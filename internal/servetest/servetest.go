@@ -82,14 +82,17 @@ func Start(t testing.TB, o Options) *Server {
 
 // Client points o at the server: the App finds it in client.json, as it
 // finds writ serve --dev, and sees only the variables in env besides the
-// data home.
+// data home and a config home of its own, so a session from writ login in
+// the user's ~/.config/writ never picks another control plane.
 func (s *Server) Client(o cli.Options, env map[string]string) cli.Options {
 	o.LookupEnv = func(name string) (string, bool) {
 		if name == "XDG_DATA_HOME" {
 			return s.Home, true
 		}
-		v, ok := env[name]
-		return v, ok
+		if v, ok := env[name]; ok || name != "XDG_CONFIG_HOME" {
+			return v, ok
+		}
+		return filepath.Join(s.Home, "config"), true
 	}
 	return o
 }

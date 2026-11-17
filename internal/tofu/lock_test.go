@@ -133,14 +133,14 @@ func TestFromTerraform(t *testing.T) {
 
 func TestStateForLock(t *testing.T) {
 	lock := []byte(`provider "registry.opentofu.org/hashicorp/aws" {
-  version = "5.34.0"
+  version = "6.0.0"
 }
 
 provider "registry.terraform.io/carlpett/sops" {
   version = "1.1.1"
 }
 `)
-	state := []byte(`{"version":4,"terraform_version":"1.16.6","serial":63,"lineage":"L","outputs":{},"resources":[` +
+	state := []byte(`{"version":4,"terraform_version":"1.17.1","serial":7,"lineage":"L","outputs":{},"resources":[` +
 		`{"mode":"managed","type":"aws_vpc","name":"a","provider":"provider[\"registry.terraform.io/hashicorp/aws\"]","instances":[{"attributes":{"cidr_block":"10.0.0.0/16","n":1e400}}]},` +
 		`{"module":"module.m","mode":"managed","type":"aws_vpc","name":"b","provider":"module.m.provider[\"registry.terraform.io/hashicorp/aws\"].west","instances":[]},` +
 		`{"mode":"data","type":"sops_file","name":"c","provider":"provider[\"registry.terraform.io/carlpett/sops\"]","instances":[]},` +
@@ -170,7 +170,7 @@ provider "registry.terraform.io/carlpett/sops" {
 	for _, r := range st.Resources {
 		addrs = append(addrs, r.Provider)
 	}
-	if !reflect.DeepEqual(addrs, want) || st.Serial != 63 || st.Lineage != "L" {
+	if !reflect.DeepEqual(addrs, want) || st.Serial != 7 || st.Lineage != "L" {
 		t.Fatalf("providers %q, serial %d, lineage %q; want %q", addrs, st.Serial, st.Lineage, want)
 	}
 	if !strings.Contains(string(got), `"n":1e400`) {
