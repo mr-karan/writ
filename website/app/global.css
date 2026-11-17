@@ -251,14 +251,14 @@ samp {
 }
 
 .prose :where(h2) {
-  font-weight: 650;
+  font-weight: 600;
   margin-top: 2.4em;
   padding-top: 1.1em;
   border-top: 1px solid var(--color-rule);
 }
 
 .prose :where(h3) {
-  font-weight: 650;
+  font-weight: 600;
   margin-top: 2em;
 }
 
@@ -275,7 +275,7 @@ samp {
 
 .prose :where(code):not(pre code) {
   font-size: 0.86em;
-  font-weight: 450;
+  font-weight: 400;
   background: var(--color-surface-2);
   border: 1px solid var(--color-rule);
   border-radius: 4px;
@@ -288,7 +288,7 @@ samp {
 }
 
 .prose :where(th) {
-  font-weight: 650;
+  font-weight: 600;
   text-align: start;
 }
 
@@ -299,7 +299,7 @@ samp {
 
 #nd-docs-layout h1 {
   font-size: clamp(1.875rem, 1.5rem + 1.4vw, 2.375rem);
-  font-weight: 680;
+  font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1.08;
   text-wrap: balance;
@@ -403,7 +403,7 @@ samp {
   font-size: 1.0625rem;
   line-height: 1.35;
   letter-spacing: -0.008em;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .landing a {
@@ -454,7 +454,6 @@ samp {
   gap: 10px;
   max-width: 44rem;
   margin: 14px 0 0;
-  font-size: 0.9375rem;
   color: var(--color-ink);
 }
 
@@ -597,7 +596,7 @@ samp {
   min-height: 46px;
   padding: 0 22px;
   border-radius: 8px;
-  font-weight: 580;
+  font-weight: 600;
   font-size: 1rem;
   line-height: 1;
   border: 1px solid transparent;
@@ -657,7 +656,7 @@ a.btn {
   align-items: center;
   gap: 6px;
   font-size: 0.8125rem;
-  font-weight: 560;
+  font-weight: 600;
   line-height: 1;
   letter-spacing: 0;
   border-radius: 999px;
@@ -726,7 +725,7 @@ a.btn {
   color: var(--color-ink-2);
   text-decoration: none;
   font-size: 0.9375rem;
-  font-weight: 520;
+  font-weight: 400;
 }
 
 .landing .nav-links a:hover {
@@ -825,7 +824,7 @@ a.btn {
 .facts dd {
   margin: 2px 0 0;
   color: var(--color-ink);
-  font-weight: 520;
+  font-weight: 400;
 }
 
 .facts dd a {
@@ -904,7 +903,7 @@ a.btn {
   display: inline-block;
   margin-top: 12px;
   font-size: 0.9375rem;
-  font-weight: 560;
+  font-weight: 600;
 }
 
 /* What Writ is: a strip of country, the three parties under it, then three plain columns. */
@@ -934,14 +933,13 @@ a.btn {
 
 .node b {
   display: block;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--color-ink);
 }
 
 .node span {
   display: block;
   margin-top: 2px;
-  font-size: 0.9375rem;
   line-height: 1.5;
   color: var(--color-ink-2);
 }
@@ -966,7 +964,6 @@ a.btn {
 .node-writ li {
   padding: 7px 0;
   border-top: 1px solid var(--color-rule);
-  font-size: 0.9375rem;
   color: var(--color-ink-2);
 }
 
@@ -990,7 +987,6 @@ a.btn {
 .cols3 p {
   margin: 6px 0 0;
   color: var(--color-ink-2);
-  font-size: 0.9375rem;
   max-width: 30rem;
 }
 
@@ -1067,7 +1063,7 @@ a.btn {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  font-weight: 650;
+  font-weight: 600;
   font-size: 0.9375rem;
   font-variant-numeric: tabular-nums;
   background: var(--color-bg);
@@ -1097,7 +1093,7 @@ a.btn {
   flex-wrap: wrap;
   min-height: 34px;
   font-size: 1.25rem;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.016em;
 }
@@ -1106,7 +1102,6 @@ a.btn {
   display: block;
   margin: 4px 0 0;
   color: var(--color-ink-2);
-  font-size: 0.9375rem;
   max-width: 30rem;
 }
 
@@ -1187,7 +1182,7 @@ a.btn {
 
 .copy {
   font-size: 0.8125rem;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1;
   color: var(--term-ink);
   background: rgb(255 255 255 / 0.08);
@@ -1228,7 +1223,7 @@ a.btn {
   margin-bottom: -1px;
   border-bottom: 2px solid transparent;
   font-size: 1rem;
-  font-weight: 560;
+  font-weight: 600;
   line-height: 1.2;
   color: var(--color-ink-3);
   white-space: nowrap;
@@ -1342,7 +1337,7 @@ a.btn {
 .holds thead th {
   border-top: 0;
   padding-top: 0;
-  font-weight: 520;
+  font-weight: 400;
   color: var(--color-ink-3);
   font-size: 0.8125rem;
 }
@@ -1400,7 +1395,6 @@ a.btn {
 
 .also p {
   margin: 6px 0 0;
-  font-size: 0.9375rem;
   color: var(--color-ink-2);
 }
 
@@ -1437,7 +1431,7 @@ a.btn {
 .cmp thead :where(th, td) {
   border-top: 0;
   padding-top: 0;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--color-ink);
 }
 
@@ -1463,7 +1457,7 @@ a.btn {
 }
 
 .cmp td:last-child {
-  font-weight: 520;
+  font-weight: 400;
 }
 
 .compare .caption {
@@ -1550,7 +1544,6 @@ a.btn {
   display: grid;
   gap: 10px;
   color: var(--color-ink-2);
-  font-size: 0.9375rem;
 }
 
 .notyet li {
@@ -1641,7 +1634,6 @@ a.btn {
   padding: 0;
   list-style: none;
   color: var(--color-ink-2);
-  font-size: 0.9375rem;
   border-bottom: 1px solid var(--color-rule);
 }
 

@@ -27,7 +27,7 @@ async function tokenize(code: string, lang: string): Promise<Token[][]> {
 function Tokens({ tokens }: { tokens: Token[] }) {
   return tokens.map((t, i) =>
     t.color || t.bold ? (
-      <span key={i} style={{ color: t.color, fontWeight: t.bold ? 650 : undefined }}>
+      <span key={i} style={{ color: t.color, fontWeight: t.bold ? 600 : undefined }}>
         {t.content}
       </span>
     ) : (

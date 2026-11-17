@@ -76,19 +76,19 @@ typography:
   title:
     fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.25rem"
-    fontWeight: 650
+    fontWeight: 600
     lineHeight: 1.25
     letterSpacing: "-0.016em"
   page-title:
     fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "clamp(1.875rem, 1.5rem + 1.4vw, 2.375rem)"
-    fontWeight: 680
+    fontWeight: 600
     lineHeight: 1.08
     letterSpacing: "-0.03em"
   title-sm:
     fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.0625rem"
-    fontWeight: 650
+    fontWeight: 600
     lineHeight: 1.35
   lede:
     fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
@@ -242,14 +242,16 @@ Every face is a self-hosted Latin subset from a pinned `@fontsource` package. Ne
 ### Hierarchy
 
 - **Display** (Newsreader 500, 42 to 76 px fluid, 1.02): the landing headline only, at most 10.8em wide. Its second sentence is a line of its own in `gild`.
-- **Headline** (Newsreader 500, 30 to 44 px fluid, 1.08): a section heading. On the docs, the page title is Archivo 680 at 30 to 38 px.
-- **Title** (650, 20 px, 1.25): a claim in "What changes", a step's name, and the headings of the two lists under the comparison. **Title, small** is 17 px, for the titles of short columns.
-- **Body** (400, 17 px, 1.6): running text on the landing page. **UI** (16 px) is the landing page's body on a phone, the docs' body, buttons, and tabs. **Small** (15 px) is for supporting text: limits, table cells, and short columns.
+- **Headline** (Newsreader 500, 30 to 44 px fluid, 1.08): a section heading. On the docs, the page title is Archivo 600 at 30 to 38 px.
+- **Title** (600, 20 px, 1.25): a claim in "What changes", a step's name, and the headings of the two lists under the comparison. **Title, small** is 17 px, for the titles of short columns.
+- **Body** (400, 17 px, 1.6): every paragraph, list, and limit on the landing page. **UI** (16 px) is the landing page's body on a phone, the docs' body, buttons, and tabs. **Small** (15 px) is for table cells, the header's links, the hero's facts, "more" links, and the footer, and for nothing that is a sentence to read.
 - **Lede** (17 to 19 px, `ink-2`, at most 38rem wide): the paragraph beside a section heading. On the docs the lede is 18 px, and running text is at most 34rem wide, which keeps lines under 80 characters.
 - **Label** (400, 13 px, `ink-3`): captions under output and screenshots, table column heads, the labels of the hero's facts, and a terminal's title bar.
 - **Code** (400, 13 px, 1.65): terminals and code blocks. Inline code is 0.84em on `surface-2`.
 
 ### Named Rules
+
+**The Two Weights Rule.** Archivo is set at 400 and 600, and at 800 only for the name. No 500, 520, 560, 580, or 650. Text is 400, and anything that names or acts is 600: a title, a button, a tab, a row's label, a status pill.
 
 **The No Eyebrow Rule.** No chip, kicker, or uppercase label sits above a heading. The heading says it.
 
