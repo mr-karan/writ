@@ -3,12 +3,14 @@ import { Inline } from '@/components/inline';
 import landing from '@/content/landing.json';
 import { compare, trust } from '@/lib/landing';
 import { Caret, Limit } from './limit';
+import { SlabRule } from './voxel';
 
 /** Writ against two paid control planes, then what Writ lacks and what a reader can check. */
 export function Compare() {
   return (
     <section id="compare" className="compare" aria-labelledby="h-compare">
       <div className="wrap">
+        <SlabRule family="i" seed={5} />
         <div className="sec-head">
           <h2 id="h-compare">{compare.title}</h2>
           <p className="lede">{compare.lede}</p>

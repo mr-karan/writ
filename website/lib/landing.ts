@@ -4,7 +4,9 @@
 // instead, which scripts/gen-content.ts cuts from the README and the docs.
 
 export const hero = {
-  title: 'Plan, approve, and apply OpenTofu on your own server.',
+  // The headline, with the phrase the page sets in color.
+  title: { plain: 'Plan, approve, and apply infra changes.', accent: 'The cloud keys stay home.' },
+  art: 'An island drawn in small cubes, seen from above. A stone keep stands on it, with ochre in its court and a tall tower that bears a key, and ochre cubes rise from the tower to a cloud. Two small huts on the shore face its gate. Part of the land at the lower left is drawn as a wire frame.',
   lede: 'Writ is an open-source control plane for OpenTofu. It plans the commits you or your CI job send it, waits for your team to approve, and applies the plan they approved. Plans and applies run on that server with its cloud roles, so your CI jobs and laptops need no cloud keys for them.',
   facts: [
     { label: 'License', text: 'Apache 2.0' },

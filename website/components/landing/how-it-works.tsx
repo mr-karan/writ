@@ -5,12 +5,14 @@ import { how } from '@/lib/landing';
 import { Flow } from './flow';
 import { Limit } from './limit';
 import { Term } from './term';
+import { SlabRule } from './voxel';
 
 export function HowItWorks() {
   const texts = [landing.plan, `${landing.denied}\n\n${landing.approved}`, landing.apply];
   return (
     <section id="how" aria-labelledby="h-how">
       <div className="wrap">
+        <SlabRule family="i" seed={2} />
         <div className="sec-head">
           <h2 id="h-how">{how.title}</h2>
           <p className="lede">{how.lede}</p>

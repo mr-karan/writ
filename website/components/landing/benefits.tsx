@@ -7,6 +7,7 @@ import { benefits } from '@/lib/landing';
 import { Limit } from './limit';
 import { Shot } from './shot';
 import { Term } from './term';
+import { SlabRule } from './voxel';
 
 /** One claim: what it is, its limit, where the docs go on, and the evidence beside it. */
 function Row({ title, text, limit, link, children }: { title: string; text: string; limit?: string; link: { text: string; href: string }; children: ReactNode }) {
@@ -36,6 +37,7 @@ export function Benefits() {
   return (
     <section id="benefits" aria-labelledby="h-benefits">
       <div className="wrap">
+        <SlabRule family="m" seed={4} />
         <div className="sec-head">
           <h2 id="h-benefits">{benefits.title}</h2>
         </div>

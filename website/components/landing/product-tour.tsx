@@ -2,12 +2,14 @@ import { Inline } from '@/components/inline';
 import { tour } from '@/lib/landing';
 import { Limit } from './limit';
 import { Frame, Shot, shotDate, shotPaths } from './shot';
+import { SlabRule } from './voxel';
 
 /** Four screenshots of the control UI behind tabs: radio inputs and CSS, so it works without script. */
 export function ProductTour() {
   return (
     <section id="product" className="tour" aria-labelledby="h-product">
       <div className="wrap">
+        <SlabRule family="b" seed={3} />
         <div className="sec-head">
           <h2 id="h-product">{tour.title}</h2>
           <p className="lede">

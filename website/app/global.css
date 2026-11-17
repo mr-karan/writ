@@ -2,11 +2,11 @@
 @import 'fumadocs-ui/css/preset.css';
 
 /*
-  One neutral palette for the landing page, the docs, and the control UI
-  they show: a pale grey ground, 1 px rules, ink for text and the primary
-  button, one blue accent for links and state, and the product's status
-  colors only where the product uses them. The coral of the mark is spent
-  on the mark and on the caret that marks a limit.
+  One palette for the landing page and the docs: a paper ground, indigo-black
+  ink, 1 px rules, a deep indigo primary button, indigo for links and state,
+  and the product's status colors only where the product uses them. The
+  ochre is spent on the mark, on the caret that marks a limit, on one phrase
+  of the headline, and on what the keep holds in the landing page's pictures.
 
   Every color on the site is one of these tokens. The --color-fd-* names are
   the ones Fumadocs UI reads. DESIGN.md lists each pair's contrast.
@@ -15,26 +15,29 @@
   --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-chivo-mono), ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 
-  --color-bg: #f6f7f9;
-  --color-surface: #ffffff;
-  --color-surface-2: #eef0f3;
-  --color-ink: #14171c;
-  --color-ink-2: #454c59;
-  --color-ink-3: #636b7b;
-  --color-rule: #dde1e7;
-  --color-rule-strong: #c3c9d2;
-  --color-accent: #2f55d4;
-  --color-accent-soft: #e8edfc;
-  --color-ok: #17703f;
-  --color-ok-soft: #e3f3e9;
+  --font-serif: var(--font-newsreader), 'Iowan Old Style', Palatino, Georgia, serif;
+
+  --color-bg: #f6f4ec;
+  --color-surface: #fdfcf6;
+  --color-surface-2: #ece9dd;
+  --color-ink: #1b1d2e;
+  --color-ink-2: #45485a;
+  --color-ink-3: #5d6072;
+  --color-rule: #dedacb;
+  --color-rule-strong: #c6c1b0;
+  --color-accent: #33409a;
+  --color-accent-soft: #e6e8f6;
+  --color-ok: #1b6b4c;
+  --color-ok-soft: #e0f0e6;
   --color-warn: #855600;
-  --color-warn-soft: #faf0d9;
-  --color-bad: #b4232a;
-  --color-bad-soft: #fbe8e8;
-  --color-btn: #14171c;
-  --color-on-btn: #ffffff;
-  --color-mark: #ff8f6b;
-  --color-mark-ground: #14171c;
+  --color-warn-soft: #f7eed6;
+  --color-bad: #b03426;
+  --color-bad-soft: #f9e6e0;
+  --color-btn: #232a5c;
+  --color-on-btn: #fbfaf4;
+  --color-gild: #9a6204;
+  --color-mark: #e2a425;
+  --color-mark-ground: #232a5c;
 
   --color-fd-background: var(--color-bg);
   --color-fd-foreground: var(--color-ink);
@@ -68,60 +71,111 @@
 /* Syntax colors, for the docs' code blocks on surface-2. */
 :root {
   --syn-bg: var(--color-surface-2);
-  --syn-fg: #14171c;
-  --syn-name: #14171c;
+  --syn-fg: #1b1d2e;
+  --syn-name: #1b1d2e;
   --syn-comment: #5a6273;
   --syn-punct: #4b5260;
-  --syn-keyword: #2f55d4;
-  --syn-string: #17703f;
+  --syn-keyword: #33409a;
+  --syn-string: #1b6b4c;
   --syn-number: #855600;
   --syn-type: #0b6676;
   --syn-function: #7a35a8;
-  --syn-add: #17703f;
-  --syn-remove: #b4232a;
+  --syn-add: #1b6b4c;
+  --syn-remove: #b03426;
   --syn-change: #855600;
 
-  --term-bg: #14171c;
-  --term-ink: #e6e9ee;
-  --term-dim: #9aa2b1;
-  --shadow: 0 1px 2px rgb(16 20 28 / 0.05), 0 18px 40px -18px rgb(16 20 28 / 0.18);
+  --term-bg: #171a2c;
+  --term-ink: #e8e8e2;
+  --term-dim: #a0a2b3;
+  --shadow: 0 1px 2px rgb(20 22 40 / 0.05), 0 18px 40px -18px rgb(20 22 40 / 0.22);
+
+  /*
+    The cubes of the landing page's pictures: indigo, bone, moss, and ochre,
+    each from 1, its darkest, to 6, its palest.
+  */
+  --vx-i1: #141a3d;
+  --vx-i2: #1f2759;
+  --vx-i3: #2f3a7c;
+  --vx-i4: #4a57a3;
+  --vx-i5: #7d88c6;
+  --vx-i6: #b9c0e3;
+  --vx-b1: #8f8672;
+  --vx-b2: #aaa18c;
+  --vx-b3: #c4bca8;
+  --vx-b4: #d8d1bf;
+  --vx-b5: #e7e1d1;
+  --vx-b6: #f1ecde;
+  --vx-m1: #2f3a1f;
+  --vx-m2: #43522b;
+  --vx-m3: #5c6e3b;
+  --vx-m4: #7b8d52;
+  --vx-m5: #a3b279;
+  --vx-m6: #c8d2a6;
+  --vx-o1: #8f5a0a;
+  --vx-o2: #b8770f;
+  --vx-o3: #d89518;
+  --vx-o4: #ecb233;
+  --vx-o5: #f5cc66;
+  --vx-o6: #fae3a3;
 }
 
 .dark {
-  --color-bg: #0d0f12;
-  --color-surface: #15181d;
-  --color-surface-2: #1b1f25;
-  --color-ink: #eceef2;
-  --color-ink-2: #b0b7c3;
-  --color-ink-3: #8f97a5;
-  --color-rule: #272c34;
-  --color-rule-strong: #3a414c;
-  --color-accent: #8fa8ff;
-  --color-accent-soft: #1b2440;
-  --color-ok: #6ad496;
-  --color-ok-soft: #14291d;
+  --color-bg: #10121f;
+  --color-surface: #171a2a;
+  --color-surface-2: #1e2133;
+  --color-ink: #ecebe4;
+  --color-ink-2: #b5b6c4;
+  --color-ink-3: #9193a5;
+  --color-rule: #282b3d;
+  --color-rule-strong: #3c4057;
+  --color-accent: #a3adf0;
+  --color-accent-soft: #1f2547;
+  --color-ok: #6fd0a0;
+  --color-ok-soft: #132a1f;
   --color-warn: #f0bd5e;
   --color-warn-soft: #2c2311;
-  --color-bad: #ff9090;
-  --color-bad-soft: #331819;
-  --color-btn: #eceef2;
-  --color-on-btn: #0d0f12;
-  --color-mark-ground: #23272e;
+  --color-bad: #ff9a85;
+  --color-bad-soft: #351b15;
+  --color-btn: #ece6d2;
+  --color-on-btn: #10121f;
+  --color-gild: #ecb233;
+  --color-mark: #ecb233;
+  --color-mark-ground: #262d63;
   --color-fd-overlay: rgb(0 0 0 / 0.6);
 
-  --term-bg: #090a0c;
+  --term-bg: #0a0b15;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 18px 40px -18px rgb(0 0 0 / 0.6);
   color-scheme: dark;
+
+  /* The same sea by night: the stone is moonlit, and the dark faces stay above the ground's own dark. */
+  --vx-i1: #1c2452;
+  --vx-i2: #263071;
+  --vx-i3: #34418f;
+  --vx-i4: #4b59ad;
+  --vx-i5: #6f7cc4;
+  --vx-i6: #99a3d8;
+  --vx-b1: #5e594d;
+  --vx-b2: #777164;
+  --vx-b3: #938d7e;
+  --vx-b4: #ada695;
+  --vx-b5: #c3bcaa;
+  --vx-b6: #d6d0bf;
+  --vx-m1: #26301a;
+  --vx-m2: #364325;
+  --vx-m3: #4c5c31;
+  --vx-m4: #667744;
+  --vx-m5: #8a9a63;
+  --vx-m6: #adba87;
 }
 
 /* Terminals are dark in both themes, so they take the dark syntax colors. */
 .dark,
 .term {
-  --syn-fg: #e6e9ee;
-  --syn-name: #e6e9ee;
-  --syn-comment: #9aa2b1;
-  --syn-punct: #a9b0bc;
-  --syn-keyword: #8fa8ff;
+  --syn-fg: #e8e8e2;
+  --syn-name: #e8e8e2;
+  --syn-comment: #a0a2b3;
+  --syn-punct: #adafbe;
+  --syn-keyword: #a3adf0;
   --syn-string: #7fd6a0;
   --syn-number: #f2c26b;
   --syn-type: #7fd1de;
@@ -174,9 +228,9 @@ samp {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  font-weight: 700;
-  font-size: 1.125rem;
-  letter-spacing: -0.02em;
+  font-weight: 800;
+  font-size: 1.3125rem;
+  letter-spacing: -0.045em;
   color: var(--color-ink);
 }
 
@@ -306,10 +360,10 @@ samp {
 
 /*
   ---------- Landing page, and the 404 page that shares its look ----------
-  Set like a technical record: one ground, one left-aligned grid, hairline
-  rules between sections, and a section head with its heading on the left
-  and its lede on the right. Only the things that are objects get a box:
-  screenshots and terminals. DESIGN.md has the rules.
+  A sea of voxels on paper: one ground, one left-aligned grid, serif
+  headings, and a rule of slabs that opens each section. Only the things
+  that are objects get a box: screenshots and terminals. DESIGN.md has the
+  rules.
 */
 .landing {
   font-size: 17px;
@@ -321,19 +375,28 @@ samp {
   text-wrap: balance;
 }
 
+.landing :where(h1, h2) {
+  font-family: var(--font-serif);
+  font-weight: 500;
+}
+
 .landing h1 {
-  font-size: clamp(2.5rem, 1.25rem + 5vw, 4.5rem);
+  font-size: clamp(2.625rem, 1.3rem + 4.7vw, 4.75rem);
   line-height: 1.02;
-  letter-spacing: -0.03em;
-  font-weight: 680;
-  max-width: 13.5em;
+  letter-spacing: -0.028em;
+  max-width: 10.8em;
+}
+
+.landing h1 em {
+  display: block;
+  font-style: normal;
+  color: var(--color-gild);
 }
 
 .landing h2 {
-  font-size: clamp(1.625rem, 1.25rem + 1.5vw, 2.25rem);
-  line-height: 1.12;
+  font-size: clamp(1.875rem, 1.3rem + 2vw, 2.75rem);
+  line-height: 1.08;
   letter-spacing: -0.02em;
-  font-weight: 650;
 }
 
 .landing :where(h3, h4) {
@@ -398,7 +461,7 @@ samp {
 .caret {
   flex: none;
   margin-top: 0.36em;
-  color: var(--color-mark);
+  color: var(--color-gild);
 }
 
 .landing :where(p, dd, li) {
@@ -411,14 +474,66 @@ samp {
   margin: 10px 0 0;
 }
 
-/* Sections: a rule, then more room above the heading than under it. */
+/* Sections: a rule of slabs, then more room above the heading than under it. */
 .landing section {
-  padding: 0 0 clamp(64px, 7.6vw, 112px);
+  padding: 0 0 clamp(72px, 9vw, 136px);
 }
 
-.landing section > .wrap {
-  border-top: 1px solid var(--color-rule-strong);
-  padding-top: clamp(24px, 2.8vw, 36px);
+/*
+  The pictures. Each path is every face of one tone. A face has a hairline
+  stroke of its own color, which closes the seam between it and the next
+  face. A faded cube is partly clear, so it goes to the ground of either
+  theme. The large pictures are files that the page draws with <use>: their
+  paths read these tokens, and lib/voxel/scenes.ts paints them as the
+  classes here paint the rules and the lone cubes.
+*/
+.voxel {
+  display: block;
+  width: 100%;
+  height: auto;
+  stroke-linejoin: round;
+  stroke-width: 0.5;
+}
+
+.vx-i2 { fill: var(--vx-i2); stroke: var(--vx-i2); }
+.vx-i3 { fill: var(--vx-i3); stroke: var(--vx-i3); }
+.vx-i4 { fill: var(--vx-i4); stroke: var(--vx-i4); }
+.vx-b2 { fill: var(--vx-b2); stroke: var(--vx-b2); }
+.vx-b3 { fill: var(--vx-b3); stroke: var(--vx-b3); }
+.vx-b4 { fill: var(--vx-b4); stroke: var(--vx-b4); }
+.vx-m2 { fill: var(--vx-m2); stroke: var(--vx-m2); }
+.vx-m3 { fill: var(--vx-m3); stroke: var(--vx-m3); }
+.vx-m4 { fill: var(--vx-m4); stroke: var(--vx-m4); }
+.vx-o3 { fill: var(--vx-o3); stroke: var(--vx-o3); }
+.vx-o4 { fill: var(--vx-o4); stroke: var(--vx-o4); }
+.vx-o5 { fill: var(--vx-o5); stroke: var(--vx-o5); }
+
+.vx-f1 { opacity: 0.6; }
+.vx-f2 { opacity: 0.3; }
+
+/* The cubes that go from the keep to the cloud light up in turn, from the tower out. */
+.vx-spark {
+  animation: vx-climb 4.2s ease-in-out infinite both;
+}
+
+@keyframes vx-climb {
+  0%, 12% { opacity: 0.3; }
+  30%, 62% { opacity: 1; }
+  100% { opacity: 0.3; }
+}
+
+.vx-sky {
+  animation: vx-drift 46s ease-in-out infinite alternate;
+}
+
+@keyframes vx-drift {
+  from { transform: translateX(-8px); }
+  to { transform: translateX(12px); }
+}
+
+.slab-rule {
+  height: 5px;
+  margin-bottom: clamp(26px, 3vw, 40px);
 }
 
 .sec-head {
@@ -480,7 +595,7 @@ samp {
   justify-content: center;
   gap: 8px;
   min-height: 46px;
-  padding: 0 20px;
+  padding: 0 22px;
   border-radius: 8px;
   font-weight: 580;
   font-size: 1rem;
@@ -654,48 +769,61 @@ a.btn {
   }
 }
 
-/* Hero: the claim, then what it is beside its facts, then the product. */
+/*
+  Hero: the claim at the top left, and the land under it. The keep stands
+  at the right, so on a wide page it rises beside the headline. The facts
+  close the hero under the picture.
+*/
 .landing .hero {
-  padding-top: clamp(36px, 5.2vw, 76px);
+  position: relative;
+  padding-top: clamp(40px, 5.6vw, 84px);
+  overflow: hidden;
 }
 
-.landing .hero > .wrap {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.hero-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  gap: clamp(28px, 5vw, 72px);
-  align-items: start;
-  margin-top: clamp(22px, 2.6vw, 34px);
+.hero-text {
+  position: relative;
+  z-index: 1;
 }
 
 .landing .hero .lede {
-  max-width: 36rem;
+  max-width: 33rem;
+  margin-top: clamp(20px, 2.2vw, 30px);
+}
+
+.hero-art {
+  width: min(100%, 1920px);
+  margin: max(-27vw, -520px) auto 0;
+  pointer-events: none;
+}
+
+@media (min-width: 1921px) {
+  /* Past its full size the picture stops growing, and its sides go to paper. */
+  .hero-art,
+  .foot-art {
+    mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  }
 }
 
 .facts {
-  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: clamp(20px, 3vw, 40px);
+  margin: clamp(8px, 2vw, 28px) 0 0;
   font-size: 0.9375rem;
-  border-bottom: 1px solid var(--color-rule);
 }
 
 .facts div {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr);
-  gap: 16px;
-  padding: 9px 0;
-  border-top: 1px solid var(--color-rule);
+  padding-top: 12px;
+  border-top: 1px solid var(--color-rule-strong);
 }
 
 .facts dt {
   color: var(--color-ink-3);
+  font-size: 0.8125rem;
 }
 
 .facts dd {
-  margin: 0;
+  margin: 2px 0 0;
   color: var(--color-ink);
   font-weight: 520;
 }
@@ -705,9 +833,23 @@ a.btn {
   white-space: nowrap;
 }
 
-@media (max-width: 860px) {
-  .hero-grid {
-    grid-template-columns: minmax(0, 1fr);
+@media (max-width: 980px) {
+  /* The headline needs the width, so the picture moves under the text and shows the keep. */
+  .hero-art {
+    width: 230%;
+    margin: 12px 0 0 -112%;
+  }
+
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 18px;
+  }
+}
+
+@media (max-width: 560px) {
+  .hero-art {
+    width: 270%;
+    margin-left: -138%;
   }
 }
 
@@ -758,26 +900,6 @@ a.btn {
   object-fit: contain;
 }
 
-.hero-shot {
-  margin-top: clamp(36px, 4.6vw, 60px);
-}
-
-.hero-shot .view {
-  aspect-ratio: 1280 / 600;
-  overflow: hidden;
-}
-
-@media (max-width: 700px) {
-  /* A phone gets the 390 px capture, from the plan's title down through its approvals. */
-  .hero-shot .view {
-    aspect-ratio: 390 / 262;
-  }
-
-  .hero-shot .view img {
-    margin-top: -34%;
-  }
-}
-
 .landing .more {
   display: inline-block;
   margin-top: 12px;
@@ -785,23 +907,29 @@ a.btn {
   font-weight: 560;
 }
 
-/* What Writ is: a drawn map, then three plain columns. */
+/* What Writ is: a strip of country, the three parties under it, then three plain columns. */
 .map {
+  margin-bottom: clamp(44px, 5.4vw, 76px);
+  /* On a phone the picture is wider than the column. */
+  overflow: clip;
+}
+
+.map-nodes {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1.2fr) 64px minmax(0, 1fr);
-  align-items: center;
-  margin-bottom: clamp(40px, 5vw, 68px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
+  column-gap: clamp(24px, 4vw, 56px);
+  align-items: start;
+  margin-top: 18px;
 }
 
 .map-side {
   display: grid;
-  gap: 12px;
+  gap: 16px;
 }
 
 .node {
-  border: 1px solid var(--color-rule-strong);
-  border-radius: 8px;
-  padding: 14px 18px 16px;
+  border-top: 1px solid var(--color-rule-strong);
+  padding-top: 12px;
 }
 
 .node b {
@@ -818,16 +946,15 @@ a.btn {
   color: var(--color-ink-2);
 }
 
+/* The keep's column: the one heavier rule on the page, in ochre, for what only it holds. */
 .node-writ {
-  background: var(--color-surface);
-  border: 1.5px solid var(--color-ink);
-  padding: 18px 22px 8px;
+  border-top: 2px solid var(--color-mark);
 }
 
 .node-writ b {
   font-size: 1.0625rem;
   letter-spacing: -0.012em;
-  padding-bottom: 12px;
+  padding-bottom: 8px;
 }
 
 .node-writ ul {
@@ -837,30 +964,10 @@ a.btn {
 }
 
 .node-writ li {
-  padding: 8px 0;
+  padding: 7px 0;
   border-top: 1px solid var(--color-rule);
   font-size: 0.9375rem;
   color: var(--color-ink-2);
-}
-
-/* An arrow from one node to the next: a rule with a head. */
-.map-arrow {
-  position: relative;
-  height: 1.5px;
-  margin-inline: 8px;
-  background: var(--color-ink-3);
-}
-
-.map-arrow::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  border-top: 1.5px solid var(--color-ink-3);
-  border-right: 1.5px solid var(--color-ink-3);
-  transform: translate(0, -50%) rotate(45deg);
 }
 
 .landing h3.sub {
@@ -888,22 +995,15 @@ a.btn {
 }
 
 @media (max-width: 860px) {
-  .map {
+  /* On a phone the picture is drawn larger and shows the keep, and the parties stack under it. */
+  .map-art {
+    width: 150%;
+    margin-left: -25%;
+  }
+
+  .map-nodes {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .map-arrow {
-    width: 1.5px;
-    height: 26px;
-    margin: 6px auto;
-  }
-
-  .map-arrow::after {
-    right: auto;
-    left: 50%;
-    top: auto;
-    bottom: 0;
-    transform: translate(-50%, 0) rotate(135deg);
+    row-gap: 16px;
   }
 
   .cols3 {
@@ -1554,11 +1654,50 @@ a.btn {
   margin-top: 14px;
 }
 
-/* Footer */
+/* Footer: the name, set large, with the land running off to the right behind it. */
 .foot-band {
   padding: 0 0 56px;
   font-size: 0.9375rem;
   color: var(--color-ink-3);
+  overflow: hidden;
+}
+
+.foot-art {
+  position: relative;
+  width: min(100%, 1920px);
+  margin-inline: auto;
+}
+
+.foot-mark {
+  position: absolute;
+  left: max(24px, (100% - 1160px) / 2);
+  bottom: 14%;
+  z-index: 1;
+  font-weight: 800;
+  font-size: clamp(5rem, 15vw, 13.5rem);
+  line-height: 0.8;
+  letter-spacing: -0.06em;
+  color: var(--color-ink);
+}
+
+@media (max-width: 760px) {
+  /* On a phone the name stands over the picture, which shows the keep's island. */
+  .foot-art {
+    padding-top: 26vw;
+  }
+
+  .foot-art .voxel {
+    width: 200%;
+    margin-left: -100%;
+  }
+
+  .foot-mark {
+    left: 16px;
+    top: 0;
+    bottom: auto;
+    font-size: 30vw;
+    line-height: 1;
+  }
 }
 
 .foot {
@@ -1569,6 +1708,7 @@ a.btn {
   justify-content: space-between;
   border-top: 1px solid var(--color-rule-strong);
   padding-top: 24px;
+  margin-top: -1px;
 }
 
 .foot p {

@@ -49,7 +49,7 @@ Limits the site must keep stating:
 
 ## Brand Commitments
 
-- The name is Writ. The mark is a proofreader's caret in coral on an ink square.
+- The name is Writ. The mark is a proofreader's caret, laid in ochre slabs on an indigo square.
 - The voice is an engineer on the team explaining Writ to another engineer: plain, technical, direct, and honest about limits. No praise for Writ, no hype words, no em dashes, no exclamation marks.
 - Every claim names its limit on the same page.
 - Every output shown came from a real run, with a caption that says which. Every screenshot is a real capture of the control UI.
