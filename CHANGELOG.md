@@ -7,6 +7,7 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 ### Fixed
 
 - A plan of a stack on S3 that tofu refused, as for a permission the plan role lacks, kept only `tofu plan exited with code 1`. It now keeps each diagnostic's summary and place, swept by a mask that knows every secret set `writ serve` keeps for the stack, with each quoted instance key shown as `["(sensitive)"]`.
+- The docs for the control UI's sign-in and the `people` issuer now say that `writ login` through a browser needs `http://127.0.0.1/callback` as a redirect URI.
 
 ## 0.1.0 - 2026-11-17
 
