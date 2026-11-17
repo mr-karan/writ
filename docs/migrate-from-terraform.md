@@ -42,6 +42,6 @@ Write each `hashicorp/` provider's `source` without a host, as `hashicorp/aws`. 
 
 ## The state
 
-A state that Terraform wrote refers to its providers at `registry.terraform.io`, and OpenTofu plans against it. In a stack that requires `hashicorp/random` 3.6.3, a state Terraform 1.17.1 applied plans with OpenTofu 1.13.9 as `No changes`.
+A state that Terraform wrote refers to its providers at `registry.terraform.io`, and OpenTofu plans against it. In a stack that requires `hashicorp/random` 3.6.3, a state Terraform 1.17.1 applied plans with OpenTofu 1.13.9 as `No changes`. Writ reads such a state for an adoption with each provider moved to the address the lock pins, as [Lock files that Terraform wrote](serve.md#lock-files-that-terraform-wrote) explains, and the state in your backend keeps its addresses until an apply writes it.
 
 To keep the state, move it to a backend `writ serve` supports: its own `http` backend, or your stack's S3 bucket. A state that Writ didn't write has no secret set, so Writ keeps no detail of a plan against it until you [adopt the state](adopt-state.md).

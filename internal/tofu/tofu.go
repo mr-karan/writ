@@ -375,7 +375,7 @@ func (r *Runner) pullShow(ctx context.Context, sc *scratch) (State, error) {
 	if serial.Serial == 0 {
 		return State{}, nil
 	}
-	if err := sc.write(stateFile, raw); err != nil {
+	if err := r.showState(ctx, sc, raw); err != nil {
 		return State{}, err
 	}
 	js, err := r.step(ctx, sc, false, "show", "show", "-json", stateFile)
@@ -383,6 +383,22 @@ func (r *Runner) pullShow(ctx context.Context, sc *scratch) (State, error) {
 		return State{}, err
 	}
 	return State{Unmasked: js, Serial: serial}, nil
+}
+
+// showState writes state for show to read, with its providers named as
+// the stack's lock file pins them (StateForLock).
+func (r *Runner) showState(ctx context.Context, sc *scratch, state []byte) error {
+	lock, err := sc.read(LockFile, r.opts.MaxOutput)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return err
+	default:
+		if state, err = StateForLock(state, lock); err != nil {
+			return fmt.Errorf("%s: %w", LockFile, err)
+		}
+	}
+	return sc.write(stateFile, state)
 }
 
 // stateSerial reads the lineage and serial of a state file and nothing
@@ -454,10 +470,10 @@ func (r *Runner) Show(ctx context.Context, s Stack, state []byte) (State, error)
 		return State{}, err
 	}
 	defer sc.remove()
-	if err := sc.write(stateFile, state); err != nil {
+	if err := r.init(ctx, sc, "-backend=false"); err != nil {
 		return State{}, err
 	}
-	if err := r.init(ctx, sc, "-backend=false"); err != nil {
+	if err := r.showState(ctx, sc, state); err != nil {
 		return State{}, err
 	}
 	js, err := r.step(ctx, sc, false, "show", "show", "-json", stateFile)
