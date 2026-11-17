@@ -465,8 +465,13 @@ func TestSecretSets(t *testing.T) {
 			{"app", "L2", 1, "RUN4", []byte("L2 serial 1")},
 			{"app", "L2", 2, "", nil},
 			{"api", "L1", 3, "RUN5", []byte("api L1 serial 3")},
+			{"app", "L3", 4, "RUN6", []byte("staging L3 serial 4")},
 		} {
-			if _, err := s.PutSerial(ctx, control.StateSerial{Env: "prod", Stack: v.stack, Lineage: v.lineage, Serial: v.serial, From: v.serial, RunID: v.run, SeenAt: t0}, v.sealed); err != nil {
+			env := "prod"
+			if v.lineage == "L3" {
+				env = "staging"
+			}
+			if _, err := s.PutSerial(ctx, control.StateSerial{Env: env, Stack: v.stack, Lineage: v.lineage, Serial: v.serial, From: v.serial, RunID: v.run, SeenAt: t0}, v.sealed); err != nil {
 				t.Fatal(err)
 			}
 		}

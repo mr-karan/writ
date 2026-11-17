@@ -426,8 +426,9 @@ func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask, unrea
 }
 
 // instanceKeys matches a quoted instance key of an address, as OpenTofu
-// writes it: ["KEY"], with KEY escaped as HCL escapes a string.
-var instanceKeys = regexp.MustCompile(`\["(?:[^"\\]|\\.)*"\]`)
+// writes it: ["KEY"], with KEY escaped as HCL escapes a string, and as a
+// summary that quotes the address again writes it: [\"KEY\"].
+var instanceKeys = regexp.MustCompile(`\["(?:[^"\\]|\\.)*"\]|\[\\"(?:[^\\]|\\[^"])*\\"\]`)
 
 // stepDiagnostics returns the diagnostics of a -json event stream as
 // "file:line:column: summary", at most maxTofuDiagnostics of them, each
@@ -466,11 +467,14 @@ func stepDiagnostics(m *mask.Mask, log []byte, sweepKeys bool) []Diagnostic {
 			out = append(out, Diagnostic{"error", string(diag.Usage), "(more diagnostics cut)"})
 			break
 		}
+		// The mask runs on the summary as tofu wrote it, so a known secret
+		// matches whole before the key sweep or the newline fold could
+		// split it.
+		text = string(m.Event([]byte(text)))
 		text = strings.ReplaceAll(text, "\n", " ")
 		if sweepKeys {
 			text = instanceKeys.ReplaceAllLiteralString(text, `["`+mask.Sensitive+`"]`)
 		}
-		text = string(m.Event([]byte(text)))
 		out = append(out, Diagnostic{severity, string(diag.Usage), printable(text)})
 	}
 	return out

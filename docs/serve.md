@@ -147,7 +147,7 @@ On S3, Writ doesn't know which serial a refused plan read, because tofu saved no
 
 The serial the plan read can still have no set, as one written outside Writ, or the state of a stack that Writ never applied or [adopted](adopt-state.md). Such a state can keep a past secret in an address keyed by `nonsensitive()`, so each quoted instance key in a summary becomes `["(sensitive)"]`. An integer key such as `[0]` stays. The rest of the summary shows, swept by the mask. So a provider's error shows, such as an AWS `AccessDenied` that names the action your plan role lacks.
 
-**Limits.** A state with no set can also keep a past secret in an attribute set through `nonsensitive()`. If a refused plan's summary quotes that attribute, the secret shows, because no set lists it and the mask hasn't read the plan.
+**Limits.** The mask knows nothing of a state with no set. If a refused plan's summary quotes a value from such a state outside a quoted instance key, as an attribute set through `nonsensitive()`, an attribute the state marks sensitive, or a name built from `each.key`, the value shows, because no set lists it and the mask hasn't read the plan. Only the quoted keys and the values the sets and `provider_env` list are swept.
 
 Your stack's variables come from its committed `.tfvars` files and from the `TF_VAR_` names in `provider_env`.
 
@@ -300,7 +300,7 @@ Writ runs a normal plan for a check, not `tofu plan -refresh-only`. OpenTofu 1.1
 
 If the check's plan changes something, Writ marks the `stack@env` drifted. In the mark you get each changed address, its kind, its action, and the names of the top-level attributes that change, from the masked plan. Values are never kept. Read `drifted_since` as when the first of an unbroken run of drifted checks ended. When a check's plan changes nothing, it clears the mark.
 
-If a check fails, as when OpenTofu refuses the plan, it keeps the reason, swept by the mask, and leaves no mark. Checks of a state with no secret set fail with only `drift unknown: no secret set for state version N of stack@env`, as [States with no secret set](#states-with-no-secret-set) explains.
+If a check fails, as when OpenTofu refuses the plan, it keeps the reason, swept by the mask, and leaves no mark. A check whose plan runs against a state with no secret set fails with only `drift unknown: no secret set for state version N of stack@env`, as [States with no secret set](#states-with-no-secret-set) explains. A check that OpenTofu refuses on S3 keeps its summaries, swept as a refused plan's are.
 
 If an apply of the same `stack@env` ran during a check, the check keeps nothing, because it may have read a state the apply was changing. Then the stack is due again at the next look. When it finds drift, `writ serve` logs `drift found` at level `WARN`, with the counts and the plan id, and sends no alert.
 
