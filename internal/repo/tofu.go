@@ -332,8 +332,13 @@ type TofuStack struct {
 	// of the local modules it calls, and below them, by path from the
 	// repository's path.
 	Files map[string][]byte
-	// Lock is the stack's .terraform.lock.hcl.
+	// Lock is the stack's .terraform.lock.hcl as OpenTofu takes it: the
+	// committed file, or for one that Terraform wrote, what
+	// tofu.FromTerraform made of it. Files holds the committed file.
 	Lock []byte
+	// Moved are the providers that tofu.FromTerraform moved from
+	// Terraform's registry to OpenTofu's.
+	Moved []tofu.Moved
 	// Backend is the backend block of the stack's terraform block, or
 	// nil when it has none.
 	Backend *Backend
@@ -489,8 +494,69 @@ func TofuSources(ctx context.Context, c forge.Client, projectID string, snap *Sn
 			}
 		}
 	}
+	ts.Lock, ts.Moved, err = tofu.FromTerraform(ts.Lock, requiredSources(ts.Files, dirs))
+	if err != nil {
+		return TofuStack{}, fmt.Errorf("%s: %w", path.Join(dir, tofu.LockFile), err)
+	}
 	ts.Digest = tofuDigest(ts.Files)
 	return ts, nil
+}
+
+// requiredSources reports whether the code in files of the directories
+// dirs, the stack's and its local modules', requires a provider's full
+// address in a required_providers block, such as
+// "registry.terraform.io/hashicorp/aws". A source with no host counts as
+// one of registry.opentofu.org, where OpenTofu resolves it. A file that
+// does not parse is skipped; tofu init refuses it.
+func requiredSources(files map[string][]byte, dirs []string) func(source string) bool {
+	required := map[string]bool{}
+	for name, text := range files {
+		if !tofuCode(name) || !slices.Contains(dirs, path.Dir(name)) {
+			continue
+		}
+		f, diags := hclsyntax.ParseConfig(text, name, hcl.InitialPos)
+		if diags.HasErrors() {
+			continue
+		}
+		for _, tb := range f.Body.(*hclsyntax.Body).Blocks {
+			if tb.Type != "terraform" {
+				continue
+			}
+			for _, rp := range tb.Body.Blocks {
+				if rp.Type != "required_providers" {
+					continue
+				}
+				for _, a := range rp.Body.Attributes {
+					obj, ok := a.Expr.(*hclsyntax.ObjectConsExpr)
+					if !ok {
+						continue
+					}
+					for _, item := range obj.Items {
+						// The key's value is the same for source and
+						// "source", which tofu reads alike.
+						if key, ok := literal(item.KeyExpr); !ok || key != "source" {
+							continue
+						}
+						src, ok := literal(item.ValueExpr)
+						if !ok {
+							continue
+						}
+						// A source's host, namespace, and type are each
+						// matched without case, and lock files write them
+						// in lower case.
+						src = strings.ToLower(src)
+						switch strings.Count(src, "/") {
+						case 1:
+							required["registry.opentofu.org/"+src] = true
+						case 2:
+							required[src] = true
+						}
+					}
+				}
+			}
+		}
+	}
+	return func(source string) bool { return required[source] }
 }
 
 // literal is the value of an expression that needs no evaluation context,

@@ -247,12 +247,16 @@ func (f *fakeTofu) call(c stateCall, method, suffix, body string) int {
 
 type stateCall struct{ addr, token string }
 
-func (f *fakeTofu) Fill(_ context.Context, lock []byte) error {
+func (f *fakeTofu) Fill(_ context.Context, lock []byte) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.fills = append(f.fills, lock)
-	return nil
+	return append(slices.Clone(lock), filledMark...), nil
 }
+
+// filledMark ends each lock file the fake's Fill returns, so a test sees
+// that the run got Fill's lock file.
+const filledMark = "# filled\n"
 
 func (f *fakeTofu) Plan(ctx context.Context, s tofu.Stack) (tofu.Plan, error) {
 	var names []string
@@ -450,6 +454,34 @@ func TestTofuCommitPlan(t *testing.T) {
 	}
 	if work, _ := os.ReadDir(filepath.Join(f.cfg.Data, "work")); len(work) != 0 {
 		t.Fatalf("the plan's work directory outlived it: %v", work)
+	}
+}
+
+// TestTofuPlanTerraformLock plans a stack whose lock file Terraform
+// wrote: Fill gets the lock moved to OpenTofu's registry, the run gets
+// Fill's lock file beside the committed one, and the plan's text says so.
+func TestTofuPlanTerraformLock(t *testing.T) {
+	runner := &fakeTofu{}
+	f := tofuFixture(t, runner)
+	files := tofuFiles()
+	committed := strings.Replace(tofuLockFile, "registry.opentofu.org", "registry.terraform.io", 1)
+	files["infra/app/.terraform.lock.hcl"] = forgetest.File{Content: committed}
+	f.gitlab.Commit(4242, "main", files)
+	if r := f.do("POST", "/v1/repos", admin(f), repoRequest(nil)); r.status != http.StatusCreated {
+		t.Fatalf("add: %d %s", r.status, r.body)
+	}
+	p, _ := f.planCommit(files, "terraform-lock")
+	want := "provider \"registry.opentofu.org/hashicorp/random\" {\n  version = \"3.9.1\"\n}\n\n"
+	if len(runner.fills) != 1 || string(runner.fills[0]) != want {
+		t.Fatalf("the plugin cache was filled with %q, want %q", runner.fills, want)
+	}
+	if got := string(runner.stacks[0].Lock); got != want+filledMark {
+		t.Fatalf("the run's lock file is %q, want the one Fill returned", got)
+	}
+	note := "Warning: .terraform.lock.hcl pins registry.terraform.io/hashicorp/random, as Terraform writes it; " +
+		"the run used registry.opentofu.org/hashicorp/random at the same version, checked against the hashes of OpenTofu's build, which OpenTofu's registry signs\n"
+	if !strings.Contains(p.Text, note) {
+		t.Fatalf("the plan's text lacks %q:\n%s", note, p.Text)
 	}
 }
 

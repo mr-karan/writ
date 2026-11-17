@@ -309,10 +309,11 @@ func (s *Server) adoptShow(ctx context.Context, a adoption, key *tfstate.Key, ts
 	}
 	_, _, secrets := s.tofuEnv(pe)
 	m := mask.New(secrets)
-	if err := s.tofuRunner.Fill(ctx, ts.Lock); err != nil {
+	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
+	if err != nil {
 		return tofu.State{}, nil, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
 	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Env: baseProviderEnv}
+	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Lock: lock, Env: baseProviderEnv}
 	if user != nil {
 		stk.User = &tofu.User{UID: user.UID, GID: user.GID}
 	}
@@ -345,10 +346,11 @@ func (s *Server) adoptPull(ctx context.Context, a adoption, id string, ts repo.T
 	}
 	runEnv, creds, secrets := s.tofuEnv(launch.Env)
 	m := mask.New(secrets)
-	if err := s.tofuRunner.Fill(ctx, ts.Lock); err != nil {
+	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
+	if err != nil {
 		return tofu.State{}, nil, 0, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
 	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Env: runEnv, Creds: creds, StateCreds: true, User: &tofu.User{UID: launch.User.UID, GID: launch.User.GID}}
+	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Lock: lock, Env: runEnv, Creds: creds, StateCreds: true, User: &tofu.User{UID: launch.User.UID, GID: launch.User.GID}}
 	state, err := s.tofuRunner.Pull(ctx, stk)
 	if err != nil {
 		return tofu.State{}, nil, 0, err

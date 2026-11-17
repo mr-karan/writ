@@ -147,7 +147,7 @@ func (s *showTofu) wait(ctx context.Context) error {
 	}
 }
 
-func (s *showTofu) Fill(context.Context, []byte) error { return nil }
+func (s *showTofu) Fill(_ context.Context, lock []byte) ([]byte, error) { return lock, nil }
 
 func (s *showTofu) Plan(ctx context.Context, st tofu.Stack) (tofu.Plan, error) {
 	if st.Dir == "queue" {

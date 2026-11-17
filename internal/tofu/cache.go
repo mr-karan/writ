@@ -93,16 +93,25 @@ func literalString(e hclsyntax.Expression) (string, bool) {
 
 // Fill installs the providers lock pins into the plugin cache, as writ's
 // own user, so that a run as another user finds them there and only reads
-// the cache. It runs `tofu init` on a configuration it writes itself, which
-// requires exactly those providers, so no code of a stack runs as writ,
-// and tofu checks each provider against the lock's hashes. Then it takes
-// group and other write access from everything in the cache, and gives
-// them read access, which writ's umask may have withheld. One Fill runs at
-// a time, and no run's init overlaps it.
-func (r *Runner) Fill(ctx context.Context, lock []byte) error {
+// the cache, and returns the lock file the run's init reads, Stack.Lock. It
+// runs `tofu init` on a configuration it writes itself, which requires
+// exactly those providers, so no code of a stack runs as writ, and tofu
+// checks each provider against the lock's hashes. Then it takes group and
+// other write access from everything in the cache, and gives them read
+// access, which writ's umask may have withheld. One Fill runs at a time,
+// and no run's init overlaps it.
+//
+// A provider the lock pins with no hashes, as FromTerraform leaves one,
+// gets the hashes tofu records as it installs it, after it checks the
+// registry's signature, and the returned lock holds them; without them a
+// run's init would not trust the cache. The Runner keeps them, so a later
+// Fill of the same version reads the cache instead of the registry, and
+// every run of that version, a plan and its apply among them, gets the same
+// hashes. A lock whose every provider has hashes is returned as it is.
+func (r *Runner) Fill(ctx context.Context, lock []byte) ([]byte, error) {
 	providers, err := LockedProviders(lock)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var main strings.Builder
 	main.WriteString("terraform {\n  required_providers {\n")
@@ -114,19 +123,87 @@ func (r *Runner) Fill(ctx context.Context, lock []byte) error {
 	defer cancel()
 	r.cache.Lock()
 	defer r.cache.Unlock()
+	var unhashed []int
+	recalled := false
+	for i, p := range providers {
+		if len(p.Hashes) > 0 {
+			continue
+		}
+		if h, ok := r.hashes[p.Source+" "+p.Version]; ok {
+			providers[i].Hashes, recalled = h, true
+		} else {
+			unhashed = append(unhashed, i)
+		}
+	}
+	if recalled || len(unhashed) > 0 {
+		if lock, err = formatLock(providers); err != nil {
+			return nil, err
+		}
+	}
 	sc, err := r.makeScratch([]string{"."}, []file{
 		{name: "main.tf", data: []byte(main.String()), mode: 0o600},
 		{name: LockFile, data: lock, mode: 0o600},
 	}, ".", nil, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer sc.remove()
 	sc.fill = true
-	if _, err := r.step(ctx, sc, false, "init", "init", "-input=false", "-lockfile=readonly", "-backend=false", "-no-color"); err != nil {
-		return err
+	// tofu records hashes only in a lock file it may write, so an init
+	// that must record some runs without -lockfile=readonly. The
+	// configuration pins each version, so the hashes are all it can
+	// change, and recordHashes holds it to that.
+	args := []string{"init", "-input=false"}
+	if len(unhashed) == 0 {
+		args = append(args, "-lockfile=readonly")
 	}
-	return shareCache(r.opts.PluginCache)
+	args = append(args, "-backend=false", "-no-color")
+	if _, err := r.step(ctx, sc, false, "init", args...); err != nil {
+		return nil, err
+	}
+	if len(unhashed) > 0 {
+		if lock, err = r.recordHashes(sc, providers, unhashed); err != nil {
+			return nil, err
+		}
+	}
+	return lock, shareCache(r.opts.PluginCache)
+}
+
+// recordHashes reads the lock file that Fill's init wrote, keeps the hashes
+// it recorded for providers[i] of each i in unhashed, and returns the lock
+// file of providers with them.
+func (r *Runner) recordHashes(sc *scratch, providers []Provider, unhashed []int) ([]byte, error) {
+	written, err := sc.read(LockFile, r.opts.MaxOutput)
+	if err != nil {
+		return nil, err
+	}
+	got, err := LockedProviders(written)
+	if err != nil {
+		return nil, fmt.Errorf("tofu init wrote a lock file writ cannot read: %w", err)
+	}
+	same := slices.EqualFunc(got, providers, func(a, b Provider) bool { return a.Source == b.Source && a.Version == b.Version })
+	if !same {
+		return nil, fmt.Errorf("tofu init wrote a lock file that pins other providers or versions than the one it was given")
+	}
+	for _, i := range unhashed {
+		if len(got[i].Hashes) == 0 {
+			return nil, fmt.Errorf("tofu init recorded no hashes of provider %s %s", got[i].Source, got[i].Version)
+		}
+	}
+	for _, i := range unhashed {
+		providers[i].Hashes = got[i].Hashes
+	}
+	text, err := formatLock(providers)
+	if err != nil {
+		return nil, err
+	}
+	if r.hashes == nil {
+		r.hashes = map[string][]string{}
+	}
+	for _, i := range unhashed {
+		r.hashes[got[i].Source+" "+got[i].Version] = got[i].Hashes
+	}
+	return text, nil
 }
 
 // shareCache makes every directory and file of the plugin cache readable

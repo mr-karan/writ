@@ -134,10 +134,11 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 		return ApplyOutput{}, err
 	}
 	m := mask.New(append(slices.Clone(secrets), learned...))
-	if err := s.tofuRunner.Fill(startCtx, ts.Lock); err != nil {
+	lock, err := s.tofuRunner.Fill(startCtx, ts.Lock)
+	if err != nil {
 		return ApplyOutput{}, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
 	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Env: runEnv, Creds: creds, StateCreds: onS3}
+	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Lock: lock, Env: runEnv, Creds: creds, StateCreds: onS3}
 	if launch.User != nil {
 		stk.User = &tofu.User{UID: launch.User.UID, GID: launch.User.GID}
 	}

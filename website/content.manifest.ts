@@ -138,6 +138,12 @@ export const pages: Page[] = [
     parts: whole('docs/adopt-state.md'),
   },
   {
+    slug: 'migrate-from-terraform',
+    title: 'Migrate from Terraform',
+    description: 'Plan a stack Terraform ran, with its lock file, provider sources, and state.',
+    parts: whole('docs/migrate-from-terraform.md'),
+  },
+  {
     slug: 'write-a-policy',
     title: 'Write and test a policy',
     description: 'Write a Rego policy, test it with conftest, and start from the examples.',
@@ -244,6 +250,7 @@ export const nav: NavEntry[] = [
   'set-up-gitlab-ci',
   'apply',
   'adopt-state',
+  'migrate-from-terraform',
   'write-a-policy',
   'import-bulk',
   'agents',
@@ -281,6 +288,7 @@ export const fileRoutes: Record<string, string> = {
   'docs/set-up-gitlab-ci.md': '/docs/set-up-gitlab-ci',
   'docs/apply.md': '/docs/apply',
   'docs/adopt-state.md': '/docs/adopt-state',
+  'docs/migrate-from-terraform.md': '/docs/migrate-from-terraform',
   'docs/write-a-policy.md': '/docs/write-a-policy',
   'docs/import-bulk.md': '/docs/import-bulk',
   'docs/agents.md': '/docs/agents',

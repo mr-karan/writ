@@ -68,8 +68,12 @@ func TestFill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Fill(context.Background(), lock); err != nil {
+	got, err := r.Fill(context.Background(), lock)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if string(got) != string(lock) {
+		t.Fatalf("Fill returned a lock with hashes for every provider changed:\n%s", got)
 	}
 	b, err := os.ReadFile(filepath.Join(cache, "seen"))
 	if err != nil {
@@ -101,4 +105,64 @@ init -input=false -lockfile=readonly -backend=false -no-color
 			t.Errorf("%s has mode %v after Fill, want %v", strings.TrimPrefix(p, cache), st.Mode().Perm(), mode)
 		}
 	}
+}
+
+func TestFillRecordsHashes(t *testing.T) {
+	tfLock, err := os.ReadFile("testdata/terraform.lock.hcl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, _, err := FromTerraform(tfLock, func(string) bool { return false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	recorded := []string{"zh:" + strings.Repeat("a", 64)}
+
+	t.Run("the hashes init records are returned, and the next Fill reads them from the Runner", func(t *testing.T) {
+		cache := t.TempDir()
+		r := newRunner(t, fakeTofu(t, "fill-record"), cache, t.TempDir(), time.Minute, 1<<20)
+		first, err := r.Fill(ctx, lock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ps, err := LockedProviders(first)
+		if err != nil {
+			t.Fatalf("Fill returned a lock that does not read: %v\n%s", err, first)
+		}
+		want := []Provider{
+			{Source: "registry.opentofu.org/hashicorp/local", Version: "2.9.1", Hashes: recorded},
+			{Source: "registry.opentofu.org/hashicorp/random", Version: "3.9.1", Hashes: recorded},
+			{Source: "registry.opentofu.org/hashicorp/tls", Version: "4.4.2", Hashes: recorded},
+		}
+		if !reflect.DeepEqual(ps, want) {
+			t.Fatalf("Fill returned a lock that pins %+v, want %+v", ps, want)
+		}
+		second, err := r.Fill(ctx, lock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(second) != string(first) {
+			t.Fatalf("the second Fill returned\n%s\nwant the first's\n%s", second, first)
+		}
+		seen, err := os.ReadFile(filepath.Join(cache, "seen"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantSeen := "init -input=false -backend=false -no-color\ninit -input=false -lockfile=readonly -backend=false -no-color\n"
+		if string(seen) != wantSeen {
+			t.Fatalf("tofu was asked to init with\n%s\nwant\n%s", seen, wantSeen)
+		}
+	})
+
+	t.Run("an init that changes a version fails Fill and records nothing", func(t *testing.T) {
+		cache := t.TempDir()
+		r := newRunner(t, fakeTofu(t, "fill-bump"), cache, t.TempDir(), time.Minute, 1<<20)
+		if _, err := r.Fill(ctx, lock); err == nil || !strings.Contains(err.Error(), "other providers or versions") {
+			t.Fatalf("Fill: %v, want a refusal of the changed version", err)
+		}
+		if len(r.hashes) != 0 {
+			t.Fatalf("Fill kept hashes %v after it failed", r.hashes)
+		}
+	})
 }

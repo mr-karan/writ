@@ -32,8 +32,9 @@ import (
 // one.
 type TofuRunner interface {
 	// Fill installs the providers a lock file pins into the plugin cache
-	// that every run reads.
-	Fill(ctx context.Context, lock []byte) error
+	// that every run reads, and returns the lock file a run's init reads,
+	// which a tofu.Stack's Lock takes.
+	Fill(ctx context.Context, lock []byte) ([]byte, error)
 	// Plan runs init, plan, and show of one stack and returns the raw
 	// result, which only the mask may read.
 	Plan(ctx context.Context, s tofu.Stack) (tofu.Plan, error)
@@ -158,10 +159,11 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 		runEnv = append(runEnv, tfstate.ClientEnv(s.cfg.URL, stack, token)...)
 		read.secrets = append(read.secrets, token)
 	}
-	if err := s.tofuRunner.Fill(ctx, ts.Lock); err != nil {
+	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
+	if err != nil {
 		return res, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(mask.New(read.secrets), err))
 	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: in.dir, Env: runEnv, Creds: creds, StateCreds: onS3}
+	stk := tofu.Stack{Files: os.DirFS(work), Dir: in.dir, Lock: lock, Env: runEnv, Creds: creds, StateCreds: onS3}
 	if launch.User != nil {
 		stk.User = &tofu.User{UID: launch.User.UID, GID: launch.User.GID}
 	}
@@ -189,7 +191,7 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 	if err != nil {
 		return res, tofuRefused("stack %s: %w; plan with a version of writ serve that knows it", stack, err)
 	}
-	res.Document, res.Text = body, tofuText(stack, env, doc, tofuEvents(m, raw.Log, "warning"))
+	res.Document, res.Text = body, tofuText(stack, env, doc, append(movedNotes(ts.Moved), tofuEvents(m, raw.Log, "warning")...))
 	res.Status = control.RefusedPlan
 	if !doc.Errored {
 		res.ID, res.Status = tofuPlanID(body, raw.File, in.source.Commit, stack, env), control.Pending
@@ -464,6 +466,24 @@ func sweptLines(m *mask.Mask, out []byte) []string {
 		lines = append(lines, printable(string(m.Event(line))))
 	}
 	return lines
+}
+
+// movedNotes tell a plan's reader which providers of a lock file that
+// Terraform wrote the run took from OpenTofu's registry.
+func movedNotes(moved []tofu.Moved) []string {
+	var out []string
+	for _, m := range moved {
+		how := "the same version and hashes"
+		if m.Rehashed {
+			how = "the same version, checked against the hashes of OpenTofu's build, which OpenTofu's registry signs"
+		}
+		if m.Kept {
+			out = append(out, fmt.Sprintf("%s pins %s, which the code names; the run also used %s, for the code that names it with no host, at the same version and hashes", tofu.LockFile, m.From, m.To))
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s pins %s, as Terraform writes it; the run used %s at %s", tofu.LockFile, m.From, m.To, how))
+	}
+	return out
 }
 
 // tofuEvents returns the diagnostics of one severity in a -json event
