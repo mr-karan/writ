@@ -68,6 +68,7 @@ func parseTemplates(u *UI) (*template.Template, error) {
 		},
 		"tone":       tone,
 		"vclass":     valueClass,
+		"val":        newValueView,
 		"planName":   planName,
 		"planRecord": planRecord,
 		"planDoc":    planDoc,

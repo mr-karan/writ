@@ -373,7 +373,7 @@ Re-shoot after the control UI changes:
 
 1. Merge the UI change, then run `just ui-shots` on this branch, or `just ui-shots <ref>` for another ref.
 2. If it stops with "the showcase at REF has no ...", the showcase's names or its reviewer changed. Update `renames` or the reviewer patch in `scripts/ui-shots.ts`.
-3. If a page's layout moved, check the crops: `secret` is the first `article.change[data-kind="replace"]` of the plan page, and `drift` is `#drift-changes` of the stack page.
+3. If a page's layout moved, check the crops: `secret` is the first `details.change[data-kind="replace"]` of the plan page, and `drift` is `#drift-changes` of the stack page.
 4. Look at the images in `public/ui/`, then build the site and commit both.
 
 At `e0f4d85` the showcase's reviewer server mounts no control UI, so its dev sign-in link answers 404 and the showcase fails. The script mounts one in its worktree until the showcase does.

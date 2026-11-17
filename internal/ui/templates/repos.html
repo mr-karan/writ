@@ -80,7 +80,8 @@
 {{define "repo"}}{{template "head" .}}
 {{with .Data}}
 <div class="page-head">
-<h1>{{.Repo.Name}} <span class="muted ref" data-record="{{record "name" .Repo.Name}}" data-field="project">{{.Repo.Project}}</span></h1>
+<h1>{{.Repo.Name}}</h1>
+<p class="subtitle"><span class="ref" data-record="{{record "name" .Repo.Name}}" data-field="project">{{.Repo.Project}}</span></p>
 </div>
 <dl class="facts">
 <dt>Forge</dt><dd>{{.Repo.Forge}}{{if .Repo.ForgeURL}} <code>{{.Repo.ForgeURL}}</code>{{end}}{{if ne .Repo.Kind "dir"}}, project id <code>{{.Repo.ProjectID}}</code>{{end}}</dd>

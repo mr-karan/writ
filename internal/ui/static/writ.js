@@ -1,8 +1,9 @@
 // The control UI's one script. Pages read and work without it: it adds
 // each time in the reader's own zone as the time's title, beside the UTC
 // the page prints, keeps the top bar saying how long ago the page loaded,
-// opens the sidebar's menu on a wide screen, and adds a copy button
-// beside each command a reader runs next.
+// opens the sidebar's menu on a wide screen, adds a copy button beside
+// each command a reader runs next, and adds a button that opens or folds
+// all the changes of a plan.
 const local = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 for (const el of document.querySelectorAll("time[datetime]")) {
   const at = new Date(el.dateTime);
@@ -29,6 +30,29 @@ if (navigator.clipboard) {
     });
     code.after(" ", button);
   }
+}
+
+// A plan's changes get one button that opens or folds all of them.
+const bar = document.querySelector(".sec-bar");
+const changes = bar ? [...bar.parentElement.querySelectorAll("details.change")] : [];
+if (changes.length > 1) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "outline";
+  const name = () => {
+    button.textContent = changes.every((d) => d.open) ? "Fold all" : "Open all";
+  };
+  button.addEventListener("click", () => {
+    const open = !changes.every((d) => d.open);
+    for (const d of changes) {
+      d.open = open;
+    }
+  });
+  for (const d of changes) {
+    d.addEventListener("toggle", name);
+  }
+  name();
+  bar.querySelector(".filters").append(button);
 }
 
 const loaded = document.querySelector("time[data-loaded]");

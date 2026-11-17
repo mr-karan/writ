@@ -1,37 +1,28 @@
 {{define "tally"}}
 <ul class="tally">
-<li{{if not .Add}} class="zero"{{end}}><span class="sign sign-create">+</span> {{template "n" (exact .Add)}} to add</li>
-<li{{if not .Change}} class="zero"{{end}}><span class="sign sign-update">~</span> {{template "n" (exact .Change)}} to change</li>
-<li{{if not .Destroy}} class="zero"{{end}}><span class="sign sign-delete">-</span> {{template "n" (exact .Destroy)}} to destroy</li>
-<li{{if not .Replace}} class="zero"{{end}}><span class="sign sign-replace">-/+</span> {{template "n" (exact .Replace)}} to replace</li>
-<li{{if not .Forget}} class="zero"{{end}}>{{template "n" (exact .Forget)}} to forget</li>
-<li{{if not .Import}} class="zero"{{end}}>{{template "n" (exact .Import)}} to import</li>
+<li{{if not .Add}} class="zero"{{end}}><span class="sign sign-create">+</span> {{template "n" (exact .Add)}} <span class="tally-word">to add</span></li>
+<li{{if not .Change}} class="zero"{{end}}><span class="sign sign-update">~</span> {{template "n" (exact .Change)}} <span class="tally-word">to change</span></li>
+<li{{if not .Destroy}} class="zero"{{end}}><span class="sign sign-delete">-</span> {{template "n" (exact .Destroy)}} <span class="tally-word">to destroy</span></li>
+<li{{if not .Replace}} class="zero"{{end}}><span class="sign sign-replace">-/+</span> {{template "n" (exact .Replace)}} <span class="tally-word">to replace</span></li>
+<li{{if not .Forget}} class="zero"{{end}}>{{template "n" (exact .Forget)}} <span class="tally-word">to forget</span></li>
+<li{{if not .Import}} class="zero"{{end}}>{{template "n" (exact .Import)}} <span class="tally-word">to import</span></li>
 </ul>
 {{end}}
 
 {{define "tofu-plan"}}{{$t := .Tofu}}
 {{if $t.Total}}
 <section aria-labelledby="h-changes">
+<div class="sec-bar">
 <h2 id="h-changes">Changes ({{template "n" (exact $t.Total)}})</h2>
 {{template "change-filter" .}}
-{{if or .Filter.Action .Filter.Risk}}<p class="muted">{{template "n" (exact .Shown)}} of {{template "n" (exact $t.Total)}} changes match.</p>{{end}}
-{{if .Shown}}
-<div class="scroll">
-<table class="index">
-<caption class="sr-only">The changes on this page, each linked to its details</caption>
-<thead><tr><th scope="col">Action</th><th scope="col">Address</th><th scope="col">Marks</th></tr></thead>
-<tbody>
-{{- range $t.Modules}}{{range .Changes}}
-<tr data-kind="{{.Kind}}"><td><span class="sign sign-{{.Kind}}">{{.Sign}}</span> {{.Kind}}</td><th scope="row"><a href="#{{.Anchor}}"><code>{{.Addr}}</code></a></th><td class="chips">{{range .Risk}}<span class="chip risk-{{.}}">{{.}}</span> {{end}}{{if .Importing}}<span class="chip">import</span> {{end}}{{if .Secret}}<span class="chip chip-secret">sensitive value changes</span>{{end}}</td></tr>
-{{- end}}{{end}}
-</tbody>
-</table>
 </div>
-{{end}}
+{{if or .Filter.Action .Filter.Risk}}<p class="muted">{{template "n" (exact .Shown)}} of {{template "n" (exact $t.Total)}} changes match.</p>{{end}}
 {{range $i, $m := $t.Modules}}
 <section aria-labelledby="h-module-{{$i}}">
-<h3 id="h-module-{{$i}}">{{if $m.Module}}Module <code>{{$m.Module}}</code>{{else}}Root module{{end}} ({{template "n" (exact (len $m.Changes))}})</h3>
+<h3 id="h-module-{{$i}}" class="group">{{if $m.Module}}Module <code>{{$m.Module}}</code>{{else}}Root module{{end}} ({{template "n" (exact (len $m.Changes))}})</h3>
+<div class="changes">
 {{range $m.Changes}}{{template "tofu-change" .}}{{end}}
+</div>
 </section>
 {{end}}
 {{template "change-pages" .}}
@@ -40,9 +31,13 @@
 
 {{if $t.Drift}}
 <section aria-labelledby="h-drift">
-<h2 id="h-drift">Changed outside OpenTofu ({{template "n" (exact (len $t.Drift))}})</h2>
+<details class="fold">
+<summary><h2 id="h-drift">Changed outside OpenTofu ({{template "n" (exact (len $t.Drift))}})</h2> <span class="fold-hint">found by the refresh of this plan</span></summary>
 <p class="muted">OpenTofu read these objects for this plan and found them changed since the last apply. The changes above start from what it found.</p>
+<div class="changes">
 {{range $t.Drift}}{{template "tofu-change" .}}{{end}}
+</div>
+</details>
 </section>
 {{end}}
 
@@ -53,10 +48,10 @@
 <div class="scroll">
 <table class="attrs">
 <caption class="sr-only">Outputs this plan changes</caption>
-<thead><tr><th scope="col">Output</th><th scope="col">Change</th><th scope="col">Before</th><th scope="col">After</th><th scope="col"><span class="sr-only">Notes</span></th></tr></thead>
+<thead><tr><th scope="col" class="c-attr">Output</th><th scope="col" class="c-kind">Change</th><th scope="col">Before</th><th scope="col">After</th><th scope="col" class="c-notes"><span class="sr-only">Notes</span></th></tr></thead>
 <tbody>
 {{- range $t.Outputs}}
-<tr><th scope="row"><code>{{.Name}}</code></th><td><span class="sign sign-{{.Kind}}">{{.Sign}}</span> {{.Kind}}</td><td class="was">{{if .Before}}<code class="val {{vclass .Before}}">{{.Before}}</code>{{end}}</td><td class="now">{{if .After}}<code class="val {{vclass .After}}">{{.After}}</code>{{end}}</td><td>{{if .SecretChanges}}<span class="chip chip-secret">sensitive value changes</span>{{end}}</td></tr>
+<tr><th scope="row"><code>{{.Name}}</code></th><td><span class="sign sign-{{.Kind}}">{{.Sign}}</span> {{.Kind}}</td><td class="was" data-label="Before">{{template "value" (val .Before "")}}</td><td class="now" data-label="After">{{template "value" (val .After "")}}</td><td class="notes">{{if .SecretChanges}}<span class="chip chip-secret">sensitive value changes</span>{{end}}</td></tr>
 {{- end}}
 </tbody>
 </table>
@@ -67,13 +62,14 @@
 {{end}}
 {{end}}
 
-{{define "tofu-change-head"}}<span class="sign sign-{{.Kind}}">{{.Sign}}</span> <code>{{.Addr}}</code> <span class="action">{{.Kind}}</span>{{if .Importing}} <span class="chip">import</span>{{end}}{{range .Risk}} <span class="chip risk-{{.}}">{{.}}</span>{{end}}{{end}}
+{{define "tofu-change-head"}}<span class="sign sign-{{.Kind}}">{{.Sign}}</span> <code class="addr">{{.Addr}}</code> <span class="change-end"><span class="action">{{.Kind}}</span>{{if .Importing}} <span class="chip">import</span>{{end}}{{range .Risk}} <span class="chip risk-{{.}}">{{.}}</span>{{end}}{{if .Secret}} <span class="chip chip-secret">sensitive value changes</span>{{end}}{{if .Drift}} <span class="change-attrs">{{range $i, $a := .Attrs}}{{if $i}}, {{end}}<code>{{$a.Name}}</code>{{end}}</span>{{end}}</span>{{end}}
 
-{{define "value"}}{{if .}}<code class="val {{vclass .}}">{{.}}</code>{{end}}{{end}}
+{{define "value"}}{{if .V}}{{if .Long}}<details class="v"><summary><code class="val {{vclass .V}}">{{.V}}</code>{{if .Pretty}}<span class="v-open">formatted</span>{{end}}</summary>{{if .Pretty}}<pre>{{.Pretty}}</pre>{{end}}</details>{{else}}<code class="val {{vclass .V}}">{{.V}}</code>{{end}}{{end}}{{end}}
 
 {{define "tofu-change"}}
-<article class="change" id="{{.Anchor}}" data-kind="{{.Kind}}" aria-labelledby="{{.Anchor}}-h">
-{{if .Drift}}<h3 id="{{.Anchor}}-h">{{template "tofu-change-head" .}}</h3>{{else}}<h4 id="{{.Anchor}}-h">{{template "tofu-change-head" .}}</h4>{{end}}
+<details class="change" id="{{.Anchor}}" data-kind="{{.Kind}}"{{if .Open}} open{{end}}>
+<summary>{{if .Drift}}<h3 id="{{.Anchor}}-h">{{template "tofu-change-head" .}}</h3>{{else}}<h4 id="{{.Anchor}}-h">{{template "tofu-change-head" .}}</h4>{{end}}</summary>
+<div class="change-body">
 <p class="meta">Actions: {{.Actions}}{{with .Reason}}. Reason: <code>{{.}}</code>{{end}}{{with .ReasonText}}, {{.}}{{end}}.</p>
 {{- if .ReplacePaths}}
 <p>Replaced because {{range $i, $p := .ReplacePaths}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}} cannot change in place.</p>
@@ -94,10 +90,10 @@
 <div class="scroll">
 <table class="attrs">
 <caption>{{if .Drift}}What changed{{else if eq .Kind "delete"}}What the delete removes{{else if eq .Kind "forget"}}What OpenTofu stops managing{{else}}What changes{{end}}</caption>
-<thead><tr><th scope="col">Attribute</th>{{if .HasBefore}}<th scope="col">Before</th>{{end}}{{if .HasAfter}}<th scope="col">After</th>{{end}}<th scope="col"><span class="sr-only">Notes</span></th></tr></thead>
+<thead><tr><th scope="col" class="c-attr">Attribute</th>{{if .HasBefore}}<th scope="col">Before</th>{{end}}{{if .HasAfter}}<th scope="col">After</th>{{end}}{{if .Notes}}<th scope="col" class="c-notes"><span class="sr-only">Notes</span></th>{{end}}</tr></thead>
 <tbody>
 {{- range .Attrs}}
-<tr><th scope="row"><code>{{.Name}}</code></th>{{if $c.HasBefore}}<td{{if $c.HasAfter}} class="was"{{end}}>{{template "value" .Before}}{{with .BeforePretty}}<details><summary><span>formatted</span></summary><pre>{{.}}</pre></details>{{end}}</td>{{end}}{{if $c.HasAfter}}<td{{if $c.HasBefore}} class="now"{{end}}>{{template "value" .After}}{{with .AfterPretty}}<details><summary><span>formatted</span></summary><pre>{{.}}</pre></details>{{end}}</td>{{end}}<td class="notes">{{if .Forces}}<span class="chip chip-warn">forces replace</span>{{end}}{{if .SecretChanges}} <span class="chip chip-secret">sensitive value changes</span>{{end}}</td></tr>
+<tr><th scope="row"><code>{{.Name}}</code></th>{{if $c.HasBefore}}<td{{if $c.HasAfter}} class="was"{{end}} data-label="Before">{{template "value" (val .Before .BeforePretty)}}</td>{{end}}{{if $c.HasAfter}}<td{{if $c.HasBefore}} class="now"{{end}} data-label="After">{{template "value" (val .After .AfterPretty)}}</td>{{end}}{{if $c.Notes}}<td class="notes">{{if .Forces}}<span class="chip chip-warn">forces replace</span>{{end}}{{if .SecretChanges}} <span class="chip chip-secret">sensitive value changes</span>{{end}}</td>{{end}}</tr>
 {{- end}}
 </tbody>
 </table>
@@ -108,17 +104,18 @@
 <div class="scroll">
 <table class="attrs">
 <caption class="sr-only">Attributes that stay the same</caption>
-<thead><tr><th scope="col">Attribute</th><th scope="col">Value</th></tr></thead>
+<thead><tr><th scope="col" class="c-attr">Attribute</th><th scope="col">Value</th></tr></thead>
 <tbody>
 {{- range .Same}}
-<tr><th scope="row"><code>{{.Name}}</code></th><td>{{template "value" .Before}}{{with .BeforePretty}}<details><summary><span>formatted</span></summary><pre>{{.}}</pre></details>{{end}}</td></tr>
+<tr><th scope="row"><code>{{.Name}}</code></th><td data-label="Value">{{template "value" (val .Before .BeforePretty)}}</td></tr>
 {{- end}}
 </tbody>
 </table>
 </div>
 </details>
 {{- end}}
-</article>
+</div>
+</details>
 {{end}}
 
 {{define "applies-table"}}
@@ -150,22 +147,12 @@
 <h1>Run <code class="id">{{short $r.ID}}</code> {{template "status" $r.Status}}</h1>
 <p class="subtitle">{{$r.Stack}}@{{$r.Env}}, plan <a class="id" href="/ui/plans/{{$r.Plan}}">{{short $r.Plan}}</a>, applied by <span class="ref" data-record="{{record "id" $r.ID}}" data-field="actor.display">{{$r.Actor.Display}}</span></p>
 </div>
-{{template "steps" .Steps}}
 {{if eq $r.Status "applying"}}<p class="note note-run" role="status">OpenTofu is applying this plan. This page loads again every 5 seconds until the run ends.</p>{{end}}
 {{if eq $r.Status "failed"}}<p class="note note-error" role="alert">The apply failed. The diagnostics below say why.</p>{{end}}
 {{if $r.Override}}<p class="note note-warning" role="note"><strong>Override.</strong> This run skipped the approval rules: {{$r.Override}}</p>{{end}}
-{{with .Doc}}{{with .Summary}}
-<section class="panel run-summary" aria-labelledby="h-summary">
-<h2 id="h-summary">Summary</h2>
-<ul class="tally">
-<li{{if not .Add}} class="zero"{{end}}><span class="sign sign-create">+</span> {{template "n" (exact .Add)}} added</li>
-<li{{if not .Change}} class="zero"{{end}}><span class="sign sign-update">~</span> {{template "n" (exact .Change)}} changed</li>
-<li{{if not .Remove}} class="zero"{{end}}><span class="sign sign-delete">-</span> {{template "n" (exact .Remove)}} destroyed</li>
-<li{{if not .Import}} class="zero"{{end}}>{{template "n" (exact .Import)}} imported</li>
-</ul>
-</section>
-{{end}}{{end}}
-<dl class="block">
+<div class="card">
+{{template "steps" .Steps}}
+<dl class="props">
 <div class="wide"><dt>Run</dt><dd><code class="id-full">{{$r.ID}}</code></dd></div>
 <div><dt>Stack</dt><dd>{{$r.Stack}}@{{$r.Env}}, an OpenTofu stack</dd></div>
 <div class="wide"><dt>Plan</dt><dd><a class="id-full" href="/ui/plans/{{$r.Plan}}">{{$r.Plan}}</a>{{with .Plan}} <span class="muted" data-record="{{planDoc .}}">by <span class="ref" data-field="plan.author.display">{{.Author.Display}}</span>{{with from .Origin}}, <span class="ref" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{end}}</span>{{end}}</dd></div>
@@ -175,6 +162,18 @@
 <div><dt>Ended</dt><dd>{{if $r.EndedAt}}{{template "time" $r.EndedAt}}{{if .Took}} <span class="muted">after <time datetime="{{.TookFor}}">{{.Took}}</time></span>{{end}}{{else}}<span class="muted">not yet</span>{{end}}</dd></div>
 {{with .Doc}}<div><dt>State version</dt><dd>{{if .StateVersion}}<code>{{.StateVersion}}</code>{{else}}<span class="muted">none</span>{{end}}</dd></div>{{end}}
 </dl>
+</div>
+{{with .Doc}}{{with .Summary}}
+<section class="summary" aria-labelledby="h-summary">
+<h2 id="h-summary" class="sr-only">Summary</h2>
+<ul class="tally">
+<li{{if not .Add}} class="zero"{{end}}><span class="sign sign-create">+</span> {{template "n" (exact .Add)}} <span class="tally-word">added</span></li>
+<li{{if not .Change}} class="zero"{{end}}><span class="sign sign-update">~</span> {{template "n" (exact .Change)}} <span class="tally-word">changed</span></li>
+<li{{if not .Remove}} class="zero"{{end}}><span class="sign sign-delete">-</span> {{template "n" (exact .Remove)}} <span class="tally-word">destroyed</span></li>
+<li{{if not .Import}} class="zero"{{end}}>{{template "n" (exact .Import)}} <span class="tally-word">imported</span></li>
+</ul>
+</section>
+{{end}}{{end}}
 {{with .DocError}}<p class="note note-error" role="alert">writ serve could not read this run's document: <span class="msg">{{.}}</span></p>{{end}}
 {{with .Doc}}
 {{if .Diagnostics}}

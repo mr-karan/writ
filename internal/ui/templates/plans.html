@@ -24,7 +24,7 @@
 {{template "foot" .}}{{end}}
 
 {{define "change-filter"}}
-<form method="get" action="/ui/plans/{{planName .Plan}}" class="filters">
+<form method="get" action="/ui/plans/{{planName .Plan}}" class="filters filters-inline">
 <div class="field"><label for="action">Action</label>
 <select id="action" name="action"><option value="">all</option>{{range .Actions}}<option value="{{.}}"{{if eq . $.Filter.Action}} selected{{end}}>{{.}}</option>{{end}}</select></div>
 <div class="field"><label for="risk">Risk</label>
@@ -56,9 +56,9 @@
 {{if and (or (eq $p.Status "refused") (eq $p.Status "failed")) (not $p.Run)}}<p class="note note-error" role="alert">writ serve could not make a plan that can be applied: it {{$p.Status}}. The diagnostics below say why.</p>{{end}}
 {{with .Adopt}}{{template "adopt-hint" .}}{{end}}
 
-<div class="review">
-<section class="panel decision" aria-labelledby="h-approvals">
-<h2 id="h-approvals">Approvals</h2>
+<div class="card">
+<section class="decision" aria-labelledby="h-approvals">
+<h2 id="h-approvals" class="sr-only">Approvals</h2>
 {{template "steps" .Steps}}
 <p>{{if eq $p.Status "planning"}}writ serve asks the approval rules of this plan once it is made.{{else if not .RulesAsked}}This plan takes no approval.{{else if eq $p.Approvals.Need 0}}No approval rule matches this plan.{{else}}It needs {{template "counted" (of (exact $p.Approvals.Need) "approval" "approvals")}} from someone other than its author{{with $p.Approvals.Rules}} (rule {{range $i, $r := .}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}){{end}}.{{end}}</p>
 {{if $p.Approvals.ApprovedBy}}<ul class="approvers">
@@ -77,17 +77,7 @@
 {{if or (eq $p.Status "pending") (eq $p.Status "approved")}}<p>Apply it with <code class="cmd">writ apply --remote {{$p.ID}}</code>, or after the merge with the apply job.</p>{{end}}
 </div>
 </section>
-{{with .Tofu}}
-<section class="panel" aria-labelledby="h-summary">
-<h2 id="h-summary">Summary</h2>
-{{template "tally" .}}
-<p class="risk-line"><span class="label">Risks</span> {{template "risks" $p.Risks}}</p>
-<p class="muted">OpenTofu <code>{{.Version}}</code>. {{template "counted" (of (exact .Unchanged) "resource stays" "resources stay")}} as {{if eq .Unchanged 1}}it is{{else}}they are{{end}}. A value under a sensitive mark shows as <code class="val masked">(sensitive)</code>.</p>
-</section>
-{{end}}
-</div>
-
-<dl class="block">
+<dl class="props">
 <div class="wide"><dt>Id</dt><dd>{{if $p.ID}}<code class="id-full">{{$p.ID}}</code>{{else}}<span class="muted">none yet; ref</span> <code>{{$p.Ref}}</code>{{end}}</dd></div>
 <div><dt>By</dt><dd><span class="ref" data-record="{{planDoc $p}}" data-field="plan.author.display">{{$p.Author.Display}}</span> <code class="muted">{{$p.Author.Person}}</code></dd></div>
 {{with from $p.Origin}}<div><dt>From</dt><dd><span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{with $.Data.Origin}}{{with index . "sha"}} <span class="muted">commit <code>{{short (print .)}}</code></span>{{end}}{{end}}</dd></div>{{end}}
@@ -96,6 +86,15 @@
 {{if $p.ExpiresAt}}<div><dt>Expires</dt><dd>{{template "time" $p.ExpiresAt}} <time class="muted" datetime="{{$p.ExpiresAt}}">{{since $p.ExpiresAt}}</time></dd></div>{{end}}
 {{if or (eq $p.Status "pending") (eq $p.Status "approved")}}<div class="wide"><dt>May apply</dt><dd>{{if $p.TeamsThatMayApply}}{{join $p.TeamsThatMayApply ", "}}{{else}}<strong>no team.</strong> No grant gives every risk class of this plan on {{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}{{$s.Stack}}{{end}}@{{$p.Env}}.{{end}}</dd></div>{{end}}
 </dl>
+</div>
+
+{{with .Tofu}}
+<section class="summary" aria-labelledby="h-summary">
+<h2 id="h-summary" class="sr-only">Summary</h2>
+{{template "tally" .}}
+<p class="summary-line"><span class="label">Risks</span> {{template "risks" $p.Risks}} <span class="muted">OpenTofu <code>{{.Version}}</code>. {{template "counted" (of (exact .Unchanged) "resource stays" "resources stay")}} as {{if eq .Unchanged 1}}it is{{else}}they are{{end}}. A value under a sensitive mark shows as <code class="val masked">(sensitive)</code>.</span></p>
+</section>
+{{end}}
 
 {{with .Policy}}
 <section aria-labelledby="h-policy" data-record="{{planDoc $p}}">

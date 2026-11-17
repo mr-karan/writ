@@ -4,9 +4,10 @@ The control UI is where a team sees what waits and what works, reviews a masked 
 
 ## Direction
 
-- **Calm and light.** A pale grey page, white cards with a 1 px border and rounded corners, and no shadow but a faint one under the plan's decision. The dark theme is the same layout in dark greys. Both follow `prefers-color-scheme` until the settings page sets a theme.
+- **Calm and light.** A pale grey page, white cards with a 1 px border and rounded corners, and no shadow. A card is the one box of the UI: a table, a list of rows, and a head of facts each sit in one, and none sits inside another. The dark theme is the same layout in dark greys. Both follow `prefers-color-scheme` until the settings page sets a theme.
 - **A frame of three parts.** A sidebar on the left, a top bar with the trail to the page, and the page under it. The website's blueprint look stays on the website.
 - **Tones.** Green ended well or adds, amber waits for a person or changes, red failed or deletes, blue is at work. Grey has nothing to say. Each tone is also a shape and sits beside a word: a dot at work has a halo, a failed dot is square, a quiet one is a ring, and every status pill names its status. Color is never the only sign.
+- **One scale.** Six text sizes, `--fs-1` to `--fs-6` in `static/writ.css`: notes, small text, tables, text, a section's heading, and the page's title. `--gap` is the space above a section and `--inset` the inset of a card. A column of numbers is set right in tabular figures.
 - **Type.** The system's own sans-serif for text and its monospace for ids, commits, addresses, and values. The UI loads no font, so its Content Security Policy has no `font-src`: the system faces are what the calm look wants, and they cost no bytes.
 
 ## The frame
@@ -133,9 +134,12 @@ A read that fails is never read as empty. A page whose main document failed show
 | Stat cards (`.stats`) | The overview's four counts, each a link to its list. |
 | Alerts (`.alerts`) | One row an alert: an icon by tone, the subject, what happened, and when. |
 | Rows (`.rows`) | A live list on the overview. |
-| Title block (`.block`) | Facts as label over value in cells drawn by a hairline. |
-| Panel (`.panel`) | A boxed part of a page with a small label. The plan's decision has the stronger border. |
-| Tally (`.tally`) | Counts of a plan or a run, a zero muted. |
+| Card (`.card`) | The head of a plan or a run: the stations, the decision, and the facts under a hairline. |
+| Facts (`.props`, `.facts`) | `.props` sets label over value in columns that line up down a card. `.facts` sets the labels of a page with few facts in one column and the values in the next. |
+| Tally (`.tally`) | Counts of a plan or a run, one cell a count, a zero muted. |
+| Change (`details.change`, template `tofu-change`) | One row a change: its sign, its address, its action, and its marks. It opens to its attributes. |
+| Value (`details.v`, template `value`) | A value past 96 characters, or one that formats over lines, on one line until a reader opens it. |
+| Fold (`details.fold`) | A section that stays folded until a reader opens it, with its heading as its handle. |
 | Chip (`.chip`) | A risk class or a mark beside a change. |
 | Note (`.note`) | What a reader must see first: an error, a warning, work in progress. |
 | Empty (`.empty`) | A dashed slot that says what is missing. |
@@ -147,16 +151,18 @@ A read that fails is never read as empty. A page whose main document failed show
 The plan page answers, in this order: what is this plan, where is it, what must happen next, and what does it change.
 
 1. The title with its status, and one line: the stacks, the environment, the author, and the origin.
-2. The decision panel: the stations, the approvals needed and given, and the next step. The approve button, the reason there is none, or the apply command with its copy button.
-3. The summary panel: the tally and the risk classes.
-4. The title block of facts, then the policy decision.
-5. The change list: one row per change, linked to its card.
-6. One card per change, grouped by module. A table shows only the columns a change has: a create has no before, a delete no after. Before is washed red and after green. A value the mask hid (`(sensitive)`) is hatched and dashed, so it never reads as a literal, and a value known only after the apply is set in italics.
-7. Drift, the outputs, and the plan as text.
+2. The head card. The stations say where the plan is. Under them are the approvals needed and given, then on a band of its own the next step: the approve button, the reason there is none, or the apply command with its copy button. The facts close the card under a hairline.
+3. The tally, one cell a count, and under it the risk classes.
+4. The policy decision.
+5. The changes, grouped by module: one row a change, with its sign, address, action, and marks. A row opens to its attributes. A page that lists at most 5 changes shows them open, and a page of more shows them folded (`unfoldedChanges` in `tofu.go`). The table of attributes shows only the columns a change has: a create has no before, a delete no after. The attribute names take one column of a set width, so they line up from change to change. Before is washed red and after green. A value the mask hid (`(sensitive)`) is hatched and dashed, so it never reads as a literal, and a value known only after the apply is set in italics. A long value shows one line until a reader opens it, and is set over lines only then.
+6. What changed outside OpenTofu, folded into one section with its count. Opened, it lists one row an object, with the names of the attributes that changed, and each row opens as a change does.
+7. The outputs, and the plan as text.
+
+The page takes its structure from the run pages of HCP Terraform and Spacelift, which list a plan's resources as rows that open, and from the status bar of Argo CD, which says in one place what state an application is in.
 
 ## Rules the pages keep
 
-- Server-rendered, no framework, no build step. Every page reads and every form works without JavaScript. `writ.js` only adds local times as titles, keeps the "Loaded" time relative, opens the sidebar on a wide screen, and adds a copy button beside a command.
+- Server-rendered, no framework, no build step. Every page reads and every form works without JavaScript. `writ.js` only adds local times as titles, keeps the "Loaded" time relative, opens the sidebar on a wide screen, adds a copy button beside a command, and adds a button that opens or folds all the changes of a plan. A change, a long value, and the section of outside changes fold with `<details>`, so each opens without the script.
 - Nothing from another origin. The Content Security Policy allows only this origin's scripts, styles, and images.
 - Every page keeps its `?as=json` link and its API and CLI footer.
 - One `h1`, landmarks, a skip link first, a caption on every table, a scope on every header cell, a label on every field, and a visible focus ring, drawn inside a box that clips.
@@ -177,5 +183,5 @@ It writes `DIR/pages.json`, with each site's address, a one-time sign-in link, a
 
 ## Left as it is
 
-- On a phone, the plan and run lists set their rows as blocks. A browser may then drop the table's roles for a screen reader, and each cell carries its column's name only visually. Not tested with a screen reader.
+- On a phone, the plan and run lists and the table of a change's attributes set their rows as blocks. A browser may then drop the table's roles for a screen reader, and each cell carries its column's name only visually. Not tested with a screen reader.
 - Oat 1.0.0 still gives the base of buttons and fields. Only its stylesheet is embedded: no page uses a part of Oat that needs its script.

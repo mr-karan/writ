@@ -57,6 +57,12 @@ type tofuChangeView struct {
 	HasBefore, HasAfter bool
 	// Secret is set when a value under a sensitive mark changes.
 	Secret bool
+	// Notes is set when an attribute carries a note: it forces a replace,
+	// or a value under a sensitive mark changes. The table of attributes
+	// has a column of notes only then.
+	Notes bool
+	// Open is set for a change the page shows unfolded.
+	Open bool
 	// Attrs are the attributes the change sets to a new value, Same the
 	// ones it leaves as they are.
 	Attrs, Same []tofuAttrView
@@ -71,6 +77,30 @@ type tofuAttrView struct {
 	// between before and after, which both show as (sensitive).
 	SecretChanges bool
 }
+
+// valueView is one value as a page sets it: on one line, and for a long
+// one folded, with Pretty under it when it formats over lines.
+type valueView struct {
+	V, Pretty string
+	// Long is set for a value the page folds to one line until a reader
+	// opens it.
+	Long bool
+}
+
+// longValue is the length past which a value is folded: about two lines
+// of a column of the table of attributes.
+const longValue = 96
+
+func newValueView(v, pretty string) valueView {
+	if !strings.Contains(pretty, "\n") {
+		pretty = ""
+	}
+	return valueView{V: v, Pretty: pretty, Long: pretty != "" || len(v) > longValue}
+}
+
+// unfoldedChanges is the most changes a plan page shows unfolded. A page
+// of more lists them folded, one row a change.
+const unfoldedChanges = 5
 
 type tofuOutputView struct {
 	Name, Kind, Sign, Before, After string
@@ -171,7 +201,9 @@ func newTofuView(p *mask.Plan, v *planView) (*tofuView, error) {
 	v.Pages = max(1, (len(shown)+changesPerPage-1)/changesPerPage)
 	v.Page = min(max(v.Page, 1), v.Pages)
 	start := (v.Page - 1) * changesPerPage
-	for _, c := range shown[start:min(start+changesPerPage, len(shown))] {
+	listed := shown[start:min(start+changesPerPage, len(shown))]
+	for _, c := range listed {
+		c.Open = len(listed) <= unfoldedChanges
 		if n := len(t.Modules); n == 0 || t.Modules[n-1].Module != c.Module {
 			t.Modules = append(t.Modules, tofuModule{Module: c.Module})
 		}
@@ -287,6 +319,7 @@ func tofuChange(c mask.ResourceChange, kind string, risk []string, anchor string
 		changed := holdsTrue(unknown[name]) || av.SecretChanges || c.Change.Before == nil || c.Change.After == nil ||
 			inBefore != inAfter || !reflect.DeepEqual(b, a)
 		if changed {
+			cv.Notes = cv.Notes || av.Forces || av.SecretChanges
 			cv.Attrs = append(cv.Attrs, av)
 		} else {
 			cv.Same = append(cv.Same, av)
