@@ -5,7 +5,7 @@
 
 export const hero = {
   title: 'Plan, approve, and apply OpenTofu on your own server.',
-  lede: 'Writ is an open-source control plane for OpenTofu. It plans the commits you or your CI job send it, waits for your team to approve, and applies the plan they approved. Your cloud keys stay on its server, and your CI jobs and laptops hold none.',
+  lede: 'Writ is an open-source control plane for OpenTofu. It plans the commits you or your CI job send it, waits for your team to approve, and applies the plan they approved. Plans and applies run on that server with its cloud roles, so your CI jobs and laptops need no cloud keys for them.',
   facts: [
     { label: 'License', text: 'Apache 2.0' },
     { label: 'Runs on', text: 'Your own server, as one Go binary' },

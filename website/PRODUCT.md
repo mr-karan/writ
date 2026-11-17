@@ -22,7 +22,7 @@ The website succeeds when a reader knows what Writ is from the first screen, and
 
 ## Positioning
 
-The cloud credentials and the state keys stay on one server you run. CI jobs and laptops hold a session or an OIDC token, and no cloud credential. An approval is for one plan id, and the apply runs the plan Writ kept. It's one Go binary under Apache 2.0, with no limit on users, runs, or resources.
+The cloud credentials and the state keys stay on one server you run. For plans and applies, CI jobs and laptops hold a session or an OIDC token, and no cloud credential. The one local exception is `writ import bulk` (and `writ mcp --allow-providers`), which reads existing objects through providers with the caller's own credentials. An approval is for one plan id, and the apply runs the plan Writ kept. It's one Go binary under Apache 2.0, with no limit on users, runs, or resources.
 
 ## Operating Context
 
