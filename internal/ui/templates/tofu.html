@@ -62,7 +62,7 @@
 {{end}}
 {{end}}
 
-{{define "tofu-change-head"}}<span class="sign sign-{{.Kind}}">{{.Sign}}</span> <code class="addr">{{.Addr}}</code> <span class="change-end"><span class="action">{{.Kind}}</span>{{if .Importing}} <span class="chip">import</span>{{end}}{{range .Risk}} <span class="chip risk-{{.}}">{{.}}</span>{{end}}{{if .Secret}} <span class="chip chip-secret">sensitive value changes</span>{{end}}{{if .Drift}} <span class="change-attrs">{{range $i, $a := .Attrs}}{{if $i}}, {{end}}<code>{{$a.Name}}</code>{{end}}</span>{{end}}</span>{{end}}
+{{define "tofu-change-head"}}<span class="sign sign-{{.Kind}}">{{.Sign}}</span> <code class="addr">{{.Addr}}</code> <span class="change-end"><span class="action">{{.Kind}}</span>{{if and .Importing (ne .Kind "import")}} <span class="chip">import</span>{{end}}{{range .Risk}}{{if ne . $.Kind}} <span class="chip risk-{{.}}">{{.}}</span>{{end}}{{end}}{{if .Secret}} <span class="chip chip-secret">sensitive value changes</span>{{end}}{{if .Drift}} <span class="change-attrs">{{range $i, $a := .Attrs}}{{if $i}}, {{end}}<code>{{$a.Name}}</code>{{end}}</span>{{end}}</span>{{end}}
 
 {{define "value"}}{{if .V}}{{if .Long}}<details class="v"><summary><code class="val {{vclass .V}}">{{.V}}</code>{{if .Pretty}}<span class="v-open">formatted</span>{{end}}</summary>{{if .Pretty}}<pre>{{.Pretty}}</pre>{{end}}</details>{{else}}<code class="val {{vclass .V}}">{{.V}}</code>{{end}}{{end}}{{end}}
 
@@ -70,7 +70,7 @@
 <details class="change" id="{{.Anchor}}" data-kind="{{.Kind}}"{{if .Open}} open{{end}}>
 <summary>{{if .Drift}}<h3 id="{{.Anchor}}-h">{{template "tofu-change-head" .}}</h3>{{else}}<h4 id="{{.Anchor}}-h">{{template "tofu-change-head" .}}</h4>{{end}}</summary>
 <div class="change-body">
-<p class="meta">Actions: {{.Actions}}{{with .Reason}}. Reason: <code>{{.}}</code>{{end}}{{with .ReasonText}}, {{.}}{{end}}.</p>
+{{if or .Reason .ReasonText (ne .Actions .Kind)}}<p class="meta">Actions: {{.Actions}}{{with .Reason}}. Reason: <code>{{.}}</code>{{end}}{{with .ReasonText}}, {{.}}{{end}}.</p>{{end}}
 {{- if .ReplacePaths}}
 <p>Replaced because {{range $i, $p := .ReplacePaths}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}} cannot change in place.</p>
 {{- end}}

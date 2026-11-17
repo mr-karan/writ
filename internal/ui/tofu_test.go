@@ -432,7 +432,7 @@ func TestTofuPlanReview(t *testing.T) {
 		want     []string
 	}{
 		{"a replace with replace_paths", "change-4", []string{
-			"-/+ random_pet.rotated replace replace",
+			"-/+ random_pet.rotated replace sensitive value changes",
 			"Actions: delete, create. Reason: replace_because_cannot_update, the provider cannot update it in place.",
 			"Replaced because keepers cannot change in place.",
 			`keepers {"secret":"(sensitive)"} {"secret":"(sensitive)"} forces replace sensitive value changes`,
@@ -445,15 +445,14 @@ func TestTofuPlanReview(t *testing.T) {
 			"What OpenTofu stops managing",
 		}},
 		{"an import", "change-2", []string{
-			"<- random_id.imported import import create",
+			"<- random_id.imported import create",
 			"Imports an object that exists, id p-9hUg, into the state.",
 			"6 attributes stay the same",
 			`b64_url "p-9hUg"`, "byte_length 4",
 		}},
-		{"a create in a module", "change-5", []string{"+ module.inner.random_pet.p create create", `length 3`, "id (known after apply)"}},
+		{"a create in a module", "change-5", []string{"+ module.inner.random_pet.p create", `length 3`, "id (known after apply)"}},
 		{"drift", "drift-1", []string{
 			"- local_file.note delete",
-			"Actions: delete.",
 			"What changed",
 			"content (sensitive)", `filename "./note.txt"`,
 		}},

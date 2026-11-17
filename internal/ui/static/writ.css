@@ -158,7 +158,11 @@ caption { text-align: left; font-weight: 600; font-size: var(--fs-2); padding: v
 /* The words and the dot move to a line of their own when the name leaves
    no room, so neither is cut. */
 .t-end { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.5rem; margin-left: auto; min-width: 0; text-align: right; }
-.t-note { color: var(--muted-foreground); font-size: var(--fs-1); font-weight: 400; }
+.t-note { min-width: 0; overflow: hidden; color: var(--muted-foreground); font-size: var(--fs-1); font-weight: 400; white-space: nowrap; text-overflow: ellipsis; }
+/* A tree row stays one line: the name keeps its width, the note gives way. */
+.envs summary, .stacks a { flex-wrap: nowrap; }
+.t-name { flex: none; max-width: 60%; }
+.t-end { flex: 1 1 auto; overflow: hidden; }
 .side .stacks { margin: 0.1rem 0 0.35rem 0.95rem; padding-left: 0.5rem; border-left: 1px solid var(--border); }
 .stacks a { padding: 0.3rem 0.6rem; font-size: var(--fs-2); }
 .side-foot { display: flex; align-items: center; gap: 0.5rem; margin: auto calc(-1 * var(--space-3)) 0; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); font-size: var(--fs-1); color: var(--muted-foreground); }
