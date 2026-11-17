@@ -4,7 +4,9 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+- A plan of a stack on S3 that tofu refused, as for a permission the plan role lacks, kept only `tofu plan exited with code 1`. It now keeps each diagnostic's summary and place, swept by a mask that knows every secret set `writ serve` keeps for the stack, with each quoted instance key shown as `["(sensitive)"]`.
 
 ## 0.1.0 - 2026-11-17
 

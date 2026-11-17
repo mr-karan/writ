@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -177,7 +178,7 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 		return res, err
 	}
 	if refused {
-		return refusedTofu(res, se, m), nil
+		return refusedTofu(res, se, m, onS3), nil
 	}
 	doc, err := m.Plan(raw.JSON)
 	if err != nil {
@@ -246,6 +247,24 @@ func (s *Server) stateSecrets(ctx context.Context, key *tfstate.Key, env, stack 
 	return key.OpenIndexSecrets(sealed, env, stack, v.Serial)
 }
 
+// knownSecrets opens every secret set writ serve keeps for stack@env, of
+// any lineage, serial, or state version.
+func (s *Server) knownSecrets(ctx context.Context, key *tfstate.Key, env, stack string) ([]string, error) {
+	sets, err := s.store.SecretSets(ctx, env, stack)
+	if err != nil {
+		return nil, fmt.Errorf("read the secret sets of %s@%s: %w", stack, env, err)
+	}
+	var out []string
+	for _, set := range sets {
+		secrets, err := key.OpenIndexSecrets(set.Sealed, env, stack, set.Version)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, secrets...)
+	}
+	return out, nil
+}
+
 // planRead is what planMask needs to find the state a plan read.
 type planRead struct {
 	key        *tfstate.Key
@@ -270,8 +289,8 @@ type planRead struct {
 // set names it. A state version that moved while the plan ran, or a state
 // with no set, is an error that holds nothing of tofu's output. A plan on
 // S3 that tofu refused wrote no saved plan to read its serial from, so its
-// mask is nil, and the refusal keeps only the failed step and its exit
-// code.
+// mask knows every secret set writ serve keeps for the stack@env instead,
+// and refusedTofu sweeps the instance keys a set may not name.
 func (s *Server) planMask(ctx context.Context, r planRead, saved []byte, refused bool) (*mask.Mask, int64, error) {
 	var v tofu.Serial
 	switch {
@@ -285,7 +304,11 @@ func (s *Server) planMask(ctx context.Context, r planRead, saved []byte, refused
 		}
 		v.Serial = now.Version
 	case refused:
-		return nil, 0, nil
+		known, err := s.knownSecrets(ctx, r.key, r.env, r.stack)
+		if err != nil {
+			return nil, 0, err
+		}
+		return mask.New(slices.Concat(r.secrets, known)), 0, nil
 	default:
 		// The serial the plan read is the one its apply must find, and one
 		// that no apply of writ serve wrote is drift.
@@ -377,16 +400,23 @@ func (s *Server) tofuEnv(launch []string) (env, creds, secrets []string) {
 // and a diagnostic's detail or snippet can show one, as
 // nonsensitive() in an error_message does. So the result keeps only each
 // diagnostic's severity, summary, and place, swept by the mask, or, when
-// the step wrote no diagnostics or planMask found no state to seed a mask
-// from (m is nil), only which step failed.
-func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask) control.PlanResult {
+// the step wrote no diagnostics, only which step failed.
+//
+// On S3 (unread) the serial the plan read is not known, and m knows every
+// set writ serve keeps for the stack@env instead. That serial may have no
+// set: one written outside writ serve, or the state of a stack writ serve
+// never applied or adopted. Such a state can keep a past secret that no
+// set names in an address keyed by nonsensitive(), which a summary such
+// as "Cannot delete" quotes, so each quoted instance key becomes
+// ["(sensitive)"]. The rest of the summary stays, because it says why the
+// plan failed, as an AccessDenied names the action the role lacks. So a
+// past secret such a state keeps in an attribute through nonsensitive()
+// shows where a summary quotes that attribute; docs/serve.md states the
+// limit.
+func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask, unread bool) control.PlanResult {
 	diags := []Diagnostic{{"error", string(diag.Usage), se.Error()}}
 	res.Text = "writ: " + se.Error() + "\n"
-	var kept []Diagnostic
-	if m != nil {
-		kept = stepDiagnostics(m, se.Stdout)
-	}
-	for _, d := range kept {
+	for _, d := range stepDiagnostics(m, se.Stdout, unread) {
 		diags = append(diags, d)
 		res.Text += d.Severity + ": " + d.Message + "\n"
 	}
@@ -395,10 +425,15 @@ func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask) contr
 	return res
 }
 
+// instanceKeys matches a quoted instance key of an address, as OpenTofu
+// writes it: ["KEY"], with KEY escaped as HCL escapes a string.
+var instanceKeys = regexp.MustCompile(`\["(?:[^"\\]|\\.)*"\]`)
+
 // stepDiagnostics returns the diagnostics of a -json event stream as
 // "file:line:column: summary", at most maxTofuDiagnostics of them, each
-// swept by the mask. It reads no detail and no snippet.
-func stepDiagnostics(m *mask.Mask, log []byte) []Diagnostic {
+// swept by the mask, and with sweepKeys each quoted instance key swept
+// whole. It reads no detail and no snippet.
+func stepDiagnostics(m *mask.Mask, log []byte, sweepKeys bool) []Diagnostic {
 	var out []Diagnostic
 	for line := range bytes.Lines(log) {
 		var ev struct {
@@ -431,7 +466,11 @@ func stepDiagnostics(m *mask.Mask, log []byte) []Diagnostic {
 			out = append(out, Diagnostic{"error", string(diag.Usage), "(more diagnostics cut)"})
 			break
 		}
-		text = string(m.Event([]byte(strings.ReplaceAll(text, "\n", " "))))
+		text = strings.ReplaceAll(text, "\n", " ")
+		if sweepKeys {
+			text = instanceKeys.ReplaceAllLiteralString(text, `["`+mask.Sensitive+`"]`)
+		}
+		text = string(m.Event([]byte(text)))
 		out = append(out, Diagnostic{severity, string(diag.Usage), printable(text)})
 	}
 	return out

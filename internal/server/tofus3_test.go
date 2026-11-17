@@ -357,8 +357,8 @@ func TestTofuS3RefreshBeforeSameIndexRefresh(t *testing.T) {
 // changed, the address that keeps the old value is masked in a plan, in
 // the apply's events, and in a plan of the serial that apply wrote. A
 // plan that tofu refuses, before writ serve knows the serial it read,
-// masks with the set of the serial writ serve read last. A serial with
-// no set, as one written outside writ serve, keeps no detail of a plan.
+// masks with every set writ serve keeps for the stack. A serial with no
+// set, as one written outside writ serve, keeps no detail of a plan.
 func TestTofuS3PlanMasksPastSecrets(t *testing.T) {
 	var serial atomic.Int64
 	rotated := func() (tofu.Plan, error) {
@@ -422,7 +422,7 @@ func TestTofuS3PlanMasksPastSecrets(t *testing.T) {
 		return tofu.Plan{}, &tofu.StepError{Step: "plan", Code: 1, Stdout: out}
 	}
 	runner.mu.Unlock()
-	if p := planned("refused"); p.Plan.Status != "refused" || p.Text != "writ: tofu plan exited with code 1\n" {
+	if p := planned("refused"); p.Plan.Status != "refused" || p.Text != "writ: tofu plan exited with code 1\nerror: Cannot delete terraform_data.keyed[\"(sensitive)\"]\n" {
 		t.Fatalf("a plan tofu refused: %s\n%s", p.Plan.Status, p.Text)
 	}
 
@@ -442,12 +442,14 @@ func TestTofuS3PlanMasksPastSecrets(t *testing.T) {
 }
 
 // A plan of a stack on S3 that tofu refused wrote no saved plan, so writ
-// serve cannot tell which serial it read, nor seed its mask with that
-// serial's secret set: the serial writ serve read last may be one written
-// outside writ serve, with no set, or of an older lineage, whose set lacks
-// the current lineage's secrets. The refusal keeps the step that failed
-// and its exit code, and nothing of tofu's diagnostics.
-func TestTofuS3RefusedPlanKeepsOnlyTheStep(t *testing.T) {
+// serve cannot tell which serial it read: the serial writ serve read last
+// may be one written outside writ serve, with no set, or of an older
+// lineage, whose set lacks the current lineage's secrets. Its mask knows
+// every set writ serve keeps for the stack, of every lineage, and the
+// refusal keeps each diagnostic's summary and place swept by it, with each
+// quoted instance key swept whole. So a provider's AccessDenied shows,
+// and no secret of any set does.
+func TestTofuS3RefusedPlanMasksEverySet(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		// last is the serial a plan reads after the second lineage's
@@ -508,17 +510,65 @@ func TestTofuS3RefusedPlanKeepsOnlyTheStep(t *testing.T) {
 
 			runner.mu.Lock()
 			runner.plan = func() (tofu.Plan, error) {
-				out := []byte(`{"type":"diagnostic","diagnostic":{"severity":"error","summary":"Cannot delete terraform_data.keyed[\"` + tofuRotated + `\"] or keyed[\"` + tofuCanary + `\"]"}}` + "\n")
+				out := []byte(`{"type":"diagnostic","diagnostic":{"severity":"error","summary":"reading ACM Certificate (` + tofuCanary + `): AccessDeniedException: not authorized to perform: acm:GetCertificate","detail":"plan role","range":{"filename":"main.tf","start":{"line":12,"column":3}}}}
+{"type":"diagnostic","diagnostic":{"severity":"error","summary":"tag ` + tofuRotated + ` is in use by keyed[\"` + tofuCanary + `\"]"}}
+`)
 				return tofu.Plan{}, &tofu.StepError{Step: "plan", Code: 1, Stdout: out}
 			}
 			runner.mu.Unlock()
 			p, _ := f.planCommit(tofuS3Files(), "refused")
-			var doc struct{ Diagnostics []server.Diagnostic }
-			if err := json.Unmarshal(p.Document, &doc); err != nil || p.Plan.Status != "refused" || p.Text != "writ: tofu plan exited with code 1\n" || len(doc.Diagnostics) != 1 {
-				t.Fatalf("a plan tofu refused: %s %v\n%s\n%s", p.Plan.Status, err, p.Text, p.Document)
-			}
+			wantRefused(t, p, `writ: tofu plan exited with code 1
+error: main.tf:12:3: reading ACM Certificate ((sensitive)): AccessDeniedException: not authorized to perform: acm:GetCertificate
+error: tag (sensitive) is in use by keyed["(sensitive)"]
+`, "tofu plan exited with code 1",
+				"main.tf:12:3: reading ACM Certificate ((sensitive)): AccessDeniedException: not authorized to perform: acm:GetCertificate",
+				`tag (sensitive) is in use by keyed["(sensitive)"]`)
 			scanForCanaries(t, f, tofuCanary, tofuRotated, tofuEnvSecret)
 		})
+	}
+}
+
+// A stack on S3 that writ serve never applied or adopted has no secret
+// set, so a refused plan's mask knows only the run's own secrets. The
+// state can still keep a past secret where nothing marks it, as a key of
+// nonsensitive(), so each quoted instance key is swept whole, and the rest
+// of each summary, such as the action an AccessDenied names, shows.
+func TestTofuS3RefusedPlanWithNoSet(t *testing.T) {
+	const pastKey = "canary-past-key-of-state-6f10"
+	runner := &fakeTofu{plan: func() (tofu.Plan, error) {
+		out := []byte(`{"type":"diagnostic","diagnostic":{"severity":"error","summary":"reading ACM Certificate: AccessDeniedException: not authorized to perform: acm:GetCertificate","detail":"` + tofuCanary + `","range":{"filename":"main.tf","start":{"line":12,"column":3}},"snippet":{"code":"` + tofuCanary + `"}}}
+{"type":"diagnostic","diagnostic":{"severity":"error","summary":"Cannot delete module.m[\"` + pastKey + `\"].terraform_data.keyed[0]"}}
+{"type":"diagnostic","diagnostic":{"severity":"warning","summary":"Provider failed with ` + tofuEnvSecret + `"}}
+`)
+		return tofu.Plan{}, &tofu.StepError{Step: "plan", Code: 1, Stdout: out}
+	}}
+	f := tofuS3Fixture(t, runner)
+	p, _ := f.planCommit(tofuS3Files(), "refused")
+	wantRefused(t, p, `writ: tofu plan exited with code 1
+error: main.tf:12:3: reading ACM Certificate: AccessDeniedException: not authorized to perform: acm:GetCertificate
+error: Cannot delete module.m["(sensitive)"].terraform_data.keyed[0]
+warning: Provider failed with (sensitive)
+`, "tofu plan exited with code 1",
+		"main.tf:12:3: reading ACM Certificate: AccessDeniedException: not authorized to perform: acm:GetCertificate",
+		`Cannot delete module.m["(sensitive)"].terraform_data.keyed[0]`,
+		"Provider failed with (sensitive)")
+	scanForCanaries(t, f, pastKey, tofuCanary, tofuEnvSecret)
+}
+
+// wantRefused fails the test unless p is refused with exactly text, and
+// its document with exactly the diagnostic messages want.
+func wantRefused(t *testing.T, p server.RemotePlan, text string, want ...string) {
+	t.Helper()
+	var doc struct{ Diagnostics []server.Diagnostic }
+	if err := json.Unmarshal(p.Document, &doc); err != nil || p.Plan.Status != "refused" || p.Text != text {
+		t.Fatalf("a plan tofu refused: %s %v\n%s\n%s", p.Plan.Status, err, p.Text, p.Document)
+	}
+	var got []string
+	for _, d := range doc.Diagnostics {
+		got = append(got, d.Message)
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("the refused plan's diagnostics %q, want %q", got, want)
 	}
 }
 

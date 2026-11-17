@@ -222,6 +222,37 @@ func (s *Store) SerialSecrets(ctx context.Context, env, stack, lineage string, s
 	return sealed, err
 }
 
+// SealedSet is the sealed index secrets of one state version on the
+// http backend, or of one serial on S3, which OpenIndexSecrets opens with
+// that number.
+type SealedSet struct {
+	Version int64
+	Sealed  []byte
+}
+
+// SecretSets returns every secret set that writ serve keeps for a
+// stack@env: those of its kept serials on S3, of any lineage, and those
+// of its kept state versions on the http backend, from before the stack
+// moved to S3. putSerial and the http backend's own pruning bound the
+// rows.
+func (s *Store) SecretSets(ctx context.Context, env, stack string) ([]SealedSet, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT serial, index_secrets FROM state_serials WHERE env = ? AND stack = ? AND index_secrets IS NOT NULL
+		UNION ALL SELECT version, index_secrets FROM tfstate_versions WHERE env = ? AND stack = ? AND index_secrets IS NOT NULL`, env, stack, env, stack)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SealedSet
+	for rows.Next() {
+		var set SealedSet
+		if err := rows.Scan(&set.Version, &set.Sealed); err != nil {
+			return nil, s.db.Error(err)
+		}
+		out = append(out, set)
+	}
+	return out, s.db.Error(rows.Err())
+}
+
 // S3Stack is a stack@env on S3 that an apply of writ serve wrote, with
 // the newest such apply.
 type S3Stack struct {
