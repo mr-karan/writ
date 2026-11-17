@@ -70,6 +70,8 @@ The hashes depend on the provider's namespace:
 
 For a `hashicorp/` provider, your trust moves from the hashes you committed to the signature of OpenTofu's registry. To pin OpenTofu's hashes in your repository, run `tofu init` in the stack and commit the lock file it writes, as [Migrate from Terraform](migrate-from-terraform.md) explains.
 
+A state that Terraform wrote names its providers at `registry.terraform.io` too. `tofu plan` maps those addresses itself, but `tofu show -json` of a state file loads the schema of each provider the file names, and fails when one isn't installed. So when [an adoption](adopt-state.md) or a [state index](#the-state-index) refresh reads a state file, Writ hands `show` a copy in which each resource's provider is the address the run's lock file pins: `registry.terraform.io/hashicorp/aws` becomes `registry.opentofu.org/hashicorp/aws` when the lock pins only the second. Nothing else in the copy changes, the backend's state isn't written, and the copy is deleted with the run's directory.
+
 The plan's text says which providers moved, with a line such as `Warning: .terraform.lock.hcl pins registry.terraform.io/hashicorp/random, as Terraform writes it; the run used registry.opentofu.org/hashicorp/random at the same version, checked against the hashes of OpenTofu's build, which OpenTofu's registry signs`.
 
 Limits:

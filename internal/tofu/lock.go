@@ -2,6 +2,7 @@ package tofu
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"slices"
@@ -126,4 +127,68 @@ func formatLock(providers []Provider) ([]byte, error) {
 		b.WriteString("}\n\n")
 	}
 	return b.Bytes(), nil
+}
+
+// stateProviderRE matches the provider address of a resource in a state
+// file, as provider["registry.terraform.io/hashicorp/aws"] or
+// module.m.provider["registry.terraform.io/hashicorp/aws"].alias.
+var stateProviderRE = regexp.MustCompile(`provider\["` + regexp.QuoteMeta(terraformRegistry) + `/([^"]+)"\]`)
+
+// StateForLock returns a state file whose resources name each provider by
+// the address the lock file pins, so that tofu show, which loads the
+// schema of every provider a state names, finds them installed. A state
+// that Terraform wrote names its providers in registry.terraform.io, and
+// FromTerraform moves those the code does not require there to
+// registry.opentofu.org; a plan maps the addresses itself, show does not.
+// A provider moves only when the lock pins it in OpenTofu's registry and
+// not in Terraform's. Nothing but the resources' provider addresses
+// changes, and a state with nothing to move is returned as it is.
+func StateForLock(state, lock []byte) ([]byte, error) {
+	if !bytes.Contains(state, []byte(terraformRegistry+"/")) {
+		return state, nil
+	}
+	providers, err := LockedProviders(lock)
+	if err != nil {
+		return nil, err
+	}
+	pinned := map[string]bool{}
+	for _, p := range providers {
+		pinned[p.Source] = true
+	}
+	var st map[string]json.RawMessage
+	if err := json.Unmarshal(state, &st); err != nil {
+		return nil, fmt.Errorf("read the state: %w", err)
+	}
+	var resources []map[string]json.RawMessage
+	if raw, ok := st["resources"]; ok {
+		if err := json.Unmarshal(raw, &resources); err != nil {
+			return nil, fmt.Errorf("read the state's resources: %w", err)
+		}
+	}
+	moved := false
+	for _, r := range resources {
+		var addr string
+		if err := json.Unmarshal(r["provider"], &addr); err != nil {
+			continue
+		}
+		to := stateProviderRE.ReplaceAllStringFunc(addr, func(m string) string {
+			rest := stateProviderRE.FindStringSubmatch(m)[1]
+			if pinned[terraformRegistry+"/"+rest] || !pinned[opentofuRegistry+"/"+rest] {
+				return m
+			}
+			return `provider["` + opentofuRegistry + "/" + rest + `"]`
+		})
+		if to == addr {
+			continue
+		}
+		r["provider"], _ = json.Marshal(to)
+		moved = true
+	}
+	if !moved {
+		return state, nil
+	}
+	if st["resources"], err = json.Marshal(resources); err != nil {
+		return nil, err
+	}
+	return json.Marshal(st)
 }
