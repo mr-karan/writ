@@ -158,11 +158,7 @@ caption { text-align: left; font-weight: 600; font-size: var(--fs-2); padding: v
 /* The words and the dot move to a line of their own when the name leaves
    no room, so neither is cut. */
 .t-end { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0.5rem; margin-left: auto; min-width: 0; text-align: right; }
-.t-note { min-width: 0; overflow: hidden; color: var(--muted-foreground); font-size: var(--fs-1); font-weight: 400; white-space: nowrap; text-overflow: ellipsis; }
-/* A tree row stays one line: the name keeps its width, the note gives way. */
-.envs summary, .stacks a { flex-wrap: nowrap; }
-.t-name { flex: none; max-width: 60%; }
-.t-end { flex: 1 1 auto; overflow: hidden; }
+.t-note { color: var(--muted-foreground); font-size: var(--fs-1); font-weight: 400; }
 .side .stacks { margin: 0.1rem 0 0.35rem 0.95rem; padding-left: 0.5rem; border-left: 1px solid var(--border); }
 .stacks a { padding: 0.3rem 0.6rem; font-size: var(--fs-2); }
 .side-foot { display: flex; align-items: center; gap: 0.5rem; margin: auto calc(-1 * var(--space-3)) 0; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); font-size: var(--fs-1); color: var(--muted-foreground); }
@@ -541,10 +537,10 @@ section + .tabs, .note + .tabs { margin-top: var(--space-8); }
   .tally { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .tally li { padding: var(--space-2) var(--space-3); }
   .change-body { padding-left: var(--space-4); }
-  .change-end { margin-left: 2.35rem; justify-content: flex-start; }
+  .change-end { min-width: 0; max-width: calc(100% - 2.35rem); margin-left: 2.35rem; justify-content: flex-start; }
   .signin { margin-top: var(--space-6); padding: var(--inset); }
   .scroll > table:not(.list, .attrs) { min-width: 34rem; }
-  .change-attrs { max-width: 100%; }
+  .change-attrs { flex: 1 1 100%; min-width: 0; max-width: 100%; }
   table.list thead, table.attrs thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   table.list, table.list tbody, table.list tr, table.list td, table.list th, table.attrs, table.attrs tbody, table.attrs tr, table.attrs td, table.attrs th, table.attrs caption { display: block; }
   table.list tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); }
