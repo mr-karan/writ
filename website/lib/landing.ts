@@ -40,7 +40,7 @@ export const what = {
 
 export const how = {
   title: 'How it works: plan, approve, apply',
-  lede: 'Writ runs OpenTofu for you, on a server you host. Your CI job and your laptop only ask.',
+  lede: 'Writ runs OpenTofu on a server you host. From your laptop or your CI job, you send it requests: plan this commit, approve this plan, apply it.',
   steps: [
     {
       name: 'Plan',
