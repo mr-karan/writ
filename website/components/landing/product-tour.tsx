@@ -1,13 +1,14 @@
 import { Inline } from '@/components/inline';
 import { tour } from '@/lib/landing';
+import { Limit } from './limit';
 import { Frame, Shot, shotDate, shotPaths } from './shot';
 
 /** Four screenshots of the control UI behind tabs: radio inputs and CSS, so it works without script. */
 export function ProductTour() {
   return (
     <section id="product" className="tour" aria-labelledby="h-product">
-      <div className="wrap center">
-        <div className="sec-head center">
+      <div className="wrap">
+        <div className="sec-head">
           <h2 id="h-product">{tour.title}</h2>
           <p className="lede">
             <Inline text={tour.lede} />
@@ -31,9 +32,9 @@ export function ProductTour() {
             </Frame>
           </div>
         ))}
-        <p className="limit">
+        <Limit>
           <Inline text={tour.limit} />
-        </p>
+        </Limit>
         <p className="caption">Screenshots of the control UI against a dev control plane with demo stacks, {shotDate}.</p>
       </div>
     </section>

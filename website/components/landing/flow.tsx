@@ -10,13 +10,13 @@ interface Station {
 }
 
 /**
- * The three steps of a change, with each step's real output. The server
- * renders the finished figure and every output, so a page without script
- * shows all of it. In view, the line draws from step to step and each
- * output takes its turn. A click on a step stops that and shows its output.
- * With reduced motion the figure stays finished.
+ * The three steps of a change, with each step's real output beside them.
+ * The server renders the finished figure and every output, so a page
+ * without script shows all of it. In view, the line fills from step to step
+ * and each output takes its turn. A click on a step stops that and shows
+ * its output. With reduced motion the figure stays finished.
  */
-export function Flow({ stations, outputs, children }: { stations: Station[]; outputs: ReactNode[]; children?: ReactNode }) {
+export function Flow({ stations, outputs, caption, children }: { stations: Station[]; outputs: ReactNode[]; caption: ReactNode; children?: ReactNode }) {
   const ref = useRef<HTMLOListElement>(null);
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   // step 0 is the finished figure: every station done.
@@ -60,33 +60,35 @@ export function Flow({ stations, outputs, children }: { stations: Station[]; out
   };
 
   return (
-    <>
-      <ol className="flow" ref={ref} data-step={step === 0 ? 3 : step}>
-        <li className="track" aria-hidden="true">
-          <i />
-        </li>
-        {stations.map((st, i) => {
-          const n = i + 1;
-          const state = step === 0 || n < step ? 'done' : n === step ? 'active' : '';
-          return (
-            <li key={st.name} className={`station ${state}`}>
-              <button type="button" aria-controls={`out-${n}`} aria-pressed={shown === n} onClick={() => pick(n)}>
-                <span className="num">{n}</span>
-                <span className="st-name">
-                  {st.name} {state ? st.live : st.idle}
-                </span>
-                <span className="st-text">{st.text}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-      {children}
-      {outputs.map((out, i) => (
-        <div key={i} id={`out-${i + 1}`} className="out" hidden={shown !== null && shown !== i + 1}>
-          {out}
-        </div>
-      ))}
-    </>
+    <div className="how-grid">
+      <div>
+        <ol className="flow" ref={ref}>
+          {stations.map((st, i) => {
+            const n = i + 1;
+            const state = step === 0 || n < step ? 'done' : n === step ? 'active' : '';
+            return (
+              <li key={st.name} className={`station ${state}`}>
+                <button type="button" aria-controls={`out-${n}`} aria-pressed={shown === n} onClick={() => pick(n)}>
+                  <span className="num">{n}</span>
+                  <span className="st-name">
+                    {st.name} {state ? st.live : st.idle}
+                  </span>
+                  <span className="st-text">{st.text}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        {children}
+      </div>
+      <div className="how-out">
+        {outputs.map((out, i) => (
+          <div key={i} id={`out-${i + 1}`} className="out" hidden={shown !== null && shown !== i + 1}>
+            {out}
+          </div>
+        ))}
+        <p className="caption">{caption}</p>
+      </div>
+    </div>
   );
 }

@@ -11,17 +11,13 @@ export function Header() {
           <Wordmark />
         </Link>
         <nav aria-label="Sections" className="nav-links">
-          <a href="#what">What it is</a>
           <a href="#how">How it works</a>
-          <a href="#product">Product</a>
           <a href="#compare">Compare</a>
           <Link href="/docs">Docs</Link>
+          <a href={site.repo}>GitHub</a>
         </nav>
         <div className="nav-right">
           <HeaderControls />
-          <a className="btn btn-ghost btn-sm gh" href={site.repo}>
-            GitHub
-          </a>
           <a className="btn btn-primary btn-sm" href="#try">
             Get started
           </a>

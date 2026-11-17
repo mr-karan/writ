@@ -99,7 +99,7 @@ Next, [set up Writ for a team](docs/quick-start.md#set-up-writ-for-a-team): Post
 - **The install script**, as in the quick start. It checks the release's minisign signature.
 - **From source**, with Go 1.27.3 or later and `just`: `just build` puts `writ` in `bin/`.
 - **Nix.** `nix run github:mr-karan/writ -- version`. The flake also has a NixOS module that runs a team's `writ serve` with Postgres.
-- **Release binaries and the container image.** v0.1.0 has static binaries for Linux and macOS on amd64 and arm64, and `ghcr.io/mr-karan/writ:0.1.0`, a `writ serve` image with OpenTofu 1.13.9. The macOS binaries have not yet run on a Mac.
+- **Release binaries and the container image.** v0.1.0 has static binaries for Linux and macOS on amd64 and arm64, and `ghcr.io/mr-karan/writ:0.1.0`, a `writ serve` image with OpenTofu 1.13.9. The macOS binaries haven't run on a Mac yet.
 
 [Install](docs/install.md) has the commands for each.
 

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Inline } from '@/components/inline';
 import landing from '@/content/landing.json';
 import { compare, trust } from '@/lib/landing';
+import { Caret, Limit } from './limit';
 
 /** Writ against two paid control planes, then what Writ lacks and what a reader can check. */
 export function Compare() {
@@ -13,33 +14,31 @@ export function Compare() {
           <p className="lede">{compare.lede}</p>
         </div>
 
-        <div className="card cmp-card">
-          <table className="cmp">
-            <thead>
-              <tr>
-                <td />
-                {compare.columns.map((c) => (
-                  <th scope="col" key={c}>
-                    {c}
-                  </th>
+        <table className="cmp">
+          <thead>
+            <tr>
+              <td />
+              {compare.columns.map((c) => (
+                <th scope="col" key={c}>
+                  {c}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {compare.rows.map(([label, ...cells]) => (
+              <tr key={label}>
+                <th scope="row">{label}</th>
+                {cells.map((cell, i) => (
+                  <td key={compare.columns[i]} data-col={compare.columns[i]}>
+                    {cell}
+                  </td>
                 ))}
               </tr>
-            </thead>
-            <tbody>
-              {compare.rows.map(([label, ...cells]) => (
-                <tr key={label}>
-                  <th scope="row">{label}</th>
-                  {cells.map((cell, i) => (
-                    <td key={compare.columns[i]} data-col={compare.columns[i]}>
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="limit">{compare.missing}</p>
+            ))}
+          </tbody>
+        </table>
+        <Limit>{compare.missing}</Limit>
         <p className="caption">
           <Inline text={compare.caption} />
         </p>
@@ -48,11 +47,12 @@ export function Compare() {
         </Link>
 
         <div className="two">
-          <div className="card notyet" id="notyet">
+          <div className="notyet" id="notyet">
             <h3>{trust.notYet.title}</h3>
             <ul>
               {landing.limits.map((item) => (
                 <li key={item.lead}>
+                  <Caret />
                   <span>
                     <b>{item.lead}</b> <Inline text={item.text} />
                   </span>
@@ -63,15 +63,12 @@ export function Compare() {
               {trust.notYet.link.text}
             </Link>
           </div>
-          <div className="card check">
+          <div className="check">
             <h3>{trust.title}</h3>
             <ul>
               {trust.items.map((item) => (
                 <li key={item.title}>
-                  <span>
-                    <b>{item.title}</b> <Inline text={item.text} />{' '}
-                    <Link href={item.link.href}>{item.link.text}</Link>
-                  </span>
+                  <b>{item.title}</b> <Inline text={item.text} /> <Link href={item.link.href}>{item.link.text}</Link>
                 </li>
               ))}
             </ul>

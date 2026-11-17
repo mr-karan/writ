@@ -4,11 +4,15 @@
 // instead, which scripts/gen-content.ts cuts from the README and the docs.
 
 export const hero = {
-  chip: { tag: 'Open source', text: 'Control plane for OpenTofu' },
   title: 'Plan, approve, and apply OpenTofu on your own server.',
-  lede: 'Writ is an open-source control plane. It plans the commits you or your CI job send it, waits for your team to approve, and applies that exact plan. No cloud keys in CI or on laptops.',
-  note: 'Version 0, and OpenTofu 1.13.9 only.',
-  facts: ['Apache 2.0', 'You host it', 'One Go binary', 'No limit on users, runs, or resources'],
+  lede: 'Writ is an open-source control plane for OpenTofu. It plans the commits you or your CI job send it, waits for your team to approve, and applies the plan they approved. Your cloud keys stay on its server, and your CI jobs and laptops hold none.',
+  facts: [
+    { label: 'License', text: 'Apache 2.0' },
+    { label: 'Runs on', text: 'Your own server, as one Go binary' },
+    { label: 'Price', text: 'Free, with no limit on users, runs, or resources' },
+    { label: 'Status', text: 'Version 0, and OpenTofu 1.13.9 only.' },
+  ],
+  notYet: { text: 'What Writ isn’t, yet', href: '#notyet' },
 };
 
 export const what = {
@@ -23,23 +27,25 @@ export const what = {
       name: 'Writ, on your server',
       items: ['Plans the commits you send it', 'Takes approvals for one exact plan', 'Checks policy and drift', 'Keeps the state keys and the cloud roles'],
     },
-    right: { name: 'Your cloud', text: 'For a plan, the plan role you configure: make it read-only. For an apply, the apply role, only once it’s approved or overridden by someone you allow.' },
+    right: {
+      name: 'Your cloud',
+      text: 'Writ plans with the plan role you configure, so make it read-only. It takes the apply role only for a plan that’s approved, or one overridden by someone you allow.',
+    },
     alt: 'Your Git host, you, and your CI job talk to Writ on your server. Only Writ talks to your cloud.',
   },
   without: 'What goes wrong without one',
   cards: [
-    { icon: 'doc', title: 'You review code, not a plan', text: 'A merge request approval says the code can merge. It doesn’t tie the apply to the plan you read.' },
+    { title: 'You review code, not a plan', text: 'A merge request approval says the code can merge. It doesn’t tie the apply to the plan you read.' },
     {
-      icon: 'key',
       title: 'The job holds the keys',
       text: 'In plain CI, the job that runs `tofu` holds the cloud credentials, the state, and the plan. A merge request can change what that job runs.',
     },
-    { icon: 'eye', title: 'Plans print secrets', text: '`tofu plan` and `tofu apply` print secrets. A log that keeps their output shows them to everyone who can read it.' },
+    { title: 'Plans print secrets', text: '`tofu plan` and `tofu apply` print secrets. A log that keeps their output shows them to everyone who can read it.' },
   ],
 } as const;
 
 export const how = {
-  title: 'How it works: plan, approve, apply',
+  title: 'How a change gets applied',
   lede: 'Writ runs OpenTofu on a server you host. From your laptop or your CI job, you send it requests: plan this commit, approve this plan, apply it.',
   steps: [
     {
@@ -137,7 +143,7 @@ export const benefits = {
     caption: 'Output of `TestTofuPlanByCommit`, 2026-11-15, with lines cut.',
   },
   agents: {
-    title: 'Agents plan. People approve.',
+    title: 'Your coding agent plans, and only people approve',
     text: 'With `writ mcp`, your coding agent plans a commit and reads the plan and its policy verdict. It never holds a cloud credential, and it can’t approve or apply.',
     link: { text: 'Use Writ with an agent', href: '/docs/agents' },
     caption: 'Output of Claude Code 2.1.318, 2026-11-10.',
@@ -164,11 +170,11 @@ export const compare = {
   lede: 'The paid control planes do this job as a hosted service, priced by plan. Writ does it on your own host, with nothing metered.',
   columns: ['Spacelift', 'HCP Terraform', 'Writ'],
   rows: [
-    ['Source and hosting', 'Closed source, as SaaS. Self-hosted with the Enterprise plan', 'Closed source, as SaaS. Terraform Enterprise is self-managed', 'Apache 2.0, on your own host. No hosted service'],
-    ['Price', 'Free for 2 users. Starter starts at $399 a month', 'Free to 500 managed resources, then from $0.10 a resource a month', 'Free. No limit on users, runs, or resources'],
-    ['OpenTofu', 'Yes', 'Runs Terraform. Its pages don’t mention OpenTofu', 'OpenTofu 1.13.9 only. No Terraform'],
+    ['Source and hosting', 'Closed source, as SaaS. Self-hosted with the Enterprise plan', 'Closed source, as SaaS. Terraform Enterprise is self-managed', 'Apache 2.0, on your own host. There’s no hosted service'],
+    ['Price', 'Free for 2 users. Starter starts at $399 a month', 'Free to 500 managed resources, then from $0.10 a resource a month', 'Free, with no limit on users, runs, or resources'],
+    ['OpenTofu', 'Yes', 'Runs Terraform. Its pages don’t mention OpenTofu', 'OpenTofu 1.13.9 only, and no Terraform'],
     ['Policy', 'OPA, from the Starter plan', 'Sentinel and OPA, in Standard and Premium. Free has one policy set of up to five policies', 'OPA, at the plan and again before the apply'],
-    ['Drift checks', 'Business plan and up', 'Standard and Premium', 'On a schedule. No alerts yet'],
+    ['Drift checks', 'Business plan and up', 'Standard and Premium', 'On a schedule, with no alerts yet'],
     ['Audit log', 'Enterprise plan', 'Premium plan', 'A row before each answer, in your database, except health checks, server discovery, and rate-limited requests. Nothing reads it yet'],
   ],
   caption:
@@ -236,8 +242,3 @@ export const questions: { q: string; a: string }[] = [
     a: '[The comparison page](/docs/compare) covers Atlantis, OTF, Terrakube, Spacelift, HCP Terraform, env zero, and Scalr, each with its source and date, and says what those tools have that Writ doesn’t.',
   },
 ];
-
-export const close = {
-  title: 'Start with one stack.',
-  text: 'Run Writ on your own machine first. It’s open source, and you don’t need a cloud account.',
-};
