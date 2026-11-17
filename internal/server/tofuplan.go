@@ -477,6 +477,10 @@ func movedNotes(moved []tofu.Moved) []string {
 		if m.Rehashed {
 			how = "the same version, checked against the hashes of OpenTofu's build, which OpenTofu's registry signs"
 		}
+		if m.Kept {
+			out = append(out, fmt.Sprintf("%s pins %s, which the code names; the run also used %s, for the code that names it with no host, at the same version and hashes", tofu.LockFile, m.From, m.To))
+			continue
+		}
 		out = append(out, fmt.Sprintf("%s pins %s, as Terraform writes it; the run used %s at %s", tofu.LockFile, m.From, m.To, how))
 	}
 	return out

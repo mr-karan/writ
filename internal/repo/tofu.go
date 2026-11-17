@@ -494,7 +494,7 @@ func TofuSources(ctx context.Context, c forge.Client, projectID string, snap *Sn
 			}
 		}
 	}
-	ts.Lock, ts.Moved, err = tofu.FromTerraform(ts.Lock, namedSources(ts.Files, dirs))
+	ts.Lock, ts.Moved, err = tofu.FromTerraform(ts.Lock, requiredSources(ts.Files, dirs))
 	if err != nil {
 		return TofuStack{}, fmt.Errorf("%s: %w", path.Join(dir, tofu.LockFile), err)
 	}
@@ -502,13 +502,14 @@ func TofuSources(ctx context.Context, c forge.Client, projectID string, snap *Sn
 	return ts, nil
 }
 
-// namedSources reports whether the code in files of the directories dirs,
-// the stack's and its local modules', names a provider by its full
-// address, such as "registry.terraform.io/hashicorp/aws", in a
-// required_providers block. A file that does not parse is skipped; tofu
-// init refuses it.
-func namedSources(files map[string][]byte, dirs []string) func(source string) bool {
-	named := map[string]bool{}
+// requiredSources reports whether the code in files of the directories
+// dirs, the stack's and its local modules', requires a provider's full
+// address in a required_providers block, such as
+// "registry.terraform.io/hashicorp/aws". A source with no host counts as
+// one of registry.opentofu.org, where OpenTofu resolves it. A file that
+// does not parse is skipped; tofu init refuses it.
+func requiredSources(files map[string][]byte, dirs []string) func(source string) bool {
+	required := map[string]bool{}
 	for name, text := range files {
 		if !tofuCode(name) || !slices.Contains(dirs, path.Dir(name)) {
 			continue
@@ -531,21 +532,31 @@ func namedSources(files map[string][]byte, dirs []string) func(source string) bo
 						continue
 					}
 					for _, item := range obj.Items {
-						if hcl.ExprAsKeyword(item.KeyExpr) != "source" {
+						// The key's value is the same for source and
+						// "source", which tofu reads alike.
+						if key, ok := literal(item.KeyExpr); !ok || key != "source" {
+							continue
+						}
+						src, ok := literal(item.ValueExpr)
+						if !ok {
 							continue
 						}
 						// A source's host, namespace, and type are each
 						// matched without case, and lock files write them
 						// in lower case.
-						if src, ok := literal(item.ValueExpr); ok && strings.Count(src, "/") == 2 {
-							named[strings.ToLower(src)] = true
+						src = strings.ToLower(src)
+						switch strings.Count(src, "/") {
+						case 1:
+							required["registry.opentofu.org/"+src] = true
+						case 2:
+							required[src] = true
 						}
 					}
 				}
 			}
 		}
 	}
-	return func(source string) bool { return named[source] }
+	return func(source string) bool { return required[source] }
 }
 
 // literal is the value of an expression that needs no evaluation context,

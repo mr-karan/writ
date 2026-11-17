@@ -74,7 +74,7 @@ The plan's text says which providers moved, with a line such as `Warning: .terra
 
 Limits:
 
-- If your code sets `source = "registry.terraform.io/hashicorp/NAME"`, Writ refuses the stack, because OpenTofu refuses such a lock entry with the lock file read-only. Write `source = "hashicorp/NAME"` instead. A provider outside `hashicorp/` that your code points to at `registry.terraform.io` stays there.
+- If your code sets `source = "registry.terraform.io/hashicorp/NAME"`, Writ refuses the stack, because OpenTofu refuses such a lock entry with the lock file read-only. Write `source = "hashicorp/NAME"` instead. A provider outside `hashicorp/` that your code points to at `registry.terraform.io` stays there. If other code in the stack names the same provider with no host, the copy pins it at both addresses, with the same version and hashes.
 - Writ reads `source` in the stack's code and its local modules. A remote module that sets a `registry.terraform.io` source isn't read.
 - `writ serve` keeps the recorded hashes in memory. After a restart, the first run of each `hashicorp/` provider version downloads it again from OpenTofu's registry.
 

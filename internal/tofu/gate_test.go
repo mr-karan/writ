@@ -90,6 +90,8 @@ func TestGate(t *testing.T) {
 		t.Fatalf("fill the plugin cache from a lock that Terraform wrote: %v", stepText(err))
 	}
 
+	gateBothRegistries(t, r)
+
 	// The run's uid can read nothing of this user's, so its copy of the
 	// cache goes where any user may read it, as a server's cache must be.
 	shared := sharedDir(t, 0o755)
@@ -115,6 +117,51 @@ func TestGate(t *testing.T) {
 	t.Logf("in the namespaces:\n%s", out)
 	if err != nil || !strings.Contains(string(out), "--- PASS: TestGate") {
 		t.Fatalf("the gate failed in the namespaces: %v", err)
+	}
+}
+
+// gateBothRegistries plans, with the registry, a stack whose code names
+// carlpett/sops by Terraform's registry while a local module names it with
+// no host, so tofu needs the lock to pin both addresses.
+// testdata/terraform-sops.lock.hcl is what tofu providers lock wrote for
+// registry.terraform.io/carlpett/sops 1.1.1; its hashes of linux_amd64 are
+// the ones Terraform 1.17.1 wrote.
+func gateBothRegistries(t *testing.T, r *Runner) {
+	ctx := context.Background()
+	tfLock, err := os.ReadFile("testdata/terraform-sops.lock.hcl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := Stack{Files: fstest.MapFS{
+		"main.tf":   {Data: []byte("terraform {\n  required_providers {\n    sops = { \"source\" = \"registry.terraform.io/carlpett/sops\", version = \"1.1.1\" }\n  }\n}\n\nmodule \"m\" {\n  source = \"./m\"\n}\n")},
+		"m/main.tf": {Data: []byte("terraform {\n  required_providers {\n    sops = { source = \"carlpett/sops\", version = \"1.1.1\" }\n  }\n}\n")},
+		LockFile:    {Data: tfLock},
+	}, Dir: "."}
+	both := func(src string) bool {
+		return src == "registry.terraform.io/carlpett/sops" || src == "registry.opentofu.org/carlpett/sops"
+	}
+	lock, moved, err := FromTerraform(tfLock, both)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []Moved{{From: "registry.terraform.io/carlpett/sops", To: "registry.opentofu.org/carlpett/sops", Kept: true}}; !slices.Equal(moved, want) {
+		t.Fatalf("moved %+v, want %+v", moved, want)
+	}
+	if s.Lock, err = r.Fill(ctx, lock); err != nil {
+		t.Fatalf("fill the plugin cache with carlpett/sops at both addresses: %v", stepText(err))
+	}
+	if !bytes.Equal(s.Lock, lock) {
+		t.Fatalf("Fill changed a lock whose every provider has hashes:\n%s", s.Lock)
+	}
+	if _, err := r.Plan(ctx, s); err != nil {
+		t.Fatalf("plan with carlpett/sops at both addresses: %v", stepText(err))
+	}
+	// The committed lock pins Terraform's address alone. With no hashes
+	// of the other, tofu trusts no cached package of it and installs one,
+	// which the run's read-only view of the cache refuses.
+	s.Lock = nil
+	if _, err := r.Plan(ctx, s); err == nil || !strings.Contains(stepText(err), "Installing carlpett/sops v1.1.1") {
+		t.Fatalf("a plan with only registry.terraform.io/carlpett/sops: %v, want an init that installs carlpett/sops for want of its lock entry", stepText(err))
 	}
 }
 

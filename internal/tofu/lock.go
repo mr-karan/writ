@@ -24,23 +24,31 @@ type Moved struct {
 	// OpenTofu's registry serves its own builds of the hashicorp/
 	// providers, and Fill records the hashes of those builds.
 	Rehashed bool
+	// Kept means the code requires From as well, so the lock keeps it
+	// and pins To beside it, at the same version and hashes.
+	Kept bool
 }
 
 // FromTerraform makes a lock file that Terraform wrote fit OpenTofu's
 // tofu init -lockfile=readonly, which refuses every provider of
-// registry.terraform.io/hashicorp/ and every one the code does not name by
-// that address. Each provider of registry.terraform.io whose full address
-// named reports false, as for a source with no host, such as
-// "hashicorp/random", moves to registry.opentofu.org, where OpenTofu
-// resolves such a source, at the same version. One of another namespace
-// keeps its hashes:
-// OpenTofu's registry serves the same release archives for it, and tofu
-// refuses an archive that matches none. One of hashicorp/ loses them:
-// OpenTofu's registry serves its own builds of those, signed by OpenTofu,
-// and Fill records their hashes. A lock file with nothing to move is
-// returned as it is. The code naming registry.terraform.io/hashicorp/ is
-// an error, which no lock file can fix.
-func FromTerraform(lock []byte, named func(source string) bool) ([]byte, []Moved, error) {
+// registry.terraform.io/hashicorp/ and needs one entry for each address
+// the code requires. required reports whether the code names a full
+// address in a source, after OpenTofu's resolution of a source with no
+// host, such as "carlpett/sops", to registry.opentofu.org.
+//
+// Each provider of registry.terraform.io that the code does not require
+// by that address moves to registry.opentofu.org at the same version: tofu
+// resolves an unnamed provider, and one with no host, there. One the code
+// requires by that address stays, and when the code also requires it in
+// OpenTofu's registry, as a module that names it with no host does, the
+// lock pins both. One of another namespace keeps its hashes: OpenTofu's
+// registry serves the same release archives for it, and tofu refuses an
+// archive that matches none. One of hashicorp/ loses them: OpenTofu's
+// registry serves its own builds of those, signed by OpenTofu, and Fill
+// records their hashes. A lock file with nothing to move is returned as it
+// is. The code requiring registry.terraform.io/hashicorp/ is an error,
+// which no lock file can fix.
+func FromTerraform(lock []byte, required func(source string) bool) ([]byte, []Moved, error) {
 	providers, err := LockedProviders(lock)
 	if err != nil {
 		return nil, nil, err
@@ -58,14 +66,21 @@ func FromTerraform(lock []byte, named func(source string) bool) ([]byte, []Moved
 			continue
 		}
 		hashicorp := strings.HasPrefix(rest, "hashicorp/")
-		if named(p.Source) {
+		m := Moved{From: p.Source, To: opentofuRegistry + "/" + rest}
+		if required(p.Source) {
 			if hashicorp {
 				return nil, nil, fmt.Errorf("the code names provider %s by Terraform's registry, which OpenTofu's tofu init refuses with the lock file read-only: name it %s, which OpenTofu installs from its own registry", p.Source, rest)
 			}
 			out = append(out, p)
+			if !required(m.To) || pinned[m.To] {
+				continue
+			}
+			m.Kept = true
+			moved = append(moved, m)
+			p.Source = m.To
+			out = append(out, p)
 			continue
 		}
-		m := Moved{From: p.Source, To: opentofuRegistry + "/" + rest}
 		moved = append(moved, m)
 		if pinned[m.To] {
 			// The lock file pins the provider in OpenTofu's registry too,
