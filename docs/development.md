@@ -41,7 +41,7 @@ GitHub Actions runs part of `just ci` on a GitHub-hosted Ubuntu runner, with Go 
 | `.github/workflows/pages.yml` | A push to `main` that changes `website/`, `docs/`, or `README.md`, or a manual run | The build of `just website`, then a deploy of `website/out` to GitHub Pages at `writ.mrkaran.dev`. |
 | `.github/workflows/release.yml` | A pushed tag `v*` | The release, as [release/README.md](../release/README.md#publish-a-release) describes. |
 
-The runner has no user namespaces with subordinate uids, so these gates never run there: `e2e`, `e2e-import`, `e2e-import-hcl`, `e2e-aws-emulator`, `e2e-tofu-s3`, `verify-mask`, `policy-parity`, `test-tfstate`, `test-tofu`, and the provider isolation step of `test-serve`. In `just check`, the tests that need a user namespace skip and say so: the provider isolation tests and the `runas` tests. `check-nix-package`, `check-nixos`, and the fuzz recipes don't run either. Run `just ci` locally for all of them.
+The workflow lets the runner make unprivileged user namespaces, which Ubuntu 24.04 refuses by default and `internal/tofu` needs. The runner has no subordinate uids, so these gates never run there: `e2e`, `e2e-import`, `e2e-import-hcl`, `e2e-aws-emulator`, `e2e-tofu-s3`, `verify-mask`, `policy-parity`, `test-tfstate`, `test-tofu`, and the provider isolation step of `test-serve`. In `just check`, the tests that need a user namespace skip and say so: the provider isolation tests and the `runas` tests. `check-nix-package`, `check-nixos`, and the fuzz recipes don't run either. Run `just ci` locally for all of them.
 
 The integration tests in `just check` download `hashicorp/random`, `local`, and `tls` from `registry.opentofu.org`, so the CI job needs the registry to be reachable.
 

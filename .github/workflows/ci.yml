@@ -24,6 +24,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+      # Ubuntu 24.04 lets AppArmor refuse unprivileged user namespaces, which
+      # internal/tofu needs to start tofu in its private filesystem view.
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Build
         run: nix develop --command just build
       - name: Vet the tagged tests
