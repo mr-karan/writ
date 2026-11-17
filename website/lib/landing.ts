@@ -12,8 +12,8 @@ export const hero = {
 };
 
 export const what = {
-  title: 'A control plane between your Git repository and your cloud',
-  lede: 'Today a CI job or a laptop runs `tofu apply` with keys that can change production. With Writ, they ask a server you host, and it does the run.',
+  title: 'Production keys live on one server, not in every pipeline',
+  lede: 'Today every CI job and laptop that runs `tofu apply` holds keys that can change production. With Writ, only the server you host holds them. Your team and your CI job sign in and ask. Writ plans, waits for approval, and applies.',
   diagram: {
     left: [
       { name: 'Your Git host', text: 'Commits of your OpenTofu stacks' },
