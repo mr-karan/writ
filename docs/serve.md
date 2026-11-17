@@ -88,7 +88,7 @@ Before the mask reads any of tofu's output, it starts from `provider_env`'s valu
 
 Writ starts there because a state can keep a past secret where nothing marks it. For example, a resource keyed by `nonsensitive(var.key)` keeps the old key in its address after the key changes. Your next plan, which deletes that resource, shows the old key in no input and under no mark. So each apply seals what its mask knew with each state version or serial it wrote, as [The state index](#the-state-index) explains, and a set carries forward every secret an earlier apply knew.
 
-That's why Writ keeps nothing of a plan's output, not even a refused plan's diagnostics, until `writ serve` knows the state version or S3 serial the plan read and has given the mask exactly that state's set. On the http backend, that's the newest version, which must be the same when the plan starts and when it ends. If an apply wrote a newer version during your plan, the plan keeps nothing and tells you to plan again. On S3 it's the serial in the saved plan, so a plan that tofu refused, which saved none, keeps only the step that failed and its exit code.
+That's why Writ keeps nothing of a plan's output until `writ serve` knows the state version or S3 serial the plan read and has given the mask that state's set. On the http backend, that's the newest version, which must be the same when the plan starts and when it ends. If an apply wrote a newer version during your plan, the plan keeps nothing, not even a refused plan's diagnostics, and tells you to plan again. On S3 it's the serial in the saved plan. A plan that tofu refused saved none, so its mask gets every set Writ keeps for the stack instead, as [What a run can see](#what-a-run-can-see) explains.
 
 ### States with no secret set
 
@@ -100,6 +100,8 @@ On S3, this covers every stack whose bucket had a state before `writ serve` firs
 
 - someone [adopts the state](adopt-state.md), which seals a set with it, or
 - an apply of `writ serve` writes a newer version from a plan against a version that has one.
+
+On S3, a plan that tofu refuses before it saves a plan, as when the plan role lacks a permission, still shows each diagnostic's summary, swept. [What a run can see](#what-a-run-can-see) explains how.
 
 ### How an apply runs
 
@@ -139,7 +141,13 @@ Writ leaves the network unchanged in the view, so `init` reaches the registry an
 
 When a step fails, it ends before the mask has read a plan. At that point the mask knows the environment's values, the token, and the secret set of the state the plan read, but none of the stack's other sensitive values. Yet a diagnostic's detail can show one of those, as `nonsensitive()` in a validation's `error_message` does.
 
-So the refused plan keeps only each diagnostic's severity, summary, file, line, and column, swept by the mask. If a step wrote no diagnostics in JSON, as `tofu init` doesn't, it leaves only its name and exit code. So does any failed step of a stack on S3, whose serial isn't known.
+So the refused plan keeps only each diagnostic's severity, summary, file, line, and column, swept by the mask. If a step wrote no diagnostics in JSON, as `tofu init` doesn't, it leaves only its name and exit code.
+
+On S3, Writ doesn't know which serial a refused plan read, because tofu saved no plan. So the mask starts from the environment's values and every secret set `writ serve` keeps for the `stack@env`: those of its serials in `state_serials`, of every lineage, and those of its state versions from any time it was on the http backend. The mask sweeps every secret those sets list out of each summary.
+
+The serial the plan read can still have no set, as one written outside Writ, or the state of a stack that Writ never applied or [adopted](adopt-state.md). Such a state can keep a past secret in an address keyed by `nonsensitive()`, so each quoted instance key in a summary becomes `["(sensitive)"]`, both as OpenTofu writes it, `["KEY"]`, and as a summary that quotes the address once more writes it, `[\"KEY\"]`. An integer key such as `[0]` stays. The rest of the summary shows, swept by the mask. So a provider's error shows, such as an AWS `AccessDenied` that names the action your plan role lacks.
+
+**Limits.** The mask knows nothing of a state with no set. If a refused plan's summary quotes a value from such a state outside a quoted instance key, as an attribute set through `nonsensitive()`, an attribute the state marks sensitive, or a name built from `each.key`, the value shows, because no set lists it and the mask hasn't read the plan. So does a key quoted three times or more. Only those quoted keys and the values the mask starts from are swept: the sets, `provider_env`, and the run's own credentials.
 
 Your stack's variables come from its committed `.tfvars` files and from the `TF_VAR_` names in `provider_env`.
 
@@ -292,7 +300,7 @@ Writ runs a normal plan for a check, not `tofu plan -refresh-only`. OpenTofu 1.1
 
 If the check's plan changes something, Writ marks the `stack@env` drifted. In the mark you get each changed address, its kind, its action, and the names of the top-level attributes that change, from the masked plan. Values are never kept. Read `drifted_since` as when the first of an unbroken run of drifted checks ended. When a check's plan changes nothing, it clears the mark.
 
-If a check fails, as when OpenTofu refuses the plan, it keeps the reason, swept by the mask, and leaves no mark. Checks of a state with no secret set fail with only `drift unknown: no secret set for state version N of stack@env`, as [States with no secret set](#states-with-no-secret-set) explains.
+If a check fails, as when OpenTofu refuses the plan, it keeps the reason, swept by the mask, and leaves no mark. A check whose plan runs against a state with no secret set fails with only `drift unknown: no secret set for state version N of stack@env`, as [States with no secret set](#states-with-no-secret-set) explains. A check that OpenTofu refuses on S3 keeps its summaries, swept as a refused plan's are.
 
 If an apply of the same `stack@env` ran during a check, the check keeps nothing, because it may have read a state the apply was changing. Then the stack is due again at the next look. When it finds drift, `writ serve` logs `drift found` at level `WARN`, with the counts and the plan id, and sends no alert.
 

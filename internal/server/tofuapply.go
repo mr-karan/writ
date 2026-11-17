@@ -164,7 +164,7 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 	case isStep:
 		doc.Diagnostics = append(doc.Diagnostics, Diagnostic{"error", string(diag.Usage), se.Error()})
 		if !withheld {
-			doc.Diagnostics = append(doc.Diagnostics, stepDiagnostics(m, se.Stdout)...)
+			doc.Diagnostics = append(doc.Diagnostics, stepDiagnostics(m, se.Stdout, false)...)
 		}
 	case err != nil:
 		doc.Diagnostics = append(doc.Diagnostics, Diagnostic{"error", string(diag.Usage), err.Error()})

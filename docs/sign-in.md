@@ -129,7 +129,7 @@ A `writ serve` from before browser sign-in sends no `device_issuers` in `GET /v1
 
 `writ login` works with every issuer of kind `people`. With several people issuers, `writ login --issuer NAME` picks one. Under `writ serve --dev` you don't sign in, and `writ login` says so. What you set up depends on the flow your identity provider offers.
 
-**The device flow.** Your issuer must publish a `device_authorization_endpoint` in its discovery document, and its application must allow the device flow. Writ reads that endpoint only from the discovery document. For a GitLab self-managed instance, look for it in the instance's own `/.well-known/openid-configuration`.
+**The device flow.** Your issuer must publish a `device_authorization_endpoint` in its discovery document, and its application must allow the device flow. Writ reads that endpoint only from the discovery document. For a GitLab self-managed instance, look for it in the instance's own `/.well-known/openid-configuration`. If it isn't there, as on GitLab.com, `writ login` can only sign in through a browser, so set that up as below.
 
 **Through a browser.** Register `http://127.0.0.1/callback` as a redirect URI of the application whose id is `client_id`, beside the control UI's `URL/ui/callback`. GitLab's form takes one redirect URI per line. The application stays confidential, because `writ serve` keeps the client secret.
 
@@ -170,7 +170,7 @@ To see the control UI and its redirect URI, look at the `control UI:` line of `w
 
 You sign in with the authorization code flow with PKCE against an issuer of kind `people`. Again `writ serve` is the OAuth client, so your browser never holds the client secret, an access token, or an ID token.
 
-1. Register `URL/ui/callback` as a redirect URI of the application whose id is `client_id`, with the scopes `openid profile email`. GitLab lists the application under Applications, in the user, group, or instance settings.
+1. Register `URL/ui/callback` as a redirect URI of the application whose id is `client_id`, with the scopes `openid profile email`. For `writ login` through a browser, the same application also needs `http://127.0.0.1/callback`, on its own line, as [Set up writ login](#set-up-writ-login) explains. GitLab lists the application under Applications, in the user, group, or instance settings.
 2. When you open a page without a session, it answers `303` to `/ui/login?next=PATH`, and you pick the issuer.
 3. Then `/ui/login/start` creates a random `state`, `nonce`, and code verifier, keeps them in an `HttpOnly` cookie that lives 10 minutes, and redirects to the issuer with the S256 challenge. Writ sends the challenge even when the discovery document doesn't list S256, and `writ serve` logs a warning at start.
 4. On return, `/ui/callback` compares `state` in constant time and deletes the cookie, so a callback works once. Then `writ serve` trades the code with the verifier and the client secret, and checks the ID token's issuer, signature, times, audience (the `client_id`), and nonce. Next it reads the groups from userinfo when `groups` says so, and maps the claims to teams.

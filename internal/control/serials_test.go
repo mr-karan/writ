@@ -442,3 +442,54 @@ func TestMarkDrift(t *testing.T) {
 		}
 	})
 }
+
+// SecretSets returns each sealed set a stack@env keeps, of every lineage
+// on S3 and of its state versions on the http backend, and no row that
+// has none or is of another stack.
+func TestSecretSets(t *testing.T) {
+	each(t, func(t *testing.T, s *control.Store, loc string) {
+		ctx := context.Background()
+		l := newLifecycle(t, s)
+		writeState(t, l, "app", "RUN1", 1)
+		writeState(t, l, "app", "RUN2", 2)
+		if _, err := s.PutIndexSecrets(ctx, "prod", "app", "RUN2", func(v int64) []byte { return fmt.Appendf(nil, "version %d", v) }); err != nil {
+			t.Fatal(err)
+		}
+		writeStateIn(t, l, "staging", "app", "RUN7", 5)
+		if _, err := s.PutIndexSecrets(ctx, "staging", "app", "RUN7", func(v int64) []byte { return fmt.Appendf(nil, "staging version %d", v) }); err != nil {
+			t.Fatal(err)
+		}
+		for _, v := range []struct {
+			stack, lineage string
+			serial         int64
+			run            string
+			sealed         []byte
+		}{
+			{"app", "L1", 3, "RUN3", []byte("L1 serial 3")},
+			{"app", "L2", 1, "RUN4", []byte("L2 serial 1")},
+			{"app", "L2", 2, "", nil},
+			{"api", "L1", 3, "RUN5", []byte("api L1 serial 3")},
+			{"app", "L3", 4, "RUN6", []byte("staging L3 serial 4")},
+		} {
+			env := "prod"
+			if v.lineage == "L3" {
+				env = "staging"
+			}
+			if _, err := s.PutSerial(ctx, control.StateSerial{Env: env, Stack: v.stack, Lineage: v.lineage, Serial: v.serial, From: v.serial, RunID: v.run, SeenAt: t0}, v.sealed); err != nil {
+				t.Fatal(err)
+			}
+		}
+		sets, err := s.SecretSets(ctx, "prod", "app")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, set := range sets {
+			got = append(got, fmt.Sprintf("%d: %s", set.Version, set.Sealed))
+		}
+		slices.Sort(got)
+		if want := []string{"1: L2 serial 1", "2: version 2", "3: L1 serial 3"}; !slices.Equal(got, want) {
+			t.Fatalf("the secret sets of app@prod: %q, want %q", got, want)
+		}
+	})
+}

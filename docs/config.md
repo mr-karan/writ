@@ -172,6 +172,7 @@ env "prod" {
 
 - `identity` is the lowercase name of the Git host or identity provider that the user ids in the issuer's tokens come from, such as the name of a `forge` block. Issuers of one Git host share it. See [Who a person is](serve.md#who-a-person-is).
 - An issuer of kind `people` is the identity provider people sign in to the control UI with. It also takes `client_id`, `client_secret_file`, the file that has the client secret, and `groups`: `"userinfo"` reads the groups claim from the userinfo endpoint, and `"id_token"`, the default, from the ID token.
+- The application whose id is `client_id` lists `URL/ui/callback` as a redirect URI for the control UI. For `writ login` through a browser, it also lists `http://127.0.0.1/callback`, which `writ login` needs when the identity provider has no device flow, as on GitLab.com. [Set up writ login](sign-in.md#set-up-writ-login) explains both.
 
 ### env
 
