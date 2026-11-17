@@ -40,6 +40,9 @@ const (
 	gateBinEnv   = "WRIT_TOFU_GATE_BIN"
 	gateRootEnv  = "WRIT_TOFU_GATE_ROOT"
 	gateHoldEnv  = "WRIT_TOFU_GATE_HOLD"
+	// gateTFLockEnv holds the lock Fill returned for FromTerraform of
+	// testdata/terraform.lock.hcl.
+	gateTFLockEnv = "WRIT_TOFU_GATE_TF_LOCK"
 )
 
 // runUser is a uid that the namespace maps and nothing else uses, as a
@@ -72,6 +75,20 @@ func TestGate(t *testing.T) {
 	if _, err := r.Plan(context.Background(), stack(t, providersTF)); err != nil {
 		t.Fatalf("fill the plugin cache: %v", stepText(err))
 	}
+	// Fill of a lock that Terraform wrote needs OpenTofu's registry, which
+	// the namespaces do not reach, to record the hashes of its builds.
+	tfLock, err := os.ReadFile("testdata/terraform.lock.hcl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, _, err := FromTerraform(tfLock, func(string) bool { return false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	filled, err := r.Fill(context.Background(), moved)
+	if err != nil {
+		t.Fatalf("fill the plugin cache from a lock that Terraform wrote: %v", stepText(err))
+	}
 
 	// The run's uid can read nothing of this user's, so its copy of the
 	// cache goes where any user may read it, as a server's cache must be.
@@ -93,7 +110,7 @@ func TestGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := exec.Command("unshare", append(slices.Clone(namespaceArgs), self, "-test.run=^TestGate$", "-test.v", "-test.count=1", "-test.timeout=10m")...)
-	cmd.Env = append(os.Environ(), gateChildEnv+"=1", gateCacheEnv+"="+shared, gateBinEnv+"="+bin, gateRootEnv+"="+t.TempDir(), gateHoldEnv+"="+hold)
+	cmd.Env = append(os.Environ(), gateChildEnv+"=1", gateCacheEnv+"="+shared, gateBinEnv+"="+bin, gateRootEnv+"="+t.TempDir(), gateHoldEnv+"="+hold, gateTFLockEnv+"="+string(filled))
 	out, err := cmd.CombinedOutput()
 	t.Logf("in the namespaces:\n%s", out)
 	if err != nil || !strings.Contains(string(out), "--- PASS: TestGate") {
@@ -188,6 +205,57 @@ func gateChild(t *testing.T) {
 				want = map[string]string{"random_pet.p": "no-op", "tls_private_key.k": "no-op", "local_file.f": "create"}
 				if got := actions(t, again.JSON); !maps.Equal(got, want) {
 					t.Fatalf("the plan after the apply: %v, want %v", got, want)
+				}
+			})
+		}
+	})
+
+	t.Run("a stack whose lock file Terraform wrote plans and applies with the lock Fill returned", func(t *testing.T) {
+		tfLock, err := os.ReadFile("testdata/terraform.lock.hcl")
+		if err != nil {
+			t.Fatal(err)
+		}
+		filled := []byte(os.Getenv(gateTFLockEnv))
+		ps, err := LockedProviders(filled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range ps {
+			if !strings.HasPrefix(p.Source, "registry.opentofu.org/hashicorp/") || !slices.ContainsFunc(p.Hashes, func(h string) bool { return strings.HasPrefix(h, "h1:") }) {
+				t.Fatalf("Fill returned %s with hashes %v, want OpenTofu's registry and an h1: hash of the cached package", p.Source, p.Hashes)
+			}
+			if slices.ContainsFunc(p.Hashes, func(h string) bool { return bytes.Contains(tfLock, []byte(h)) }) {
+				t.Fatalf("Fill returned %s with a hash of Terraform's build: %v", p.Source, p.Hashes)
+			}
+		}
+		for _, u := range users {
+			t.Run(u.name, func(t *testing.T) {
+				state := newStateServer(t)
+				s := stack(t, mainTF, state.env())
+				s.Files.(fstest.MapFS)[LockFile] = &fstest.MapFile{Data: tfLock}
+				s.User = u.user
+				// tofu rewrites the committed lock and drops its hashes, so
+				// it would download the providers again, which it cannot
+				// here; with the registry, the read-only lock refuses it.
+				if _, err := r.Plan(ctx, s); err == nil || !strings.Contains(stepText(err), "automatically rewrote") {
+					t.Fatalf("a plan with the lock file Terraform wrote: %v, want tofu's refusal of it", stepText(err))
+				}
+				s.Lock = filled
+				p, err := r.Plan(ctx, s)
+				if err != nil {
+					t.Fatalf("plan: %v", stepText(err))
+				}
+				want := map[string]string{"random_pet.p": "create", "tls_private_key.k": "create", "local_file.f": "create"}
+				if got := actions(t, p.JSON); !maps.Equal(got, want) {
+					t.Fatalf("the plan's changes: %v, want %v", got, want)
+				}
+				// The saved plan records the lock, and tofu applies it only
+				// with the same one.
+				if _, err := r.Apply(ctx, s, p.File); err != nil {
+					t.Fatalf("apply: %v", stepText(err))
+				}
+				if !bytes.Contains(state.get(), []byte(`registry.opentofu.org/hashicorp/random`)) {
+					t.Fatalf("the apply wrote no state of OpenTofu's random:\n%s", state.get())
 				}
 			})
 		}
@@ -311,7 +379,7 @@ func gateChild(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := fr.Fill(ctx, lock); err != nil {
+		if _, err := fr.Fill(ctx, lock); err != nil {
 			t.Fatalf("fill: %v", stepText(err))
 		}
 		if _, err := fr.Plan(ctx, s); err != nil {

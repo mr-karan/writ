@@ -37,6 +37,7 @@ One task each, step by step.
 - [Set up GitLab CI](set-up-gitlab-ci.md): the plan, approve, and apply jobs.
 - [Approve and apply a plan](apply.md): by id, after a merge, and with an override.
 - [Adopt a state](adopt-state.md): bring in a state Writ didn't write.
+- [Migrate from Terraform](migrate-from-terraform.md): plan a repository whose stacks Terraform ran.
 - [Write and test a policy](write-a-policy.md): Rego, `conftest`, and the examples.
 - [Import many objects](import-bulk.md): write code for objects you already run, in one pass.
 - [Use Writ with an agent](agents.md): the skill `writ agent init` installs, and `writ mcp`.

@@ -12,6 +12,7 @@ import (
 	"github.com/mr-karan/writ/internal/forge"
 	"github.com/mr-karan/writ/internal/forge/forgetest"
 	"github.com/mr-karan/writ/internal/repo"
+	"github.com/mr-karan/writ/internal/tofu"
 )
 
 const tofuLock = `provider "registry.opentofu.org/hashicorp/random" {
@@ -153,6 +154,70 @@ func TestTofuSources(t *testing.T) {
 		}
 		if other.Digest == app.Digest || same.Digest != other.Digest {
 			t.Fatalf("digests: %s, after a module edit %s, after an edit of an uncalled module %s", app.Digest, other.Digest, same.Digest)
+		}
+	})
+
+	t.Run("a lock file that Terraform wrote", func(t *testing.T) {
+		tfLock := strings.ReplaceAll(tofuLock, "registry.opentofu.org", "registry.terraform.io") +
+			"\nprovider \"registry.terraform.io/carlpett/sops\" {\n  version = \"1.1.1\"\n  hashes  = [\"h1:ghi=\"]\n}\n"
+		for _, tc := range []struct {
+			name, code, err string
+			lock            string
+			moved           []tofu.Moved
+		}{
+			{
+				name: "moves the providers the code names with no host",
+				code: "terraform {\n  required_providers {\n    sops = { source = \"carlpett/sops\" }\n  }\n}\n",
+				lock: "provider \"registry.opentofu.org/carlpett/sops\" {\n  version = \"1.1.1\"\n  hashes = [\n    \"h1:ghi=\",\n  ]\n}\n\n" +
+					"provider \"registry.opentofu.org/hashicorp/random\" {\n  version = \"3.9.1\"\n}\n\n" +
+					"provider \"registry.opentofu.org/hashicorp/tls\" {\n  version = \"4.4.2\"\n}\n\n",
+				moved: []tofu.Moved{
+					{From: "registry.terraform.io/carlpett/sops", To: "registry.opentofu.org/carlpett/sops"},
+					{From: "registry.terraform.io/hashicorp/random", To: "registry.opentofu.org/hashicorp/random", Rehashed: true},
+					{From: "registry.terraform.io/hashicorp/tls", To: "registry.opentofu.org/hashicorp/tls", Rehashed: true},
+				},
+			},
+			{
+				name: "keeps a provider a module names by Terraform's registry, in any case",
+				code: "module \"m\" {\n  source = \"./m\"\n}\n",
+				lock: "provider \"registry.opentofu.org/hashicorp/random\" {\n  version = \"3.9.1\"\n}\n\n" +
+					"provider \"registry.opentofu.org/hashicorp/tls\" {\n  version = \"4.4.2\"\n}\n\n" +
+					"provider \"registry.terraform.io/carlpett/sops\" {\n  version = \"1.1.1\"\n  hashes = [\n    \"h1:ghi=\",\n  ]\n}\n\n",
+				moved: []tofu.Moved{
+					{From: "registry.terraform.io/hashicorp/random", To: "registry.opentofu.org/hashicorp/random", Rehashed: true},
+					{From: "registry.terraform.io/hashicorp/tls", To: "registry.opentofu.org/hashicorp/tls", Rehashed: true},
+				},
+			},
+			{
+				name: "refuses a hashicorp/ provider named by Terraform's registry",
+				code: "terraform {\n  required_providers {\n    random = { source = \"registry.terraform.io/hashicorp/random\", version = \"3.9.1\" }\n  }\n}\n",
+				err:  "app/.terraform.lock.hcl: the code names provider registry.terraform.io/hashicorp/random by Terraform's registry",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				files := tofuRepo()
+				files["infra/app/.terraform.lock.hcl"] = forgetest.File{Content: tfLock}
+				files["infra/app/versions.tf"] = forgetest.File{Content: tc.code}
+				// m names sops by Terraform's registry, and only the second
+				// case calls it.
+				files["infra/app/m/main.tf"] = forgetest.File{Content: "terraform {\n  required_providers {\n    sops = { source = \"Registry.Terraform.io/CarlPett/sops\" }\n  }\n}\n"}
+				ts, err := readTofu(t, files).sources("app")
+				if tc.err != "" {
+					if err == nil || !strings.Contains(err.Error(), tc.err) {
+						t.Fatalf("TofuSources: %v, want an error that says %q", err, tc.err)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(ts.Lock) != tc.lock || !slices.Equal(ts.Moved, tc.moved) {
+					t.Fatalf("the lock:\n%s\nwant:\n%s\nmoved %+v, want %+v", ts.Lock, tc.lock, ts.Moved, tc.moved)
+				}
+				if string(ts.Files["app/.terraform.lock.hcl"]) != tfLock {
+					t.Fatalf("the stack's files hold a lock file other than the committed one:\n%s", ts.Files["app/.terraform.lock.hcl"])
+				}
+			})
 		}
 	})
 

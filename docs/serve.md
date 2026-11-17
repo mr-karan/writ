@@ -29,7 +29,7 @@ When `writ serve` plans your OpenTofu stack, it:
 
 1. Gathers, at the commit, every file in the stack's directory and in the local modules it calls, whose `source` starts with `./` or `../`. [What a stack can contain](#what-a-stack-can-contain) lists the checks on those files.
 2. Takes the stack's backend from its `terraform` block. If you write `backend "http" {}`, `writ serve` keeps the state. That means it serves the http backend under `/v1/tfstate/`, and gives each run the address and a token that reads that stack's state and nothing else. That token ends when the run ends. If you write `backend "s3"`, the state stays in the stack's own bucket, and the run reaches it with the environment's role, as [Stacks on S3](#stacks-on-s3) explains. Writ refuses a stack with no backend, an http block with anything in it, a `cloud` block, or any other backend, and says which backend it found.
-3. Installs the providers that the lock file pins into `tofu.plugin_cache`. This runs as `writ serve`'s own user, from a configuration it writes itself, so none of your stack's code runs as that user. This init sees the [filesystem view](#what-a-run-can-see) below, with the cache writable. A provider uid can read the cache but can't write it.
+3. Installs the providers that the lock file pins into `tofu.plugin_cache`. If Terraform wrote your lock file, the run uses a copy moved to OpenTofu's registry, as [Lock files that Terraform wrote](#lock-files-that-terraform-wrote) explains. This runs as `writ serve`'s own user, from a configuration it writes itself, so none of your stack's code runs as that user. This init sees the [filesystem view](#what-a-run-can-see) below, with the cache writable. A provider uid can read the cache but can't write it.
 4. Runs `tofu init -lockfile=readonly`, `tofu plan -lock=false`, and `tofu show -json` as one of `provider_uids`. Because `init` fetches every module and provider the commit refers to, it gets the backend's address and no cloud credential. Both `plan` and `show` also get the environment's `provider_env` and its plan role, and no apply role. If your stack is on S3, `init` runs twice. First `tofu init -backend=false` fetches the modules and providers with no credential. Then `tofu init -get=false`, which fetches nothing, configures the backend with `provider_env` and the plan role, because it needs them to list the bucket.
 5. Masks the plan's JSON and its events. Writ keeps only the masked plan document, the text made from it, and the saved plan, sealed under the environment's key. You can't fetch the saved plan from any API route. tofu's raw output never leaves the run's directory, which is deleted.
 
@@ -56,6 +56,27 @@ To catch a disguised source, `writ serve` decodes percent escapes in the source 
 Your stacks have size limits as well. Writ refuses a stack, and says which file, when one of its `.tf`, `.tofu`, `.tfvars`, or lock files is over 1 MiB, any other file is over 16 MiB, or its files and its modules' files are over 2,000 files or 64 MiB. Writ counts every file, whether an earlier plan of the commit read it or not.
 
 These limits leave room for a function's archive or another file your code reads, and they keep what one plan holds in memory and writes to its directory small. If a file is oversized, Writ refuses only the stacks that contain it, so discovery and the other stacks go on. OpenTofu code counts against these limits for each stack that contains it, and against no limit for the commit. So code elsewhere in your repository doesn't refuse a stack.
+
+### Lock files that Terraform wrote
+
+You can plan a stack whose `.terraform.lock.hcl` Terraform wrote, and you don't have to change your repository. Terraform pins each provider at `registry.terraform.io`. OpenTofu resolves a source with no host, such as `hashicorp/aws`, to `registry.opentofu.org`, so `tofu init -lockfile=readonly` refuses Terraform's lock file.
+
+So for each run, `writ serve` writes its own copy of the lock file. In that copy, each `registry.terraform.io` provider moves to `registry.opentofu.org` at the same version. The commit's lock file stays as it is, and so does the stack's source digest. Writ never writes to your repository.
+
+The hashes depend on the provider's namespace:
+
+- A provider outside `hashicorp/`, such as `carlpett/sops`, keeps its hashes. OpenTofu's registry serves its author's release archives, the same ones Terraform's registry serves, and `tofu init` refuses an archive that doesn't match a hash.
+- A `hashicorp/` provider, such as `hashicorp/aws`, loses its hashes. OpenTofu's registry serves OpenTofu's own builds of these, which aren't byte-for-byte the same, so Terraform's hashes can't match. `writ serve` installs OpenTofu's build, `tofu init` checks the signature that OpenTofu's registry serves with it, and `writ serve` records that build's hashes. Every run of that version checks the cache against them, and a plan and its apply use the same ones.
+
+For a `hashicorp/` provider, your trust moves from the hashes you committed to the signature of OpenTofu's registry. To pin OpenTofu's hashes in your repository, run `tofu init` in the stack and commit the lock file it writes, as [Migrate from Terraform](migrate-from-terraform.md) explains.
+
+The plan's text says which providers moved, with a line such as `Warning: .terraform.lock.hcl pins registry.terraform.io/hashicorp/random, as Terraform writes it; the run used registry.opentofu.org/hashicorp/random at the same version, checked against the hashes of OpenTofu's build, which OpenTofu's registry signs`.
+
+Limits:
+
+- If your code sets `source = "registry.terraform.io/hashicorp/NAME"`, Writ refuses the stack, because OpenTofu refuses such a lock entry with the lock file read-only. Write `source = "hashicorp/NAME"` instead. A provider outside `hashicorp/` that your code points to at `registry.terraform.io` stays there.
+- Writ reads `source` in the stack's code and its local modules. A remote module that sets a `registry.terraform.io` source isn't read.
+- `writ serve` keeps the recorded hashes in memory. After a restart, the first run of each `hashicorp/` provider version downloads it again from OpenTofu's registry.
 
 ### Policy and the mask
 

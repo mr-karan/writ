@@ -74,7 +74,7 @@ func (r *recordedTofu) read(name string) []byte {
 	return b
 }
 
-func (r *recordedTofu) Fill(context.Context, []byte) error { return nil }
+func (r *recordedTofu) Fill(_ context.Context, lock []byte) ([]byte, error) { return lock, nil }
 
 func (r *recordedTofu) Plan(ctx context.Context, _ tofu.Stack) (tofu.Plan, error) {
 	r.mu.Lock()

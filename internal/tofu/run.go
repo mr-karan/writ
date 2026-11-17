@@ -341,6 +341,11 @@ func (r *Runner) newScratch(s Stack) (*scratch, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tofu: read the stack's files: %w", err)
 	}
+	if s.Lock != nil {
+		lock := path.Join(s.Dir, LockFile)
+		files = slices.DeleteFunc(files, func(f file) bool { return f.name == lock })
+		files = append(files, file{name: lock, data: s.Lock, mode: 0o600})
+	}
 	sc, err := r.makeScratch(dirs, files, s.Dir, s.Env, s.User)
 	if err != nil {
 		return nil, err
@@ -396,13 +401,14 @@ func (sc *scratch) remove() {
 	_ = asUser(sc.user, func() error { return sc.root.RemoveAll(sc.name) })
 }
 
-// readPlan reads the saved plan, refusing one over max bytes.
-func (sc *scratch) readPlan(max int) ([]byte, error) {
+// read reads the file name of the stack's directory, as the run's user,
+// refusing one over max bytes.
+func (sc *scratch) read(name string, max int) ([]byte, error) {
 	var data []byte
 	err := asUser(sc.user, func() error {
-		// O_NONBLOCK keeps an open of a FIFO the run left in the plan's
+		// O_NONBLOCK keeps an open of a FIFO the run left in the file's
 		// place from blocking; only a regular file is read.
-		f, err := sc.run.OpenFile(path.Join(sc.work, planFile), os.O_RDONLY|syscall.O_NONBLOCK, 0)
+		f, err := sc.run.OpenFile(path.Join(sc.work, name), os.O_RDONLY|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return err
 		}
@@ -410,16 +416,16 @@ func (sc *scratch) readPlan(max int) ([]byte, error) {
 		if fi, err := f.Stat(); err != nil {
 			return err
 		} else if !fi.Mode().IsRegular() {
-			return fmt.Errorf("%s is a %s, not a file", planFile, fi.Mode().Type())
+			return fmt.Errorf("%s is a %s, not a file", name, fi.Mode().Type())
 		}
 		data, err = io.ReadAll(io.LimitReader(f, int64(max)+1))
 		return err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("tofu: read the saved plan: %w", err)
+		return nil, fmt.Errorf("tofu: read %s: %w", name, err)
 	}
 	if len(data) > max {
-		return nil, fmt.Errorf("tofu: the saved plan: %w", ErrOutputLimit)
+		return nil, fmt.Errorf("tofu: %s: %w", name, ErrOutputLimit)
 	}
 	return data, nil
 }

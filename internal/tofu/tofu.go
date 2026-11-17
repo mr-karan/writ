@@ -74,7 +74,7 @@ type Options struct {
 }
 
 // Runner starts tofu. It holds no state between runs but the open
-// scratch root, which Close releases.
+// scratch root, which Close releases, and the hashes Fill recorded.
 type Runner struct {
 	opts Options
 	root *os.Root
@@ -82,6 +82,10 @@ type Runner struct {
 	// cache is held by Fill to write the plugin cache, and by each run's
 	// init to read it.
 	cache sync.RWMutex
+	// hashes are the hashes Fill recorded of a provider version that a
+	// lock pinned with none, by source and version. Fill holds cache to
+	// read or write them.
+	hashes map[string][]string
 }
 
 // New checks opts, that the scratch root is safe from other users, that
@@ -164,6 +168,9 @@ type Stack struct {
 	Files fs.FS
 	// Dir is the stack's directory within Files, "." for its root.
 	Dir string
+	// Lock, when set, is the lock file that Fill returned, which the run's
+	// init reads in place of the one in Files.
+	Lock []byte
 	// Env is tofu's environment for every step, such as PATH and the
 	// state backend's address. Nothing else comes from writ's own
 	// environment. Each step adds tofu's and git's settings, and puts
@@ -234,7 +241,7 @@ func (r *Runner) Plan(ctx context.Context, s Stack) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	file, err := sc.readPlan(r.opts.MaxOutput)
+	file, err := sc.read(planFile, r.opts.MaxOutput)
 	if err != nil {
 		return Plan{}, err
 	}

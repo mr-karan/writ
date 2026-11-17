@@ -253,10 +253,11 @@ func (s *Server) refreshS3(ctx context.Context, st control.S3Stack) error {
 	}
 	runEnv, creds, secrets := s.tofuEnv(launch.Env)
 	m := mask.New(secrets)
-	if err := s.tofuRunner.Fill(ctx, ts.Lock); err != nil {
+	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
+	if err != nil {
 		return fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
 	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Env: runEnv, Creds: creds, StateCreds: true, User: &tofu.User{UID: launch.User.UID, GID: launch.User.GID}}
+	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Lock: lock, Env: runEnv, Creds: creds, StateCreds: true, User: &tofu.User{UID: launch.User.UID, GID: launch.User.GID}}
 	state, err := s.tofuRunner.Pull(ctx, stk)
 	if err != nil {
 		return fmt.Errorf("%w%s", err, stepLines(m, err))

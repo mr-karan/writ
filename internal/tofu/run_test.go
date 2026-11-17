@@ -162,6 +162,35 @@ func fakeTofuMain(behaviour string, args []string) int {
 			seen := append(main, strings.Join(args, " ")+"\n"...)
 			err = os.WriteFile(filepath.Join(os.Getenv("TF_PLUGIN_CACHE_DIR"), "seen"), seen, 0o666)
 		}
+	case "fill-record", "fill-bump":
+		// The fake logs each init's flags, and an init that may write the
+		// lock file records a hash of each provider that has none, as
+		// tofu does. fill-bump writes another version too, which tofu
+		// does not.
+		if cmd != "init" {
+			return 3
+		}
+		if err = appendFile(filepath.Join(os.Getenv("TF_PLUGIN_CACHE_DIR"), "seen"), strings.Join(args, " ")+"\n"); err != nil || slices.Contains(args, "-lockfile=readonly") {
+			break
+		}
+		var lock []byte
+		var ps []Provider
+		if lock, err = os.ReadFile(LockFile); err == nil {
+			ps, err = LockedProviders(lock)
+		}
+		for i := range ps {
+			if len(ps[i].Hashes) == 0 {
+				ps[i].Hashes = []string{"zh:" + strings.Repeat("a", 64)}
+			}
+			if behaviour == "fill-bump" {
+				ps[i].Version = "9.9.9"
+			}
+		}
+		if err == nil {
+			if lock, err = formatLock(ps); err == nil {
+				err = os.WriteFile(LockFile, lock, 0o600)
+			}
+		}
 	default:
 		fmt.Fprintln(os.Stderr, "no fake behaviour", behaviour)
 		return 2
@@ -171,6 +200,18 @@ func fakeTofuMain(behaviour string, args []string) int {
 		return 1
 	}
 	return 0
+}
+
+func appendFile(name, text string) error {
+	f, err := os.OpenFile(name, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(text); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 const (
