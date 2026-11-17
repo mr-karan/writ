@@ -3,7 +3,7 @@ import landing from '@/content/landing.json';
 import { Transcript } from '@/lib/code';
 import { how } from '@/lib/landing';
 import { Flow } from './flow';
-import { Icon } from './icons';
+import { Limit } from './limit';
 import { Term } from './term';
 
 export function HowItWorks() {
@@ -11,7 +11,7 @@ export function HowItWorks() {
   return (
     <section id="how" aria-labelledby="h-how">
       <div className="wrap">
-        <div className="sec-head center">
+        <div className="sec-head">
           <h2 id="h-how">{how.title}</h2>
           <p className="lede">{how.lede}</p>
         </div>
@@ -27,15 +27,10 @@ export function HowItWorks() {
               <Transcript text={texts[i]} wrap={i === 1} label={st.output} prompts={i === 1 ? ['alice', 'bob'] : []} />
             </Term>
           ))}
+          caption={<Inline text={how.caption} />}
         >
-          <p className="refuse">
-            <Icon name="cross" size={16} />
-            <span>{how.refusal}</span>
-          </p>
+          <Limit>{how.refusal}</Limit>
         </Flow>
-        <p className="caption">
-          <Inline text={how.caption} />
-        </p>
       </div>
     </section>
   );

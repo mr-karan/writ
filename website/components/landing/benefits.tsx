@@ -1,16 +1,33 @@
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { Inline } from '@/components/inline';
 import landing from '@/content/landing.json';
 import { Transcript } from '@/lib/code';
 import { benefits } from '@/lib/landing';
+import { Limit } from './limit';
 import { Shot } from './shot';
 import { Term } from './term';
 
-function More({ link }: { link: { text: string; href: string } }) {
+/** One claim: what it is, its limit, where the docs go on, and the evidence beside it. */
+function Row({ title, text, limit, link, children }: { title: string; text: string; limit?: string; link: { text: string; href: string }; children: ReactNode }) {
   return (
-    <Link className="more" href={link.href}>
-      {link.text}
-    </Link>
+    <article className="row">
+      <div className="row-text">
+        <h3>{title}</h3>
+        <p>
+          <Inline text={text} />
+        </p>
+        {limit && (
+          <Limit>
+            <Inline text={limit} />
+          </Limit>
+        )}
+        <Link className="more" href={link.href}>
+          {link.text}
+        </Link>
+      </div>
+      <div className="row-visual">{children}</div>
+    </article>
   );
 }
 
@@ -22,97 +39,63 @@ export function Benefits() {
         <div className="sec-head">
           <h2 id="h-benefits">{benefits.title}</h2>
         </div>
-        <div className="bento">
-          <article className="card b-wide">
-            <h3>{keys.title}</h3>
-            <p>{keys.text}</p>
-            <p className="limit">{keys.limit}</p>
-            <More link={keys.link} />
-            <div className="visual">
-              <table className="holds">
-                <thead>
-                  <tr>
-                    <th scope="col">Who</th>
-                    <th scope="col">Cloud credentials</th>
-                    <th scope="col">Your state</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {keys.holds.map((row) => (
-                    <tr key={row.who}>
-                      <th scope="row">{row.who}</th>
-                      <td className={row.yes ? 'yes' : 'no'}>{row.creds}</td>
-                      <td className={row.yes ? 'yes' : 'no'}>{row.state}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </article>
 
-          <article className="card b-wide">
-            <h3>{secrets.title}</h3>
-            <p>{secrets.text}</p>
-            <p className="limit">{secrets.limit}</p>
-            <More link={secrets.link} />
-            <div className="visual">
-              <div className="crop" tabIndex={0} role="region" aria-label="A replaced resource in a plan, screenshot">
-                <Shot name="secret" alt={secrets.alt} />
-              </div>
-            </div>
-          </article>
+        <Row {...keys}>
+          <table className="holds">
+            <thead>
+              <tr>
+                <th scope="col">Who</th>
+                <th scope="col">Cloud credentials</th>
+                <th scope="col">Your state</th>
+              </tr>
+            </thead>
+            <tbody>
+              {keys.holds.map((row) => (
+                <tr key={row.who}>
+                  <th scope="row">{row.who}</th>
+                  <td className={row.yes ? 'yes' : 'no'}>{row.creds}</td>
+                  <td className={row.yes ? 'yes' : 'no'}>{row.state}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Row>
 
-          <article className="card b-two">
-            <h3>{drift.title}</h3>
-            <p>{drift.text}</p>
-            <p className="limit">{drift.limit}</p>
-            <More link={drift.link} />
-            <div className="visual">
-              <div className="crop" tabIndex={0} role="region" aria-label="A stack's drift check, screenshot">
-                <Shot name="drift" alt={drift.alt} />
-              </div>
-            </div>
-          </article>
+        <Row {...secrets}>
+          <div className="crop" tabIndex={0} role="region" aria-label="A replaced resource in a plan, screenshot">
+            <Shot name="secret" alt={secrets.alt} />
+          </div>
+        </Row>
 
-          <article className="card b-third">
-            <h3>{policy.title}</h3>
-            <p>{policy.text}</p>
-            <p className="limit">
-              <Inline text={policy.limit} />
-            </p>
-            <More link={policy.link} />
-            <div className="visual">
-              <Term small>
-                <Transcript text={landing.policyDeny} wrap label="Output of writ plan on a commit that a policy denies" />
-              </Term>
-              <p className="caption">
-                <Inline text={policy.caption} />
-              </p>
-            </div>
-          </article>
+        <Row {...drift}>
+          <div className="crop" tabIndex={0} role="region" aria-label="A stack's drift check, screenshot">
+            <Shot name="drift" alt={drift.alt} />
+          </div>
+        </Row>
 
-          <article className="card b-full">
-            <div>
-              <h3>{agents.title}</h3>
-              <p>
-                <Inline text={agents.text} />
-              </p>
-              <More link={agents.link} />
-            </div>
-            <div className="visual">
-              <Term small>
-                <Transcript text={landing.mcpAdd} wrap label="Output of claude mcp add for writ mcp" />
-              </Term>
-              <p className="caption">{agents.caption}</p>
-            </div>
-          </article>
-        </div>
+        <Row {...policy}>
+          <Term small>
+            <Transcript text={landing.policyDeny} wrap label="Output of writ plan on a commit that a policy denies" />
+          </Term>
+          <p className="caption">
+            <Inline text={policy.caption} />
+          </p>
+        </Row>
+
+        <Row {...agents}>
+          <Term small>
+            <Transcript text={landing.mcpAdd} wrap label="Output of claude mcp add for writ mcp" />
+          </Term>
+          <p className="caption">{agents.caption}</p>
+        </Row>
 
         <div className="also">
           {also.map((item) => (
             <div key={item.title}>
-              <b>{item.title}</b>
-              <Inline text={item.text} />
+              <h3>{item.title}</h3>
+              <p>
+                <Inline text={item.text} />
+              </p>
             </div>
           ))}
         </div>

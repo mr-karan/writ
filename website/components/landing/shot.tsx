@@ -42,16 +42,11 @@ export function Shot({ name, alt, eager = false }: { name: string; alt: string; 
   );
 }
 
-/** A plain browser frame with the example address of the page it shows. */
+/** A frame with the example address of the page it shows: the control UI is on your own host. */
 export function Frame({ path, children, className = '' }: { path: string; children: ReactNode; className?: string }) {
   return (
     <div className={`frame ${className}`}>
       <div className="frame-bar">
-        <span className="dots" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
         <span className="url">writ.example.com{path}</span>
       </div>
       {children}

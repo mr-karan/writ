@@ -1,14 +1,13 @@
 import { Inline } from '@/components/inline';
 import { what } from '@/lib/landing';
-import { Icon } from './icons';
 
 /** What Writ is: who talks to it, what it does, and what it alone can reach. */
 export function What() {
   const { diagram } = what;
   return (
-    <section id="what" className="what" aria-labelledby="h-what">
+    <section id="what" aria-labelledby="h-what">
       <div className="wrap">
-        <div className="sec-head center">
+        <div className="sec-head">
           <h2 id="h-what">{what.title}</h2>
           <p className="lede">
             <Inline text={what.lede} />
@@ -29,10 +28,7 @@ export function What() {
             <b>{diagram.center.name}</b>
             <ul>
               {diagram.center.items.map((item) => (
-                <li key={item}>
-                  <Icon name="check" size={15} />
-                  {item}
-                </li>
+                <li key={item}>{item}</li>
               ))}
             </ul>
           </div>
@@ -46,13 +42,10 @@ export function What() {
         </div>
 
         <h3 className="sub">{what.without}</h3>
-        <div className="cards3">
+        <div className="cols3">
           {what.cards.map((card) => (
-            <div className="card" key={card.title}>
-              <div className="ico">
-                <Icon name={card.icon} />
-              </div>
-              <h3>{card.title}</h3>
+            <div key={card.title}>
+              <h4>{card.title}</h4>
               <p>
                 <Inline text={card.text} />
               </p>

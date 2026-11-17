@@ -1,4 +1,4 @@
-import { DocsBody, DocsDescription, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/docs/page';
+import { DocsBody, DocsPage, DocsTitle } from 'fumadocs-ui/layouts/docs/page';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getMDXComponents } from '@/components/mdx';
@@ -30,11 +30,10 @@ export default async function Page({ params }: Props) {
   return (
     <DocsPage toc={page.data.toc}>
       <DocsTitle id="main-content" tabIndex={-1} className="scroll-mt-24 outline-none">{page.data.title}</DocsTitle>
-      <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>
         <MDX components={getMDXComponents()} />
       </DocsBody>
-      <p className="mt-10 border-t border-rule pt-4 text-sm text-ink-2">
+      <p className="mt-10 border-t border-rule pt-4 text-sm text-pretty text-ink-2">
         This page is built from{' '}
         {files.map((file, i) => (
           <span key={file}>

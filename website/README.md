@@ -55,4 +55,4 @@ The screenshots in `public/ui/` are real captures of the control UI. After the U
 
 ## Design
 
-`DESIGN.md` records the visual direction, the landing page's figures and motion, the tokens, and the audit that was run on the site.
+`PRODUCT.md` records who the site is for and what it must keep true. `DESIGN.md` records the visual system: the tokens, the type, the layout, each component, and the rules a change has to keep. Both follow the formats of [Impeccable](https://github.com/pbakaus/impeccable), whose detector found nothing on the built pages on 2026-11-17: `npx impeccable detect http://127.0.0.1:4318/` against a served `out/`.
