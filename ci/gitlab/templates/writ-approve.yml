@@ -1,0 +1,33 @@
+# GitLab CI/CD component: a manual job in each merge request pipeline that
+# approves every plan the pipeline's plan jobs made. It blocks the
+# pipeline until someone runs it, so with "Pipelines must succeed" the
+# merge request cannot merge before a plan has its approvals. writ serve
+# refuses the approval of the person who started the pipeline, and passes
+# the job once each plan has the approvals its rules need, whoever gave
+# them. A sketch: no GitLab pipeline has run it. See ci/gitlab/README.md.
+spec:
+  inputs:
+    server:
+      description: The URL of writ serve. It is also the audience of the job's token.
+    image:
+      description: An image whose PATH holds the writ binary.
+    stage:
+      description: The stage of the approve job, after the plan jobs.
+      default: writ-approve
+---
+writ-approve:
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  id_tokens:
+    WRIT_ID_TOKEN:
+      aud: $[[ inputs.server ]]
+  variables:
+    GIT_STRATEGY: none
+    WRIT_SERVER: $[[ inputs.server ]]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+      allow_failure: false
+  script:
+    # The token names the pipeline and the person who ran the job.
+    - writ approve --remote --pipeline

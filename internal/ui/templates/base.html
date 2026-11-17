@@ -1,0 +1,230 @@
+{{define "head"}}<!doctype html>
+<html lang="en"{{if ne .Theme "system"}} data-theme="{{.Theme}}"{{end}}>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{.Title}} · writ serve</title>
+<link rel="stylesheet" href="{{asset "oat.min.css"}}">
+<link rel="stylesheet" href="{{asset "writ.css"}}">
+<script type="module" src="{{asset "writ.js"}}"></script>
+{{- if .Refresh}}
+<meta http-equiv="refresh" content="{{.Refresh}}">
+{{- end}}
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="app{{if not .Session}} app-bare{{end}}">
+{{- if .Session}}
+<aside class="side">
+<div class="side-head">{{template "brand"}}</div>
+<details class="menu">
+<summary><span>Menu</span></summary>
+<div class="menu-body">
+<nav class="sections" aria-label="Sections">
+<ul>
+{{- range $s := sections}}
+<li><a href="{{$s.Href}}"{{if eq $.Section $s.Key}} aria-current="page"{{end}}>{{template "icon" $s.Key}}<span class="sec-name">{{$s.Name}}</span>{{with $.Shell}}{{with index .Counts $s.Key}}{{if or .Fig.N .Fig.Floor}}<span class="count">{{template "n" .Fig}}<span class="sr-only"> {{.What}}</span></span>{{end}}{{end}}{{end}}</a></li>
+{{- end}}
+</ul>
+</nav>
+{{- with .Shell}}
+{{- if .Failed}}
+<p class="tree-note" role="status">writ serve could not read the environments.</p>
+{{- else}}
+<form class="find" method="get" action="{{.FindAction}}" role="search">
+<label for="find" class="sr-only">Filter stacks by name</label>
+<svg class="icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+<input id="find" name="find" type="search" value="{{.Find}}" placeholder="Filter stacks" autocomplete="off">
+{{- range .Keep}}
+<input type="hidden" name="{{index . 0}}" value="{{index . 1}}">
+{{- end}}
+</form>
+<nav class="tree" aria-labelledby="tree-h">
+<p class="tree-head" id="tree-h"><span>Environments</span> <span class="count">{{template "n" (exact (len .Envs))}}</span></p>
+{{- if .Find}}
+<p class="tree-note">{{template "n" .Matches}} {{if .Matches.Floor}}{{noun .Matches "listed stack matches" "listed stacks match"}}{{else}}{{noun .Matches "stack matches" "stacks match"}}{{end}} “{{.Find}}”. <a href="{{.FindClear}}">Clear the filter</a></p>
+{{- end}}
+<ul class="envs">
+{{- range .Envs}}
+<li><details open>
+<summary><span class="dot dot-{{.Tone}}" aria-hidden="true"></span><span class="t-name">{{.Name}}</span> <span class="t-end"><span class="t-note">{{template "note" .Note}}</span></span></summary>
+{{- if .Stacks}}
+<ul class="stacks">
+{{- range .Stacks}}
+<li><a href="{{link "/ui/stack" "stack" .Name "env" .Env}}"{{if .Current}} aria-current="page"{{end}}><span class="t-name">{{.Name}}</span> <span class="t-end"><span class="t-note">{{template "note" .Note}}</span><span class="dot dot-{{.Tone}}" aria-hidden="true"></span></span></a></li>
+{{- end}}
+</ul>
+{{- end}}
+{{- if .More.N}}
+<p class="tree-note">{{template "n" .More}} more with state, not listed.</p>
+{{- else if not .Stacks}}
+{{- with none "no-stack" .Count}}
+<p class="tree-note">{{.}}</p>
+{{- else}}
+<p class="tree-note">writ serve read only some plans here, so a stack a plan names may not be listed.</p>
+{{- end}}
+{{- end}}
+</details></li>
+{{- end}}
+</ul>
+{{- if .StacksMore}}<p class="tree-note">The tree shows the first 200 stacks with state.</p>{{end}}
+</nav>
+{{- with .Repos}}
+<p class="side-foot">{{if .Failed.N}}<span class="dot dot-bad" aria-hidden="true"></span><a href="/ui/repos">{{template "n" .Failed}} {{noun .Failed "repository poll" "repository polls"}} failed</a>{{else if .PolledAt}}<span class="dot dot-ok" aria-hidden="true"></span><span>Repositories checked <time datetime="{{.PolledAt}}">{{ago .PolledAt}}</time></span>{{else}}<span class="dot dot-none" aria-hidden="true"></span>{{with none "no-repo" .Count}}{{.}}{{else with none "no-poll"}}{{.}}{{end}}{{end}}</p>
+{{- end}}
+{{- end}}
+{{- end}}
+</div>
+</details>
+</aside>
+{{- end}}
+<div class="frame">
+<header class="top">
+{{- if .Session}}
+<nav class="crumbs" aria-label="Breadcrumb">
+<ol>
+{{- range .Crumbs}}{{if .Name}}
+<li>{{if .Href}}<a href="{{.Href}}">{{.Name}}</a>{{else}}<span aria-current="page">{{.Name}}</span>{{end}}</li>
+{{- end}}{{end}}
+</ol>
+</nav>
+<div class="top-end">
+<span class="loaded">Loaded <time datetime="{{.Now}}" data-loaded>{{clock .Now}}</time></span>
+<a class="who ref" href="/ui/whoami">{{.Session.Display}}</a>
+<form method="post" action="/ui/logout"><button type="submit" class="outline small">Sign out</button></form>
+</div>
+{{- else}}
+{{template "brand"}}
+{{- end}}
+</header>
+<main id="main" tabindex="-1">
+{{end}}
+
+{{define "brand"}}<a class="brand" href="/ui/"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16" focusable="false"><path d="M3 12 8 4l5 8"/></svg></span><span class="brand-name">Writ</span> <span class="brand-sub">serve</span></a>{{end}}
+
+{{define "icon"}}<svg class="icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+{{- if eq . "overview"}}<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>
+{{- else if eq . "runs"}}<path d="M5 3.5v9l7-4.5z"/>
+{{- else if eq . "plans"}}<path d="M4 2.5h5.5L12 5v8.5H4z"/><path d="M6.5 8h3M6.5 10.5h3"/>
+{{- else if eq . "approvals"}}<circle cx="8" cy="8" r="5.5"/><path d="m5.6 8 1.7 1.7 3.2-3.4"/>
+{{- else if eq . "repos"}}<circle cx="5" cy="3.8" r="1.4"/><circle cx="5" cy="12.2" r="1.4"/><circle cx="11" cy="5.5" r="1.4"/><path d="M5 5.2v5.6M11 6.9c0 2.3-6 1.6-6 3.9"/>
+{{- else if eq . "access"}}<circle cx="5.5" cy="10.5" r="2.5"/><path d="m7.3 8.7 5.2-5.2M10.6 5.4l1.6 1.6"/>
+{{- else}}<path d="M2.5 4.5h3m3 0h5M2.5 8h7m3 0h1M2.5 11.5h1.5m3 0h6"/><circle cx="7" cy="4.5" r="1.5"/><circle cx="11" cy="8" r="1.5"/><circle cx="5.5" cy="11.5" r="1.5"/>
+{{- end}}</svg>{{end}}
+
+{{define "n"}}<span class="n">{{.N}}{{if .Floor}}<span class="more">+</span><span class="sr-only"> or more</span>{{end}}</span>{{end}}
+
+{{define "counted"}}{{template "n" .N}} {{.Word}}{{end}}
+
+{{define "note"}}{{range $i, $p := .}}{{if $i}} · {{end}}{{with .N}}{{template "n" .}} {{end}}{{.Word}}{{end}}{{end}}
+
+{{define "chev"}}<svg class="chev" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="m6 4 4 4-4 4"/></svg>{{end}}
+
+{{define "foot"}}
+</main>
+<footer class="foot">
+{{- if .API}}
+<p><span class="label">API</span> {{range $i, $a := .API}}{{if $i}}, {{end}}<code>{{if not (hasMethod $a)}}GET {{end}}{{$a}}</code>{{end}}</p>
+{{- end}}
+{{- if .CLI}}
+<p><span class="label">CLI</span> <code>{{.CLI}}</code></p>
+{{- end}}
+{{- if and .Session .JSON}}
+<p><a href="{{.JSON}}">This page's main document as JSON</a></p>
+{{- end}}
+</footer>
+</div>
+</div>
+</body>
+</html>
+{{end}}
+
+{{define "at"}}<time datetime="{{.}}">{{when .}}</time>{{end}}
+
+{{define "time"}}{{if .}}<time datetime="{{.}}">{{when .}}</time>{{else}}<span class="muted">never</span>{{end}}{{end}}
+
+{{define "status"}}<span class="stamp{{with tone .}} stamp-{{.}}{{end}} status-{{.}}"><span class="dot" aria-hidden="true"></span>{{.}}</span>{{end}}
+
+{{define "risks"}}{{range .}}<span class="chip risk-{{.}}">{{.}}</span> {{else}}<span class="muted">none</span>{{end}}{{end}}
+
+{{define "steps"}}
+<ol class="steps" aria-label="Where this change is">
+{{- range .}}
+<li class="step step-{{.State}}"><span class="step-name">{{.Name}}</span> <span class="sr-only">{{.State}}</span> <span class="step-note">{{with .Given}}{{template "n" .}} {{end}}{{with .Need}}of {{template "n" .}}{{end}}{{.Note}}</span></li>
+{{- end}}
+</ol>
+{{end}}
+
+{{define "diags"}}
+{{- if .}}
+<ul class="notes">
+{{- range .}}
+<li class="note note-{{.Severity}}"><strong>{{.Severity}}</strong> <span class="class">{{.Class}}</span>: <span class="msg" data-field="diagnostics[].message">{{.Message}}</span></li>
+{{- end}}
+</ul>
+{{- end}}
+{{end}}
+
+{{define "plan-diags"}}
+{{- if .}}
+<ul class="notes">
+{{- range .}}
+<li class="note note-{{.Severity}}"><strong>{{.Severity}}</strong> <span class="class">{{.Class}}</span>{{if .File}} <code>{{.File}}:{{.Line}}:{{.Col}}</code>{{end}}: <span class="msg" data-field="document.diagnostics[].message">{{.Message}}</span>{{if .Fix}}<br><span class="fix">Fix: <span class="msg" data-field="document.diagnostics[].fix.message">{{.Fix.Message}}</span></span>{{end}}</li>
+{{- end}}
+</ul>
+{{- end}}
+{{end}}
+
+{{define "plan-table"}}
+<div class="scroll">
+<table class="list">
+<caption class="sr-only">{{.Caption}}</caption>
+<thead><tr><th scope="col">Status</th><th scope="col">Plan</th><th scope="col">Env</th><th scope="col">Stacks</th><th scope="col" class="num">Changes</th><th scope="col">Risks</th><th scope="col">By</th><th scope="col">Made</th><th scope="col">Expires</th></tr></thead>
+<tbody>
+{{- range .Plans}}{{$p := .}}
+<tr>
+<td data-label="Status">{{template "status" .Status}}</td>
+<td data-label="Plan"><a class="id" href="/ui/plans/{{planName .}}">{{short (planName .)}}</a>{{if .SupersededBy}} <span class="chip">superseded</span>{{end}}</td>
+<td data-label="Env">{{.Env}}</td>
+<td data-label="Stacks">{{range $i, $s := .Stacks}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}}</td>
+<td data-label="Changes" class="num">{{range $i, $s := .Stacks}}{{if $i}}, {{end}}{{template "n" (exact $s.Changes)}}{{end}}</td>
+<td data-label="Risks" class="chips">{{template "risks" .Risks}}</td>
+<td data-label="By" data-record="{{planRecord .}}"><span class="ref" data-field="author.display">{{.Author.Display}}</span>{{with from .Origin}}<br><span class="muted"><span class="ref" data-field="origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span></span>{{end}}</td>
+<td data-label="Made">{{template "time" .MadeAt}}</td>
+<td data-label="Expires">{{if .ExpiresAt}}{{template "time" .ExpiresAt}} <time class="muted" datetime="{{.ExpiresAt}}">{{since .ExpiresAt}}</time>{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{end}}
+
+{{define "error"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1><code>{{.Status}}</code> {{.Heading}}</h1>
+</div>
+{{range .Diagnostics}}<p class="note note-{{.Severity}}" role="alert" data-record="format={{$.Data.Format}}"><strong>{{.Class}}</strong>: <span class="msg" data-field="diagnostics[].message">{{.Message}}</span></p>{{end}}
+{{end}}
+<p><a href="/ui/">Go to the overview</a></p>
+{{template "foot" .}}{{end}}
+
+{{define "login"}}{{template "head" .}}
+{{with .Data}}
+<div class="signin">
+<h1>Sign in to writ serve</h1>
+{{if .Message}}<p class="note" role="status">{{.Message}}</p>{{end}}
+{{if .Issuers}}
+<p>Sign in with your team's identity provider. writ serve gives you a session of the same teams and grants that <code>writ login</code> gives.</p>
+<ul class="issuers">
+{{range .Issuers}}<li><a class="button" href="{{link "/ui/login/start" "issuer" .Name "next" $.Data.Next}}">Sign in with {{.Name}}</a> <code class="muted">{{.URL}}</code></li>{{end}}
+</ul>
+{{else if .Dev}}
+<p>This is the dev control plane of one user. To sign in, run <code>writ ui</code> in a terminal and open the link it prints. The link works once, for 10 minutes.</p>
+{{else}}
+<p>This writ serve has no issuer of kind <code>people</code>, so no one can sign in. Add one to the config and restart writ serve.</p>
+{{end}}
+</div>
+{{end}}
+{{template "foot" .}}{{end}}

@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+.source/
+next-env.d.ts
+*.tsbuildinfo
+# Written by scripts/gen-content.ts from the repository's Markdown.
+content/
+public/raw/
+public/llms.txt

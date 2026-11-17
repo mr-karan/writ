@@ -1,0 +1,5 @@
+go test fuzz v1
+[]byte("{\"\\\\%000\\\\C\\\\uD80C\\\\uDdddddd%\\\\uDe0009$000\\\\%\\\\uD0000\":true}")
+[]byte("{}")
+string("\x9d\x9d")
+string("")

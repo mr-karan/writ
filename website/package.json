@@ -1,0 +1,30 @@
+{
+  "name": "writ-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "content": "bun scripts/gen-content.ts",
+    "dev": "bun run content && NEXT_TELEMETRY_DISABLED=1 next dev",
+    "build": "bun run content && NEXT_TELEMETRY_DISABLED=1 next build",
+    "typecheck": "bun run content && fumadocs-mdx && tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/archivo": "5.3.0",
+    "@fontsource-variable/chivo-mono": "5.3.0",
+    "fumadocs-core": "16.17.8",
+    "fumadocs-mdx": "15.4.10",
+    "fumadocs-ui": "16.17.8",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/mdx": "2.0.14",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "6.0.3"
+  }
+}

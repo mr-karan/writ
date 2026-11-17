@@ -1,0 +1,5 @@
+# Files vendored from other projects, checked by TestVendor. Each line:
+# file, project, version, source URL, SHA-256 of the file as fetched.
+# Oat is MIT-licensed; its license is oat-license.txt. Fetched 2026-11-10.
+oat.min.css @knadh/oat 1.0.0 https://cdn.jsdelivr.net/npm/@knadh/oat@1.0.0/oat.min.css 129d3c21c5af7eb7dcf1c4e6681fab467d5843a31ba602ab3635f0ce5630499b
+oat-license.txt @knadh/oat 1.0.0 https://cdn.jsdelivr.net/npm/@knadh/oat@1.0.0/LICENSE 8e689e72c5de68083003ef22e99ffc875322968251eaf47dd88cbf33969e6326

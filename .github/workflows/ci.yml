@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      GOFLAGS: -timeout=30m
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31.11.5
+      - name: Build
+        run: nix develop --command just build
+      - name: Vet the tagged tests
+        run: |
+          nix develop --command go vet -tags e2e,e2e_tofu,e2e_import,e2e_awsemu,tofu,uishowcase,uirecord,maskrecord ./...
+          nix develop --command go vet -tags failpoint ./...
+      - name: just check, with Postgres
+        run: nix shell --inputs-from . nixpkgs#postgresql_18 --command nix develop --command just check
+      - name: Control UI showcase
+        run: nix develop --command go test -race -count=1 -tags uishowcase -run '^TestShowcaseServes$' ./internal/ui

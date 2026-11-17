@@ -1,0 +1,7 @@
+/writ
+/bin/
+.writ/
+*.test
+/.audit/
+/result*
+/dist/

@@ -1,0 +1,48 @@
+Writ
+Copyright 2026 Karan Sharma
+
+This product is licensed under the Apache License, Version 2.0. The text of
+that license is in the file LICENSE.
+
+Writ includes Open Policy Agent (https://github.com/open-policy-agent/opa),
+Copyright The OPA Authors, licensed under the Apache License, Version 2.0.
+
+The files proto/tfplugin5.proto and proto/tfplugin6.proto are copied from
+OpenTofu (https://github.com/opentofu/opentofu), Copyright IBM Corp. 2014,
+2026, and are licensed under the Mozilla Public License, Version 2.0. The
+code generated from them is in internal/tfplugin5 and internal/tfplugin6.
+
+The writ binary includes github.com/hashicorp/hcl/v2
+(https://github.com/hashicorp/hcl), licensed under the Mozilla Public
+License, Version 2.0. Its source is available at that address.
+
+The writ binary includes the following works licensed under the Apache
+License, Version 2.0, whose NOTICE files say:
+
+--- github.com/agext/levenshtein
+Alrux Go EXTensions (AGExt) - package levenshtein
+Copyright 2016 ALRUX Inc.
+
+This product includes software developed at ALRUX Inc.
+(http://www.alrux.com/).
+
+--- github.com/aws/aws-sdk-go-v2
+AWS SDK for Go
+Copyright 2015 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Copyright 2014-2015 Stripe, Inc.
+
+--- github.com/aws/smithy-go
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+--- github.com/coreos/go-oidc/v3
+CoreOS Project
+Copyright 2014 CoreOS, Inc
+
+This product includes software developed at CoreOS, Inc.
+(http://www.coreos.com/).
+
+--- google.golang.org/grpc
+Copyright 2014 gRPC authors.
+
+--- go.yaml.in/yaml/v3
+Copyright 2011-2016 Canonical Ltd.

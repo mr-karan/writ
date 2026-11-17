@@ -1,0 +1,5 @@
+go test fuzz v1
+[]byte("{\"\\\\ud800\\\\udc00\":true}")
+[]byte("{}")
+string("\ufffd\ufffd")
+string("")

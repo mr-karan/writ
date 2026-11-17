@@ -1,0 +1,21 @@
+import Link from 'next/link';
+import { repoUrl, site } from '@/lib/site';
+
+export function Footer() {
+  return (
+    <footer className="foot-band">
+      <div className="wrap foot">
+        <p>Writ is open source under the Apache 2.0 license. This site has no analytics and no cookies.</p>
+        <nav aria-label="Footer">
+          <Link href="/docs">Docs</Link>
+          <Link href="/docs/quick-start">Quick start</Link>
+          <Link href="/docs/status">Status and limits</Link>
+          <Link href="/docs/compare">Comparison</Link>
+          <a href={repoUrl('SECURITY.md')}>Security</a>
+          <a href={site.repo}>GitHub</a>
+          <a href="/llms.txt">llms.txt</a>
+        </nav>
+      </div>
+    </footer>
+  );
+}

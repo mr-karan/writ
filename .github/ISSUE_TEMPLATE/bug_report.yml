@@ -1,0 +1,56 @@
+name: Bug report
+description: Writ did something wrong, or something the docs say it does not do.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For a security problem, do not use this form: follow SECURITY.md instead.
+        Check that no output you paste holds a secret, a token, or an account id.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what Writ did, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The commands, and a small stack or config that shows the problem. Stacks with hashicorp/random, local, or tls are easiest to reproduce.
+      placeholder: |
+        1. writ serve --dev
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The output of the command, and of writ serve's log if it matters.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: writ version
+      description: The output of `writ version`, or the commit you built.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where it ran
+      options:
+        - writ serve --dev
+        - a team's writ serve
+        - the CLI alone
+        - the GitLab CI component
+        - other
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: OS and architecture, and how you installed Writ (source, Nix, container image).

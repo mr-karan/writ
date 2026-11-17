@@ -1,0 +1,224 @@
+{{define "env-filter"}}
+{{- if .Envs}}
+<nav class="tabs" aria-label="Environment">
+{{- if .All}}
+<a href="{{.Base}}"{{if not .Env}} aria-current="page"{{end}}>All</a>
+{{- end}}
+{{- range .Envs}}
+<a href="{{link $.Base "env" .}}"{{if eq $.Env .}} aria-current="page"{{end}}>{{.}}</a>
+{{- end}}
+</nav>
+{{- end}}
+{{end}}
+
+{{define "overview"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1>Overview{{if .Env}} <span class="muted">{{.Env}}</span>{{end}}</h1>
+<p class="subtitle">{{with exact (len .Envs)}}{{template "n" .}} {{noun . "environment" "environments"}}{{end}} · {{template "n" .StackCount}} {{noun .StackCount "stack" "stacks"}} with state{{with $.Shell}}{{with .Repos}} · {{template "n" .Count}} {{noun .Count "repository" "repositories"}}{{end}}{{end}}</p>
+</div>
+{{template "env-filter" (envs "/ui/" .Env .Envs true)}}
+<ul class="stats" aria-label="At a glance">
+<li><a class="stat" href="#h-waiting"><span class="stat-label">Waiting for approval</span><span class="stat-n"><span class="dot dot-{{if .Waiting.N}}wait{{else}}none{{end}}" aria-hidden="true"></span>{{template "n" .Waiting}}</span><span class="stat-sub">{{template "n" .Others}} by others · {{template "n" .Mine}} yours</span></a></li>
+<li><a class="stat" href="#h-applying"><span class="stat-label">Applying</span><span class="stat-n"><span class="dot dot-{{if .Applying.N}}run{{else}}none{{end}}" aria-hidden="true"></span>{{template "n" .Applying}}</span><span class="stat-sub">{{template "n" .Planning}} planning</span></a></li>
+<li><a class="stat" href="#h-alerts"><span class="stat-label">Failed</span><span class="stat-n"><span class="dot dot-{{if .Failed.N}}bad{{else}}none{{end}}" aria-hidden="true"></span>{{template "n" .Failed}}</span><span class="stat-sub">runs in the last 24 hours</span></a></li>
+<li><a class="stat" href="#h-stacks"><span class="stat-label">Drifted</span><span class="stat-n"><span class="dot dot-{{if .Drifted.N}}wait{{else}}none{{end}}" aria-hidden="true"></span>{{template "n" .Drifted}}</span><span class="stat-sub">of {{template "n" .Checked}} {{noun .Checked "stack" "stacks"}} checked</span></a></li>
+</ul>
+{{with none "nothing" .Live .StackCount}}
+<p class="note">{{.}} <a href="/ui/start">Getting started</a> lists the steps to a first plan.</p>
+{{end}}
+
+<section aria-labelledby="h-alerts">
+<h2 id="h-alerts" class="sec-head">Active alerts <span class="count">{{template "n" .AlertCount}}</span></h2>
+{{if .Alerts}}
+<ul class="alerts">
+{{- range .Alerts}}
+<li class="alert alert-{{.Tone}}">{{if eq .Tone "bad"}}<svg class="alert-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M5.5 1.8h5l3.7 3.7v5l-3.7 3.7h-5l-3.7-3.7v-5z"/><path d="m6 6 4 4m0-4-4 4"/></svg>{{else}}<svg class="alert-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 2 14.5 13.5h-13z"/><path d="M8 6.5v3.2M8 11.4v.1"/></svg>{{end}}
+<div class="alert-body">
+<p class="alert-title"><a href="{{.Href}}">{{.Subject}}</a> <span class="alert-kind">{{.Kind}}</span></p>
+{{- if .Detail}}
+<p class="alert-detail msg" data-record="{{.Record}}" data-field="message">{{.Detail}}</p>
+{{- end}}
+{{- if .At}}
+<p class="alert-at">{{.AtWord}} <time datetime="{{.At}}">{{if eq .AtWord "expires"}}{{since .At}}{{else}}{{ago .At}}{{end}}</time></p>
+{{- end}}
+</div>
+</li>
+{{- end}}
+</ul>
+{{if .AlertsMore}}<p class="muted">writ serve lists the drift alerts of the first 200 stacks and the newest 200 failed runs of each environment, and leaves more out.</p>{{end}}
+{{if .PlansMore}}<p class="muted">An environment holds more than 200 plans of one status and writ serve read the newest 200, so a plan about to expire may not show here.</p>{{end}}
+{{else if .AlertsMore}}
+<p class="note">writ serve lists the drift alerts of the first 200 stacks and the newest 200 failed runs of each environment, and left every one of them out here.</p>
+{{else}}
+{{with none "calm" .AlertCount}}
+<p class="calm"><span class="dot dot-ok" aria-hidden="true"></span>{{.}}</p>
+{{else with none "steady" .Steady}}
+<p class="note">{{.}} An environment holds more than 200 plans of one status and writ serve read the newest 200, so a plan about to expire may not show here.</p>
+{{end}}
+{{end}}
+</section>
+
+<div class="cols">
+<section aria-labelledby="h-applying">
+<h2 id="h-applying" class="sec-head">Applying now <span class="count">{{template "n" .Applying}}</span></h2>
+{{if .ApplyingRows}}{{template "rows" .ApplyingRows}}{{else}}<p class="empty">{{with none "applying" .Applying}}{{.}}{{else}}writ serve read the newest 200 plans of each status, so a plan that applies may not show here.{{end}}</p>{{end}}
+</section>
+<section aria-labelledby="h-waiting">
+<h2 id="h-waiting" class="sec-head">Waiting for approval <span class="count">{{template "n" .Waiting}}</span></h2>
+{{if .WaitingRows}}{{template "rows" .WaitingRows}}{{else}}<p class="empty">{{with none "waiting" .Waiting}}{{.}}{{else}}writ serve read the newest 200 plans of each status, so a plan that waits for approval may not show here.{{end}}</p>{{end}}
+</section>
+</div>
+
+{{if .PlanningRows}}
+<section aria-labelledby="h-planning">
+<h2 id="h-planning" class="sec-head">Planning now <span class="count">{{template "n" .Planning}}</span></h2>
+{{template "rows" .PlanningRows}}
+</section>
+{{end}}
+{{if or .Planning.N .Applying.N}}<p class="muted hint">This page loads again every 30 seconds while a plan plans or applies.</p>{{end}}
+
+<section aria-labelledby="h-stacks">
+<h2 id="h-stacks" class="sec-head">Stacks with state <span class="count">{{template "n" .StackCount}}</span></h2>
+{{if .Stacks}}
+<div class="scroll">
+<table id="tofu-stacks">
+<caption class="sr-only">Each OpenTofu stack in each environment whose state writ serve keeps or reads, with its drift</caption>
+<thead><tr><th scope="col">Stack</th><th scope="col">Env</th><th scope="col">Backend</th><th scope="col" class="num">Resources</th><th scope="col">Drift</th><th scope="col">Checked</th></tr></thead>
+<tbody>
+{{- range .Stacks}}
+<tr>
+<th scope="row"><a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}">{{.Stack}}</a></th>
+<td>{{.Env}}</td>
+<td>{{.Backend}}</td>
+<td class="num">{{template "n" (exact .Resources)}}</td>
+<td class="drift">{{template "drift-status" .}}</td>
+<td>{{with .Check}}{{template "time" .CheckedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{if .StacksLeft.N}}<p class="muted">writ serve lists the first 200 stacks with state, by environment and name, so {{template "n" .StacksLeft}} more here are not listed.</p>{{end}}
+{{else if .StacksLeft.N}}
+<p class="note">{{template "n" .StacksLeft}} {{noun .StacksLeft "stack has" "stacks have"}} state here. writ serve lists the first 200 stacks with state, by environment and name, and these come after them.</p>
+{{else}}
+{{with none "stateless" .StackCount}}<p class="empty">{{.}}</p>{{end}}
+{{end}}
+</section>
+{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "rows"}}
+<ul class="rows">
+{{- range .}}
+<li><a class="row" href="{{.Href}}"><span class="dot dot-{{.Tone}}" aria-hidden="true"></span><span class="row-main"><span class="row-title">{{.Title}}{{if .Mine}} <span class="chip">yours</span>{{end}}</span><span class="row-sub">{{if .Commit}}<code>{{.Commit}}</code>{{else}}no commit{{end}} · <span class="ref" data-record="{{.Record}}" data-field="{{.Field}}">{{.Author}}</span></span></span>{{if .At}}<span class="row-time"><span class="sr-only">{{.AtWord}} </span><time datetime="{{.At}}">{{ago .At}}</time></span>{{end}}{{template "chev"}}</a></li>
+{{- end}}
+</ul>
+{{end}}
+
+{{define "drift-status"}}{{with .Check}}{{template "status" .Status}}{{if eq .Status "drifted"}} {{template "n" (exact .Outside)}} outside, {{template "n" (exact .Code)}} in code{{end}}{{else}}<span class="muted">not checked</span>{{end}}{{if .Checking}} <span class="chip">checking</span>{{end}}{{if .OutsideWrite}} <span class="chip chip-warn">written outside writ</span>{{end}}{{end}}
+
+{{define "adopt-hint"}}<p class="note note-warning" id="adopt" role="note">{{none "no-secret"}} A person with <code>adopt</code> on the stack can seal a set for it from the values the state marks sensitive. A secret the state holds without a sensitive mark is not in that set and may show in later plans. <code class="cmd">{{.}}</code></p>{{end}}
+
+{{define "drift-box"}}
+<section class="panel" aria-labelledby="h-drift">
+<h2 id="h-drift">Drift</h2>
+{{with .OutsideWrite}}<p class="note note-warning">Serial <code>{{.Serial}}</code> of the state was written outside writ serve, seen {{template "at" .SeenAt}}.</p>{{end}}
+{{if .Checking}}<p class="muted">A drift check runs now.</p>{{end}}
+{{with .Check}}
+<dl class="block" id="drift-facts">
+<div><dt>Status</dt><dd>{{template "status" .Status}}</dd></div>
+<div><dt>Checked</dt><dd>{{template "time" .CheckedAt}}</dd></div>
+{{if .Commit}}<div><dt>Commit</dt><dd><code>{{short .Commit}}</code> of {{.Repo}}</dd></div>{{end}}
+{{if .Plan}}<div><dt>Plan</dt><dd><code class="id-full">{{.Plan}}</code>, never applied</dd></div>{{end}}
+{{if .DriftedSince}}<div><dt>Drifted since</dt><dd>{{template "time" .DriftedSince}}</dd></div>{{end}}
+</dl>
+{{if eq .Status "failed"}}<p class="note note-error"><span class="msg" data-record="{{record "env" $.Env "stack" $.Stack "check.status" .Status}}" data-field="check.error">{{.Error}}</span></p>{{end}}
+{{if .Changes}}
+<div class="scroll">
+<table id="drift-changes">
+<caption>{{template "n" (exact .Outside)}} changed outside OpenTofu, {{template "n" (exact .Code)}} that the code would change{{if lt (len .Changes) (add .Outside .Code)}}, the first {{template "n" (exact (len .Changes))}} shown{{end}}</caption>
+<thead><tr><th scope="col">Address</th><th scope="col">Found</th><th scope="col">Action</th><th scope="col">Attributes</th></tr></thead>
+<tbody>
+{{- range .Changes}}
+<tr>
+<th scope="row"><code>{{.Address}}</code></th>
+<td>{{if eq .Kind "outside"}}changed outside OpenTofu{{else}}in the code{{end}}</td>
+<td><span class="sign sign-{{.Action}}">{{.Action}}</span></td>
+<td>{{range $i, $a := .Attributes}}{{if $i}}, {{end}}<code>{{$a}}</code>{{else}}<span class="muted">none</span>{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{end}}
+{{else}}{{if not .Checking}}<p class="empty">{{none "unchecked"}}</p>{{end}}{{end}}
+</section>
+{{end}}
+
+{{define "stack-tabs"}}
+<nav class="tabs" aria-label="Views of {{.Stack}} in {{.Env}}">
+<a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}"{{if eq .View "resources"}} aria-current="page"{{end}}>Resources</a>
+<a href="{{link "/ui/stack" "stack" .Stack "env" .Env "view" "runs"}}"{{if eq .View "runs"}} aria-current="page"{{end}}>Runs</a>
+<a href="{{link "/ui/stack" "stack" .Stack "env" .Env "view" "plans"}}"{{if eq .View "plans"}} aria-current="page"{{end}}>Plans</a>
+</nav>
+{{end}}
+
+{{define "stack"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1>{{.Stack}} <span class="muted">in {{.Env}}</span></h1>
+</div>
+{{with .Drift}}{{template "drift-box" .}}{{end}}
+{{with .Adopt}}{{template "adopt-hint" .}}{{end}}
+{{template "stack-tabs" .}}
+{{if eq .View "resources"}}
+{{if not .Index}}
+<p class="empty" id="no-index">{{if .Drift}}{{none "unindexed"}}{{else if .DriftFailed}}writ serve could not read the drift record of this stack, so this page cannot say whether it keeps a state of it.{{else}}{{none "no-state"}}{{end}}</p>
+{{else if .Index.Resources}}
+<div class="scroll">
+<table id="index-rows">
+<caption class="sr-only">Resources the state of {{.Stack}} in {{.Env}} manages, from the state index, with only the attributes it keeps</caption>
+<thead><tr><th scope="col">Address</th><th scope="col">Type</th><th scope="col">Provider</th><th scope="col">ID</th><th scope="col">Kept attributes</th></tr></thead>
+<tbody>
+{{- range .Index.Resources}}
+<tr>
+<th scope="row"><code>{{.Address}}</code></th>
+<td><code>{{.Type}}</code></td>
+<td><code>{{.Provider}}</code></td>
+<td>{{if .ID}}<code>{{.ID}}</code>{{else}}<span class="muted">none</span>{{end}}</td>
+<td>{{if .ARN}}arn <code>{{.ARN}}</code> {{end}}{{if .Identifier}}identifier <code>{{.Identifier}}</code> {{end}}{{if .Region}}region <code>{{.Region}}</code> {{end}}{{if .Namespace}}namespace <code>{{.Namespace}}</code> {{end}}{{if .ModifyIndex}}modify_index <code>{{.ModifyIndex}}</code>{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+<p class="muted">From {{if eq .Index.Backend "s3"}}serial{{else}}version{{end}} <code>{{.Index.IndexedVersion}}</code> of the state, indexed {{template "at" .Index.IndexedAt}}.</p>
+{{else}}
+<p class="empty">{{none "no-resource" (exact (len .Index.Resources))}}</p>
+{{end}}
+{{else if eq .View "runs"}}
+<h2>Started by writ serve</h2>
+{{if .Applies.Runs}}{{template "applies-table" .Applies}}{{else}}<p class="empty">{{none "no-run" (exact (len .Applies.Runs))}}</p>{{end}}
+{{else}}
+{{if .Plans.Plans}}{{template "plan-table" (plans (print "Plans of " .Stack " in " .Env) .Plans.Plans)}}
+{{if .Plans.Next}}<p class="muted">The newest {{template "n" (exact (len .Plans.Plans))}} plans of this stack. <a href="{{link "/ui/plans" "env" .Env "stack" .Stack "cursor" .Plans.Next}}">Older plans</a></p>{{end}}
+{{else}}<p class="empty">{{none "no-stack-plan" (exact (len .Plans.Plans))}}</p>{{end}}
+{{end}}
+{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "runs"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1>Runs{{if .Stack}} <span class="muted">of {{.Stack}} in {{.Env}}</span>{{end}}</h1>
+<p class="subtitle">The applies writ serve started, newest first.</p>
+</div>
+{{if not .Stack}}{{template "env-filter" (envs "/ui/runs" .Env .Envs false)}}{{end}}
+<section aria-labelledby="h-applies">
+<h2 id="h-applies" class="sr-only">Started by writ serve ({{template "n" (figure (len .Applies.Runs) .Applies.More)}})</h2>
+{{if .Applies.Runs}}{{template "applies-table" .Applies}}{{else}}<p class="empty">{{none "no-run" (exact (len .Applies.Runs))}}</p>{{end}}
+</section>
+{{end}}
+{{template "foot" .}}{{end}}

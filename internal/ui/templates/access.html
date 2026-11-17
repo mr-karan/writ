@@ -1,0 +1,124 @@
+{{define "grant-rows"}}
+<div class="scroll">
+<table>
+<caption class="sr-only">{{.Caption}}</caption>
+<thead><tr><th scope="col" class="num">Grant</th>{{if .Teams}}<th scope="col">Teams</th>{{end}}<th scope="col">Envs</th><th scope="col">Stacks</th><th scope="col">Can</th><th scope="col">Risks</th></tr></thead>
+<tbody>
+{{- range .Rows}}
+<tr><td class="num"><code>{{.Grant}}</code></td>{{if $.Teams}}<td>{{join .Teams ", "}}</td>{{end}}<td>{{join .Envs ", "}}</td><td><code>{{join .Stacks " "}}</code></td><td>{{join .Can " "}}</td><td>{{if .Risks}}{{join .Risks " "}}{{else}}<span class="muted">none</span>{{end}}</td></tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{end}}
+
+{{define "access"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1>Access</h1>
+<p class="subtitle">Teams and grants come from the config file of writ serve. To change them, edit that file, review the change as code, and restart writ serve. This page only reads them.</p>
+</div>
+{{with .Me.Principal}}
+<section aria-labelledby="h-you">
+<h2 id="h-you">You</h2>
+<p>You are <span class="ref" data-field="principal.display">{{.Display}}</span>, by a {{if eq .Kind "person"}}browser session{{else}}{{.Kind}} token{{end}} of {{.Issuer}}, person <code>{{.Person}}</code>. It ends {{template "at" .Expires}}.</p>
+<p>Teams: {{if $.Data.Me.Teams}}{{join $.Data.Me.Teams ", "}}{{else}}{{none "no-team"}}{{end}} <a href="/ui/whoami">What you may do</a></p>
+</section>
+{{end}}
+<section aria-labelledby="h-grants">
+<h2 id="h-grants">Grants ({{template "n" (exact (len .Config.Grants))}})</h2>
+<p class="muted">Grants only add. A team may do what any grant that names it gives.</p>
+{{template "grant-rows" (grants "Every grant of the config, in order" .Config.Grants true)}}
+</section>
+<section aria-labelledby="h-teams">
+<h2 id="h-teams">Teams ({{template "n" (exact (len .Config.Teams))}})</h2>
+<p class="muted">A team is a rule over the claims of one issuer's tokens. Every claim must match one of its values. Its members are not listed.</p>
+<div class="scroll">
+<table>
+<caption class="sr-only">Every team and the claims it matches</caption>
+<thead><tr><th scope="col">Team</th><th scope="col">Issuer</th><th scope="col">Matches</th></tr></thead>
+<tbody>
+{{- range .Config.Teams}}
+<tr><th scope="row">{{.Name}}</th><td>{{.Issuer}}</td><td>{{range $i, $m := .Match}}{{if $i}}, and {{end}}<code>{{$m.Claim}}</code> is {{range $j, $v := $m.Values}}{{if $j}} or {{end}}<code>{{$v}}</code>{{end}}{{else}}<span class="muted">no claim: only the one user of writ serve --dev is in it</span>{{end}}</td></tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+</section>
+{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "whoami"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1>Who you are</h1>
+</div>
+{{with .Principal}}
+<dl class="facts">
+<dt>Name</dt><dd><span class="ref" data-field="principal.display">{{.Display}}</span></dd>
+<dt>Kind</dt><dd>{{.Kind}}{{if eq .Kind "person"}}, signed in with a browser session{{end}}</dd>
+<dt>Issuer</dt><dd>{{.Issuer}}</dd>
+<dt>Subject</dt><dd><code>{{.Subject}}</code></dd>
+<dt>Person</dt><dd><code>{{.Person}}</code> <span class="muted">a CI job you start carries the same id, so you cannot approve your own plan through it</span></dd>
+<dt>Ends</dt><dd>{{template "time" .Expires}} <time class="muted" datetime="{{.Expires}}">{{since .Expires}}</time></dd>
+</dl>
+{{end}}
+<h2>Teams</h2>
+<p>{{if .Teams}}{{join .Teams ", "}}{{else}}{{none "no-team"}}{{end}}</p>
+<p class="muted">Teams are fixed when the session starts. A change at the identity provider shows after the next sign-in.</p>
+<h2>What you may do ({{template "n" (exact (len .Grants))}})</h2>
+{{if .Grants}}{{template "grant-rows" (myGrants "The grants that name one of your teams" .Grants)}}{{else}}<p class="muted">{{none "no-grant" (exact (len .Grants))}}</p>{{end}}
+{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "settings"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1>Settings</h1>
+</div>
+<section aria-labelledby="h-browser">
+<h2 id="h-browser">This browser</h2>
+<form method="post" action="/ui/settings" class="theme">
+<fieldset>
+<legend>Theme</legend>
+<label><input type="radio" name="theme" value="system"{{if eq $.Theme "system"}} checked{{end}}> System</label>
+<label><input type="radio" name="theme" value="light"{{if eq $.Theme "light"}} checked{{end}}> Light</label>
+<label><input type="radio" name="theme" value="dark"{{if eq $.Theme "dark"}} checked{{end}}> Dark</label>
+</fieldset>
+<button type="submit">Save</button>
+</form>
+<p class="muted">The theme is a cookie of this browser, and the one setting writ serve keeps for you.</p>
+</section>
+
+<section aria-labelledby="h-server">
+<h2 id="h-server">Server</h2>
+<dl class="facts">
+<dt>Version</dt><dd>writ <code>{{.Server.Version}}</code></dd>
+<dt>URL</dt><dd><code>{{.Server.URL}}</code></dd>
+<dt>Sign-in</dt><dd>{{if .Server.Login}}authorization code flow with PKCE{{else}}not set up{{end}}</dd>
+<dt>Health</dt><dd>{{if .Health.OK}}{{template "status" "ok"}}{{else}}{{template "status" "failing"}}{{end}} <span class="muted"><code>GET /healthz</code> answered <code>{{.HealthCode}}</code></span></dd>
+<dt>Control database</dt><dd>{{if .Health.Database}}answers{{else}}<strong>does not answer</strong>{{end}}</dd>
+{{range .Health.Issuers}}<dt>Issuer {{.Name}}</dt><dd>key set fetched {{template "time" .KeysAt}}{{if .ClockOffsetMS}}, clock offset <code>{{deref64 .ClockOffsetMS}} ms</code>{{end}}</dd>{{end}}
+</dl>
+{{if .Health.Diagnostics}}<div data-record="format=writ.health/v0">{{template "diags" .Health.Diagnostics}}</div>{{end}}
+</section>
+
+{{with .Config}}
+<section aria-labelledby="h-config">
+<h2 id="h-config">Config</h2>
+<dl class="facts">
+<dt>Issuers</dt><dd><ul class="plain">{{range .Issuers}}<li>{{.Name}}: {{.Kind}}, <code>{{.URL}}</code></li>{{end}}</ul></dd>
+<dt>Environments</dt><dd><ul class="plain">{{range .Envs}}<li>{{.Name}}</li>{{end}}</ul></dd>
+{{if .Forges}}<dt>Forges</dt><dd><ul class="plain">{{range .Forges}}<li>{{.Name}}: {{.Kind}}, <code>{{.URL}}</code></li>{{end}}</ul>Each default branch is polled every <code>{{.PollEvery}}</code>.</dd>{{end}}
+<dt>Lifetimes</dt><dd>plan <code>{{.PlanTTL}}</code>, session <code>{{.SessionTTL}}</code></dd>
+{{with .Admin}}
+<dt>Limits</dt><dd><code>{{.Limits.RequestsPerSecond}}</code> requests a second and <code>{{.Limits.PlansPerPrincipal}}</code> running plans for each principal, <code>{{.Limits.Plans}}</code> running plans in all, and bodies up to <code>{{.Limits.Body}}</code> bytes</dd>
+<dt>Retention</dt><dd>audit rows {{if .Retention.Audit}}<code>{{.Retention.Audit}}</code>{{else}}forever{{end}}, spent plans {{if .Retention.Plans}}<code>{{.Retention.Plans}}</code>{{else}}forever{{end}}</dd>
+{{end}}
+</dl>
+<p class="muted">To change any of these, edit the config file and restart writ serve. <code>writ serve --check</code> prints the config on the host.</p>
+</section>
+{{end}}
+<p class="muted">The control UI uses <a href="{{.License}}">Oat 1.0.0</a> by Kailash Nadh, under the MIT license.</p>
+{{end}}
+{{template "foot" .}}{{end}}

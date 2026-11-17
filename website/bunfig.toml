@@ -1,0 +1,3 @@
+[install]
+# Save exact versions, never ranges.
+exact = true

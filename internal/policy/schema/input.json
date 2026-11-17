@@ -1,0 +1,360 @@
+{
+  "title": "The input of a policy in writ serve: the masked plan document and input.writ",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "format_version": {
+      "type": "string"
+    },
+    "terraform_version": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    },
+    "errored": {
+      "type": "boolean"
+    },
+    "variables": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "full_name": {
+                "type": "string"
+              },
+              "alias": {
+                "type": "string"
+              },
+              "version_constraint": {
+                "type": "string"
+              },
+              "module_address": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "version_constraint": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "resource_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "previous_address": {
+            "type": "string"
+          },
+          "module_address": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "index": {},
+          "provider_name": {
+            "type": "string"
+          },
+          "deposed": {
+            "type": "string"
+          },
+          "change": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "before": {},
+              "after": {},
+              "after_unknown": {},
+              "before_sensitive": {},
+              "after_sensitive": {},
+              "replace_paths": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {}
+                }
+              },
+              "importing": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "generated_config": {
+                "type": "string"
+              },
+              "changed_sensitive_paths": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          "action_reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "resource_drift": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "previous_address": {
+            "type": "string"
+          },
+          "module_address": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "index": {},
+          "provider_name": {
+            "type": "string"
+          },
+          "deposed": {
+            "type": "string"
+          },
+          "change": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "before": {},
+              "after": {},
+              "after_unknown": {},
+              "before_sensitive": {},
+              "after_sensitive": {},
+              "replace_paths": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {}
+                }
+              },
+              "importing": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                }
+              },
+              "generated_config": {
+                "type": "string"
+              },
+              "changed_sensitive_paths": {
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          "action_reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "output_changes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "before": {},
+          "after": {},
+          "after_unknown": {},
+          "before_sensitive": {},
+          "after_sensitive": {},
+          "replace_paths": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {}
+            }
+          },
+          "importing": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              }
+            }
+          },
+          "generated_config": {
+            "type": "string"
+          },
+          "changed_sensitive_paths": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {}
+            }
+          }
+        }
+      }
+    },
+    "checks": {},
+    "relevant_attributes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "resource": {
+            "type": "string"
+          },
+          "attribute": {
+            "type": "array",
+            "items": {}
+          }
+        }
+      }
+    },
+    "writ": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": [
+            "plan",
+            "apply"
+          ]
+        },
+        "now": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string"
+        },
+        "stack": {
+          "type": "string"
+        },
+        "actor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "person": {
+              "type": "string"
+            },
+            "display": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "teams": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "approvals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "person": {
+                "type": "string"
+              },
+              "display": {
+                "type": "string"
+              },
+              "via": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

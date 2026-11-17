@@ -1,0 +1,29 @@
+# .gitlab-ci.yml of a project that plans, approves, and applies its stacks
+# with writ serve, as writ ci gitlab --repo infra prints it. A sketch, as
+# the components it includes are.
+stages: [check, writ-plan, writ-approve, writ-apply]
+
+check:
+  stage: check
+  image: registry.example.com/writ:0.4.0
+  script:
+    - writ --dir infra/network init
+    - writ --dir infra/network check
+
+include:
+  - component: $CI_SERVER_FQDN/platform/writ-ci/writ-plan@0.1.0
+    inputs:
+      server: https://writ.example.com
+      env: prod
+      stack: network
+      image: registry.example.com/writ:0.4.0
+  - component: $CI_SERVER_FQDN/platform/writ-ci/writ-approve@0.1.0
+    inputs:
+      server: https://writ.example.com
+      image: registry.example.com/writ:0.4.0
+  - component: $CI_SERVER_FQDN/platform/writ-ci/writ-apply@0.1.0
+    inputs:
+      server: https://writ.example.com
+      env: prod
+      stack: network
+      image: registry.example.com/writ:0.4.0

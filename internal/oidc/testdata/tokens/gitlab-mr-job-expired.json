@@ -1,0 +1,21 @@
+{
+  "comment": "the same token, checked an hour after it expired",
+  "kind": "gitlab-ci",
+  "issuer": "https://gitlab.com",
+  "audience": "https://writ.example.com",
+  "at": "2026-11-10T11:47:00Z",
+  "jwks": {
+    "keys": [
+      {
+        "alg": "RS256",
+        "e": "AQAB",
+        "kid": "rsa-1",
+        "kty": "RSA",
+        "n": "z6VMDqYjSce_OZBz2gqsqMZsexTIvs4xAac-XHfYli-GaTfuzxFZejEMYxjan-4j5YG-I8USBZlWwllAP1_YIia6PFZQQkAY2UhOCZqPG7yRhjwCmgxXt6pRx0rn19VgQuPw51zCGRda3ik2qKgqNYoe5rPik6nxsq0kKZuQD_yVVdejc1BFnmCY8bWksKk5FvYN8KKUPw6cB6gtKfnTf5P6jlOf1xx5G9YHV0pmgepp-AhRrV4V5fxWLw-69-MEb7gTlN_vyX9V1qhECEXXb6MBiesFs5IbmOXG0WiPDDy2bYzylQV8CMFB_R0fJ_A2H8bW9L1d3Csrmr2ydZLA0Q",
+        "use": "sig"
+      }
+    ]
+  },
+  "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InJzYS0xIiwidHlwIjoiSldUIn0.eyJhdWQiOiJodHRwczovL3dyaXQuZXhhbXBsZS5jb20iLCJjaV9jb25maWdfcmVmX3VyaSI6ImdpdGxhYi5jb20vYWNtZS9pbmZyYS8vLmdpdGxhYi1jaS55bWxAcmVmcy9oZWFkcy9hZGQtc3VibmV0LWQiLCJjaV9jb25maWdfc2hhIjoiNWQxZTlhMGM3YjJmNGUxZDhhNmMzYjllMGY3YTJkNGM2YjhlMWYzYSIsImVudmlyb25tZW50X3Byb3RlY3RlZCI6ImZhbHNlIiwiZXhwIjoxNzk0MzA3NjIwLCJpYXQiOjE3OTQzMDczMjAsImlzcyI6Imh0dHBzOi8vZ2l0bGFiLmNvbSIsImpvYl9pZCI6Ijk5MjIxMDEiLCJqdGkiOiIyMzViM2E1NC1iNzk3LTQ1YzctYWU5YS1mNzJkN2JjNmVmNWIiLCJuYW1lc3BhY2VfaWQiOiI3MiIsIm5hbWVzcGFjZV9wYXRoIjoiYWNtZSIsIm5iZiI6MTc5NDMwNzMxNSwicGlwZWxpbmVfaWQiOiIxODQ5MjEzIiwicGlwZWxpbmVfc291cmNlIjoibWVyZ2VfcmVxdWVzdF9ldmVudCIsInByb2plY3RfaWQiOiI0MjQyIiwicHJvamVjdF9wYXRoIjoiYWNtZS9pbmZyYSIsInByb2plY3RfdmlzaWJpbGl0eSI6InByaXZhdGUiLCJyZWYiOiJhZGQtc3VibmV0LWQiLCJyZWZfcGF0aCI6InJlZnMvaGVhZHMvYWRkLXN1Ym5ldC1kIiwicmVmX3Byb3RlY3RlZCI6ImZhbHNlIiwicmVmX3R5cGUiOiJicmFuY2giLCJydW5uZXJfZW52aXJvbm1lbnQiOiJnaXRsYWItaG9zdGVkIiwicnVubmVyX2lkIjoxLCJzaGEiOiI1ZDFlOWEwYzdiMmY0ZTFkOGE2YzNiOWUwZjdhMmQ0YzZiOGUxZjNhIiwic3ViIjoicHJvamVjdF9wYXRoOmFjbWUvaW5mcmE6cmVmX3R5cGU6YnJhbmNoOnJlZjphZGQtc3VibmV0LWQiLCJ1c2VyX2FjY2Vzc19sZXZlbCI6ImRldmVsb3BlciIsInVzZXJfZW1haWwiOiJhbGljZUBleGFtcGxlLmNvbSIsInVzZXJfaWQiOiIxMDAxIiwidXNlcl9sb2dpbiI6ImFsaWNlIn0.x8C3zJdgo7xJ-bPD5V9Mq-D6f15vagh4B6E7uS8NgZeirc6pLdBmZ7wl-S5CAhdx7PJ-p7cnypJBd-lJ-KjdA0FBz-7NUyu3kcFHENIty6xXqx35dq_StGA8oOW2iJ_gC1YusE1rcpiG5XIAOvcT6SGddcZAXfQCxgE1RvlNE0ap2H_GBAMeOlynMK1LF9vFZt3Gf5SDhSR2Db4hIY4en0_KbA0ZuepGQXQMFm75bW0Tq3_pOINly_kxg4gZJRk23HRL73gssrJvU4OCAVx4Vjft9hi9YpFy6GXPWBF25J1WinowXZNJbNe_DyXRy6Zsm0RHVw-M8prWJNgXuqRarg",
+  "want": "times"
+}

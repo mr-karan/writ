@@ -1,0 +1,21 @@
+{
+  "comment": "signed in a test with a generated key, in the claim shape of docs.github.com/en/actions/reference/security/oidc, read 2026-11-10",
+  "kind": "github-actions",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "audience": "https://writ.example.com",
+  "at": "2026-11-10T10:42:00Z",
+  "jwks": {
+    "keys": [
+      {
+        "alg": "RS256",
+        "e": "AQAB",
+        "kid": "rsa-1",
+        "kty": "RSA",
+        "n": "z6VMDqYjSce_OZBz2gqsqMZsexTIvs4xAac-XHfYli-GaTfuzxFZejEMYxjan-4j5YG-I8USBZlWwllAP1_YIia6PFZQQkAY2UhOCZqPG7yRhjwCmgxXt6pRx0rn19VgQuPw51zCGRda3ik2qKgqNYoe5rPik6nxsq0kKZuQD_yVVdejc1BFnmCY8bWksKk5FvYN8KKUPw6cB6gtKfnTf5P6jlOf1xx5G9YHV0pmgepp-AhRrV4V5fxWLw-69-MEb7gTlN_vyX9V1qhECEXXb6MBiesFs5IbmOXG0WiPDDy2bYzylQV8CMFB_R0fJ_A2H8bW9L1d3Csrmr2ydZLA0Q",
+        "use": "sig"
+      }
+    ]
+  },
+  "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6InJzYS0xIiwidHlwIjoiSldUIiwieDV0IjoiZXhhbXBsZS10aHVtYnByaW50In0.eyJhY3RvciI6ImJvYiIsImFjdG9yX2lkIjoiMjAwMiIsImF1ZCI6Imh0dHBzOi8vd3JpdC5leGFtcGxlLmNvbSIsImJhc2VfcmVmIjoibWFpbiIsImV2ZW50X25hbWUiOiJwdWxsX3JlcXVlc3QiLCJleHAiOjE3OTQzMDc2MjAsImhlYWRfcmVmIjoiYWRkLXN1Ym5ldC1kIiwiaWF0IjoxNzk0MzA3MzIwLCJpc3MiOiJodHRwczovL3Rva2VuLmFjdGlvbnMuZ2l0aHVidXNlcmNvbnRlbnQuY29tIiwiam9iX3dvcmtmbG93X3JlZiI6ImFjbWUvaW5mcmEvLmdpdGh1Yi93b3JrZmxvd3Mvd3JpdC1wbGFuLnltbEByZWZzL3B1bGwvNDIvbWVyZ2UiLCJqdGkiOiJleGFtcGxlLWlkIiwibmJmIjoxNzk0MzA3MzE1LCJyZWYiOiJyZWZzL3B1bGwvNDIvbWVyZ2UiLCJyZWZfdHlwZSI6ImJyYW5jaCIsInJlcG9zaXRvcnkiOiJhY21lL2luZnJhIiwicmVwb3NpdG9yeV9pZCI6Ijc4MTIzNDU2NyIsInJlcG9zaXRvcnlfb3duZXIiOiJhY21lIiwicmVwb3NpdG9yeV9vd25lcl9pZCI6IjY1IiwicmVwb3NpdG9yeV92aXNpYmlsaXR5IjoicHJpdmF0ZSIsInJ1bl9hdHRlbXB0IjoiMSIsInJ1bl9pZCI6IjYxODI3MzkxMDQiLCJydW5fbnVtYmVyIjoiMTAiLCJydW5uZXJfZW52aXJvbm1lbnQiOiJnaXRodWItaG9zdGVkIiwic2hhIjoiNWQxZTlhMGM3YjJmNGUxZDhhNmMzYjllMGY3YTJkNGM2YjhlMWYzYSIsInN1YiI6InJlcG86YWNtZS9pbmZyYTpwdWxsX3JlcXVlc3QiLCJ3b3JrZmxvdyI6IndyaXQtcGxhbiIsIndvcmtmbG93X3JlZiI6ImFjbWUvaW5mcmEvLmdpdGh1Yi93b3JrZmxvd3Mvd3JpdC1wbGFuLnltbEByZWZzL3B1bGwvNDIvbWVyZ2UifQ.anm6p6MuKm68R8RbbztGMcfsjuaMeO7eUxlycdadSynisM5qeZ7D5wgCBQB5lfKL1X6d44YLFYZjz6GtkzMGiZHoJBPq-mpvrerHkMtQfRBavf7Iam7Hpv2vu7pBr3z7ha4VyPyVQKBA20t6NDlMUKJ3F1V7uAMd5-8Pav7qfTHc-kxicuVWP7pZQWS6_evUFiDJ1jF8K9RlbQYb4-HglwnnW626-p5ADb3WRl4d6aXd2pYThj_tlx3vhfp1wiMR731bToQfVZDE_m7A_0VC8izI_AKH4eNmTqND2SLt1cosHf7zmf45QfBN67JQ5YodtSTE_5zcE8SxOJlGGVUlmg",
+  "want": ""
+}

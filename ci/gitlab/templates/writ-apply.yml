@@ -1,0 +1,41 @@
+# GitLab CI/CD component: apply one Writ stack in one environment after a
+# merge. The job runs on the default branch and names no plan: writ serve
+# finds the approved plan whose sources of the stack equal those of the
+# merged commit, the job's own, and applies that saved plan with the
+# environment's apply role. With no such plan the job fails and nothing
+# changes. A sketch: no GitLab pipeline has run it. See
+# ci/gitlab/README.md.
+spec:
+  inputs:
+    server:
+      description: The URL of writ serve. It is also the audience of the job's token.
+    env:
+      description: The Writ environment to apply in.
+    stack:
+      description: The stack's name on writ serve, as writ repo show lists it.
+    image:
+      description: An image whose PATH holds the writ binary.
+    stage:
+      description: The stage of the apply job.
+      default: writ-apply
+---
+"writ-apply-$[[ inputs.stack ]]-$[[ inputs.env ]]":
+  stage: $[[ inputs.stage ]]
+  image: $[[ inputs.image ]]
+  id_tokens:
+    WRIT_ID_TOKEN:
+      aud: $[[ inputs.server ]]
+  variables:
+    GIT_STRATEGY: none
+    WRIT_SERVER: $[[ inputs.server ]]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  environment:
+    name: $[[ inputs.env ]]
+  script:
+    # writ serve takes the commit from the job's token and checks it is on
+    # the default branch.
+    - >-
+      writ apply --remote --merged
+      --env "$[[ inputs.env ]]"
+      --stack "$[[ inputs.stack ]]"

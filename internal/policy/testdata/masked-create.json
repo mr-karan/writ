@@ -1,0 +1,421 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.13.9",
+  "timestamp": "2026-11-13T08:35:20Z",
+  "errored": false,
+  "variables": [
+    "fallback",
+    "label",
+    "owner",
+    "pin",
+    "pw",
+    "unmarked"
+  ],
+  "configuration": {
+    "providers": [
+      {
+        "key": "local",
+        "name": "local",
+        "full_name": "registry.opentofu.org/hashicorp/local",
+        "version_constraint": "2.9.1"
+      },
+      {
+        "key": "random",
+        "name": "random",
+        "full_name": "registry.opentofu.org/hashicorp/random",
+        "version_constraint": "3.9.1"
+      },
+      {
+        "key": "tls",
+        "name": "tls",
+        "full_name": "registry.opentofu.org/hashicorp/tls",
+        "version_constraint": "4.4.2"
+      }
+    ]
+  },
+  "resource_changes": [
+    {
+      "address": "local_file.encoded",
+      "mode": "managed",
+      "type": "local_file",
+      "name": "encoded",
+      "provider_name": "registry.opentofu.org/hashicorp/local",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "content": "(sensitive)",
+          "content_base64": null,
+          "directory_permission": "0777",
+          "file_permission": "0777",
+          "filename": "./encoded.txt",
+          "sensitive_content": null,
+          "source": null
+        },
+        "after_unknown": {
+          "content_base64sha256": true,
+          "content_base64sha512": true,
+          "content_md5": true,
+          "content_sha1": true,
+          "content_sha256": true,
+          "content_sha512": true,
+          "id": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "content": true,
+          "sensitive_content": true
+        },
+        "changed_sensitive_paths": [
+          [
+            "content"
+          ]
+        ]
+      }
+    },
+    {
+      "address": "local_file.json",
+      "mode": "managed",
+      "type": "local_file",
+      "name": "json",
+      "provider_name": "registry.opentofu.org/hashicorp/local",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "content": "{\"v\":\"(sensitive)\"}",
+          "content_base64": null,
+          "directory_permission": "0777",
+          "file_permission": "0777",
+          "filename": "./json.txt",
+          "sensitive_content": null,
+          "source": null
+        },
+        "after_unknown": {
+          "content_base64sha256": true,
+          "content_base64sha512": true,
+          "content_md5": true,
+          "content_sha1": true,
+          "content_sha256": true,
+          "content_sha512": true,
+          "id": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "sensitive_content": true
+        }
+      }
+    },
+    {
+      "address": "local_file.plain",
+      "mode": "managed",
+      "type": "local_file",
+      "name": "plain",
+      "provider_name": "registry.opentofu.org/hashicorp/local",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "content": "(sensitive)",
+          "content_base64": null,
+          "directory_permission": "0777",
+          "file_permission": "0777",
+          "filename": "./plain.txt",
+          "sensitive_content": null,
+          "source": null
+        },
+        "after_unknown": {
+          "content_base64sha256": true,
+          "content_base64sha512": true,
+          "content_md5": true,
+          "content_sha1": true,
+          "content_sha256": true,
+          "content_sha512": true,
+          "id": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "sensitive_content": true
+        }
+      }
+    },
+    {
+      "address": "local_file.wrapped",
+      "mode": "managed",
+      "type": "local_file",
+      "name": "wrapped",
+      "provider_name": "registry.opentofu.org/hashicorp/local",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "content": "dXNlcj(sensitive)==",
+          "content_base64": null,
+          "directory_permission": "0777",
+          "file_permission": "0777",
+          "filename": "./wrapped.txt",
+          "sensitive_content": null,
+          "source": null
+        },
+        "after_unknown": {
+          "content_base64sha256": true,
+          "content_base64sha512": true,
+          "content_md5": true,
+          "content_sha1": true,
+          "content_sha256": true,
+          "content_sha512": true,
+          "id": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "sensitive_content": true
+        }
+      }
+    },
+    {
+      "address": "random_id.keyed[\"(sensitive)\"]",
+      "mode": "managed",
+      "type": "random_id",
+      "name": "keyed",
+      "index": "(sensitive)",
+      "provider_name": "registry.opentofu.org/hashicorp/random",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "byte_length": 4,
+          "keepers": null,
+          "prefix": null
+        },
+        "after_unknown": {
+          "b64_std": true,
+          "b64_url": true,
+          "dec": true,
+          "hex": true,
+          "id": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "random_integer.pinned",
+      "mode": "managed",
+      "type": "random_integer",
+      "name": "pinned",
+      "provider_name": "registry.opentofu.org/hashicorp/random",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "keepers": {
+            "pin": "(sensitive)"
+          },
+          "max": 739211,
+          "min": "(sensitive)",
+          "seed": null
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": {},
+          "result": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "keepers": {}
+        }
+      }
+    },
+    {
+      "address": "random_password.db",
+      "mode": "managed",
+      "type": "random_password",
+      "name": "db",
+      "provider_name": "registry.opentofu.org/hashicorp/random",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "keepers": null,
+          "length": 24,
+          "lower": true,
+          "min_lower": 0,
+          "min_numeric": 0,
+          "min_special": 0,
+          "min_upper": 0,
+          "number": true,
+          "numeric": true,
+          "override_special": null,
+          "special": true,
+          "upper": true
+        },
+        "after_unknown": {
+          "bcrypt_hash": true,
+          "id": true,
+          "result": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "bcrypt_hash": true,
+          "result": true
+        }
+      }
+    },
+    {
+      "address": "random_pet.named",
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "named",
+      "provider_name": "registry.opentofu.org/hashicorp/random",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "keepers": {
+            "db_password": "(sensitive)",
+            "fallback": "(sensitive)",
+            "size": "18"
+          },
+          "length": 2,
+          "prefix": null,
+          "separator": "-"
+        },
+        "after_unknown": {
+          "id": true,
+          "keepers": {}
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "keepers": {
+            "fallback": true
+          }
+        },
+        "changed_sensitive_paths": [
+          [
+            "keepers",
+            "fallback"
+          ]
+        ]
+      }
+    },
+    {
+      "address": "tls_private_key.k",
+      "mode": "managed",
+      "type": "tls_private_key",
+      "name": "k",
+      "provider_name": "registry.opentofu.org/hashicorp/tls",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "algorithm": "ED25519",
+          "ecdsa_curve": "P224",
+          "rsa_bits": 2048
+        },
+        "after_unknown": {
+          "id": true,
+          "private_key_openssh": true,
+          "private_key_pem": true,
+          "private_key_pem_pkcs8": true,
+          "public_key_fingerprint_md5": true,
+          "public_key_fingerprint_sha256": true,
+          "public_key_openssh": true,
+          "public_key_pem": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "private_key_openssh": true,
+          "private_key_pem": true,
+          "private_key_pem_pkcs8": true
+        }
+      }
+    }
+  ],
+  "output_changes": {
+    "key_pem": {
+      "actions": [
+        "create"
+      ],
+      "before": null,
+      "after": null,
+      "after_unknown": true,
+      "before_sensitive": true,
+      "after_sensitive": true
+    },
+    "pin": {
+      "actions": [
+        "create"
+      ],
+      "before": null,
+      "after": "(sensitive)",
+      "after_unknown": false,
+      "before_sensitive": true,
+      "after_sensitive": true,
+      "changed_sensitive_paths": [
+        null
+      ]
+    },
+    "pw": {
+      "actions": [
+        "create"
+      ],
+      "before": null,
+      "after": "(sensitive)",
+      "after_unknown": false,
+      "before_sensitive": true,
+      "after_sensitive": true,
+      "changed_sensitive_paths": [
+        null
+      ]
+    },
+    "pw_copy": {
+      "actions": [
+        "create"
+      ],
+      "before": null,
+      "after": "(sensitive)",
+      "after_unknown": false,
+      "before_sensitive": false,
+      "after_sensitive": false
+    },
+    "settings": {
+      "actions": [
+        "create"
+      ],
+      "before": null,
+      "after": {
+        "db_password": "(sensitive)",
+        "size": 3
+      },
+      "after_unknown": false,
+      "before_sensitive": false,
+      "after_sensitive": false
+    }
+  },
+  "relevant_attributes": [
+    {
+      "resource": "tls_private_key.k",
+      "attribute": [
+        "private_key_pem"
+      ]
+    }
+  ]
+}
