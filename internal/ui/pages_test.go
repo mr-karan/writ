@@ -562,7 +562,7 @@ func TestTofuPlanPage(t *testing.T) {
 		want         []string
 	}{
 		{"delete", tofuChange("random_pet.old", `["delete"]`, "delete_because_no_resource_config"),
-			[]string{"Changes (1)", "- random_pet.old delete delete Actions: delete. Reason: delete_because_no_resource_config", "0 to add ~ 0 to change - 1 to destroy -/+ 0 to replace 0 to forget 0 to import"}},
+			[]string{"Changes (1)", "- random_pet.old delete Actions: delete. Reason: delete_because_no_resource_config", "0 to add ~ 0 to change - 1 to destroy -/+ 0 to replace 0 to forget 0 to import"}},
 		{"forget", tofuChange("random_pet.left", `["forget"]`, "delete_because_no_resource_config"),
 			[]string{"Changes (1)", "~ random_pet.left forget delete Actions: forget. Reason: delete_because_no_resource_config", "0 to destroy -/+ 0 to replace 1 to forget 0 to import"}},
 	} {

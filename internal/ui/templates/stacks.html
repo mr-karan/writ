@@ -122,17 +122,17 @@
 {{define "adopt-hint"}}<p class="note note-warning" id="adopt" role="note">{{none "no-secret"}} A person with <code>adopt</code> on the stack can seal a set for it from the values the state marks sensitive. A secret the state holds without a sensitive mark is not in that set and may show in later plans. <code class="cmd">{{.}}</code></p>{{end}}
 
 {{define "drift-box"}}
-<section class="panel" aria-labelledby="h-drift">
+<section aria-labelledby="h-drift">
 <h2 id="h-drift">Drift</h2>
 {{with .OutsideWrite}}<p class="note note-warning">Serial <code>{{.Serial}}</code> of the state was written outside writ serve, seen {{template "at" .SeenAt}}.</p>{{end}}
 {{if .Checking}}<p class="muted">A drift check runs now.</p>{{end}}
 {{with .Check}}
-<dl class="block" id="drift-facts">
+<dl class="props card" id="drift-facts">
 <div><dt>Status</dt><dd>{{template "status" .Status}}</dd></div>
 <div><dt>Checked</dt><dd>{{template "time" .CheckedAt}}</dd></div>
 {{if .Commit}}<div><dt>Commit</dt><dd><code>{{short .Commit}}</code> of {{.Repo}}</dd></div>{{end}}
-{{if .Plan}}<div><dt>Plan</dt><dd><code class="id-full">{{.Plan}}</code>, never applied</dd></div>{{end}}
 {{if .DriftedSince}}<div><dt>Drifted since</dt><dd>{{template "time" .DriftedSince}}</dd></div>{{end}}
+{{if .Plan}}<div class="wide"><dt>Plan</dt><dd><code class="id-full">{{.Plan}}</code>, never applied</dd></div>{{end}}
 </dl>
 {{if eq .Status "failed"}}<p class="note note-error"><span class="msg" data-record="{{record "env" $.Env "stack" $.Stack "check.status" .Status}}" data-field="check.error">{{.Error}}</span></p>{{end}}
 {{if .Changes}}

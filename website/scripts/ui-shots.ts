@@ -31,7 +31,7 @@ const images: { name: string; page: string; heights: Record<number, number>; cli
   { name: 'plan', page: 'plan-others', heights: tall },
   { name: 'stack', page: 'stack', heights: tall },
   { name: 'runs', page: 'runs', heights: tall },
-  { name: 'secret', page: 'plan-others', heights: { 1280: 0 }, clip: 'article.change[data-kind="replace"]' },
+  { name: 'secret', page: 'plan-others', heights: { 1280: 0 }, clip: 'details.change[data-kind="replace"]' },
   { name: 'drift', page: 'stack', heights: { 1280: 0 }, clip: '#drift-changes' },
 ];
 

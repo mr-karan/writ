@@ -2,10 +2,10 @@
 <div class="scroll">
 <table>
 <caption class="sr-only">{{.Caption}}</caption>
-<thead><tr><th scope="col" class="num">Grant</th>{{if .Teams}}<th scope="col">Teams</th>{{end}}<th scope="col">Envs</th><th scope="col">Stacks</th><th scope="col">Can</th><th scope="col">Risks</th></tr></thead>
+<thead><tr><th scope="col" class="c-ord">Grant</th>{{if .Teams}}<th scope="col">Teams</th>{{end}}<th scope="col">Envs</th><th scope="col">Stacks</th><th scope="col">Can</th><th scope="col">Risks</th></tr></thead>
 <tbody>
 {{- range .Rows}}
-<tr><td class="num"><code>{{.Grant}}</code></td>{{if $.Teams}}<td>{{join .Teams ", "}}</td>{{end}}<td>{{join .Envs ", "}}</td><td><code>{{join .Stacks " "}}</code></td><td>{{join .Can " "}}</td><td>{{if .Risks}}{{join .Risks " "}}{{else}}<span class="muted">none</span>{{end}}</td></tr>
+<tr><td><code>{{.Grant}}</code></td>{{if $.Teams}}<td>{{join .Teams ", "}}</td>{{end}}<td>{{join .Envs ", "}}</td><td><code>{{join .Stacks " "}}</code></td><td>{{join .Can " "}}</td><td class="chips">{{template "risks" .Risks}}</td></tr>
 {{- end}}
 </tbody>
 </table>
