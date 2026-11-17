@@ -455,6 +455,10 @@ func TestSecretSets(t *testing.T) {
 		if _, err := s.PutIndexSecrets(ctx, "prod", "app", "RUN2", func(v int64) []byte { return fmt.Appendf(nil, "version %d", v) }); err != nil {
 			t.Fatal(err)
 		}
+		writeStateIn(t, l, "staging", "app", "RUN7", 5)
+		if _, err := s.PutIndexSecrets(ctx, "staging", "app", "RUN7", func(v int64) []byte { return fmt.Appendf(nil, "staging version %d", v) }); err != nil {
+			t.Fatal(err)
+		}
 		for _, v := range []struct {
 			stack, lineage string
 			serial         int64

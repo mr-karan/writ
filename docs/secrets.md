@@ -47,7 +47,7 @@ Your masked plan document keeps only the keys the mask lists. You'll never see a
 
 Two limits fail closed, so you lose the document rather than risk a secret. If your run's secrets pass 4 MiB, or one string's decoding and matching costs more than 32 MiB, Writ stores no document at all for that run.
 
-If your plan fails before the mask has read it, Writ keeps only each diagnostic's severity, summary, file, line, and column, swept. Writ never keeps a diagnostic's detail or snippet, because a validation's `error_message` can quote a variable through `nonsensitive()`. On a stack whose state is on S3, each quoted instance key in a summary also becomes `["(sensitive)"]`, as [What a run can see](serve.md#what-a-run-can-see) explains.
+If your plan fails before the mask has read it, Writ keeps only each diagnostic's severity, summary, file, line, and column, swept. Writ never keeps a diagnostic's detail or snippet, because a validation's `error_message` can quote a variable through `nonsensitive()`. On a stack whose state is on S3, each instance key a summary quotes once or twice also becomes `["(sensitive)"]`, as [What a run can see](serve.md#what-a-run-can-see) explains.
 
 Nothing else in Writ reads your run's raw state. To enforce that, `internal/archtest` refuses any code outside `internal/tofu` that reads it, other than as the argument of the mask's `Index`.
 

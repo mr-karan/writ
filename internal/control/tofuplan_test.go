@@ -39,19 +39,26 @@ func (l *lifecycle) tofuPlan(stack string, at time.Time, version int64) string {
 // http backend writes it: with the run's token and its lock.
 func writeState(t *testing.T, l *lifecycle, stack, run string, serial int64) {
 	t.Helper()
+	writeStateIn(t, l, "prod", stack, run, serial)
+}
+
+// writeStateIn writes serial as a state version of stack@env on the http
+// backend, through the lock a run takes.
+func writeStateIn(t *testing.T, l *lifecycle, env, stack, run string, serial int64) {
+	t.Helper()
 	ctx := context.Background()
 	hash := []byte("hash of " + run)
-	if err := l.s.AddStateToken(ctx, hash, control.StateToken{RunID: run, Env: "prod", Stack: stack, Scope: control.StateApply, ExpiresAt: t0.Add(time.Hour)}, t0); err != nil {
+	if err := l.s.AddStateToken(ctx, hash, control.StateToken{RunID: run, Env: env, Stack: stack, Scope: control.StateApply, ExpiresAt: t0.Add(time.Hour)}, t0); err != nil {
 		t.Fatal(err)
 	}
 	auth := control.StateAuth{Hash: hash, RunID: run, Now: t0}
-	if _, err := l.s.LockState(ctx, auth, "prod", stack, control.StateLock{ID: "lock-" + run, RunID: run, Info: "{}", At: t0}, lockRow); err != nil {
+	if _, err := l.s.LockState(ctx, auth, env, stack, control.StateLock{ID: "lock-" + run, RunID: run, Info: "{}", At: t0}, lockRow); err != nil {
 		t.Fatal(err)
 	}
-	err := l.s.PutState(ctx, control.StatePut{Env: "prod", Stack: stack, Auth: auth, LockID: "lock-" + run, Keep: 5,
+	err := l.s.PutState(ctx, control.StatePut{Env: env, Stack: stack, Auth: auth, LockID: "lock-" + run, Keep: 5,
 		Version: control.StateVersion{Serial: serial, Lineage: "lineage", SHA256: fmt.Sprintf("%064d", serial), RunID: run, At: t0},
 		Seal:    func(int64) []byte { return []byte("sealed") },
-		Audit:   control.Entry{At: t0, Request: "W" + run, Kind: "state-write", Op: "state-write", Env: "prod", Stacks: []string{stack}, Run: run, Decision: control.Allowed}})
+		Audit:   control.Entry{At: t0, Request: "W" + run, Kind: "state-write", Op: "state-write", Env: env, Stacks: []string{stack}, Run: run, Decision: control.Allowed}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,11 +27,15 @@ func TestStepDiagnosticsMasksBeforeTheKeySweep(t *testing.T) {
 func TestStepDiagnosticsSweepsQuotedKeys(t *testing.T) {
 	for _, summary := range []string{
 		`Cannot delete terraform_data.keyed["past-key"]`,
+		`Cannot delete terraform_data.keyed["past\"key"]`,
 		`reading "terraform_data.keyed[\"past-key\"]": not found`,
+		`reading "terraform_data.keyed[\"past\\\"key\"]": not found`,
+		`reading "terraform_data.keyed[\"past\\\\key\"]": not found`,
+		`reading "terraform_data.keyed[\"{\\\"h\\\":[\\\"past-key\\\"]}\"]": not found`,
 	} {
 		ev, _ := json.Marshal(map[string]any{"type": "diagnostic", "diagnostic": map[string]any{"severity": "error", "summary": summary}})
 		got := stepDiagnostics(mask.New(nil), append(ev, '\n'), true)
-		if len(got) != 1 || strings.Contains(got[0].Message, "past-key") {
+		if len(got) != 1 || strings.Contains(got[0].Message, "past") {
 			t.Fatalf("%s: %+v", summary, got)
 		}
 	}

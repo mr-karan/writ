@@ -427,8 +427,10 @@ func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask, unrea
 
 // instanceKeys matches a quoted instance key of an address, as OpenTofu
 // writes it: ["KEY"], with KEY escaped as HCL escapes a string, and as a
-// summary that quotes the address again writes it: [\"KEY\"].
-var instanceKeys = regexp.MustCompile(`\["(?:[^"\\]|\\.)*"\]|\[\\"(?:[^\\]|\\[^"])*\\"\]`)
+// summary that quotes the address once more writes it: [\"KEY\"], where
+// a quote in KEY is \\\" and a backslash \\\\. A key quoted three
+// times or more is not matched.
+var instanceKeys = regexp.MustCompile(`\["(?:[^"\\]|\\.)*"\]|\[\\"(?:[^\\]|\\\\(?:\\[\\"]|[^\\])|\\[^"\\])*\\"\]`)
 
 // stepDiagnostics returns the diagnostics of a -json event stream as
 // "file:line:column: summary", at most maxTofuDiagnostics of them, each
