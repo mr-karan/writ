@@ -194,6 +194,23 @@ func TestContrast(t *testing.T) {
 				}
 			}
 		}
+		// A category tile is a white glyph on a fill: the glyph is at
+		// least 3:1 on the fill, and the fill at least 3:1 on a card.
+		cats := 0
+		for k := range c {
+			if !strings.HasPrefix(k, "--cat-") {
+				continue
+			}
+			cats++
+			for _, other := range []string{"--on-cat", "--card"} {
+				if r := contrast(c[k][i], c[other][i]); r < 3 {
+					t.Errorf("%s: %s on %s is %.2f:1, under 3:1", theme, k, other, r)
+				}
+			}
+		}
+		if cats != 12 {
+			t.Errorf("%d category colors, want the twelve of the resources view", cats)
+		}
 	}
 }
 
