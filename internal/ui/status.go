@@ -10,9 +10,9 @@ import (
 // ended well, bad when it failed, and void when it no longer applies.
 var tones = map[string]string{
 	"planning": "run", "applying": "run",
-	"pending": "wait", "drifted": "wait", "busy": "wait",
+	"pending": "wait", "drifted": "wait", "busy": "wait", "warned": "wait",
 	"approved": "ok", "applied": "ok", "clean": "ok", "ok": "ok", "passed": "ok",
-	"refused": "bad", "failed": "bad", "failing": "bad", "in-doubt": "bad",
+	"refused": "bad", "failed": "bad", "failing": "bad", "in-doubt": "bad", "denied": "bad",
 	"superseded": "void", "expired": "void",
 }
 
