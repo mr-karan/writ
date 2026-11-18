@@ -1,0 +1,51 @@
+{{define "settings"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1>Settings</h1>
+</div>
+<section aria-labelledby="h-browser">
+<h2 id="h-browser">This browser</h2>
+<form method="post" action="/ui/settings" class="theme">
+<fieldset>
+<legend>Theme</legend>
+<label><input type="radio" name="theme" value="system"{{if eq $.Theme "system"}} checked{{end}}> System</label>
+<label><input type="radio" name="theme" value="light"{{if eq $.Theme "light"}} checked{{end}}> Light</label>
+<label><input type="radio" name="theme" value="dark"{{if eq $.Theme "dark"}} checked{{end}}> Dark</label>
+</fieldset>
+<button type="submit">Save</button>
+</form>
+<p class="muted">The theme is a cookie of this browser, and the one setting writ serve keeps for you.</p>
+</section>
+
+<section aria-labelledby="h-server">
+<h2 id="h-server">Server</h2>
+<dl class="facts">
+<dt>Version</dt><dd>writ <code>{{.Server.Version}}</code></dd>
+<dt>URL</dt><dd><code>{{.Server.URL}}</code></dd>
+<dt>Sign-in</dt><dd>{{if .Server.Login}}authorization code flow with PKCE{{else}}not set up{{end}}</dd>
+<dt>Health</dt><dd>{{if .Health.OK}}{{template "status" "ok"}}{{else}}{{template "status" "failing"}}{{end}} <span class="muted"><code>GET /healthz</code> answered <code>{{.HealthCode}}</code></span></dd>
+<dt>Control database</dt><dd>{{if .Health.Database}}answers{{else}}<strong>does not answer</strong>{{end}}</dd>
+{{range .Health.Issuers}}<dt>Issuer {{.Name}}</dt><dd>key set fetched {{template "time" .KeysAt}}{{if .ClockOffsetMS}}, clock offset <code>{{deref64 .ClockOffsetMS}} ms</code>{{end}}</dd>{{end}}
+</dl>
+{{if .Health.Diagnostics}}<div data-record="format=writ.health/v0">{{template "diags" .Health.Diagnostics}}</div>{{end}}
+</section>
+
+{{with .Config}}
+<section aria-labelledby="h-config">
+<h2 id="h-config">Config</h2>
+<dl class="facts">
+<dt>Issuers</dt><dd><ul class="plain">{{range .Issuers}}<li>{{.Name}}: {{.Kind}}, <code>{{.URL}}</code></li>{{end}}</ul></dd>
+<dt>Environments</dt><dd><ul class="plain">{{range .Envs}}<li>{{.Name}}</li>{{end}}</ul></dd>
+{{if .Forges}}<dt>Forges</dt><dd><ul class="plain">{{range .Forges}}<li>{{.Name}}: {{.Kind}}, <code>{{.URL}}</code></li>{{end}}</ul>Each default branch is polled every <code>{{.PollEvery}}</code>.</dd>{{end}}
+<dt>Lifetimes</dt><dd>plan <code>{{.PlanTTL}}</code>, session <code>{{.SessionTTL}}</code></dd>
+{{with .Admin}}
+<dt>Limits</dt><dd><code>{{.Limits.RequestsPerSecond}}</code> requests a second and <code>{{.Limits.PlansPerPrincipal}}</code> running plans for each principal, <code>{{.Limits.Plans}}</code> running plans in all, and bodies up to <code>{{.Limits.Body}}</code> bytes</dd>
+<dt>Retention</dt><dd>audit rows {{if .Retention.Audit}}<code>{{.Retention.Audit}}</code>{{else}}forever{{end}}, spent plans {{if .Retention.Plans}}<code>{{.Retention.Plans}}</code>{{else}}forever{{end}}</dd>
+{{end}}
+</dl>
+<p class="muted">To change any of these, edit the config file and restart writ serve. <code>writ serve --check</code> prints the config on the host.</p>
+</section>
+{{end}}
+<p class="muted">The control UI uses <a href="{{.License}}">Oat 1.0.0</a> by Kailash Nadh, under the MIT license.</p>
+{{end}}
+{{template "foot" .}}{{end}}

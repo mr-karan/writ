@@ -176,30 +176,6 @@
 {{- end}}
 {{end}}
 
-{{define "plan-table"}}
-<div class="scroll">
-<table class="list">
-<caption class="sr-only">{{.Caption}}</caption>
-<thead><tr><th scope="col">Status</th><th scope="col">Plan</th><th scope="col">Env</th><th scope="col">Stacks</th><th scope="col" class="num">Changes</th><th scope="col">Risks</th><th scope="col">By</th><th scope="col">Made</th><th scope="col">Expires</th></tr></thead>
-<tbody>
-{{- range .Plans}}{{$p := .}}
-<tr>
-<td data-label="Status">{{template "status" .Status}}</td>
-<td data-label="Plan"><a class="id" href="/ui/plans/{{planName .}}">{{short (planName .)}}</a>{{if .SupersededBy}} <span class="chip">superseded</span>{{end}}</td>
-<td data-label="Env">{{.Env}}</td>
-<td data-label="Stacks">{{range $i, $s := .Stacks}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}}</td>
-<td data-label="Changes" class="num">{{range $i, $s := .Stacks}}{{if $i}}, {{end}}{{template "n" (exact $s.Changes)}}{{end}}</td>
-<td data-label="Risks" class="chips">{{template "risks" .Risks}}</td>
-<td data-label="By" data-record="{{planRecord .}}"><span class="ref" data-field="author.display">{{.Author.Display}}</span>{{with from .Origin}}<br><span class="muted"><span class="ref" data-field="origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span></span>{{end}}</td>
-<td data-label="Made">{{template "time" .MadeAt}}</td>
-<td data-label="Expires">{{if .ExpiresAt}}{{template "time" .ExpiresAt}} <time class="muted" datetime="{{.ExpiresAt}}">{{since .ExpiresAt}}</time>{{end}}</td>
-</tr>
-{{- end}}
-</tbody>
-</table>
-</div>
-{{end}}
-
 {{define "error"}}{{template "head" .}}
 {{with .Data}}
 <div class="page-head">
