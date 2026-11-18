@@ -254,8 +254,9 @@ type page struct {
 	// Refresh reloads the page every so many seconds while something on
 	// it is in progress; 0 for never.
 	Refresh int
-	// Crumbs is the trail in the top bar, ending at this page, and Here
-	// the stack@env the page is about, which the sidebar marks.
+	// Crumbs is the trail to this page: its ancestors, which render above
+	// the title as links, then the page itself, which the title names. Here
+	// is the stack@env the page is about, which the sidebar marks.
 	Crumbs []crumb
 	Here   struct{ Env, Stack string }
 	// Shell is the sidebar's data, nil on a page that fetched nothing.
@@ -268,6 +269,17 @@ type page struct {
 // crumb is one step of the trail; the last is the page itself.
 type crumb struct{ Name, Href string }
 
+// Trail is the steps of the trail that link to a page above this one.
+func (p *page) Trail() []crumb {
+	var out []crumb
+	for _, c := range p.Crumbs {
+		if c.Href != "" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func (u *UI) theme(r *http.Request) string {
 	if c, err := r.Cookie(themeCookie); err == nil && (c.Value == "light" || c.Value == "dark") {
 		return c.Value
@@ -278,9 +290,6 @@ func (u *UI) theme(r *http.Request) string {
 func (u *UI) render(w http.ResponseWriter, r *http.Request, status int, name string, p *page) {
 	p.Theme = u.theme(r)
 	p.Now = u.now().UTC().Format(time.RFC3339)
-	if len(p.Crumbs) == 0 && p.Title != "" {
-		p.Crumbs = []crumb{{Name: p.Title}}
-	}
 	var b bytes.Buffer
 	if err := u.tmpl.ExecuteTemplate(&b, name, p); err != nil {
 		u.log.Error("render a page", "template", name, "err", err)

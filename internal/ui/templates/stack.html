@@ -81,7 +81,7 @@
 <h2>Started by writ serve</h2>
 {{if .Applies.Runs}}{{template "applies-table" .Applies}}{{else}}<p class="empty">{{none "no-run" (exact (len .Applies.Runs))}}</p>{{end}}
 {{else}}
-{{if .Plans.Plans}}{{template "plan-table" (plans (print "Plans of " .Stack " in " .Env) .Plans.Plans)}}
+{{if .Plans.Plans}}{{template "plan-table" (plans (print "Plans of " .Stack " in " .Env) .Plans.Plans "status" "stack")}}
 {{if .Plans.Next}}<p class="muted">The newest {{template "n" (exact (len .Plans.Plans))}} plans of this stack. <a href="{{link "/ui/plans" "env" .Env "stack" .Stack "cursor" .Plans.Next}}">Older plans</a></p>{{end}}
 {{else}}<p class="empty">{{none "no-stack-plan" (exact (len .Plans.Plans))}}</p>{{end}}
 {{end}}

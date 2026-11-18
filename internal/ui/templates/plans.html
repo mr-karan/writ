@@ -4,16 +4,16 @@
 <h1>Plans</h1>
 </div>
 {{template "env-filter" (envs "/ui/plans" .Env .Envs false)}}
-<form method="get" action="/ui/plans" class="filters">
+<form method="get" action="/ui/plans" class="bar" role="search">
 <input type="hidden" name="env" value="{{.Env}}">
-<div class="field"><label for="stack">Stack</label>
-<input id="stack" name="stack" value="{{.Stack}}" size="16" autocomplete="off"></div>
-<div class="field"><label for="status">Status</label>
-<select id="status" name="status"><option value="">all</option>{{range .Statuses}}<option value="{{.}}"{{if eq . $.Data.Status}} selected{{end}}>{{.}}</option>{{end}}</select></div>
-<button type="submit" class="outline">Filter</button>
+{{- with .Status}}
+<input type="hidden" name="status" value="{{.}}">
+{{- end}}
+<div class="find"><label for="stack" class="sr-only">Filter by stack</label>{{template "icon" "search"}}<input id="stack" name="stack" type="search" value="{{.Stack}}" placeholder="Filter by stack" autocomplete="off"></div>
+{{template "pick" .StatusPick}}
 </form>
 {{if .Plans}}
-{{template "plan-table" (plans (print "Plans in " .Env ", newest first") .Plans)}}
+{{template "plan-table" (plans (print "Plans in " .Env ", newest first") .Plans "status" "stack")}}
 {{if .Next}}<p class="muted">{{if .Cursor}}These are{{else}}The newest{{end}} {{template "n" (exact (len .Plans))}} plans that match, and older ones follow. <a href="{{link "/ui/plans" "env" .Env "stack" .Stack "status" .Status "cursor" .Next}}">Older plans</a></p>{{end}}
 {{else if .Cursor}}
 <p class="empty">Every older plan that matches is listed before this page. <a href="{{link "/ui/plans" "env" .Env "stack" .Stack "status" .Status}}">The newest plans</a></p>
@@ -133,11 +133,11 @@
 {{if .Next}}<p class="note">writ serve read the newest {{template "n" (exact .Read)}} plans that wait in {{.Env}}, and older ones wait too, so each count below is a floor. <a href="{{link "/ui/plans" "env" .Env "status" "pending" "cursor" .Next}}">Older plans that wait</a></p>{{end}}
 <section aria-labelledby="h-others">
 <h2 id="h-others">Plans by others ({{template "n" .OthersN}})</h2>
-{{if .Others}}{{template "plan-table" (plans "Plans by others that wait" .Others)}}{{else}}<p class="empty">{{with none "no-others" .OthersN}}{{.}}{{else}}The newest plans that wait are all yours; a plan by someone else may wait among the older ones.{{end}}</p>{{end}}
+{{if .Others}}{{template "plan-table" (plans "Plans by others that wait" .Others "status" "stack")}}{{else}}<p class="empty">{{with none "no-others" .OthersN}}{{.}}{{else}}The newest plans that wait are all yours; a plan by someone else may wait among the older ones.{{end}}</p>{{end}}
 </section>
 <section aria-labelledby="h-mine">
 <h2 id="h-mine">Yours ({{template "n" .MineN}})</h2>
-{{if .Mine}}{{template "plan-table" (plans "Your plans that wait" .Mine)}}{{else}}<p class="empty">{{with none "no-mine" .MineN}}{{.}}{{else}}The newest plans that wait are all by others; a plan of yours may wait among the older ones.{{end}}</p>{{end}}
+{{if .Mine}}{{template "plan-table" (plans "Your plans that wait" .Mine "status" "stack")}}{{else}}<p class="empty">{{with none "no-mine" .MineN}}{{.}}{{else}}The newest plans that wait are all by others; a plan of yours may wait among the older ones.{{end}}</p>{{end}}
 </section>
 {{end}}
 {{template "foot" .}}{{end}}

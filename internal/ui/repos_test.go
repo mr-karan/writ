@@ -112,7 +112,7 @@ func TestDevAddRepository(t *testing.T) {
 		t.Fatalf("sign-in: %d %s %s", status, at, body)
 	}
 	// Getting started is no section of the navigation, so none is current.
-	nav, _, _ := strings.Cut(body[strings.Index(body, `<nav class="sections"`):], "</nav>")
+	nav, _, _ := strings.Cut(body[strings.Index(body, `<nav class="sections nav"`):], "</nav>")
 	if strings.Contains(nav, `aria-current="page"`) {
 		t.Errorf("getting started marks a section of the navigation as current:\n%s", body)
 	}

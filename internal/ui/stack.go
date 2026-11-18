@@ -52,6 +52,7 @@ func (u *UI) stack(w http.ResponseWriter, r *http.Request, s *server.Session) {
 		if d.Applies, ok = f.applies("Runs of "+d.Stack+" in "+d.Env+" that writ serve started, newest first", d.Env, d.Stack); !ok {
 			return
 		}
+		d.Applies.Stack = true
 		p.CLI = "writ runs --remote --env " + d.Env + " --stack " + d.Stack
 	case "plans":
 		d.Plans = &server.RemotePlans{}

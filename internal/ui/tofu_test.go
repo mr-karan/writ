@@ -563,8 +563,8 @@ func TestTofuRunPages(t *testing.T) {
 		"Run " + failed.Run.ID[:8] + " failed",
 		"The apply failed. The diagnostics below say why.",
 		"Diagnostics (2)",
-		"error usage: tofu apply exited with code 1",
-		"error usage: main.tf:23:32: Create local file error",
+		"error usage tofu apply exited with code 1",
+		"error usage main.tf:23:32: Create local file error",
 		"Resources (1)",
 		"local_file.broken create errored 0",
 	} {
@@ -576,18 +576,19 @@ func TestTofuRunPages(t *testing.T) {
 		t.Errorf("the failed run's page shows a diagnostic's detail:\n%s", body)
 	}
 
+	// Each list is of one environment, dev, so a row names the stack alone.
 	for _, path := range []string{"/ui/runs", "/ui/runs?env=dev&stack=app", "/ui/stack?stack=app&env=dev&view=runs"} {
 		_, doc := x.page(path)
 		body := words(doc)
-		for _, want := range []string{"failed " + failed.Run.ID[:8] + " app@dev " + p3.Plan.ID[:8] + " tester", "applied " + ok.Run.ID[:8] + " app@dev " + p.Plan.ID[:8] + " tester"} {
+		for _, want := range []string{"failed " + failed.Run.ID[:8] + " app " + p3.Plan.ID[:8] + " tester", "applied " + ok.Run.ID[:8] + " app " + p.Plan.ID[:8] + " tester"} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s lacks %q:\n%s", path, want, body)
 			}
 		}
 	}
 	_, doc = x.page("/ui/plans?env=dev")
-	if body := words(doc); !strings.Contains(body, p3.Plan.ID[:8]+" dev app") {
-		t.Errorf("the plans list lacks the OpenTofu plan with its stack and env:\n%s", body)
+	if body := words(doc); !strings.Contains(body, p3.Plan.ID[:8]+" app") {
+		t.Errorf("the plans list of dev lacks the OpenTofu plan with its stack:\n%s", body)
 	}
 }
 

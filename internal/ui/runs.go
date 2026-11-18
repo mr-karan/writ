@@ -8,11 +8,13 @@ import (
 )
 
 // appliesTable is the data of the applies-table template: the runs writ
-// serve started.
+// serve started. Stack shows the stack of each, which a list of one
+// stack's runs leaves out.
 type appliesTable struct {
 	Caption string
 	Runs    []server.RunInfo
 	More    bool
+	Stack   bool
 }
 
 // applies gets the runs writ serve started in env, of stack when it is
@@ -53,6 +55,7 @@ func (u *UI) runs(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	if d.Applies, ok = f.applies(caption, d.Env, d.Stack); !ok {
 		return
 	}
+	d.Applies.Stack = true
 	p.CLI = "writ runs --remote --env " + d.Env
 	if d.Stack != "" {
 		p.CLI += " --stack " + d.Stack

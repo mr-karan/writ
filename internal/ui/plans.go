@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,11 +16,11 @@ import (
 type plansData struct {
 	Env, Stack, Status string
 	// Cursor is the page's own cursor, "" on the newest page.
-	Cursor   string
-	Envs     []string
-	Statuses []string
-	Plans    []server.PlanInfo
-	Next     string
+	Cursor     string
+	Envs       []string
+	StatusPick picker
+	Plans      []server.PlanInfo
+	Next       string
 }
 
 // plans lists the plans of one environment, newest first, with filters in
@@ -27,11 +28,14 @@ type plansData struct {
 func (u *UI) plans(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	f := u.fetcher(w, r, s)
 	q := r.URL.Query()
-	d := plansData{Stack: q.Get("stack"), Status: q.Get("status"), Cursor: q.Get("cursor"),
-		Statuses: []string{"planning", "pending", "approved", "applying", "applied", "refused", "failed", "expired", "superseded"}}
+	d := plansData{Stack: q.Get("stack"), Status: q.Get("status"), Cursor: q.Get("cursor")}
 	var ok bool
 	if d.Env, d.Envs, ok = f.listEnv(q.Get("env")); !ok {
 		return
+	}
+	d.StatusPick = picker{Label: "Status", Value: cmp.Or(d.Status, "all")}
+	for _, s := range []string{"", "planning", "pending", "approved", "applying", "applied", "refused", "failed", "expired", "superseded"} {
+		d.StatusPick.Items = append(d.StatusPick.Items, pickItem{Name: cmp.Or(s, "all"), Href: link("/ui/plans", "env", d.Env, "stack", d.Stack, "status", s), Current: s == d.Status})
 	}
 	var doc server.RemotePlans
 	if !f.main(link("/v1/plans", "env", d.Env, "stack", d.Stack, "status", d.Status, "cursor", d.Cursor), &doc) {

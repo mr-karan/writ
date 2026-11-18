@@ -131,25 +131,25 @@ type count struct {
 	What string
 }
 
-// envNode is one environment of the sidebar's tree. Its tone and note
-// come from the environment's counts, not from the stacks the tree lists.
-// Count is its stacks with state or a live plan, and More those with state
-// that the tree leaves out.
+// envNode is one environment of the sidebar's tree. Its tone comes from
+// the environment's counts, not from the stacks the tree lists. Count is
+// its stacks with state or a live plan, and More those with state that the
+// tree leaves out.
 type envNode struct {
 	Name   string
 	Tone   string
-	Note   []part
 	Stacks []stackNode
 	Count  figure
 	More   figure
 }
 
 // stackNode is one stack@env: its look, and what it waits on in words, so
-// the dot is never the only sign.
+// the dot is never the only sign. Quiet is set when all is well with it,
+// so only a screen reader hears its note.
 type stackNode struct {
 	Name, Env, Tone string
 	Note            []part
-	Current         bool
+	Current, Quiet  bool
 }
 
 // part is one piece of a tree note: a count and what it counts, such as
@@ -242,14 +242,10 @@ func tree(a *server.OverviewDoc, envs []string, hereEnv, hereStack, find string)
 				continue
 			}
 			tone, note := look(st, e.PlansMore)
-			n.Stacks = append(n.Stacks, stackNode{Name: st.Stack, Env: env, Tone: tone, Note: note, Current: env == hereEnv && st.Stack == hereStack})
+			n.Stacks = append(n.Stacks, stackNode{Name: st.Stack, Env: env, Tone: tone, Note: note, Current: env == hereEnv && st.Stack == hereStack, Quiet: tone == "ok"})
 		}
 		if find != "" && len(n.Stacks) == 0 && n.More.None() && !e.PlansMore {
 			continue
-		}
-		n.Note = liveNote(e.Plans, e.PlansMore)
-		if len(n.Note) == 0 {
-			n.Note = []part{counted(n.Count, noun(n.Count, "stack", "stacks"))}
 		}
 		out = append(out, n)
 	}

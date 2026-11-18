@@ -142,10 +142,11 @@ func TestOverviewPastTheList(t *testing.T) {
 	if got := classTexts(p.doc, "count"); !slices.Contains(got, "200+ or more waiting") {
 		t.Errorf("the sidebar's counts with 201 plans that wait: %q", got)
 	}
-	// network has state and comes after the 200 stacks listed, so the
-	// tree leaves it out and says so, and never lists it as a stack with
-	// no state.
-	if got := classTexts(p.doc, "envs"); len(got) != 1 || !strings.Contains(got[0], "prod 200+ or more pending") || !strings.Contains(got[0], "1 more with state, not listed") ||
+	// prod holds network and the 200 stacks named before it, and with
+	// plans left unread its count of stacks is a floor. network has state
+	// and comes after the 200 stacks listed, so the tree leaves it out and
+	// says so, and never lists it as a stack with no state.
+	if got := classTexts(p.doc, "envs"); len(got) != 1 || !strings.Contains(got[0], "prod 201+ or more stacks") || !strings.Contains(got[0], "1 more with state, not listed") ||
 		strings.Contains(got[0], "network") {
 		t.Errorf("the sidebar with 201 plans that wait: %q", got)
 	}
