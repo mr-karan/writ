@@ -122,7 +122,7 @@ details > :not(summary) { margin: 0; }
 details[open] > :not(summary) { animation: none; }
 summary { display: block; padding: 0; font-weight: inherit; user-select: auto; transition: none; }
 summary:hover { background: none; }
-summary::after { content: none; }
+summary::after { content: none; mask-image: none; background: none; transition: none; }
 
 /* The frame: a sidebar and the page. */
 /* The sidebar's ground is painted on the frame too, so it runs the full
