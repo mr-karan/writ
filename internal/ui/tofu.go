@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/server"
@@ -442,12 +441,7 @@ type tofuRunResource struct {
 // creates one address.
 func newTofuRun(rr server.RemoteRun, plan *server.PlanInfo) tofuRunData {
 	d := tofuRunData{Run: rr.Run, Plan: plan, Text: rr.Text, Steps: runSteps(rr.Run)}
-	if start, err := time.Parse(time.RFC3339, rr.Run.StartedAt); err == nil {
-		if end, err := time.Parse(time.RFC3339, rr.Run.EndedAt); err == nil {
-			took := end.Sub(start).Round(time.Second)
-			d.Took, d.TookFor = took.String(), fmt.Sprintf("PT%dS", int(took.Seconds()))
-		}
-	}
+	d.Took, d.TookFor = took(rr.Run.StartedAt, rr.Run.EndedAt)
 	if len(rr.Document) == 0 || string(rr.Document) == "null" {
 		return d
 	}
