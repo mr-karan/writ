@@ -18,7 +18,7 @@ func TestOfflineAWSImportGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = provider.Install(context.Background(), provider.InstallOptions{Dirs: dirs}, nil, []provider.Requirement{{Name: "aws", Source: schema.Source{Namespace: "hashicorp", Type: "aws"}, Version: "6.70.0"}})
+	_, err = provider.Install(context.Background(), provider.InstallOptions{Dirs: dirs}, []provider.Requirement{{Name: "aws", Source: schema.Source{Namespace: "hashicorp", Type: "aws"}, Version: "6.70.0"}})
 	if err != nil {
 		t.Fatal(err)
 	}

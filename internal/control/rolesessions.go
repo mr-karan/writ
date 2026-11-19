@@ -29,7 +29,7 @@ func (s *Store) RecordRoleSession(ctx context.Context, r RoleSession) error {
 			first_at = CASE WHEN role_sessions.first_at < excluded.first_at THEN role_sessions.first_at ELSE excluded.first_at END,
 			expires_at = CASE WHEN role_sessions.expires_at > excluded.expires_at THEN role_sessions.expires_at ELSE excluded.expires_at END`,
 		r.Role, r.Name, r.SourceIdentity, r.From.UnixMilli(), r.Until.UnixMilli())
-	return s.db.Error(err)
+	return err
 }
 
 // RoleSessions returns the recorded sessions of a role with a session

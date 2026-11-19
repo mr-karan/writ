@@ -67,9 +67,9 @@ func installed(t *testing.T) provider.Dirs {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		opts := provider.InstallOptions{Dirs: c.dirs, Offline: true}
-		if _, cached := provider.Install(ctx, opts, nil, reqs); cached != nil {
+		if _, cached := provider.Install(ctx, opts, reqs); cached != nil {
 			opts.Offline = false
-			if _, err := provider.Install(ctx, opts, nil, reqs); err != nil {
+			if _, err := provider.Install(ctx, opts, reqs); err != nil {
 				c.err = errors.Join(cached, err)
 			}
 		}
@@ -89,7 +89,7 @@ func schemas(t *testing.T) map[schema.Source]*schema.Provider {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	lock, err := provider.Install(ctx, provider.InstallOptions{Dirs: dirs, Offline: true}, nil, reqs)
+	lock, err := provider.Install(ctx, provider.InstallOptions{Dirs: dirs, Offline: true}, reqs)
 	if err != nil {
 		t.Fatal(err)
 	}

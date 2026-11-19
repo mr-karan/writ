@@ -90,13 +90,13 @@ type LiveCounts struct {
 
 func (c *LiveCounts) add(status string) {
 	switch status {
-	case "planning":
+	case PlanPlanning:
 		c.Planning++
-	case "pending":
+	case PlanPending:
 		c.Pending++
-	case "approved":
+	case PlanApproved:
 		c.Approved++
-	case "applying":
+	case PlanApplying:
 		c.Applying++
 	}
 }
@@ -243,12 +243,12 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			alert := Alert{Env: st.Env, Stack: st.Stack}
 			if c := d.Check; c != nil {
 				switch c.Status {
-				case "drifted":
+				case DriftDrifted:
 					a := alert
 					a.Kind, a.At = AlertDrifted, cmp.Or(c.DriftedSince, c.CheckedAt)
 					a.Message = plural(c.Outside, "change") + " outside OpenTofu, " + plural(c.Code, "change") + " the code would make"
 					doc.Alerts = append(doc.Alerts, a)
-				case "failed":
+				case DriftFailed:
 					a := alert
 					a.Kind, a.At, a.Message = AlertDriftCheckFailed, c.CheckedAt, c.Error
 					doc.Alerts = append(doc.Alerts, a)
@@ -271,7 +271,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	seen := map[string]int{}
 	for i := range doc.Envs {
 		e := &doc.Envs[i]
-		for _, status := range []string{"planning", "pending", "approved", "applying"} {
+		for _, status := range []string{PlanPlanning, PlanPending, PlanApproved, PlanApplying} {
 			got, next, err := s.store.Plans(ctx, control.PlanFilter{Env: e.Name, Status: status, Rules: rules, Limit: overviewLimit,
 				Keep: reads}, now)
 			if err != nil {
@@ -317,7 +317,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			st.Plans.add(info.Status)
 		}
 	}
-	for status, into := range map[string]*[]LivePlan{"applying": &doc.Applying, "pending": &doc.Pending, "planning": &doc.Planning} {
+	for status, into := range map[string]*[]LivePlan{PlanApplying: &doc.Applying, PlanPending: &doc.Pending, PlanPlanning: &doc.Planning} {
 		for _, pl := range live[status] {
 			lp := LivePlan{Plan: pl}
 			if run, ok := runs[pl.ID]; ok {
@@ -353,7 +353,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			Message: "the apply by " + run.Actor.Display + " failed"})
 	}
 	soon := min(expiringWindow, s.cfg.PlanTTL/4)
-	for _, pl := range append(slices.Clone(live["pending"]), live["approved"]...) {
+	for _, pl := range append(slices.Clone(live[PlanPending]), live[PlanApproved]...) {
 		exp, err := time.Parse(time.RFC3339, pl.ExpiresAt)
 		if err != nil || exp.Sub(now) > soon {
 			continue

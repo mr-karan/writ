@@ -20,10 +20,8 @@ func TestPoolStartsNothingUntilUsed(t *testing.T) {
 }
 
 func TestPoolReportsUninstalledProviders(t *testing.T) {
-	p := NewPool(PoolOptions{
-		Dirs:    Dirs{Cache: t.TempDir()},
-		Configs: []Config{{Source: tlsSrc, Version: "4.4.2"}},
-	})
+	p := NewPool(PoolOptions{Dirs: Dirs{Cache: t.TempDir()}})
+	p.Add(&Lock{}, []Config{{Source: tlsSrc, Version: "4.4.2"}})
 	defer p.Close(context.Background())
 	_, err := p.Client(context.Background(), keyOf(tlsSrc))
 	var missing *MissingError

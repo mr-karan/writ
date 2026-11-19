@@ -42,10 +42,8 @@ func (k ConfigKey) String() string { return k.Source.String() + " " + k.Version 
 
 // PoolOptions configures a Pool.
 type PoolOptions struct {
-	Dirs    Dirs
-	Lock    *Lock
-	Configs []Config
-	Log     *slog.Logger
+	Dirs Dirs
+	Log  *slog.Logger
 	// Launch is how the pool starts each provider process.
 	Launch Launch
 }
@@ -84,12 +82,7 @@ func NewPool(opts PoolOptions) *Pool {
 	if opts.Log == nil {
 		opts.Log = slog.New(slog.DiscardHandler)
 	}
-	if opts.Lock == nil {
-		opts.Lock = &Lock{}
-	}
-	p := &Pool{opts: opts, configs: map[ConfigKey]lockedConfig{}, clients: make(map[ConfigKey]*poolEntry)}
-	p.Add(opts.Lock, opts.Configs)
-	return p
+	return &Pool{opts: opts, configs: map[ConfigKey]lockedConfig{}, clients: make(map[ConfigKey]*poolEntry)}
 }
 
 // Add lets the pool start configs, each pinned by lock. A run over several

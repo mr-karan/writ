@@ -202,14 +202,14 @@ type Rules struct {
 	Counts func(person string) bool
 	// Need is the approvals the current rules ask of a plan.
 	Need func(Plan) int
-	// Speculative is set on a dev server, which approves and applies a
-	// speculative plan, of files a client sent. A team's control plane
-	// never applies one, so its status stays pending whatever its
-	// approvals.
+	// Speculative is set on a dev server, which applies a speculative
+	// plan, of files a client sent, that needs no approval; the server
+	// takes no approval of one. A team's control plane never applies one,
+	// so its status stays pending whatever its approvals.
 	Speculative bool
 }
 
-// Approvable reports whether p takes approvals and applies under the
+// Approvable reports whether p may reach approved and apply under the
 // rules: a plan of a commit always, a speculative plan only on a dev
 // server.
 func (r Rules) Approvable(p Plan) bool { return p.Source.Commit != "" || r.Speculative }
@@ -503,7 +503,7 @@ func (s *Store) PipelineHas(ctx context.Context, p Pipeline, id string) (bool, e
 	}
 	var n int
 	err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM plans WHERE id = ? AND "+plansOfRequests(ofPipeline), id, p.Issuer, p.ProjectID, p.Pipeline).Scan(&n)
-	return n > 0, s.db.Error(err)
+	return n > 0, err
 }
 
 // mergedPage is how many candidate plans MergedPlan reads in one query.

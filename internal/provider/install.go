@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -69,27 +68,23 @@ type InstallOptions struct {
 	HTTP *http.Client
 	Log  *slog.Logger
 	// Offline resolves every requirement from the cache alone, verified
-	// against writ.lock or the hashes recorded when it was extracted, and
-	// never contacts a registry. A version that is not cached is an error.
+	// against the hashes recorded when it was extracted, and never contacts
+	// a registry. A version that is not cached is an error.
 	Offline bool
 	// Launch is how the providers start to report their schemas.
 	Launch Launch
 }
 
-// Install installs each requirement for the current platform.
+// Install installs each requirement for the current platform and returns
+// the lock of what it installed.
 //
-// A requirement pinned in lock whose cached binary matches the pinned hash
-// needs no network. Otherwise Install asks the registry for the release,
-// refuses an archive hash that differs from the pin (it never re-pins),
-// downloads and verifies the archive unless the cache already holds it, and
-// extracts the binary. A provider whose schema is not cached is started once
-// to fetch it. With Offline, a requirement that would need the registry is an
-// error instead. GPG verification of the SHA256SUMS signature is not in version
-// 0; see the open questions in docs/architecture.md.
-func Install(ctx context.Context, opts InstallOptions, lock *Lock, reqs []Requirement) (*Lock, error) {
-	if lock == nil {
-		lock = &Lock{}
-	}
+// Install asks the registry for the release, downloads and verifies the
+// archive unless the cache already holds it, and extracts the binary. A
+// provider whose schema is not cached is started once to fetch it. With
+// Offline, Install takes each requirement from the cache alone, and one that
+// is not cached is an error. GPG verification of the SHA256SUMS signature is
+// not in version 0; see the open questions in docs/architecture.md.
+func Install(ctx context.Context, opts InstallOptions, reqs []Requirement) (*Lock, error) {
 	in := installer{dirs: opts.Dirs, platform: CurrentPlatform(), http: opts.HTTP, log: opts.Log, offline: opts.Offline, launch: opts.Launch}
 	if in.http == nil {
 		in.http = &http.Client{Timeout: downloadTimeout}
@@ -111,14 +106,14 @@ func Install(ctx context.Context, opts InstallOptions, lock *Lock, reqs []Requir
 				return
 			}
 			defer func() { <-sem }()
-			entries[i], errs[i] = in.install(ctx, lock, req)
+			entries[i], errs[i] = in.install(ctx, req)
 		})
 	}
 	wg.Wait()
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	out := &Lock{entries: slices.Clone(lock.entries)}
+	out := &Lock{}
 	for _, e := range entries {
 		out = out.with(e)
 	}
@@ -147,31 +142,17 @@ type installer struct {
 	launch   Launch
 }
 
-func (in installer) install(ctx context.Context, lock *Lock, req Requirement) (LockEntry, error) {
+func (in installer) install(ctx context.Context, req Requirement) (LockEntry, error) {
 	if err := checkPathPart("version", req.Version); err != nil {
 		return LockEntry{}, fmt.Errorf("%s: %w", req.Source, err)
 	}
 	bin := in.dirs.BinaryPath(req.Source, req.Version, in.platform)
-	pinned, isPinned := lock.find(req.Source, req.Version, in.platform)
-	if isPinned {
-		if err := req.admit(in.platform, pinned.Archive); err != nil {
-			return LockEntry{}, err
-		}
-		if sum, err := binaryHash(bin, false, in.log); err == nil && sum == pinned.Binary {
-			in.log.Debug("provider already installed", "source", req.Source.String(), "version", req.Version)
-			return pinned, in.ensureSchema(ctx, req, pinned, bin)
-		}
-	}
 	if in.offline {
-		return in.fromCache(ctx, req, bin, isPinned)
+		return in.fromCache(ctx, req, bin)
 	}
 	rel, err := registry{http: in.http}.release(ctx, req.Source, req.Version, in.platform)
 	if err != nil {
 		return LockEntry{}, err
-	}
-	if isPinned && rel.archive != pinned.Archive {
-		return LockEntry{}, fmt.Errorf("%s %s %s: the registry's archive hash %x differs from %s (%x); writ never re-pins a version",
-			req.Source, req.Version, in.platform, rel.archive, LockFile, pinned.Archive)
 	}
 	if err := req.admit(in.platform, rel.archive); err != nil {
 		return LockEntry{}, err
@@ -182,24 +163,16 @@ func (in installer) install(ctx context.Context, lock *Lock, req Requirement) (L
 	} else if entry.Binary, err = in.download(ctx, req, rel, bin); err != nil {
 		return LockEntry{}, err
 	}
-	if isPinned && entry.Binary != pinned.Binary {
-		return LockEntry{}, fmt.Errorf("%s %s %s: the extracted binary's hash %x differs from %s (%x)",
-			req.Source, req.Version, in.platform, entry.Binary, LockFile, pinned.Binary)
-	}
 	return entry, in.ensureSchema(ctx, req, entry, bin)
 }
 
 // fromCache pins a requirement to the cached binary and the archive hash its
 // .sum file records, after checking the binary still has the hash recorded
-// there. install has already found that a pinned requirement's binary is
-// missing or differs from its pin.
-func (in installer) fromCache(ctx context.Context, req Requirement, bin string, isPinned bool) (LockEntry, error) {
+// there.
+func (in installer) fromCache(ctx context.Context, req Requirement, bin string) (LockEntry, error) {
 	what := fmt.Sprintf("%s %s %s", req.Source, req.Version, in.platform)
 	if _, err := os.Stat(bin); errors.Is(err, fs.ErrNotExist) {
 		return LockEntry{}, fmt.Errorf("%s is not in the provider cache at %s; install it online to download it", what, in.dirs.Cache)
-	}
-	if isPinned {
-		return LockEntry{}, fmt.Errorf("%s: the cached binary %s does not match its hash in %s; install it online to download it again", what, bin, LockFile)
 	}
 	archive, binary, err := cachedBinary(bin, in.log)
 	if err != nil {

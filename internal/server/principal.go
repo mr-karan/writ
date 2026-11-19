@@ -99,8 +99,8 @@ func (s *Server) knownIdentity(person string) bool {
 // rules are the config's approval rules. An approval counts only when its
 // person is of an identity the config defines, so a person whose
 // identity was renamed, and who approved again under the new name, counts
-// once. --dev serves one person, checks no identity, and approves and
-// applies a speculative plan.
+// once. --dev serves one person, checks no identity, and applies a
+// speculative plan that needs no approval.
 func (s *Server) rules() control.Rules {
 	return control.Rules{
 		Counts:      func(person string) bool { return s.cfg.Dev || s.knownIdentity(person) },

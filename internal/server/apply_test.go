@@ -481,6 +481,64 @@ func (f *fixture) devPlan(tok string) server.RemotePlan {
 	return f.waitPlan(tok, p.doc["plan"].(map[string]any)["ref"].(string))
 }
 
+// keptSpeculative stores a pending speculative plan of network@prod by
+// alice, of files a client sent, as writ serve kept one before it planned
+// only commits, and returns its id.
+func keptSpeculative(t *testing.T, f *fixture) string {
+	t.Helper()
+	ctx := context.Background()
+	now := time.Now()
+	cfgID, err := f.store.RecordConfig(ctx, f.cfg.Text, f.cfg.URL, "test", &f.cfg.Policy, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := control.Entry{At: now, Kind: "test", Decision: control.Allowed, ConfigID: cfgID}
+	pl := control.Plan{Ref: "SPECULATIVE", Env: "prod", Stack: "network", ConfigID: cfgID, RequestedAt: now, SourceDigest: "digest",
+		Author: control.Principal{Issuer: "gitlab", Person: "gitlab/user/1001", Display: "alice", Detail: json.RawMessage(`{"kind":"person"}`)},
+		Origin: json.RawMessage(`{}`)}
+	if err := f.store.CreatePlan(ctx, pl, control.TokenUse{}, e); err != nil {
+		t.Fatal(err)
+	}
+	id := strings.Repeat("5", 32)
+	res := control.PlanResult{ID: id, Status: control.Pending, MadeAt: now, ExpiresAt: now.Add(time.Hour), Risks: []string{"create"}, Changes: 1, Need: 1, Saved: []byte("saved")}
+	if err := f.store.FinishPlan(ctx, pl.Ref, res, e); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// No control plane takes an approval of a speculative plan, a dev one
+// included, and the UI offers none: it is refused as a drift plan is, and
+// stores no approval.
+func TestSpeculativePlanTakesNoApproval(t *testing.T) {
+	controltest.Each(t, func(t *testing.T, e controltest.Engine) {
+		store, _ := controltest.Open(t, e)
+		dev, devTok := devServerWithOptions(t, &fakeTofu{}, func(o *server.Options) { o.Store = store })
+		dev.store = store
+		team := tofuFixtureOn(t, e, &fakeTofu{plan: createOnly}, uidLines(t), withApprovals(t))
+		for _, tt := range []struct {
+			name string
+			f    *fixture
+			tok  string
+		}{
+			{"dev", dev, devTok},
+			{"team", team, bob(team)},
+		} {
+			t.Run(tt.name, func(t *testing.T) {
+				id := keptSpeculative(t, tt.f)
+				r := tt.f.do("POST", "/v1/plans/"+id+"/approvals", tt.tok, nil)
+				if r.status != http.StatusConflict || r.class() != "state" || !strings.Contains(string(r.body), "plan "+id+" is a speculative plan, of files a client sent, which writ serve never approves") {
+					t.Errorf("approve a speculative plan: %d %s", r.status, r.body)
+				}
+				got, err := tt.f.store.Approvals(context.Background(), []string{id})
+				if err != nil || len(got[id]) != 0 {
+					t.Errorf("approvals of the speculative plan: %+v, %v", got[id], err)
+				}
+			})
+		}
+	})
+}
+
 // An override applies a plan without its approvals, for a person with
 // override, with a reason; it is refused for a plan that has them.
 func TestOverride(t *testing.T) {

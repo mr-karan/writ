@@ -149,10 +149,10 @@ func OpenTofuStack(ctx context.Context, dir string, opts TofuOptions) (*TofuStac
 	// The lock's hashes pin each archive, so a cached provider needs no
 	// registry, and Install starts none whose archive they do not list.
 	install := provider.InstallOptions{Dirs: opts.Dirs, Log: opts.Log, Offline: true, Launch: opts.Launch}
-	lock, err := provider.Install(ctx, install, nil, reqs)
+	lock, err := provider.Install(ctx, install, reqs)
 	if err != nil && !opts.Offline {
 		install.Offline = false
-		lock, err = provider.Install(ctx, install, nil, reqs)
+		lock, err = provider.Install(ctx, install, reqs)
 	}
 	if errors.Is(err, provider.ErrUnlistedArchive) {
 		return nil, fmt.Errorf("%w; run tofu providers lock -platform=%s in the stack, and check what it changes", err, provider.CurrentPlatform())
@@ -170,7 +170,7 @@ func OpenTofuStack(ctx context.Context, dir string, opts TofuOptions) (*TofuStac
 	}
 	return &TofuStack{
 		code: code, lock: lock, schemas: schemas, hasher: value.NewHasher(key),
-		pool:    provider.NewPool(provider.PoolOptions{Dirs: opts.Dirs, Lock: lock, Log: opts.Log, Launch: opts.Launch}),
+		pool:    provider.NewPool(provider.PoolOptions{Dirs: opts.Dirs, Log: opts.Log, Launch: opts.Launch}),
 		configs: map[tfcode.ProviderRef]*tofuConfig{},
 	}, nil
 }
