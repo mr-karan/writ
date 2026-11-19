@@ -37,7 +37,8 @@ func String(s string) hclwrite.Tokens {
 
 // Quoted is s as a quoted HCL string, never a heredoc, with every template
 // sequence and every character that is not printable escaped. OpenTofu
-// reads back s exactly when s is valid UTF-8 in normal form C.
+// reads back s exactly when s is valid UTF-8 in normal form C. It differs
+// from addr.Quote, which writes Writ's address syntax rather than HCL.
 func Quoted(s string) string {
 	return string(hclwrite.TokensForValue(cty.StringVal(s)).Bytes())
 }
