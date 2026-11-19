@@ -477,6 +477,9 @@ func (x *showcase) seed() map[string]string {
 		"stack-drift":     "/ui/stack?stack=app&env=" + server.DevEnv + "&view=drift",
 		"stack-many":      "/ui/stack?stack=platform&env=" + server.DevEnv,
 		"stack-many-find": "/ui/stack?stack=platform&env=" + server.DevEnv + "&q=module.cluster",
+		"stack-modules":   "/ui/stack?stack=platform&env=" + server.DevEnv + "&group=module",
+		"stack-root":      "/ui/stack?stack=alerts&env=" + server.DevEnv,
+		"stack-root-flat": "/ui/stack?stack=alerts&env=" + server.DevEnv + "&group=flat",
 		"repos":           "/ui/repos",
 		"repo":            "/ui/repos/demo",
 		"repo-new":        "/ui/repos/new",
@@ -504,11 +507,17 @@ func (x *showcase) seedMany(ctx context.Context) {
 	arn := func(r *control.IndexRow, service, path string) {
 		r.ARN, r.Region = "arn:aws:"+service+":"+region+":000000000000:"+path, region
 	}
-	arn(add("aws_lb.app", "aws_lb", "app-alb"), "elasticloadbalancing", "loadbalancer/app/app-alb/5c1e0a7d93b2f4e1")
-	arn(add("aws_lb_listener.https", "aws_lb_listener", "listener/app/app-alb/5c1e0a7d93b2f4e1/1c0d"), "elasticloadbalancing", "listener/app/app-alb/5c1e0a7d93b2f4e1/1c0d")
-	arn(add("aws_lb_listener.http", "aws_lb_listener", "listener/app/app-alb/5c1e0a7d93b2f4e1/2e7a"), "elasticloadbalancing", "listener/app/app-alb/5c1e0a7d93b2f4e1/2e7a")
+	// A load balancer's ID is its ARN, as the AWS provider sets it.
+	lb := func(addr, typ, path string) {
+		r := add(addr, typ, "")
+		arn(r, "elasticloadbalancing", path)
+		r.ID = r.ARN
+	}
+	lb("aws_lb.app", "aws_lb", "loadbalancer/app/app-alb/5c1e0a7d93b2f4e1")
+	lb("aws_lb_listener.https", "aws_lb_listener", "listener/app/app-alb/5c1e0a7d93b2f4e1/1c0d2e3f4a5b6c7d")
+	lb("aws_lb_listener.http", "aws_lb_listener", "listener/app/app-alb/5c1e0a7d93b2f4e1/2e7a3b4c5d6e7f80")
 	for _, c := range []string{"blue", "green"} {
-		arn(add(`aws_lb_target_group.web["`+c+`"]`, "aws_lb_target_group", "tg-web-"+c), "elasticloadbalancing", "targetgroup/tg-web-"+c+"/0f3b")
+		lb(`aws_lb_target_group.web["`+c+`"]`, "aws_lb_target_group", "targetgroup/tg-web-"+c+"/0f3b4c5d6e7f8091")
 	}
 	add("module.vpc.aws_vpc.main", "aws_vpc", "vpc-000000001")
 	for i, z := range []string{"a", "b", "c"} {
@@ -574,6 +583,7 @@ func (x *showcase) seedMany(ctx context.Context) {
 	if _, err := x.store.ReplaceIndex(ctx, control.IndexWrite{Env: server.DevEnv, Stack: "platform", Backend: control.BackendHTTP, Version: 63, At: time.Now().Add(-2 * time.Hour), Rows: rows}); err != nil {
 		x.t.Fatal(err)
 	}
+	x.seedRootOnly(ctx)
 	const ref = "dc-platform"
 	if err := x.store.BeginDrift(ctx, ref, server.DevEnv, "platform", time.Now().Add(-3*time.Hour)); err != nil {
 		x.t.Fatal(err)
@@ -584,6 +594,62 @@ func (x *showcase) seedMany(ctx context.Context) {
 			{Address: "module.cluster.aws_autoscaling_group.nomad_client", Kind: control.DriftCode, Action: "update", Attributes: []string{"max_size", "desired_capacity"}},
 			{Address: "module.cluster.aws_security_group_rule.ingress_https", Kind: control.DriftCode, Action: "replace", Attributes: []string{"cidr_blocks"}},
 		}}); err != nil {
+		x.t.Fatal(err)
+	}
+}
+
+// seedRootOnly gives stack alerts an index of resources all in the root
+// module, shaped like a real service's: a role whose policy attachments
+// are keyed by policy ARNs, and a load balancer, its listeners, and its
+// target groups, whose IDs are their ARNs.
+func (x *showcase) seedRootOnly(ctx context.Context) {
+	const aws, nomad, region, acct = "registry.opentofu.org/hashicorp/aws", "registry.opentofu.org/hashicorp/nomad", "eu-west-1", "000000000000"
+	var rows []control.IndexRow
+	add := func(addr, typ, id string) *control.IndexRow {
+		provider := aws
+		if strings.HasPrefix(typ, "nomad_") {
+			provider = nomad
+		}
+		rows = append(rows, control.IndexRow{Address: addr, Type: typ, Provider: provider, ID: id})
+		return &rows[len(rows)-1]
+	}
+	lb := func(addr, typ, path string) {
+		a := "arn:aws:elasticloadbalancing:" + region + ":" + acct + ":" + path
+		add(addr, typ, a).ARN = a
+	}
+	add("aws_iam_role.acme_nomad_alerts", "aws_iam_role", "acme-nomad-alerts-uat").ARN = "arn:aws:iam::" + acct + ":role/acme-nomad-alerts-uat"
+	add("aws_iam_instance_profile.acme_nomad_alerts", "aws_iam_instance_profile", "acme-nomad-alerts-uat")
+	for i, policy := range []string{
+		"arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+		"arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+		"arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
+		"arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM",
+		"arn:aws:iam::" + acct + ":policy/acme-alerts-secrets-read",
+		"arn:aws:iam::" + acct + ":policy/acme-alerts-queue-write",
+		"arn:aws:iam::" + acct + ":policy/acme-alerts-logs-write",
+		"arn:aws:iam::" + acct + ":policy/acme-alerts-kms-decrypt",
+	} {
+		add(`aws_iam_role_policy_attachment.acme_nomad_alerts["`+policy+`"]`, "aws_iam_role_policy_attachment", fmt.Sprintf("acme-nomad-alerts-uat-2026110100000000000000%04d", i))
+	}
+	lb("aws_lb.alerts", "aws_lb", "loadbalancer/app/acme-uat-nomad/edf7a1b2c3d4e5f6")
+	lb("aws_lb_listener.https", "aws_lb_listener", "listener/app/acme-uat-nomad/edf7a1b2c3d4e5f6/9a8b7c6d5e4f3a2b")
+	lb("aws_lb_listener.http", "aws_lb_listener", "listener/app/acme-uat-nomad/edf7a1b2c3d4e5f6/1b2c3d4e5f6a7b8c")
+	lb(`aws_lb_listener_rule.alerts["api"]`, "aws_lb_listener_rule", "listener-rule/app/acme-uat-nomad/edf7a1b2c3d4e5f6/9a8b7c6d5e4f3a2b/0c1d2e3f4a5b6c7d")
+	for _, tg := range []string{"web", "api", "triggers"} {
+		lb(`aws_lb_target_group.alerts["`+tg+`"]`, "aws_lb_target_group", "targetgroup/acme-uat-alerts-"+tg+"/3c4d5e6f7a8b9c0d")
+	}
+	add("aws_security_group.alerts_lb", "aws_security_group", "sg-0a1b2c3d4e5f60001")
+	add("aws_route53_record.alerts", "aws_route53_record", "Z0000000EXAMPLE_alerts.example.com_CNAME")
+	add("aws_sqs_queue.alerts", "aws_sqs_queue", "https://sqs."+region+".amazonaws.com/"+acct+"/acme-alerts-uat").ARN = "arn:aws:sqs:" + region + ":" + acct + ":acme-alerts-uat"
+	add("aws_kms_key.alerts", "aws_kms_key", "2a3b4c5d-0000-4e6f-8a9b-0c1d2e3f4a5b")
+	for _, j := range []string{"alerts-front", "alerts-core", "alerts-triggerd"} {
+		r := add(`nomad_job.alerts["`+j+`"]`, "nomad_job", j)
+		r.Namespace, r.ModifyIndex = "alerts", "48211"
+	}
+	add("nomad_acl_policy.alerts", "nomad_acl_policy", "alerts-deploy")
+	add("nomad_acl_token.alerts", "nomad_acl_token", "7b1f2e3d-0000-4c5b-9a87-6e5d4c3b2a10")
+	add("nomad_csi_volume.alerts_data", "nomad_csi_volume", "alerts-data")
+	if _, err := x.store.ReplaceIndex(ctx, control.IndexWrite{Env: server.DevEnv, Stack: "alerts", Backend: control.BackendHTTP, Version: 12, At: time.Now().Add(-40 * time.Minute), Rows: rows}); err != nil {
 		x.t.Fatal(err)
 	}
 }

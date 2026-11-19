@@ -79,8 +79,20 @@ type resourceRow struct {
 	server.IndexResource
 	// Module is "root", or the module path, such as "module.a.module.b".
 	Module string
-	// Label is the type without its provider prefix, "_" as " ".
+	// Label is the type in words, without its provider prefix.
 	Label string
+	// Prefix is the part of Address before Name: the module path and the
+	// type. Name is the resource's name and key, or the whole address
+	// when it does not hold its type.
+	Prefix, Name string
+	// Short is the row's ID line: the name an ARN ends with when the ID
+	// is that ARN, else the ID.
+	Short string
+	// Grouped is set in a view of sub-groups, whose rows show only Name.
+	Grouped bool
+	// ShowModule is set when the row shows its module as a chip: off the
+	// root, and in a view that does not group by module.
+	ShowModule bool
 	// Drift is "", "outside", or "code": what the last drift check found
 	// of the resource. outside wins over code. DriftHref links the drift
 	// view when Drift is set.
@@ -146,7 +158,9 @@ func groupResources(rs []server.IndexResource, check *server.DriftCheckInfo, que
 	var rows []resourceRow
 	marked := 0
 	for _, r := range rs {
-		row := resourceRow{IndexResource: r, Module: moduleOf(r.Address), Label: labelOf(r.Type), Drift: drift[r.Address]}
+		row := resourceRow{IndexResource: r, Module: moduleOf(r.Address), Label: labelOf(r.Type), Short: shortID(r), Grouped: by != "flat", Drift: drift[r.Address]}
+		row.Prefix, row.Name = splitAddress(r.Address, row.Module, r.Type)
+		row.ShowModule = row.Module != "root" && by != "module"
 		if row.Drift != "" {
 			marked++
 		}
@@ -275,13 +289,136 @@ func indexEnd(s string, i int) int {
 	return len(s)
 }
 
-// labelOf is a type's words without its provider: aws_lb_listener is
-// "lb listener".
+// splitAddress splits the address of a resource of type typ in module
+// into its module and type, and its name and key. An address that does
+// not hold its type where it should is all name.
+func splitAddress(addr, module, typ string) (prefix, name string) {
+	rest := addr
+	if module != "root" {
+		rest = strings.TrimPrefix(addr[len(module):], ".")
+	}
+	head := typ + "."
+	if strings.HasPrefix(rest, "data.") {
+		head = "data." + head
+	}
+	if typ == "" || !strings.HasPrefix(rest, head) || len(rest) == len(head) {
+		return "", addr
+	}
+	cut := len(addr) - len(rest) + len(head)
+	return addr[:cut], addr[cut:]
+}
+
+// shortID is the ID a row shows: when the ID is an ARN, the name the ARN
+// ends with, else the ID.
+func shortID(r server.IndexResource) string {
+	if r.ID == r.ARN || r.ARN == "" {
+		if name := arnName(r.ID); name != "" {
+			return name
+		}
+	}
+	return r.ID
+}
+
+// arnName is the last part of an ARN's resource that is not a generated
+// hex id, such as acme-uat of loadbalancer/app/acme-uat/5c1e0a7d93b2f4e1,
+// or "" when s is not an ARN. A resource whose only other part is its
+// kind, such as certificate/0a1b2c3d, keeps its id.
+func arnName(s string) string {
+	parts := strings.SplitN(s, ":", 6)
+	if len(parts) < 6 || parts[0] != "arn" {
+		return ""
+	}
+	segs := strings.FieldsFunc(parts[5], func(r rune) bool { return r == '/' || r == ':' })
+	if len(segs) == 0 {
+		return ""
+	}
+	end := len(segs)
+	for end > 1 && hexID(segs[end-1]) {
+		end--
+	}
+	if end == 1 && len(segs) > 1 {
+		end = len(segs)
+	}
+	return segs[end-1]
+}
+
+// hexID reports whether s looks generated: four or more lowercase hex
+// digits, at least one a digit.
+func hexID(s string) bool {
+	digit := false
+	for _, c := range s {
+		switch {
+		case c >= '0' && c <= '9':
+			digit = true
+		case c < 'a' || c > 'f':
+			return false
+		}
+	}
+	return digit && len(s) >= 4
+}
+
+// Where is the resource's region: the index's, or the one its ARN names.
+func (r resourceRow) Where() string {
+	if r.Region != "" {
+		return r.Region
+	}
+	for _, s := range []string{r.ARN, r.ID} {
+		if parts := strings.SplitN(s, ":", 6); len(parts) == 6 && parts[0] == "arn" && parts[3] != "" {
+			return parts[3]
+		}
+	}
+	return ""
+}
+
+// breaks splits s after each '/', ':', '.', and '[', the places a long
+// address or ID may break across lines.
+func breaks(s string) []string {
+	var out []string
+	for s != "" {
+		i := strings.IndexAny(s, "/:.[")
+		if i < 0 {
+			return append(out, s)
+		}
+		out, s = append(out, s[:i+1]), s[i+1:]
+	}
+	return out
+}
+
+// shortProvider is a provider's source without the host of a public
+// registry: hashicorp/aws.
+func shortProvider(source string) string {
+	for _, host := range []string{"registry.opentofu.org/", "registry.terraform.io/"} {
+		if rest, ok := strings.CutPrefix(source, host); ok {
+			return rest
+		}
+	}
+	return source
+}
+
+// acronyms are the words of a type that a label writes in capitals.
+var acronyms = map[string]bool{
+	"iam": true, "lb": true, "alb": true, "acl": true, "ec2": true, "s3": true, "kms": true, "vpc": true,
+	"eip": true, "nat": true, "ecr": true, "ssm": true, "sqs": true, "sns": true, "dns": true, "tls": true,
+	"id": true, "arn": true, "csi": true, "db": true, "acm": true, "ebs": true, "efs": true, "ecs": true,
+	"eks": true, "ip": true,
+}
+
+// labelOf is a type's words without its provider, an acronym in capitals
+// and the first word capitalised: aws_lb_listener is "LB listener".
 func labelOf(typ string) string {
 	if _, rest, ok := strings.Cut(typ, "_"); ok && rest != "" {
 		typ = rest
 	}
-	return strings.ReplaceAll(typ, "_", " ")
+	words := strings.Split(typ, "_")
+	for i, w := range words {
+		switch {
+		case acronyms[w]:
+			words[i] = strings.ToUpper(w)
+		case i == 0 && w != "":
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 // linkDrift sets the link to the drift view on each marked row.

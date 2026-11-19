@@ -31,7 +31,7 @@
 
 {{with .Config}}
 <section class="card" aria-labelledby="h-config">
-<div class="card-head"><h2 id="h-config">Config</h2><span class="end meta">Read from the config file of writ serve</span></div>
+<div class="card-head"><h2 id="h-config">Config</h2></div>
 <dl class="kv">
 {{if .Issuers}}<div><dt>Issuers</dt><dd>{{range $i, $is := .Issuers}}{{if $i}}<br>{{end}}{{$is.Name}} <span class="muted">{{$is.Kind}}</span> <code>{{$is.URL}}</code>{{end}}</dd></div>{{end}}
 <div><dt>Environments</dt><dd>{{range $i, $e := .Envs}}{{if $i}}, {{end}}{{$e.Name}}{{end}}</dd></div>

@@ -658,7 +658,7 @@ func TestTofuDriftPages(t *testing.T) {
 		t.Errorf("the drift tab does not count the changes: %s", got)
 	}
 	_, doc = x.page("/ui/stack?stack=app&env=dev")
-	if got := words(byID(t, doc, "index-rows")); !strings.Contains(got, "random_pet.kept pet kept-pet root Type random_pet Provider registry.opentofu.org/hashicorp/random ID kept-pet") {
+	if got := words(byID(t, doc, "index-rows")); !strings.Contains(got, "random_pet.kept Pet kept-pet Address random_pet.kept Provider hashicorp/random ID kept-pet") {
 		t.Errorf("the stack's resources: %s", got)
 	}
 	if first(doc, func(n *html.Node) bool { id, _ := attr(n, "id"); return id == "drift-facts" }) != nil {
@@ -741,6 +741,15 @@ func TestTofuAdoptHint(t *testing.T) {
 	_, doc := x.page("/ui/plans/" + p.Plan.Ref)
 	if got := words(byID(t, doc, "adopt")); !strings.Contains(got, "A person with adopt on the stack can seal a set for it") || !strings.HasSuffix(got, want) {
 		t.Errorf("the plan's page: %s", got)
+	}
+	// The note words the failure, so the diagnostic beside it is one
+	// short line; the plan's document keeps the whole message.
+	const why = "a person with adopt on app@" + server.DevEnv + " can seal a set for it"
+	if !strings.Contains(string(p.Document), why) {
+		t.Errorf("the plan's document lacks %q: %s", why, p.Document)
+	}
+	if got := words(up(byID(t, doc, "h-diags"), isTag("section"))); strings.Contains(got, why) || strings.Contains(got, "keeps no detail") || !strings.Contains(got, "No secret set for the state this plan read") {
+		t.Errorf("the plan's diagnostics repeat the note: %s", got)
 	}
 
 	x.driftCheck(second)

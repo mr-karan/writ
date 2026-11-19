@@ -31,7 +31,7 @@
 </nav>
 {{- with .Shell}}
 {{- if .Failed}}
-<p class="tree-note" role="status">writ serve could not read the environments.</p>
+<p class="tree-note" role="status">Writ could not read the environments.</p>
 {{- else}}
 <nav class="tree" aria-labelledby="tree-h">
 <p class="side-label" id="tree-h">Stacks</p>
@@ -53,7 +53,7 @@
 {{- if .Stacks}}
 <ul class="stacks">
 {{- range .Stacks}}
-<li><a href="{{link "/ui/stack" "stack" .Name "env" .Env}}"{{if .Current}} aria-current="page"{{end}}><span class="dot dot-{{.Tone}}" aria-hidden="true"></span><span class="t-name">{{.Name}}</span> <span class="t-note{{if .Quiet}} sr-only{{end}}">{{template "note" .Note}}</span></a></li>
+<li><a href="{{link "/ui/stack" "stack" .Name "env" .Env}}"{{if .Current}} aria-current="page"{{end}}><span class="dot dot-{{.Tone}}" aria-hidden="true"></span><span class="t-name" data-name="{{.Name}}">{{.Name}}</span> <span class="t-note{{if .Quiet}} sr-only{{end}}">{{template "note" .Note}}</span></a></li>
 {{- end}}
 </ul>
 {{- end}}
@@ -63,7 +63,7 @@
 {{- with none "no-stack" .Count}}
 <p class="tree-note">{{.}}</p>
 {{- else}}
-<p class="tree-note">writ serve read only some plans here, so a stack a plan names may not be listed.</p>
+<p class="tree-note">Writ read only some plans here, so a stack a plan names may not be listed.</p>
 {{- end}}
 {{- end}}
 </details></li>
@@ -191,7 +191,7 @@
 {{- if .}}
 <ul class="diags">
 {{- range .}}
-<li><span class="chip chip-{{if eq .Severity "warning"}}warn{{else}}bad{{end}}">{{.Severity}}</span> <span class="muted">{{.Class}}</span>{{if .File}} <code>{{.File}}:{{.Line}}:{{.Col}}</code>{{end}} <span class="msg" data-field="document.diagnostics[].message">{{.Message}}</span>{{if .Fix}} <span class="fix">Fix: <span class="msg" data-field="document.diagnostics[].fix.message">{{.Fix.Message}}</span></span>{{end}}</li>
+<li><span class="chip chip-{{if eq .Severity "warning"}}warn{{else}}bad{{end}}">{{.Severity}}</span> <span class="muted">{{.Class}}</span>{{if .File}} <code>{{.File}}:{{.Line}}:{{.Col}}</code>{{end}} {{if .Adopted}}<span>No secret set for the state this plan read.</span>{{else}}<span class="msg" data-field="document.diagnostics[].message">{{.Message}}</span>{{end}}{{if .Fix}} <span class="fix">Fix: <span class="msg" data-field="document.diagnostics[].fix.message">{{.Fix.Message}}</span></span>{{end}}</li>
 {{- end}}
 </ul>
 {{- end}}
@@ -230,7 +230,7 @@
 {{else if .Dev}}
 <p>This is the dev control plane of one user. To sign in, run <code>writ ui</code> in a terminal and open the link it prints. The link works once, for 10 minutes.</p>
 {{else}}
-<p>This writ serve has no issuer of kind <code>people</code>, so no one can sign in. Add one to the config and restart writ serve.</p>
+<p>This Writ has no issuer of kind <code>people</code>, so no one can sign in. Add one to the config and restart writ serve.</p>
 {{end}}
 </div>
 </div>

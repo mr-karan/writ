@@ -10,7 +10,7 @@
 {{if .Repos}}{{range $i, $r := .Repos}}{{if $i}}, {{end}}<a href="/ui/repos/{{$r.Name}}">{{$r.Name}}</a>{{end}}
 {{else}}{{none "no-repo" (exact (len .Repos))}}. <div class="cmd-line"><a href="/ui/repos/new">Add a repository</a> <span class="muted">or run</span> <code class="cmd">{{if .Server.Dev}}writ repo add .{{else}}writ repo add NAME HOST/PROJECT --path PATH{{end}}</code></div>{{end}}</li>
 <li class="{{if .Served.N}}item-done{{else}}item-next{{end}}"><strong>Stacks found</strong> {{template "counted" (of .Stacks "stack" "stacks")}}, {{template "n" .Served}} served in an environment</li>
-<li class="{{if .Plans.N}}item-done{{else}}item-next{{end}}"><strong>First plan</strong> {{if .Plans.N}}<a href="/ui/plans">{{template "counted" (of .Plans "plan" "plans")}}</a>{{else}}{{with none "no-plan-yet" .Plans}}{{.}}{{else}}writ serve could not read every environment's plans.{{end}} <div class="cmd-line"><code class="cmd">writ plan --remote{{if .FirstEnv}} --env {{.FirstEnv}}{{end}}</code> <span class="muted">in a clean work tree, or in CI:</span> <code class="cmd">writ ci gitlab --repo {{if eq (len .Repos) 1}}{{(index .Repos 0).Name}}{{else}}NAME{{end}}</code></div>{{end}}</li>
+<li class="{{if .Plans.N}}item-done{{else}}item-next{{end}}"><strong>First plan</strong> {{if .Plans.N}}<a href="/ui/plans">{{template "counted" (of .Plans "plan" "plans")}}</a>{{else}}{{with none "no-plan-yet" .Plans}}{{.}}{{else}}Writ could not read every environment's plans.{{end}} <div class="cmd-line"><code class="cmd">writ plan --remote{{if .FirstEnv}} --env {{.FirstEnv}}{{end}}</code> <span class="muted">in a clean work tree, or in CI:</span> <code class="cmd">writ ci gitlab --repo {{if eq (len .Repos) 1}}{{(index .Repos 0).Name}}{{else}}NAME{{end}}</code></div>{{end}}</li>
 <li class="{{if .Plans.N}}item-next{{else}}item-later{{end}}"><strong>First approved apply</strong> Someone other than the author approves the plan, on its page or with <code>writ approve --remote ID</code>, then <code>writ apply --remote ID</code> or the apply job runs it.</li>
 </ol>
 {{end}}
@@ -22,12 +22,11 @@
 <h1>Repositories</h1>
 {{if and .Repos (not .Pinned)}}<a class="button primary" href="/ui/repos/new">Add repository</a>{{end}}
 </div>
-{{if .Pinned}}<p class="meta">Read from the config file of writ serve</p>{{end}}
 {{if .Repos}}
 <div class="card">
 <div class="scroll">
 <table class="list">
-<caption class="sr-only">Each repository writ serve reads code from</caption>
+<caption class="sr-only">Repositories</caption>
 <thead><tr><th scope="col">Repository</th><th scope="col">Path</th><th scope="col">Branch</th><th scope="col">Commit read</th><th scope="col" class="num">Stacks</th><th scope="col" class="end">Polled</th></tr></thead>
 <tbody>
 {{- range .Repos}}
@@ -55,7 +54,7 @@
 <div class="page-head">
 <h1>Add repository</h1>
 </div>
-{{if .Pinned}}<p class="note note-error" role="alert">The config lists the repositories, so writ serve adds none here. Add it to <code>repos</code> in the config.</p>{{end}}
+{{if .Pinned}}<p class="note note-error" role="alert">The config lists the repositories, so Writ adds none here. Add it to <code>repos</code> in the config.</p>{{end}}
 {{range .Refusal}}<p class="note note-{{.Severity}}" role="alert"><strong>{{.Class}}</strong>: <span class="msg">{{.Message}}</span></p>{{end}}
 <form method="post" action="/ui/repos/new" class="card form">
 <label for="f-name">Name</label>

@@ -646,7 +646,7 @@ func TestSidebarSaysItCouldNotLoad(t *testing.T) {
 }
 
 // sidebarFailed is what the sidebar says when its read failed.
-const sidebarFailed = "writ serve could not read the environments."
+const sidebarFailed = "Writ could not read the environments."
 
 // breakOverview makes every read of the overview fail: it reads every
 // stack's last drift check.

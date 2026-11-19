@@ -52,7 +52,23 @@ func TestResourceModuleAndLabel(t *testing.T) {
 			t.Errorf("moduleOf(%s) = %s, want %s", c.addr, got, c.module)
 		}
 	}
-	for typ, want := range map[string]string{"aws_lb_listener": "lb listener", "random_pet": "pet", "terraform_data": "data", "thing": "thing"} {
+	for typ, want := range map[string]string{
+		"aws_lb_listener":                     "LB listener",
+		"aws_iam_role":                        "IAM role",
+		"aws_iam_instance_profile":            "IAM instance profile",
+		"aws_iam_role_policy_attachment":      "IAM role policy attachment",
+		"nomad_acl_token":                     "ACL token",
+		"nomad_csi_volume":                    "CSI volume",
+		"aws_s3_bucket":                       "S3 bucket",
+		"aws_vpc_security_group_ingress_rule": "VPC security group ingress rule",
+		"aws_ec2_transit_gateway":             "EC2 transit gateway",
+		"aws_route53_record":                  "Route53 record",
+		"aws_lambda_permission":               "Lambda permission",
+		"random_pet":                          "Pet",
+		"terraform_data":                      "Data",
+		"thing":                               "Thing",
+		"aws_idea":                            "Idea",
+	} {
 		if got := labelOf(typ); got != want {
 			t.Errorf("labelOf(%s) = %q, want %q", typ, got, want)
 		}
@@ -252,5 +268,91 @@ func TestResourceDriftMarks(t *testing.T) {
 	}
 	if v := groupResources(rs, nil, "", "service"); !v.Marked.None() {
 		t.Error("a stack with no drift check has marks")
+	}
+}
+
+// TestResourceRowNames holds what a row shows of a resource: its name and
+// key without the module and type, a short ID when the ID is an ARN, the
+// region from the index or the ARN, and the module chip only off the root.
+func TestResourceRowNames(t *testing.T) {
+	const lbARN = "arn:aws:elasticloadbalancing:eu-west-1:000000000000:loadbalancer/app/acme-uat/5c1e0a7d93b2f4e1"
+	rs := []server.IndexResource{
+		{Address: `aws_iam_role_policy_attachment.app["arn:aws:iam::aws:policy/ReadOnlyAccess"]`, Type: "aws_iam_role_policy_attachment", ID: "app-20261101000000000000000001"},
+		{Address: "aws_lb.app", Type: "aws_lb", ID: lbARN, ARN: lbARN},
+		{Address: "aws_lb_listener.https", Type: "aws_lb_listener", ID: "arn:aws:elasticloadbalancing:eu-west-1:000000000000:listener/app/acme-uat/5c1e0a7d93b2f4e1/1c0d2e3f"},
+		{Address: `aws_lb_target_group.web["blue"]`, Type: "aws_lb_target_group", ID: "arn:aws:elasticloadbalancing:eu-west-1:000000000000:targetgroup/tg-web-blue/0f3b4c5d", ARN: "arn:aws:elasticloadbalancing:eu-west-1:000000000000:targetgroup/tg-web-blue/0f3b4c5d", Region: "eu-central-1"},
+		{Address: "aws_acm_certificate.app", Type: "aws_acm_certificate", ID: "arn:aws:acm:eu-west-1:000000000000:certificate/0a1b2c3d"},
+		{Address: "aws_lambda_function.rotate", Type: "aws_lambda_function", ID: "rotate-keys", ARN: "arn:aws:lambda:eu-west-1:000000000000:function:rotate-keys"},
+		{Address: "aws_s3_bucket.logs", Type: "aws_s3_bucket", ID: "acme-logs", ARN: "arn:aws:s3:::acme-logs"},
+		{Address: "aws_iam_policy.logs", Type: "aws_iam_policy", ID: "arn:aws:iam::000000000000:policy/logs-write", ARN: "arn:aws:iam::000000000000:policy/logs-write"},
+		{Address: `module.vpc.aws_subnet.private["a.b"]`, Type: "aws_subnet", ID: "subnet-0a1"},
+		{Address: `module.c["x.y"].module.d[1].nomad_job.web`, Type: "nomad_job", ID: "web"},
+		{Address: "data.aws_ami.base", Type: "aws_ami", ID: "ami-0a1"},
+		{Address: "arn:not-a-resource", Type: "aws_odd", ID: "arn:broken"},
+	}
+	want := map[string]struct{ prefix, name, short, region, module string }{
+		rs[0].Address:  {"aws_iam_role_policy_attachment.", `app["arn:aws:iam::aws:policy/ReadOnlyAccess"]`, "app-20261101000000000000000001", "", ""},
+		rs[1].Address:  {"aws_lb.", "app", "acme-uat", "eu-west-1", ""},
+		rs[2].Address:  {"aws_lb_listener.", "https", "acme-uat", "eu-west-1", ""},
+		rs[3].Address:  {"aws_lb_target_group.", `web["blue"]`, "tg-web-blue", "eu-central-1", ""},
+		rs[4].Address:  {"aws_acm_certificate.", "app", "0a1b2c3d", "eu-west-1", ""},
+		rs[5].Address:  {"aws_lambda_function.", "rotate", "rotate-keys", "eu-west-1", ""},
+		rs[6].Address:  {"aws_s3_bucket.", "logs", "acme-logs", "", ""},
+		rs[7].Address:  {"aws_iam_policy.", "logs", "logs-write", "", ""},
+		rs[8].Address:  {"module.vpc.aws_subnet.", `private["a.b"]`, "subnet-0a1", "", "module.vpc"},
+		rs[9].Address:  {`module.c["x.y"].module.d[1].nomad_job.`, "web", "web", "", `module.c["x.y"].module.d[1]`},
+		rs[10].Address: {"data.aws_ami.", "base", "ami-0a1", "", ""},
+		rs[11].Address: {"", "arn:not-a-resource", "arn:broken", "", ""},
+	}
+	for _, by := range []string{"service", "module", "flat"} {
+		v := groupResources(rs, nil, "", by)
+		for _, g := range v.Groups {
+			for _, s := range g.Subs {
+				for _, r := range s.Rows {
+					w := want[r.Address]
+					if r.Prefix != w.prefix || r.Name != w.name || r.Prefix+r.Name != r.Address {
+						t.Errorf("group=%s: %s splits as %q + %q, want %q + %q", by, r.Address, r.Prefix, r.Name, w.prefix, w.name)
+					}
+					if r.Short != w.short || r.Where() != w.region {
+						t.Errorf("group=%s: %s shows the ID %q in %q, want %q in %q", by, r.Address, r.Short, r.Where(), w.short, w.region)
+					}
+					if r.Grouped != (by != "flat") {
+						t.Errorf("group=%s: %s is grouped %v", by, r.Address, r.Grouped)
+					}
+					if chip := w.module != "" && by != "module"; r.ShowModule != chip || chip && r.Module != w.module {
+						t.Errorf("group=%s: %s shows the module chip %v of %q", by, r.Address, r.ShowModule, r.Module)
+					}
+				}
+			}
+		}
+	}
+}
+
+// TestBreaks splits an address after each place a line may break, and
+// nowhere inside a word.
+func TestBreaks(t *testing.T) {
+	for in, want := range map[string][]string{
+		`app["arn:aws:iam::aws:policy/ReadOnlyAccess"]`: {`app[`, `"arn:`, `aws:`, `iam:`, `:`, `aws:`, `policy/`, `ReadOnlyAccess"]`},
+		"module.vpc.aws_subnet.private[0]":              {"module.", "vpc.", "aws_subnet.", "private[", "0]"},
+		"plain-name":                                    {"plain-name"},
+		"":                                              nil,
+	} {
+		if got := breaks(in); !slices.Equal(got, want) {
+			t.Errorf("breaks(%s) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestShortProvider drops the registry host of a provider's source.
+func TestShortProvider(t *testing.T) {
+	for in, want := range map[string]string{
+		"registry.opentofu.org/hashicorp/aws": "hashicorp/aws",
+		"registry.terraform.io/hashicorp/aws": "hashicorp/aws",
+		"example.com/acme/thing":              "example.com/acme/thing",
+		"hashicorp/aws":                       "hashicorp/aws",
+	} {
+		if got := shortProvider(in); got != want {
+			t.Errorf("shortProvider(%s) = %s, want %s", in, got, want)
+		}
 	}
 }

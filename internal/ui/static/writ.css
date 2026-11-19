@@ -171,6 +171,10 @@ li, [data-field] { margin-block-end: 0; }
 .stacks a[aria-current] { background: var(--side-active); font-weight: 600; }
 .stacks .dot { align-self: center; }
 .t-name { min-width: 0; max-width: calc(100% - 1rem); overflow-wrap: anywhere; }
+/* A stack's name reserves its width in bold, so the current one, set
+   bold, wraps its note no more than the others do. */
+.stacks .t-name { display: inline-grid; }
+.stacks .t-name::after { content: attr(data-name); height: 0; overflow: hidden; visibility: hidden; font-weight: 600; }
 .t-note { margin-left: auto; white-space: nowrap; color: var(--muted-foreground); font-size: var(--fs-1); font-weight: 400; }
 .tree-note { margin: 0 var(--space-2) var(--space-2) 1.75rem; color: var(--muted-foreground); font-size: var(--fs-1); }
 .side-foot { margin-top: auto; padding: var(--space-3) var(--space-2); border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: var(--fs-1); }
@@ -488,11 +492,13 @@ td.notes .chip { margin-bottom: 0.125rem; }
 .res .a-line .a { min-width: 0; }
 .res .mark { flex: none; }
 .res .chip { justify-self: end; max-width: 100%; overflow: hidden; text-overflow: ellipsis; display: inline-block; line-height: 1.25rem; }
-.res .a { display: block; font-family: var(--font-mono); font-size: var(--fs-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.res[open] .a { white-space: normal; overflow-wrap: anywhere; }
+/* An address wraps at its <wbr>s, after '/', ':', '.', and '[', so the
+   end of a long key, which tells rows apart, stays in view. */
+.res .a { display: block; font-family: var(--font-mono); font-size: var(--fs-2); overflow-wrap: break-word; }
 .res .ty { display: block; color: var(--muted-foreground); font-size: var(--fs-1); }
 .res .rid { min-width: 0; color: var(--muted-foreground); font-family: var(--font-mono); font-size: var(--fs-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .res .kv { padding: var(--space-1) var(--inset) var(--space-3) 3.25rem; gap: var(--space-1) var(--space-6); font-size: var(--fs-2); }
+.res .kv dd { overflow-wrap: break-word; }
 .mark { display: inline-block; width: 0.4375rem; height: 0.4375rem; margin-left: 0.375rem; border-radius: 50%; background: var(--chg); vertical-align: middle; }
 /* Package 4: a stack's resources. A type label, a module chip, and a
    group's name are code so their digits stay the identifier's own. */

@@ -107,10 +107,11 @@ func (u *UI) plan(w http.ResponseWriter, r *http.Request, s *server.Session) {
 
 // adoptHint is the command that adopts the state a failed plan of
 // stack@env read, when it failed because that state has no secret set,
-// and "" otherwise. The flag that names the state depends on the stack's
-// backend, which the stack's drift record names.
+// and "" otherwise. It marks the diagnostic that says so as Adopted.
+// The flag that names the state depends on the stack's backend, which
+// the stack's drift record names.
 func (f *fetch) adoptHint(diags []docDiag, stack, env string) string {
-	for _, d := range diags {
+	for i, d := range diags {
 		if _, ok := server.AdoptCommand(d.Message, stack, env, ""); !ok {
 			continue
 		}
@@ -125,6 +126,7 @@ func (f *fetch) adoptHint(diags []docDiag, stack, env string) string {
 			backend = drift.Stacks[0].Backend
 		}
 		cmd, _ := server.AdoptCommand(d.Message, stack, env, backend)
+		diags[i].Adopted = true
 		return cmd
 	}
 	return ""

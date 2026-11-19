@@ -42,7 +42,7 @@
 </div>
 <p class="meta">{{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}} in {{$p.Env}} · by <span class="ref" data-record="{{planDoc $p}}" data-field="plan.author.display">{{$p.Author.Display}}</span>{{with from $p.Origin}} · <span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{end}}</p>
 {{if $p.SupersededBy}}<div class="note note-warning" role="note">{{template "icon" "warn"}}<div><strong>A newer plan exists.</strong> <a class="id" href="/ui/plans/{{$p.SupersededBy}}">{{short $p.SupersededBy}}</a></div></div>{{end}}
-{{if eq $p.Status "expired"}}<p class="note">Expired {{template "time" $p.ExpiresAt}}. It can no longer be applied.</p>{{end}}
+{{if eq $p.Status "expired"}}<div class="note" role="note"><p>Expired {{template "time" $p.ExpiresAt}}. It can no longer be applied.</p></div>{{end}}
 {{if eq $p.Status "superseded"}}<p class="note">Superseded: {{$p.SupersededWhy}}. It can no longer be applied.</p>{{end}}
 {{with .Adopt}}{{template "adopt-hint" .}}{{end}}
 
@@ -50,7 +50,7 @@
 <section class="decision" aria-labelledby="h-approvals">
 <h2 id="h-approvals" class="sr-only">Approvals</h2>
 {{template "steps" .Steps}}
-<p>{{if eq $p.Status "planning"}}writ serve asks the approval rules of this plan once it is made.{{else if not .RulesAsked}}This plan takes no approval.{{else if eq $p.Approvals.Need 0}}No approval rule matches this plan.{{else}}It needs {{template "counted" (of (exact $p.Approvals.Need) "approval" "approvals")}} from someone other than its author{{with $p.Approvals.Rules}} (rule {{range $i, $r := .}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}){{end}}.{{end}}</p>
+<p>{{if eq $p.Status "planning"}}Writ asks the approval rules of this plan once it is made.{{else if not .RulesAsked}}This plan takes no approval.{{else if eq $p.Approvals.Need 0}}No approval rule matches this plan.{{else}}It needs {{template "counted" (of (exact $p.Approvals.Need) "approval" "approvals")}} from someone other than its author{{with $p.Approvals.Rules}} (rule {{range $i, $r := .}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}){{end}}.{{end}}</p>
 {{if $p.Approvals.ApprovedBy}}<ul class="approvers">
 {{- range $p.Approvals.ApprovedBy}}
 <li>{{template "icon" "check"}}<span class="sr-only">Approved by </span><span class="ref" data-record="{{planDoc $p}}" data-field="plan.approvals.approved_by[].display">{{.Display}}</span> {{template "when" .At}} <span class="muted">{{.Via}}</span></li>
@@ -60,7 +60,7 @@
 </section>
 {{if or .DocError .Older $o.Live $o.Speculative}}
 <div class="next">
-{{if .DocError}}<p class="note note-error" role="alert">writ serve could not read this plan's document, so this page offers no approval: <span class="msg">{{.DocError}}</span>. Review it with <code>writ show --remote {{$p.ID}}</code>.</p>
+{{if .DocError}}<p class="note note-error" role="alert">Writ could not read this plan's document, so this page offers no approval: <span class="msg">{{.DocError}}</span>. Review it with <code>writ show --remote {{$p.ID}}</code>.</p>
 {{else if .Older}}<p>An older Writ made this plan, so this page offers no approval.</p>
 {{else if $o.Approve}}
 <form method="post" action="/ui/plans/{{$p.ID}}/approve" class="cmd-line"><button type="submit" class="primary">Approve this plan</button> <span class="muted">as <span class="ref">{{$.Session.Display}}</span></span></form>

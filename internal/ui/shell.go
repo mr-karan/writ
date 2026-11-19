@@ -63,12 +63,12 @@ func noun(f figure, one, many string) string {
 // all is well. A template says one only through none, and the render
 // checks hold each to what the reader may read.
 var nones = map[string]string{
-	"nothing":   "Nothing waits and writ serve keeps no stack yet.",
+	"nothing":   "Nothing waits and Writ keeps no stack yet.",
 	"calm":      "No drift, no failed run in the last 24 hours, no plan about to expire, and no failed repository poll.",
 	"steady":    "No drift, no failed run in the last 24 hours, and no failed repository poll.",
 	"applying":  "No plan is applying.",
 	"waiting":   "No plan waits for approval.",
-	"stateless": "writ serve keeps the state of no OpenTofu stack yet. A stack appears here after its first apply.",
+	"stateless": "Writ keeps the state of no OpenTofu stack yet. A stack appears here after its first apply.",
 	"no-stack":  "No stack yet.",
 	"no-repo":   "No repository yet",
 	"no-poll":   "No repository polled yet",
@@ -76,13 +76,13 @@ var nones = map[string]string{
 	"no-others":     "No plan by someone else waits here.",
 	"no-mine":       "No plan of yours waits here.",
 	"no-plan":       "No plan matches.",
-	"no-run":        "writ serve has started no run here.",
+	"no-run":        "Writ has started no run here.",
 	"no-stack-plan": "No plan of this stack.",
-	"no-state":      "writ serve keeps or reads no state of this stack yet.",
-	"unindexed":     "writ serve has a state of this stack but has not indexed it yet, so it lists no resource.",
+	"no-state":      "Writ keeps or reads no state of this stack yet.",
+	"unindexed":     "Writ has a state of this stack but has not indexed it yet, so it lists no resource.",
 	"no-resource":   "The state index holds no resource of this stack.",
 	"unchecked":     "No drift check of this stack has run.",
-	"no-secret":     "No secret set. writ serve keeps no detail of a plan of this state and approves none.",
+	"no-secret":     "No secret set. Writ keeps no detail of a plan of this state and approves none.",
 	"no-found":      "The commit read holds no stack: no directory under the path has a committed .terraform.lock.hcl and .tf or .tofu files.",
 	"no-team":       "None. No team's rule matches your claims, so you may read nothing.",
 	"no-grant":      "No grant names one of your teams.",
@@ -405,7 +405,7 @@ func alertOf(a server.Alert) alert {
 	case server.AlertDriftCheckFailed:
 		r.Tone, r.Kind, r.AtWord = "bad", "Drift check failed", "checked"
 	case server.AlertOutsideWrite:
-		r.Tone, r.Kind, r.AtWord = "wait", "State written outside writ serve", "seen"
+		r.Tone, r.Kind, r.AtWord = "wait", "State written outside Writ", "seen"
 	case server.AlertRunFailed:
 		r.Tone, r.Kind, r.AtWord, r.Href, r.Record = "bad", "Run failed", "ended", "/ui/runs/"+a.Run, record("kind", a.Kind, "run", a.Run)
 	case server.AlertPlanExpiring:

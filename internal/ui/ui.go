@@ -84,7 +84,7 @@ func (u *UI) Mount() {
 	cop := http.NewCrossOriginProtection()
 	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u.log.Warn("cross-origin request refused", "method", r.Method, "path", r.URL.Path, "origin", r.Header.Get("Origin"), "sec_fetch_site", r.Header.Get("Sec-Fetch-Site"))
-		u.errorPage(w, r, nil, http.StatusForbidden, "refused", []server.Diagnostic{{Severity: "error", Class: "denied", Message: "writ serve refuses a form sent from another site"}}, nil)
+		u.errorPage(w, r, nil, http.StatusForbidden, "refused", []server.Diagnostic{{Severity: "error", Class: "denied", Message: "Writ refuses a form sent from another site"}}, nil)
 	}))
 	var table []server.UIRoute
 	for _, rt := range u.routes() {
@@ -293,7 +293,7 @@ func (u *UI) render(w http.ResponseWriter, r *http.Request, status int, name str
 	var b bytes.Buffer
 	if err := u.tmpl.ExecuteTemplate(&b, name, p); err != nil {
 		u.log.Error("render a page", "template", name, "err", err)
-		http.Error(w, "writ serve failed to render this page", http.StatusInternalServerError)
+		http.Error(w, "Writ failed to render this page", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -399,7 +399,7 @@ func (f *fetch) main(target string, into any) bool {
 	}
 	if err := json.Unmarshal(body, into); err != nil {
 		f.u.log.Error("decode a document", "target", target, "err", err)
-		f.u.errorPage(f.w, f.r, f.sess, http.StatusInternalServerError, "internal error", []server.Diagnostic{{Severity: "error", Class: "internal", Message: "writ serve sent a document the control UI cannot read"}}, f.api)
+		f.u.errorPage(f.w, f.r, f.sess, http.StatusInternalServerError, "internal error", []server.Diagnostic{{Severity: "error", Class: "internal", Message: "Writ sent a document the control UI cannot read"}}, f.api)
 		return false
 	}
 	return true

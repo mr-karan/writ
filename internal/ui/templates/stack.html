@@ -45,14 +45,18 @@
 </nav>
 {{end}}
 
-{{define "res-row"}}<details class="res"><summary><span class="name">{{if .Drift}}<span class="a-line"><code class="a">{{.Address}}</code><span class="mark" aria-hidden="true"></span><span class="sr-only"> changed in the last drift check</span></span>{{else}}<code class="a">{{.Address}}</code>{{end}} <code class="ty">{{.Label}}</code></span> <code class="rid">{{.ID}}</code> <code class="chip">{{.Module}}</code></summary>
+{{define "brk"}}{{range $i, $s := breaks .}}{{if $i}}<wbr>{{end}}{{$s}}{{end}}{{end}}
+
+{{define "res-addr"}}<code class="a">{{if .Grouped}}{{with .Prefix}}<span class="sr-only">{{.}}</span>{{end}}{{template "brk" .Name}}{{else}}{{template "brk" .Address}}{{end}}</code>{{end}}
+
+{{define "res-row"}}<details class="res"><summary><span class="name">{{if .Drift}}<span class="a-line">{{template "res-addr" .}}<span class="mark" aria-hidden="true"></span><span class="sr-only"> changed in the last drift check</span></span>{{else}}{{template "res-addr" .}}{{end}} <code class="ty">{{.Label}}</code></span> <code class="rid">{{.Short}}</code>{{if .ShowModule}} <code class="chip">{{.Module}}</code>{{end}}</summary>
 <dl class="kv">
-<div><dt>Type</dt><dd><code>{{.Type}}</code></dd></div>
-{{- with .Provider}}<div><dt>Provider</dt><dd><code>{{.}}</code></dd></div>{{end}}
-{{- with .ID}}<div><dt>ID</dt><dd><code>{{.}}</code></dd></div>{{end}}
-{{- with .ARN}}<div><dt>ARN</dt><dd><code>{{.}}</code></dd></div>{{end}}
+<div><dt>Address</dt><dd><code>{{template "brk" .Address}}</code></dd></div>
+{{- with .Provider}}<div><dt>Provider</dt><dd><code>{{provider .}}</code></dd></div>{{end}}
+{{- if ne .ID .ARN}}{{with .ID}}<div><dt>ID</dt><dd><code>{{template "brk" .}}</code></dd></div>{{end}}{{end}}
+{{- with .ARN}}<div><dt>ARN</dt><dd><code>{{template "brk" .}}</code></dd></div>{{end}}
 {{- with .Identifier}}<div><dt>Identifier</dt><dd><code>{{.}}</code></dd></div>{{end}}
-{{- with .Region}}<div><dt>Region</dt><dd><code>{{.}}</code></dd></div>{{end}}
+{{- with .Where}}<div><dt>Region</dt><dd><code>{{.}}</code></dd></div>{{end}}
 {{- with .Namespace}}<div><dt>Namespace</dt><dd><code>{{.}}</code></dd></div>{{end}}
 {{- with .ModifyIndex}}<div><dt>Modify index</dt><dd><code>{{.}}</code></dd></div>{{end}}
 {{- if .Drift}}<div><dt>Drift</dt><dd><a href="{{.DriftHref}}">{{if eq .Drift "outside"}}changed outside OpenTofu{{else}}the code would change it{{end}}</a></dd></div>{{end}}
@@ -107,7 +111,7 @@
 </div>
 {{end}}
 {{else}}
-<div class="card"><p class="empty" id="no-index">{{if .Drift}}{{none "unindexed"}}{{else if .DriftFailed}}writ serve could not read the drift record of this stack, so this page cannot say whether it keeps a state of it.{{else}}{{none "no-state"}}{{end}}</p></div>
+<div class="card"><p class="empty" id="no-index">{{if .Drift}}{{none "unindexed"}}{{else if .DriftFailed}}Writ could not read the drift record of this stack, so this page cannot say whether it keeps a state of it.{{else}}{{none "no-state"}}{{end}}</p></div>
 {{end}}
 {{end}}
 
@@ -119,7 +123,7 @@
 <p class="meta">{{template "counted" (of (exact .Resources) "resource" "resources")}} · {{if eq .Backend "s3"}}serial{{else}}version{{end}} <code>{{.IndexedVersion}}</code> · indexed {{template "when" .IndexedAt}}</p>
 {{- end}}{{end}}
 </div>
-{{with .Drift}}{{with .OutsideWrite}}<div class="note note-warning" role="note">{{template "icon" "warn"}}<div>Serial <code>{{.Serial}}</code> of the state was written outside writ serve, seen {{template "time" .SeenAt}}.</div></div>{{end}}{{end}}
+{{with .Drift}}{{with .OutsideWrite}}<div class="note note-warning" role="note">{{template "icon" "warn"}}<div>Serial <code>{{.Serial}}</code> of the state was written outside Writ, seen {{template "time" .SeenAt}}.</div></div>{{end}}{{end}}
 {{with .Adopt}}{{template "adopt-hint" .}}{{end}}
 {{template "stack-tabs" .}}
 {{if eq .View "resources"}}{{template "resources" .}}
