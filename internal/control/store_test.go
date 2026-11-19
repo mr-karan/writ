@@ -14,6 +14,7 @@ import (
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/control/controltest"
 	"github.com/mr-karan/writ/internal/control/pgtest"
+	"github.com/mr-karan/writ/internal/sqldb"
 )
 
 func TestMain(m *testing.M) { os.Exit(pgtest.Main(m)) }
@@ -25,6 +26,29 @@ func each(t *testing.T, f func(t *testing.T, s *control.Store, loc string)) {
 	controltest.Each(t, func(t *testing.T, e controltest.Engine) {
 		s, loc := controltest.Open(t, e)
 		f(t, s, loc)
+	})
+}
+
+// A failed scan names the value it read, and a value can be a secret, so
+// a scan's error is classified like any other error of the database.
+func TestScanErrorHidesTheValue(t *testing.T) {
+	controltest.Each(t, func(t *testing.T, e controltest.Engine) {
+		rows, err := controltest.Raw(t, e.New(t)).QueryContext(context.Background(), "SELECT 'sealed-secret'")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		if !rows.Next() {
+			t.Fatal(rows.Err())
+		}
+		var n int
+		err = rows.Scan(&n)
+		if _, ok := errors.AsType[*sqldb.IOError](err); !ok {
+			t.Fatalf("scan error %v is not a *sqldb.IOError", err)
+		}
+		if e.Name == "postgres" && strings.Contains(err.Error(), "sealed-secret") {
+			t.Fatalf("scan error %q names the value", err)
+		}
 	})
 }
 

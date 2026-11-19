@@ -264,11 +264,11 @@ func (s *Store) repos(ctx context.Context, q string, args ...any) ([]Repo, error
 	for rows.Next() {
 		r, err := scanRepo(rows)
 		if err != nil {
-			return nil, s.db.Error(err)
+			return nil, err
 		}
 		out = append(out, r)
 	}
-	return out, s.db.Error(rows.Err())
+	return out, rows.Err()
 }
 
 // RecordHead stores a commit read from a repository's default branch,
@@ -409,11 +409,11 @@ func (s *Store) eachBatch(ctx context.Context, ids []string, q string, row func(
 		for rows.Next() {
 			if err := row(rows); err != nil {
 				rows.Close()
-				return s.db.Error(err)
+				return err
 			}
 		}
 		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-			return s.db.Error(err)
+			return err
 		}
 	}
 	return nil

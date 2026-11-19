@@ -124,9 +124,9 @@ func (s *Store) Environments(ctx context.Context) ([]string, error) {
 	for rows.Next() {
 		var env string
 		if err := rows.Scan(&env); err != nil {
-			return nil, s.db.Error(err)
+			return nil, err
 		}
 		out = append(out, env)
 	}
-	return out, s.db.Error(rows.Err())
+	return out, rows.Err()
 }

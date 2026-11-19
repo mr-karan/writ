@@ -3,7 +3,6 @@ package provider
 import (
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -82,6 +81,44 @@ func TestAWSReferenceCoverage(t *testing.T) {
 	}
 }
 
+// The ownership annotations hold for a real hashicorp/aws schema in the
+// cache: each field an autoscaler moves is a settable number there, and
+// the built resource type marks it Scaled.
+func TestAWSCachedAnnotations(t *testing.T) {
+	dirs, err := DefaultDirs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cachedAWSSchema(t, dirs)
+	if c == nil {
+		t.Skip("real hashicorp/aws schema is not cached; run writ init for a pinned AWS provider first (this test never starts or downloads AWS)")
+	}
+	t.Logf("checking cached AWS schema %s", c.dir)
+	p, _, err := c.build(schema.Source{Namespace: "hashicorp", Type: "aws"}, "cached")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for wire, scaled := range map[string][]string{
+		"aws_autoscaling_group": {"desired_capacity"},
+		"aws_ecs_service":       {"desired_count"},
+	} {
+		t.Run(wire, func(t *testing.T) {
+			r, err := p.ResourceByWire(wire)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(r.Scaled, scaled) {
+				t.Fatalf("Scaled is %v, want %v", r.Scaled, scaled)
+			}
+			for _, path := range scaled {
+				if a, _ := r.Block.Lookup(strings.Split(path, ".")); a.Type.Kind() != types.Float {
+					t.Errorf("%s.%s is %s, want a number", wire, path, a.Type)
+				}
+			}
+		})
+	}
+}
+
 func isRef(t types.Type) bool {
 	return t.Kind() == types.Ref || t.Kind() == types.List && t.Elem().Kind() == types.Ref
 }
@@ -90,7 +127,7 @@ func isRef(t types.Type) bool {
 // cache holds none.
 func cachedAWSSchema(t *testing.T, dirs Dirs) *schemaCache {
 	t.Helper()
-	indexes, err := filepath.Glob(filepath.Join(dirs.Cache, "schemas", fmt.Sprintf("v%d", schemaFormat), "*", "index.json"))
+	indexes, err := filepath.Glob(filepath.Join(filepath.Dir(dirs.SchemaDir([32]byte{})), "*", "index.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

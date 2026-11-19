@@ -434,11 +434,11 @@ func (s *Store) Approvals(ctx context.Context, ids []string) (map[string][]Appro
 	for rows.Next() {
 		a, err := scanApproval(rows)
 		if err != nil {
-			return nil, s.db.Error(err)
+			return nil, err
 		}
 		out[a.PlanID] = append(out[a.PlanID], a)
 	}
-	return out, s.db.Error(rows.Err())
+	return out, rows.Err()
 }
 
 // PlanEvent is one change of a plan's status.
@@ -462,12 +462,12 @@ func (s *Store) PlanEvents(ctx context.Context, ref string) ([]PlanEvent, error)
 		var ev PlanEvent
 		var at int64
 		if err := rows.Scan(&at, &ev.From, &ev.To, &ev.Person, &ev.Display, &ev.Run, &ev.Reason); err != nil {
-			return nil, s.db.Error(err)
+			return nil, err
 		}
 		ev.At = fromMS(at)
 		out = append(out, ev)
 	}
-	return out, s.db.Error(rows.Err())
+	return out, rows.Err()
 }
 
 // Pipeline names one CI pipeline: the issuer's URL, and the project and
@@ -1199,7 +1199,7 @@ func (s *Store) Runs(ctx context.Context, env, stack string, limit int, keep fun
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, s.db.Error(err)
+		return nil, false, err
 	}
 	if len(runs) > limit {
 		return runs[:limit], true, nil
@@ -1230,7 +1230,7 @@ func (s *Store) FailedRuns(ctx context.Context, env string, since time.Time, lim
 			runs = append(runs, run)
 		}
 	}
-	return runs, total, s.db.Error(rows.Err())
+	return runs, total, rows.Err()
 }
 
 // PlanRuns returns the run of each plan of ids that has one, by plan id,
@@ -1256,7 +1256,7 @@ func (s *Store) PlanRuns(ctx context.Context, ids []string) (map[string]Run, err
 		}
 		out[run.PlanID] = run
 	}
-	return out, s.db.Error(rows.Err())
+	return out, rows.Err()
 }
 
 // withSources scans a run's columns and then the digest after them.
