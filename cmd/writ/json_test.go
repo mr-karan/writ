@@ -143,7 +143,7 @@ func TestEveryFailureIsOneJSONDocument(t *testing.T) {
 
 // nullable holds the keys whose value is an object that a failure
 // document may leave null. Every other null is a list that must be [].
-var nullable = map[string]bool{"plan": true, "document": true, "policy": true, "run": true, "session": true}
+var nullable = map[string]bool{"plan": true, "document": true, "policy": true, "network": true, "run": true, "session": true}
 
 // nullList returns the path of the first null in doc that nullable does
 // not name, or "".
