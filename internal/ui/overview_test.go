@@ -57,8 +57,8 @@ func TestOverviewAndSidebarCount(t *testing.T) {
 	if got := classTexts(p.doc, "stat"); len(got) != 4 || got[0] != "Waiting for approval00 by others · 0 yours" || got[2] != "Failed1runs in the last 24 hours" {
 		t.Errorf("the stat cards after a failed run: %q", got)
 	}
-	alerts := classTexts(p.doc, "alert-title")
-	if !slices.Contains(alerts, "network@prod Run failed") {
+	alerts := classTexts(p.doc, "alerts")
+	if len(alerts) != 1 || !strings.Contains(alerts[0], "Run failed network@prod") {
 		t.Errorf("no alert of the failed run: %q", alerts)
 	}
 	found := false
@@ -94,10 +94,10 @@ func TestOverviewPastTheList(t *testing.T) {
 	if got := classTexts(p.doc, "stat"); len(got) != 4 || got[3] != "Drifted1of 2 stacks checked" {
 		t.Errorf("the stat cards with network's drift past the list: %q", got)
 	}
-	if got := classTexts(p.doc, "alert-title"); !slices.Contains(got, "network@prod Drift found") {
+	if got := classTexts(p.doc, "alerts"); len(got) != 1 || !strings.Contains(got[0], "Drift found network@prod") {
 		t.Errorf("no alert of network's drift: %q", got)
 	}
-	if body := text(p.doc); strings.Contains(body, "No drift, no failed run in the last 24 hours, no plan about to expire") || !strings.Contains(body, "202 stacks with state") {
+	if body := strings.Join(strings.Fields(text(p.doc)), " "); strings.Contains(body, "No drift, no failed run in the last 24 hours, no plan about to expire") || !strings.Contains(body, "Stacks with state 202") {
 		t.Errorf("the overview with 202 stacks: %s", body)
 	}
 

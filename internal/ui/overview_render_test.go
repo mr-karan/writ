@@ -216,16 +216,6 @@ func (r *reading) figures() {
 func (r *reading) figureTruth(n *html.Node) (string, int, bool) {
 	v, w := r.view, r.w
 	all := w.sum(r.rd.envs...)
-	if p := up(n, classed("subtitle")); p != nil {
-		switch slices.Index(everyOf(p, classed("n")), n) {
-		case 0:
-			return "environments", len(r.rd.envs), true
-		case 1:
-			return "stacks with state", v.stacks, true
-		case 2:
-			return "repositories", w.repos, true
-		}
-	}
 	if s := up(n, classed("stat")); s != nil {
 		label := folded(first(s, classed("stat-label")))
 		i := -1

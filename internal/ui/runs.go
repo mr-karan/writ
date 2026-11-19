@@ -43,10 +43,9 @@ func (u *UI) runs(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	if d.Env, d.Envs, ok = f.listEnv(q.Get("env")); !ok {
 		return
 	}
-	p := &page{Title: "Runs", Section: "runs", Crumbs: []crumb{{"Runs", "/ui/runs"}, {d.Env, ""}}}
+	p := &page{Title: "Runs", Section: "runs"}
 	if d.Stack != "" {
-		p.Crumbs[1].Href = link("/ui/runs", "env", d.Env)
-		p.Crumbs = append(p.Crumbs, crumb{Name: d.Stack})
+		p.Crumbs = []crumb{{"Runs", link("/ui/runs", "env", d.Env)}, {d.Stack, ""}}
 	}
 	caption := "Runs writ serve started in " + d.Env + ", newest first"
 	if d.Stack != "" {
@@ -55,7 +54,7 @@ func (u *UI) runs(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	if d.Applies, ok = f.applies(caption, d.Env, d.Stack); !ok {
 		return
 	}
-	d.Applies.Stack = true
+	d.Applies.Stack = d.Stack == ""
 	p.CLI = "writ runs --remote --env " + d.Env
 	if d.Stack != "" {
 		p.CLI += " --stack " + d.Stack

@@ -56,7 +56,7 @@ var terms = regexp.MustCompile(`\bclean work tree\b`)
 // fieldsRE are the listings and fields of a page, as template text: each
 // row or field says what one record holds, so its own words, such as no
 // commit or never checked, are that record's.
-var fieldsRE = regexp.MustCompile(`(?s)<table\b.*?</table>|<ul class="(rows|alerts)">.*?</ul>|<dl\b.*?</dl>`)
+var fieldsRE = regexp.MustCompile(`(?s)<table\b.*?</table>|<ul class="(rows|alerts|rows alerts)">.*?</ul>|<dl\b.*?</dl>`)
 
 // fields are the elements fieldsRE finds, on a rendered page, and the
 // tree's notes, whose words checkRender judges one by one.

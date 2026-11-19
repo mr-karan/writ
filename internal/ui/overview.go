@@ -22,9 +22,6 @@ func (u *UI) overview(w http.ResponseWriter, r *http.Request, s *server.Session)
 		return
 	}
 	p := &page{Title: "Overview", Section: "overview", Data: d}
-	if env != "" {
-		p.Crumbs = []crumb{{"Overview", "/ui/"}, {env, ""}}
-	}
 	if d.Planning.N > 0 || d.Applying.N > 0 {
 		p.Refresh = 30
 	}
