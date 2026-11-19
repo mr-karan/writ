@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/mr-karan/writ/internal/addr"
 )
 
 // Kind is the shape of a type, ignoring the secret taint.
@@ -525,7 +527,7 @@ func (t Type) write(b *strings.Builder) {
 			if i > 0 {
 				b.WriteString(" | ")
 			}
-			b.WriteString(quote(m))
+			b.WriteString(addr.Quote(m))
 		}
 	case Ref:
 		b.WriteString(t.refKind.String())
@@ -573,33 +575,6 @@ func writeFields(b *strings.Builder, fields []Field) {
 		f.Type.write(b)
 	}
 	b.WriteString(" }")
-}
-
-// quote renders a Writ string literal. It matches addr.Quote; types imports
-// no other Writ package, so it keeps its own copy.
-func quote(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for i := 0; i < len(s); i++ {
-		switch c := s[i]; c {
-		case '"', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(c)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\t':
-			b.WriteString(`\t`)
-		case '$':
-			if i+1 < len(s) && s[i+1] == '{' {
-				b.WriteByte('\\')
-			}
-			b.WriteByte('$')
-		default:
-			b.WriteByte(c)
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
 }
 
 // String renders tls.PrivateKey.

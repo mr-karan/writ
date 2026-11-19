@@ -40,7 +40,7 @@ res.Saved = key.SealPlan(raw.File, res.ID, env, stack)
 | --- | --- | --- |
 | `diag` | `Span`, `Diagnostic`, classes, fixes | none |
 | `addr` | `Addr`, the canonical address of an object an import names, and quoting for messages and shell words | none |
-| `types` | the static types of provider schemas, `Assign`, printing | none |
+| `types` | the static types of provider schemas, `Assign`, printing | addr |
 | `value` | the values the importer and the provider client pass: known values, `Unknown`, secret marks, canonical encodings and keyed digests, redaction, secret-aware path printing | addr, schema |
 | `schema` | annotated provider schemas, the annotation table | types |
 | `provider` | registry install, the lock of installed providers, schema cache, processes, gRPC, cty, and starting a process with its own environment as another uid, for the importer's provider client and the isolation check | schema, types, value, tfplugin5, tfplugin6, runas |
