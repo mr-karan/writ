@@ -65,11 +65,9 @@ func (d Dirs) BinaryPath(src schema.Source, version, platform string) string {
 
 // InstallOptions configures Install.
 type InstallOptions struct {
-	CurrentPlatform string // defaults to the running platform
-	Dirs            Dirs
-	Platforms       []string // lock platforms, defaults to the current platform
-	HTTP            *http.Client
-	Log             *slog.Logger
+	Dirs Dirs
+	HTTP *http.Client
+	Log  *slog.Logger
 	// Offline resolves every requirement from the cache alone, verified
 	// against writ.lock or the hashes recorded when it was extracted, and
 	// never contacts a registry. A version that is not cached is an error.
@@ -78,8 +76,7 @@ type InstallOptions struct {
 	Launch Launch
 }
 
-// Install pins the selected platforms and installs the current platform.
-// Foreign binaries are hashed from their archives and are never started.
+// Install installs each requirement for the current platform.
 //
 // A requirement pinned in lock whose cached binary matches the pinned hash
 // needs no network. Otherwise Install asks the registry for the release,
@@ -93,57 +90,29 @@ func Install(ctx context.Context, opts InstallOptions, lock *Lock, reqs []Requir
 	if lock == nil {
 		lock = &Lock{}
 	}
-	in := installer{dirs: opts.Dirs, http: opts.HTTP, log: opts.Log, offline: opts.Offline, launch: opts.Launch}
+	in := installer{dirs: opts.Dirs, platform: CurrentPlatform(), http: opts.HTTP, log: opts.Log, offline: opts.Offline, launch: opts.Launch}
 	if in.http == nil {
 		in.http = &http.Client{Timeout: downloadTimeout}
 	}
 	if in.log == nil {
 		in.log = slog.New(slog.DiscardHandler)
 	}
-	current := opts.CurrentPlatform
-	if current == "" {
-		current = CurrentPlatform()
-	}
-	platforms := opts.Platforms
-	if platforms == nil {
-		platforms = []string{current}
-	}
-	if len(platforms) == 0 {
-		return nil, fmt.Errorf("platform list must not be empty")
-	}
-	platforms = slices.Clone(platforms)
-	slices.Sort(platforms)
-	platforms = slices.Compact(platforms)
-	for _, p := range platforms {
-		if err := validatePlatform(p); err != nil {
-			return nil, err
-		}
-	}
 	reqs = uniqueRequirements(reqs)
-	entries := make([]LockEntry, len(reqs)*len(platforms))
+	entries := make([]LockEntry, len(reqs))
 	errs := make([]error, len(entries))
 	sem := make(chan struct{}, installParallelism)
 	var wg sync.WaitGroup
-	for pi, platform := range platforms {
-		for ri, req := range reqs {
-			i := pi*len(reqs) + ri
-			worker := in
-			worker.platform = platform
-			wg.Go(func() {
-				select {
-				case sem <- struct{}{}:
-				case <-ctx.Done():
-					errs[i] = ctx.Err()
-					return
-				}
-				defer func() { <-sem }()
-				if platform == current {
-					entries[i], errs[i] = worker.install(ctx, lock, req)
-				} else {
-					entries[i], errs[i] = worker.pinArchive(ctx, lock, req)
-				}
-			})
-		}
+	for i, req := range reqs {
+		wg.Go(func() {
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				errs[i] = ctx.Err()
+				return
+			}
+			defer func() { <-sem }()
+			entries[i], errs[i] = in.install(ctx, lock, req)
+		})
 	}
 	wg.Wait()
 	if err := errors.Join(errs...); err != nil {
@@ -449,13 +418,4 @@ func archiveBinary(r io.ReaderAt, size int64, typ string) (io.ReadCloser, error)
 		return nil, err
 	}
 	return rc, nil
-}
-
-func validatePlatform(p string) error {
-	os, arch, ok := strings.Cut(p, "_")
-	if !ok || !slices.Contains([]string{"linux", "darwin", "windows", "freebsd", "openbsd", "netbsd", "dragonfly", "solaris", "illumos"}, os) ||
-		!slices.Contains([]string{"386", "amd64", "arm", "arm64", "ppc64", "ppc64le", "mips", "mipsle", "mips64", "mips64le", "s390x", "riscv64", "loong64"}, arch) {
-		return fmt.Errorf("invalid platform %q: want os_arch, such as linux_amd64 or darwin_arm64", p)
-	}
-	return nil
 }

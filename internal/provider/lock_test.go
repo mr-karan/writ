@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,31 +26,22 @@ func entry(src schema.Source, version, platform string, archive, binary byte) Lo
 	return LockEntry{Source: src, Version: version, Platform: platform, Archive: hash(archive), Binary: hash(binary)}
 }
 
-func TestLockEncodeSortsAndFinds(t *testing.T) {
+func TestLockSortsAndFinds(t *testing.T) {
 	acme := schema.Source{Host: "example.com", Namespace: "acme", Type: "thing"}
-	// Out of order on purpose: Encode sorts by source, version, platform.
+	// Out of order on purpose: entries sort by source, version, platform.
 	l := (&Lock{}).
 		with(entry(tlsSrc, "4.4.2", "linux_amd64", 1, 2)).
 		with(entry(acme, "0.1.0", "linux_amd64", 7, 8)).
 		with(entry(randomSrc, "3.9.1", "darwin_arm64", 5, 6)).
 		with(entry(randomSrc, "3.9.1", "linux_amd64", 3, 4))
-	want := []string{
-		"example.com/acme/thing 0.1.0 linux_amd64 ",
-		"hashicorp/random 3.9.1 darwin_arm64 ",
-		"hashicorp/random 3.9.1 linux_amd64 ",
-		"hashicorp/tls 4.4.2 linux_amd64 ",
+	want := []LockEntry{
+		entry(acme, "0.1.0", "linux_amd64", 7, 8),
+		entry(randomSrc, "3.9.1", "darwin_arm64", 5, 6),
+		entry(randomSrc, "3.9.1", "linux_amd64", 3, 4),
+		entry(tlsSrc, "4.4.2", "linux_amd64", 1, 2),
 	}
-	lines := strings.Split(strings.TrimSuffix(string(l.Encode()), "\n"), "\n")
-	if len(lines) != len(want) {
-		t.Fatalf("Encode gave %d lines, want %d:\n%s", len(lines), len(want), l.Encode())
-	}
-	for i, line := range lines {
-		if !strings.HasPrefix(line, want[i]) {
-			t.Errorf("line %d = %q, want it to start with %q", i+1, line, want[i])
-		}
-	}
-	if want := "hashicorp/tls 4.4.2 linux_amd64 archive=sha256:" + strings.Repeat("01", 32) + " binary=sha256:" + strings.Repeat("02", 32); lines[3] != want {
-		t.Errorf("line 4 = %q, want %q", lines[3], want)
+	if got := l.Entries(); !slices.Equal(got, want) {
+		t.Errorf("Entries:\n got %+v\nwant %+v", got, want)
 	}
 
 	e, ok := l.find(randomSrc, "3.9.1", "darwin_arm64")
@@ -74,29 +66,21 @@ func TestLockFindUsesCurrentPlatform(t *testing.T) {
 	}
 }
 
-func TestLockWithAndDigest(t *testing.T) {
+func TestLockWith(t *testing.T) {
 	l := &Lock{}
 	a := LockEntry{Source: tlsSrc, Version: "4.4.2", Platform: "linux_amd64", Archive: hash(1), Binary: hash(2)}
 	b := LockEntry{Source: randomSrc, Version: "3.9.1", Platform: "linux_amd64", Archive: hash(3), Binary: hash(4)}
 	ab := l.with(a).with(b)
-	ba := l.with(b).with(a)
-	if ab.Digest() != ba.Digest() {
-		t.Error("the same entries added in another order give another digest")
+	if !slices.Equal(ab.Entries(), l.with(b).with(a).Entries()) {
+		t.Error("the same entries added in another order give another lock")
 	}
-	if len(l.Encode()) != 0 {
+	if len(l.Entries()) != 0 {
 		t.Error("with modified the lock it was called on")
 	}
 	a2 := a
 	a2.Binary = hash(9)
-	replaced := ab.with(a2)
-	if e, _ := replaced.find(tlsSrc, "4.4.2", "linux_amd64"); e.Binary != hash(9) {
-		t.Errorf("with did not replace the entry: %+v", e)
-	}
-	if got := strings.Count(string(replaced.Encode()), "\n"); got != 2 {
-		t.Errorf("replacing an entry left %d lines, want 2", got)
-	}
-	if replaced.Digest() == ab.Digest() {
-		t.Error("changing a binary hash did not change the digest")
+	if got, want := ab.with(a2).Entries(), []LockEntry{b, a2}; !slices.Equal(got, want) {
+		t.Errorf("replacing an entry gave %+v, want %+v", got, want)
 	}
 }
 
