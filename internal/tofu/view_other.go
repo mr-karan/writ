@@ -19,7 +19,7 @@ func startConfined(cmd *exec.Cmd, c command) error {
 	}
 	cmd.SysProcAttr = runas.SysProcAttr(c.user)
 	cmd.SysProcAttr.Setpgid = true
-	return cmd.Start()
+	return runas.Start(cmd)
 }
 
 // maxSocketPath is the size of sun_path on macOS and the BSDs, which holds

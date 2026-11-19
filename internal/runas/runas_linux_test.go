@@ -2,12 +2,15 @@ package runas
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -72,6 +75,19 @@ func TestStartMapped(t *testing.T) {
 		return
 	}
 	inNamespaces(t, "TestStartMapped")
+}
+
+// TestStartBesideStartMapped starts processes as other users, as a
+// provider's start and writ serve --check do, while StartMapped starts
+// processes in user namespaces, after AsUser, as uid 1000 with the
+// capabilities writ serve has. Go starts a process that switches users
+// with CLONE_VM, so the child's setresuid marks writ itself not dumpable.
+func TestStartBesideStartMapped(t *testing.T) {
+	if os.Getenv(childEnv) != "" {
+		startBesideStartMappedChild(t)
+		return
+	}
+	inNamespaces(t, "TestStartBesideStartMapped")
 }
 
 // inNamespaces runs the test name of this package's test binary again
@@ -146,6 +162,87 @@ func startMappedChild(t *testing.T) {
 	// Dumpable, writ would let any process of its uid read its memory.
 	if d := dumpable(t); d != 0 {
 		t.Errorf("after StartMapped writ is dumpable %d, want 0 as before it", d)
+	}
+}
+
+func startBesideStartMappedChild(t *testing.T) {
+	if os.Getuid() != writUID {
+		t.Fatalf("the child runs as uid %d, not %d", os.Getuid(), writUID)
+	}
+	// The uids below may read the store but not this user's profile.
+	truePath, err := exec.LookPath("true")
+	if err == nil {
+		truePath, err = filepath.EvalSymlinks(truePath)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A multi-call coreutils picks the program by its first argument.
+	command := func() *exec.Cmd {
+		cmd := exec.Command(truePath)
+		cmd.Args = []string{"true"}
+		return cmd
+	}
+	if err := AsUser(User{UID: runUID, GID: runUID}, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	var started atomic.Int64
+	errs := make(chan error, 4)
+	for i := range uint32(4) {
+		wg.Go(func() {
+			u := User{UID: runUID + 1 + i, GID: runUID + 1 + i}
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				cmd := command()
+				cmd.SysProcAttr = SysProcAttr(&u)
+				err := Start(cmd)
+				if err == nil {
+					err = cmd.Wait()
+				}
+				if err != nil {
+					errs <- fmt.Errorf("start as uid %d: %w", u.UID, err)
+					return
+				}
+				started.Add(1)
+			}
+		})
+	}
+	const n = 300
+	var failed []error
+	for range n {
+		cmd := command()
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Cloneflags:                 syscall.CLONE_NEWUSER,
+			UidMappings:                []syscall.SysProcIDMap{{ContainerID: 0, HostID: writUID, Size: 1}, {ContainerID: runUID, HostID: runUID, Size: 1}},
+			GidMappings:                []syscall.SysProcIDMap{{ContainerID: 0, HostID: writUID, Size: 1}, {ContainerID: runUID, HostID: runUID, Size: 1}},
+			GidMappingsEnableSetgroups: true,
+		}
+		if err := StartMapped(cmd); err != nil {
+			failed = append(failed, err)
+			continue
+		}
+		if err := cmd.Wait(); err != nil {
+			t.Fatalf("the process in the user namespace: %v", err)
+		}
+	}
+	close(stop)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+	if started.Load() == 0 {
+		t.Fatal("no process started as another user beside StartMapped, so the test proves nothing")
+	}
+	t.Logf("%d processes started as other users beside %d StartMapped", started.Load(), n)
+	if len(failed) > 0 {
+		t.Fatalf("StartMapped failed %d of %d times beside starts as other users; first: %v", len(failed), n, failed[0])
 	}
 }
 

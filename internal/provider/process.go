@@ -93,7 +93,7 @@ func start(ctx context.Context, binary string, launch Launch) (*process, error) 
 	p.cmd.Stderr = p.stderr
 	p.cmd.WaitDelay = time.Second
 	setProcAttr(p.cmd, launch.User)
-	if err := p.cmd.Start(); err != nil {
+	if err := runas.Start(p.cmd); err != nil {
 		p.removeDir()
 		return nil, fmt.Errorf("start %s: %w", binary, err)
 	}

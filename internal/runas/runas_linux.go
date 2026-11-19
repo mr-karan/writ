@@ -74,16 +74,16 @@ func setFS(u User) {
 	syscall.RawSyscall(syscall.SYS_SETFSUID, uintptr(u.UID), 0, 0)
 }
 
-// dumpMu keeps setFS from marking the process not dumpable while
-// StartMapped starts a process.
+// dumpMu keeps setFS and Start from marking the process not dumpable
+// while StartMapped starts a process.
 var dumpMu sync.Mutex
 
 // StartMapped starts cmd, which makes a user namespace whose uid_map and
 // gid_map this process writes. The kernel lets a process other than root
 // open those files only while it is dumpable, and AsUser leaves it not
 // dumpable. So the process is dumpable while cmd starts and is put back
-// after, with no AsUser in between. Not dumpable, a process lets nothing
-// of its uid without CAP_SYS_PTRACE trace it or read its memory.
+// after, with no AsUser or Start in between. Not dumpable, a process lets
+// nothing of its uid without CAP_SYS_PTRACE trace it or read its memory.
 func StartMapped(cmd *exec.Cmd) error {
 	dumpMu.Lock()
 	defer dumpMu.Unlock()
@@ -108,6 +108,16 @@ func StartMapped(cmd *exec.Cmd) error {
 		return errors.Join(err, fmt.Errorf("make writ not dumpable again: %w", e))
 	}
 	return err
+}
+
+// Start starts cmd, whose SysProcAttr may switch the user it runs as.
+// Go starts a child outside a new user namespace with CLONE_VM, so the
+// child's change of ids marks writ itself not dumpable, as setFS does,
+// and it waits for StartMapped the same way.
+func Start(cmd *exec.Cmd) error {
+	dumpMu.Lock()
+	defer dumpMu.Unlock()
+	return cmd.Start()
 }
 
 // fsIDs returns this thread's filesystem uid and gid. An invalid id
