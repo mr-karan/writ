@@ -79,13 +79,6 @@ func (a Addr) Let() string {
 	return a.s
 }
 
-// Within reports whether a is p or lies under p on complete address steps:
-// files["a"] is within files, filesystem is not.
-func (a Addr) Within(p Addr) bool {
-	rest, ok := strings.CutPrefix(a.s, p.s)
-	return ok && (rest == "" || rest[0] == '.' || rest[0] == '[')
-}
-
 // IsIdent reports whether s matches [A-Za-z_][A-Za-z0-9_]*.
 func IsIdent(s string) bool {
 	if s == "" {

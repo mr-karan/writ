@@ -103,10 +103,6 @@ type Field struct {
 	// Computed fields get a value from the provider when config leaves them
 	// null. ReadOnly implies Computed.
 	Computed bool
-	// Filled computed fields are ones the annotation layer knows the provider
-	// sets to a non-null value when config leaves them null. A provider may
-	// leave any other computed field null.
-	Filled bool
 }
 
 // Scalar constructors.
@@ -182,19 +178,6 @@ func sortedFields(fields []Field) []Field {
 
 // Secret returns t with the secret taint set.
 func Secret(t Type) Type { t.secret = true; return t }
-
-// HoldsInvalid reports whether t is or contains Invalid.
-func (t Type) HoldsInvalid() bool {
-	switch t.kind {
-	case Invalid:
-		return true
-	case List, Map:
-		return t.elem.HoldsInvalid()
-	case Record:
-		return slices.ContainsFunc(t.fields, func(f Field) bool { return f.Type.HoldsInvalid() })
-	}
-	return false
-}
 
 // Named returns t printed as name, for a type written through `type Name =
 // T`. It changes nothing but how t prints.
