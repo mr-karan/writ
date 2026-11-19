@@ -142,6 +142,7 @@ Common causes:
 - `plan ID expired at TIME: plan again`
 - `another run is applying to STACK@ENV; try again when it ends`
 - `plan ID is a drift check of STACK@ENV, which writ serve never approves or applies: plan the stack to change it`
+- `plan ID is a speculative plan, of files a client sent, which writ serve never approves: push the commit and plan it`
 - `the key KEY is closed with no run: no run started; run the command again`
 - `state version N of STACK@ENV is not its newest, version N: adopt the newest`
 - `an apply of STACK@ENV runs, which may write a newer state: adopt after it ends`

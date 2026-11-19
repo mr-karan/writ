@@ -6,7 +6,7 @@ On a team's control plane, every apply starts from a commit's plan. Someone othe
 
 Clients never send code or a saved plan to an apply. No laptop or CI job holds the state key or a cloud credential, either. For the commands, see [Approve and apply a plan](apply.md).
 
-Today `writ serve` plans only commits. If you kept plans from before that, some may be speculative plans, made from files a client sent. You can't approve one on a team's control plane, and no control plane applies it.
+Today `writ serve` plans only commits. If you kept plans from before that, some may be speculative plans, made from files a client sent. No control plane takes an approval of one, `writ serve --dev` included, and no control plane applies it.
 
 ## Set how many approvals a plan needs
 

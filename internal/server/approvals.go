@@ -112,9 +112,10 @@ func (s *Server) dbFailed(w http.ResponseWriter, r *http.Request, format string,
 	s.refuse(w, r, format, diag.StateIO, http.StatusServiceUnavailable, "the control database failed; the request id is %s", reqOf(r).id)
 }
 
-// approve records the caller's approval of plans, all or none. The caller
-// needs approve on each plan's stack@env, must be a person, and through a
-// CI token may approve only plans of the token's own pipeline.
+// approve records the caller's approval of plans, all or none. Each must
+// be a plan of a commit. The caller needs approve on each plan's
+// stack@env, must be a person, and through a CI token may approve only
+// plans of the token's own pipeline.
 func (s *Server) approve(w http.ResponseWriter, r *http.Request, plans []control.Plan) {
 	req := reqOf(r)
 	pr := req.principal
@@ -131,8 +132,8 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request, plans []control
 			return
 		}
 		grants = append(grants, oneBased(d.Grants)...)
-		if !s.rules().Approvable(p) {
-			s.refuse(w, r, FormatApprove, diag.Usage, http.StatusBadRequest, "plan %s is a speculative plan, of files a client sent, which a team's control plane never applies, so it takes no approval", p.ID)
+		if p.Source.Commit == "" {
+			s.refuse(w, r, FormatApprove, diag.State, http.StatusConflict, "plan %s is a speculative plan, of files a client sent, which writ serve never approves: push the commit and plan it", p.ID)
 			return
 		}
 		if pr.tok == nil {
