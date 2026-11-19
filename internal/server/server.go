@@ -484,6 +484,7 @@ func (s *Server) routeTable() []apiRoute {
 		{"/v1/drift", true, map[string]http.HandlerFunc{"GET": s.listDrift}},
 		{"/v1/index", true, map[string]http.HandlerFunc{"GET": s.stateIndex}},
 		{"/v1/overview", true, map[string]http.HandlerFunc{"GET": s.overview}},
+		{"/v1/audit", true, map[string]http.HandlerFunc{"GET": s.listAudit}},
 		{"/", false, map[string]http.HandlerFunc{}},
 	}
 }
@@ -755,6 +756,8 @@ func formatOf(route, method string) string {
 		return FormatStateIndex
 	case route == "/v1/overview":
 		return FormatOverview
+	case route == "/v1/audit":
+		return FormatAudit
 	case strings.HasPrefix(route, "/v1/plans"):
 		return FormatRemotePlan
 	case route == "/v1/state/adopt":
