@@ -25,9 +25,7 @@ type Launch struct {
 
 // User is an OS user and group with no name. writ serve gives each run its
 // own from the config's provider_uids.
-type User runas.User
-
-func (u User) String() string { return runas.User(u).String() }
+type User = runas.User
 
 // ErrIsolationUnsupported is returned where providers cannot run as another
 // user.

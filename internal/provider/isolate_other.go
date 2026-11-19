@@ -12,14 +12,6 @@ import (
 // start refuses a User before it gets here.
 func setProcAttr(*exec.Cmd, *User) {}
 
-// Command returns a command that fails to start: providers run as other
-// users only on Linux.
-func (u User) Command(ctx context.Context, name string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Err = ErrIsolationUnsupported
-	return cmd
-}
-
 func mkdirAs(User, string) (string, error) { return "", ErrIsolationUnsupported }
 
 func removeAs(User, string) {}

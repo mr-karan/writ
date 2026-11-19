@@ -2,9 +2,11 @@ package runas
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -23,6 +25,14 @@ func SysProcAttr(u *User) *syscall.SysProcAttr {
 		a.Credential = &syscall.Credential{Uid: u.UID, Gid: u.GID, Groups: []uint32{}}
 	}
 	return a
+}
+
+// Command returns a command that runs as u with no supplementary groups,
+// killed when writ dies.
+func (u User) Command(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.SysProcAttr = SysProcAttr(&u)
+	return cmd
 }
 
 // AsUser runs fn on an OS thread whose filesystem uid and gid are u's, so

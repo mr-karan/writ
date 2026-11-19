@@ -38,21 +38,13 @@ type capData struct {
 // killed writ never leaks provider processes, and runs it as u when u is
 // set, with no supplementary groups.
 func setProcAttr(cmd *exec.Cmd, u *User) {
-	cmd.SysProcAttr = runas.SysProcAttr((*runas.User)(u))
-}
-
-// Command returns a command that runs as u with no supplementary groups,
-// killed when writ dies, as a provider is.
-func (u User) Command(ctx context.Context, name string, args ...string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, name, args...)
-	setProcAttr(cmd, &u)
-	return cmd
+	cmd.SysProcAttr = runas.SysProcAttr(u)
 }
 
 // mkdirAs makes a fresh directory under root that belongs to u, mode 0700.
 func mkdirAs(u User, root string) (string, error) {
 	var dir string
-	err := runas.AsUser(runas.User(u), func() error {
+	err := runas.AsUser(u, func() error {
 		var err error
 		dir, err = os.MkdirTemp(root, "writ-")
 		return err
@@ -62,14 +54,14 @@ func mkdirAs(u User, root string) (string, error) {
 
 // removeAs removes dir, which u owns, as u.
 func removeAs(u User, dir string) {
-	_ = runas.AsUser(runas.User(u), func() error { return os.RemoveAll(dir) })
+	_ = runas.AsUser(u, func() error { return os.RemoveAll(dir) })
 }
 
 // dialAs connects to the unix socket at addr as u. The socket belongs to
 // u, and its mode comes from the provider's umask, so only u may connect.
 func dialAs(ctx context.Context, u User, addr string) (net.Conn, error) {
 	var conn net.Conn
-	err := runas.AsUser(runas.User(u), func() error {
+	err := runas.AsUser(u, func() error {
 		var err error
 		conn, err = (&net.Dialer{}).DialContext(ctx, "unix", addr)
 		return err

@@ -12,7 +12,6 @@ import (
 	"github.com/mr-karan/writ/internal/awsrole"
 	"github.com/mr-karan/writ/internal/diag"
 	"github.com/mr-karan/writ/internal/mask"
-	"github.com/mr-karan/writ/internal/provider"
 	"github.com/mr-karan/writ/internal/runas"
 )
 
@@ -83,7 +82,10 @@ func (e *classedError) Unwrap() error { return e.err }
 // runLaunch is how the providers of one plan or apply start, and the
 // role credentials the broker has served them so far.
 type runLaunch struct {
-	provider.Launch
+	// Env is the providers' whole environment.
+	Env []string
+	// User is the provider uid the run runs as, nil under --dev.
+	User *runas.User
 	// served returns the secrets of the run's role credentials, nil for a
 	// run with no role. The environment holds only the token that fetches
 	// them, and a refresh adds to them while the run goes on.
@@ -144,7 +146,7 @@ func (s *Server) launch(ctx context.Context, run, env string, role roleKind, p *
 		vars = append(vars, sess.Env()...)
 		launch.served = sess.Secrets
 	}
-	launch.Launch = provider.Launch{OwnEnv: true, Env: vars}
+	launch.Env = vars
 	user, free, err := s.takeUID(ctx)
 	if err != nil {
 		done()
@@ -157,13 +159,13 @@ func (s *Server) launch(ctx context.Context, run, env string, role roleKind, p *
 
 // takeUID takes a provider uid no other run has, nil when the config sets
 // no provider_uids. free ends what still runs as it and returns it.
-func (s *Server) takeUID(ctx context.Context) (user *provider.User, free func(), err error) {
+func (s *Server) takeUID(ctx context.Context) (user *runas.User, free func(), err error) {
 	if s.uids == nil {
 		return nil, func() {}, nil
 	}
 	select {
 	case uid := <-s.uids:
-		return &provider.User{UID: uid, GID: uid}, func() { s.freeUID(uid) }, nil
+		return &runas.User{UID: uid, GID: uid}, func() { s.freeUID(uid) }, nil
 	case <-ctx.Done():
 		return nil, nil, s.noUID(ctx)
 	}

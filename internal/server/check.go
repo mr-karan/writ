@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mr-karan/writ/internal/provider"
+	"github.com/mr-karan/writ/internal/runas"
 )
 
 // IsolationProbeEnv, set in writ's environment, makes writ run the
@@ -124,7 +124,7 @@ func CheckIsolation(ctx context.Context, cfg *Config, exe string) ([]Check, erro
 	if r == nil {
 		return nil, nil
 	}
-	user := provider.User{UID: r.First, GID: r.First}
+	user := runas.User{UID: r.First, GID: r.First}
 	secret := map[string]string{cfg.Data: "data"}
 	if cfg.TLS != nil {
 		secret[cfg.TLS.Key] = "tls.key"
