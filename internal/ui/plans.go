@@ -19,8 +19,8 @@ type plansData struct {
 	Envs          []string
 	StatusPick    picker
 	StartedByPick picker
-	Plans      []server.PlanInfo
-	Next       string
+	Plans         []server.PlanInfo
+	Next          string
 }
 
 // plans lists the plans of one environment, newest first, with filters in
