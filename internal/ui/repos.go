@@ -123,13 +123,10 @@ func (u *UI) addRepo(w http.ResponseWriter, r *http.Request, s *server.Session) 
 		http.Redirect(w, r, "/ui/repos/"+req.Name, http.StatusSeeOther)
 		return
 	}
-	var refusal struct {
-		Diagnostics []server.Diagnostic `json:"diagnostics"`
-	}
-	_ = json.Unmarshal(resp, &refusal)
+	_, refusal := refusalOf(resp)
 	f := u.fetcher(w, r, s)
 	f.api = append(f.api, "POST /v1/repos")
-	f.renderStatus(status, "repo-new", &page{Title: "Add repository", Section: "repos", Data: newRepoData{Dev: u.srv.Dev(), Form: req, Refusal: refusal.Diagnostics}, Crumbs: repoNewCrumbs})
+	f.renderStatus(status, "repo-new", &page{Title: "Add repository", Section: "repos", Data: newRepoData{Dev: u.srv.Dev(), Form: req, Refusal: refusal}, Crumbs: repoNewCrumbs})
 }
 
 // plansIn lists the newest 200 plans of each environment in status, or in

@@ -51,6 +51,7 @@ func (in instance) address() string {
 
 // tofuQuote is s quoted as OpenTofu 1.13.9 quotes a string key in an
 // address, in toHCLQuotedString of internal/addrs/instance_key.go.
+// It is tfcode.Quoted without the move to NFC, as OpenTofu prints a key.
 func tofuQuote(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')

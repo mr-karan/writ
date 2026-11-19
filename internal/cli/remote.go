@@ -229,7 +229,7 @@ func printPlanLine(w io.Writer, p *server.PlanInfo) {
 	}
 	who := escapeHuman(p.Author.Display, false)
 	from := "of files sent, never applied by a team's control plane"
-	if p.Source.Kind == "commit" {
+	if p.Source.Kind == server.SourceCommit {
 		from = "of " + p.Source.Repo + " at " + forge.Short(p.Source.Commit)
 	}
 	switch p.Status {

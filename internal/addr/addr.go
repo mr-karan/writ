@@ -114,6 +114,7 @@ func ShellWord(s string) string {
 
 // Quote renders s as a Writ string literal. It escapes ", \, newline, and
 // tab, and escapes $ only before {, where it would start an interpolation.
+// It is not HCL: Parse reads it back, so it differs from tfcode.Quoted.
 func Quote(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 2)

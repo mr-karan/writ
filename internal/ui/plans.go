@@ -32,7 +32,7 @@ func (u *UI) plans(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	if d.Env, d.Envs, ok = f.listEnv(q.Get("env")); !ok {
 		return
 	}
-	d.StatusPick = newPicker("Status", d.Status, []string{"planning", "pending", "approved", "applying", "applied", "refused", "failed", "expired", "superseded"}, func(s string) string {
+	d.StatusPick = newPicker("Status", d.Status, server.PlanStatuses, func(s string) string {
 		return link("/ui/plans", "env", d.Env, "stack", d.Stack, "status", s)
 	})
 	var doc server.RemotePlans
@@ -41,7 +41,7 @@ func (u *UI) plans(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	}
 	d.Plans, d.Next = doc.Plans, doc.Next
 	p := &page{Title: "Plans", Section: "plans", Data: d, Crumbs: []crumb{{Name: "Plans"}}}
-	if slices.ContainsFunc(d.Plans, func(p server.PlanInfo) bool { return p.Status == "planning" }) {
+	if slices.ContainsFunc(d.Plans, func(p server.PlanInfo) bool { return p.Status == server.PlanPlanning }) {
 		p.Refresh = 30
 	}
 	f.render("plans", p)
@@ -99,7 +99,7 @@ func (u *UI) plan(w http.ResponseWriter, r *http.Request, s *server.Session) {
 		p.Crumbs = append(p.Crumbs, crumb{st, link("/ui/stack", "stack", st, "env", doc.Plan.Env)})
 	}
 	p.Crumbs = append(p.Crumbs, crumb{Name: p.Title})
-	if doc.Plan.Status == "planning" {
+	if doc.Plan.Status == server.PlanPlanning {
 		p.Refresh = 3
 	}
 	f.render("plan", p)
@@ -141,12 +141,8 @@ func (u *UI) approve(w http.ResponseWriter, r *http.Request, s *server.Session) 
 		http.Redirect(w, r, "/ui/plans/"+url.PathEscape(id), http.StatusSeeOther)
 		return
 	}
-	var refusal struct {
-		Format      string              `json:"format"`
-		Diagnostics []server.Diagnostic `json:"diagnostics"`
-	}
-	_ = json.Unmarshal(resp, &refusal)
-	u.refusalPage(w, r, s, status, "approval refused", refusal.Format, refusal.Diagnostics, []string{"POST /v1/plans/" + id + "/approvals"})
+	format, diags := refusalOf(resp)
+	u.refusalPage(w, r, s, status, "approval refused", format, diags, []string{"POST /v1/plans/" + id + "/approvals"})
 }
 
 type approvalsData struct {
@@ -173,7 +169,7 @@ func (u *UI) approvals(w http.ResponseWriter, r *http.Request, s *server.Session
 		return
 	}
 	var doc server.RemotePlans
-	if !f.main(link("/v1/plans", "env", d.Env, "status", "pending", "limit", "200"), &doc) {
+	if !f.main(link("/v1/plans", "env", d.Env, "status", server.PlanPending, "limit", "200"), &doc) {
 		return
 	}
 	for _, p := range doc.Plans {

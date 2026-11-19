@@ -9,11 +9,11 @@ import (
 // run while something works, wait while it waits for a person, ok when it
 // ended well, bad when it failed, and void when it no longer applies.
 var tones = map[string]string{
-	"planning": "run", "applying": "run",
-	"pending": "wait", "drifted": "wait", "warned": "wait",
-	"approved": "ok", "applied": "ok", "clean": "ok", "ok": "ok", "passed": "ok",
-	"refused": "bad", "failed": "bad", "failing": "bad", "denied": "bad",
-	"superseded": "void", "expired": "void",
+	server.PlanPlanning: "run", server.PlanApplying: "run",
+	server.PlanPending: "wait", server.DriftDrifted: "wait", "warned": "wait",
+	server.PlanApproved: "ok", server.PlanApplied: "ok", server.DriftClean: "ok", "ok": "ok", "passed": "ok",
+	server.PlanRefused: "bad", server.PlanFailed: "bad", "failing": "bad", "denied": "bad",
+	server.PlanSuperseded: "void", server.PlanExpired: "void",
 }
 
 // tone is the look of a status, "" for one the table does not know.
@@ -46,7 +46,7 @@ func planSteps(p *server.PlanInfo) []step {
 	approve := step{Name: "Approve", State: "todo"}
 	apply := step{Name: "Apply", State: "todo"}
 	switch {
-	case p.Status == "planning":
+	case p.Status == server.PlanPlanning:
 		approve.Note = "not known yet"
 	case !rulesAsked(p):
 	case p.Approvals.Need == 0:
@@ -55,24 +55,24 @@ func planSteps(p *server.PlanInfo) []step {
 		approve.Given, approve.Need = &figure{N: min(len(p.Approvals.ApprovedBy), p.Approvals.Need)}, &figure{N: p.Approvals.Need}
 	}
 	switch p.Status {
-	case "planning":
-		plan.State, plan.Note = "now", "planning"
-	case "pending":
+	case server.PlanPlanning:
+		plan.State, plan.Note = "now", p.Status
+	case server.PlanPending:
 		approve.State = "next"
-	case "approved":
+	case server.PlanApproved:
 		approve.State, apply.State = "done", "next"
-	case "applying":
-		approve.State, apply.State, apply.Note = "done", "now", "applying"
-	case "applied":
-		approve.State, apply.State, apply.Note = "done", "done", "applied"
-	case "refused", "failed":
+	case server.PlanApplying:
+		approve.State, apply.State, apply.Note = "done", "now", p.Status
+	case server.PlanApplied:
+		approve.State, apply.State, apply.Note = "done", "done", p.Status
+	case server.PlanRefused, server.PlanFailed:
 		if p.Run != "" {
-			approve.State, apply.State, apply.Note = "done", "failed", "failed"
+			approve.State, apply.State, apply.Note = "done", "failed", server.PlanFailed
 			break
 		}
 		plan.State, plan.Note = "failed", p.Status
 		approve.State, apply.State = "void", "void"
-	case "expired", "superseded":
+	case server.PlanExpired, server.PlanSuperseded:
 		if rulesAsked(p) && len(p.Approvals.ApprovedBy) >= p.Approvals.Need {
 			approve.State = "done"
 		} else {
@@ -83,6 +83,29 @@ func planSteps(p *server.PlanInfo) []step {
 	return []step{plan, approve, apply}
 }
 
+// offer is what the plan page offers its reader toward approving and
+// applying the plan. writ serve decides an approval; the page only says
+// what the reader may ask for.
+type offer struct {
+	// Live is set while the plan may still be approved and applied.
+	Live bool
+	// Approve is set when the reader may approve the plan, and Own when
+	// the reader made it and so cannot.
+	Approve, Own bool
+	// Speculative is set for a plan of files a client sent, which takes no
+	// approval.
+	Speculative bool
+}
+
+func offerOf(p *server.PlanInfo, s *server.Session) offer {
+	o := offer{Live: server.PlanLive(p.Status), Speculative: p.Source.Kind == server.SourceSpeculative}
+	if o.Live && p.Source.Kind == server.SourceCommit {
+		o.Own = p.Author.Person == s.Person
+		o.Approve = !o.Own
+	}
+	return o
+}
+
 // rulesAsked reports whether writ serve asked the approval rules of a
 // plan. It asks them when it saves a plan, so not while the plan plans,
 // nor of one refused or failed before it was saved, nor of a request that
@@ -90,9 +113,9 @@ func planSteps(p *server.PlanInfo) []step {
 // own, and the earlier plan takes the approvals.
 func rulesAsked(p *server.PlanInfo) bool {
 	switch {
-	case p.ID == "", p.Status == "planning", p.Status == "refused":
+	case p.ID == "", p.Status == server.PlanPlanning, p.Status == server.PlanRefused:
 		return false
-	case p.Status == "failed":
+	case p.Status == server.PlanFailed:
 		return p.Run != ""
 	}
 	return true
@@ -122,9 +145,9 @@ func runSteps(r *server.RunInfo) []step {
 	}
 	apply := step{Name: "Apply", State: "done", Note: r.Status}
 	switch r.Status {
-	case "applying":
+	case server.RunApplying:
 		apply.State = "now"
-	case "applied":
+	case server.RunApplied:
 	default:
 		apply.State = "failed"
 	}

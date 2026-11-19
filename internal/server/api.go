@@ -357,7 +357,7 @@ type RunInfo struct {
 // or, for kind speculative, files a client sent, on a plan kept from
 // before writ serve planned only commits.
 type PlanSourceInfo struct {
-	Kind   string `json:"kind"` // commit or speculative
+	Kind   string `json:"kind"` // SourceCommit or SourceSpeculative
 	Repo   string `json:"repo,omitempty"`
 	Ref    string `json:"ref,omitempty"`
 	Commit string `json:"commit,omitempty"`
@@ -366,6 +366,12 @@ type PlanSourceInfo struct {
 	// none.
 	RefCheck string `json:"ref_check,omitempty"`
 }
+
+// The kinds of a plan's source.
+const (
+	SourceCommit      = "commit"
+	SourceSpeculative = "speculative"
+)
 
 // PlanStack is one stack of a plan.
 type PlanStack struct {

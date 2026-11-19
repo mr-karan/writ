@@ -71,6 +71,8 @@ func parseTemplates(u *UI) (*template.Template, error) {
 			return *p
 		},
 		"tone":       tone,
+		"live":       server.PlanLive,
+		"offer":      offerOf,
 		"vclass":     valueClass,
 		"val":        newValueView,
 		"planName":   planName,
