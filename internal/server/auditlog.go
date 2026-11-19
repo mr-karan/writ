@@ -119,19 +119,32 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	req := reqOf(r)
 	teams := req.principal.teams
 	every := s.cfg.Policy.DecideEvery(teams, authz.Admin, maxStackParts).Allowed
-	f.Keep = func(e control.Entry) bool { return s.auditVisible(teams, every, e) }
-	rows, next, err := s.store.AuditRows(r.Context(), f)
-	if errors.Is(err, control.ErrBadCursor) {
-		bad(err.Error())
-		return
-	}
-	if err != nil {
-		s.dbFailed(w, r, FormatAudit, err)
-		return
+	// A filter of a stack@env the principal may not read, or of an
+	// environment where it reads no stack, matches no row it may see, so
+	// it reads none: a scan of hidden rows would set next, and next would
+	// count them. Its own row names the stack only when the principal may
+	// read it, so no read adds a row of a stack its principal may not read.
+	readable := every || f.Env == "" ||
+		f.Stack == "" && s.cfg.Policy.InEnv(teams, authz.Read, f.Env) ||
+		f.Stack != "" && s.cfg.Policy.Decide(teams, authz.Read, []string{f.Stack}, f.Env, nil).Allowed
+	var rows []control.Entry
+	var next string
+	if readable {
+		f.Keep = func(e control.Entry) bool { return s.auditVisible(teams, every, e) }
+		var err error
+		rows, next, err = s.store.AuditRows(r.Context(), f)
+		if errors.Is(err, control.ErrBadCursor) {
+			bad(err.Error())
+			return
+		}
+		if err != nil {
+			s.dbFailed(w, r, FormatAudit, err)
+			return
+		}
 	}
 	e := &req.entry
 	e.Op, e.Env, e.Plan, e.Run, e.Decision = string(authz.Read), f.Env, f.Plan, f.Run, control.Allowed
-	if f.Stack != "" {
+	if f.Stack != "" && readable {
 		e.Stacks = []string{f.Stack}
 	}
 	doc := AuditDoc{Format: FormatAudit, OK: true, Rows: []AuditRow{}, Next: next, Diagnostics: []Diagnostic{}}

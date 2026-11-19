@@ -170,10 +170,17 @@ func TestAuditReadSeesOnlyWhatItMayRead(t *testing.T) {
 	if r.status != 200 || len(doc.Rows) != 0 || doc.Next != "" {
 		t.Fatalf("nora's read of app@prod: %d %s", r.status, r.body)
 	}
-	// The read is audited like any list: a read of the stack@env it names.
+	// The read is audited like any list: a read of the environment, and
+	// of the stack only when the principal may read it, so no read adds a
+	// row of a stack its principal may not read.
 	rows := f.audit(controltest.AuditFilter{Request: r.header.Get("X-Request-Id")})
-	if len(rows) != 1 || rows[0].Op != "read" || rows[0].Env != "prod" || strings.Join(rows[0].Stacks, ",") != "app" || rows[0].Decision != control.Allowed || rows[0].Route != "/v1/audit" {
-		t.Fatalf("the read's own row: %+v", rows)
+	if len(rows) != 1 || rows[0].Op != "read" || rows[0].Env != "prod" || len(rows[0].Stacks) != 0 || rows[0].Decision != control.Allowed || rows[0].Route != "/v1/audit" {
+		t.Fatalf("nora's read's own row: %+v", rows)
+	}
+	_, r = f.auditPage(tok["rita"], url.Values{"env": {"prod"}, "stack": {"app"}})
+	rows = f.audit(controltest.AuditFilter{Request: r.header.Get("X-Request-Id")})
+	if len(rows) != 1 || rows[0].Env != "prod" || strings.Join(rows[0].Stacks, ",") != "app" {
+		t.Fatalf("rita's read's own row: %+v", rows)
 	}
 }
 
@@ -330,5 +337,41 @@ func TestAuditReadNeverShowsWhatARequestSent(t *testing.T) {
 	}
 	if !other {
 		t.Fatalf("no row shows the method of no standard set as OTHER: %+v", rows)
+	}
+}
+
+// A principal that may not read a stack@env, or any stack of an
+// environment, gets an empty page with no cursor however many rows its
+// filter matches, and its read's own row names no stack it may not read.
+// Before, each read of app@prod added a row of app@prod that its
+// principal could not see, and once the page's scan of 5,000 rows found
+// none it could, next was set: a count of the hidden rows.
+func TestAuditUnreadableFilterGivesNoCursor(t *testing.T) {
+	f, tok := auditFixture(t)
+	hidden := make([]control.Entry, control.AuditScan-10)
+	for i := range hidden {
+		hidden[i] = control.Entry{Request: "h", Env: "prod", Stacks: []string{"app"}, Op: "apply"}
+	}
+	f.seed(time.Now().Add(-2*time.Hour), hidden...)
+	for _, tc := range []struct {
+		name, who string
+		query     url.Values
+	}{
+		{"no grant, a stack", "zed", url.Values{"env": {"prod"}, "stack": {"app"}}},
+		{"another stack's grant, a stack", "nora", url.Values{"env": {"prod"}, "stack": {"app"}}},
+		{"no grant, an environment", "zed", url.Values{"env": {"prod"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := range 20 {
+				doc, r := f.auditPage(tok[tc.who], tc.query)
+				if r.status != 200 || len(doc.Rows) != 0 || doc.Next != "" {
+					t.Fatalf("read %d: %d %s", i+1, r.status, r.body)
+				}
+				own := f.audit(controltest.AuditFilter{Request: r.header.Get("X-Request-Id")})
+				if len(own) != 1 || own[0].Env != "prod" || len(own[0].Stacks) != 0 {
+					t.Fatalf("read %d's own row: %+v", i+1, own)
+				}
+			}
+		})
 	}
 }
