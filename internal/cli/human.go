@@ -10,9 +10,9 @@ import (
 
 // printDiags renders diagnostics in this form:
 //
-//	error[type] certs.writ:22:25
-//	  cert_request_pem expects Pem<tls.CertRequest>, got Pem<tls.SelfSignedCert>
-//	  fix: replace `ca.cert_pem` with `server_req.cert_request_pem`
+//	error[syntax] serve.hcl:22:25
+//	  provider_uids must be a range such as "61000-61063"
+//	  fix: write provider_uids = "61000-61063"
 //
 // A diagnostic with no source location prints only its severity and class
 // on the first line.
