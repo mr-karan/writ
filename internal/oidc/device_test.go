@@ -152,3 +152,45 @@ func TestDeviceRefusals(t *testing.T) {
 		}
 	})
 }
+
+// A sign-in in the browser may start while a device login polls the token
+// endpoint; under -race the two must not touch the same client config.
+func TestDeviceLoginBesideBrowserSignIn(t *testing.T) {
+	ctx := context.Background()
+	is := oidctest.New(t)
+	is.SetPerson(oidctest.GitLabPerson())
+	p := newProvider(t, is, true)
+	a, err := p.StartDevice(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		time.Sleep(1500 * time.Millisecond)
+		is.ApproveDevice(a.UserCode)
+	}()
+	stop := make(chan struct{})
+	signedIn := make(chan struct{})
+	go func() {
+		defer close(signedIn)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				if u, _ := p.AuthCodeURL("https://writ.example.com/ui/callback", "state", "nonce"); u == "" {
+					t.Error("no sign-in URL")
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+		}
+	}()
+	if _, err := p.WaitDevice(ctx, a); err != nil {
+		t.Error(err)
+	}
+	close(stop)
+	<-signedIn
+	<-done
+}

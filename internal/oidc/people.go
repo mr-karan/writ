@@ -151,10 +151,22 @@ func (p *Provider) AuthCodeURL(redirectURI, state, nonce string) (authURL, verif
 // ChallengeURL is AuthCodeURL for a verifier the caller does not hold:
 // writ login's, which reaches writ serve only with the code.
 func (p *Provider) ChallengeURL(redirectURI, state, nonce, challenge string) string {
-	cfg := p.oauth
-	cfg.RedirectURL = redirectURI
+	cfg := p.redirecting(redirectURI)
 	return cfg.AuthCodeURL(state, oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 		oauth2.SetAuthURLParam("code_challenge", challenge), gooidc.Nonce(nonce))
+}
+
+// redirecting is the provider's client config with redirectURI. It names
+// the fields rather than copying p.oauth, whose auth-style cache a device
+// login may be writing at the same time.
+func (p *Provider) redirecting(redirectURI string) *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     p.oauth.ClientID,
+		ClientSecret: p.oauth.ClientSecret,
+		Endpoint:     p.oauth.Endpoint,
+		Scopes:       p.oauth.Scopes,
+		RedirectURL:  redirectURI,
+	}
 }
 
 // Exchange trades an authorization code for the provider's ID token, checks
@@ -162,8 +174,7 @@ func (p *Provider) ChallengeURL(redirectURI, state, nonce, challenge string) str
 // userinfo when the provider is set up to. The token never leaves this
 // function: the caller gets its verified claims.
 func (p *Provider) Exchange(ctx context.Context, code, verifier, redirectURI, nonce string) (*Token, *Refusal) {
-	cfg := p.oauth
-	cfg.RedirectURL = redirectURI
+	cfg := p.redirecting(redirectURI)
 	cctx, c := with(ctx, p.client)
 	tok, err := cfg.Exchange(cctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
