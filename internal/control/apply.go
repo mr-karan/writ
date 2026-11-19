@@ -503,7 +503,7 @@ func (s *Store) PipelineHas(ctx context.Context, p Pipeline, id string) (bool, e
 	}
 	var n int
 	err := s.db.QueryRowContext(ctx, "SELECT count(*) FROM plans WHERE id = ? AND "+plansOfRequests(ofPipeline), id, p.Issuer, p.ProjectID, p.Pipeline).Scan(&n)
-	return n > 0, s.db.Error(err)
+	return n > 0, err
 }
 
 // mergedPage is how many candidate plans MergedPlan reads in one query.
