@@ -297,7 +297,8 @@ func (d *DB) rows(r *sql.Rows, err error) (*Rows, error) {
 }
 
 // Rows is the result of QueryContext. Its errors are classified as every
-// error of the pool is: a failed scan names the value it read.
+// error of the pool is, because a failed scan's driver text quotes the
+// value it read.
 type Rows struct {
 	rows *sql.Rows
 	db   *DB
