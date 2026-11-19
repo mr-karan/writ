@@ -165,7 +165,7 @@
 
 {{define "status"}}<span class="stamp{{with tone .}} stamp-{{.}}{{end}} status-{{.}}"><span class="dot" aria-hidden="true"></span>{{.}}</span>{{end}}
 
-{{define "risks"}}{{if .}}<span class="chips">{{range .}}<span class="chip risk-{{.}}">{{.}}</span>{{end}}</span>{{end}}{{end}}
+{{define "risks"}}{{if .}}<span class="chips">{{range $i, $r := .}}{{if $i}} {{end}}<span class="chip risk-{{$r}}">{{$r}}</span>{{end}}</span>{{end}}{{end}}
 
 {{define "pick"}}<details class="pick" name="pick"><summary>{{.Label}} <b>{{.Value}}</b></summary><ul>
 {{- range .Items}}<li><a href="{{.Href}}"{{if .Current}} aria-current="true"{{end}}>{{.Name}}</a></li>{{end -}}
