@@ -153,7 +153,7 @@ func printServeCheck(w io.Writer, file string, cfg *server.Config) error {
 	case egress.Enforce:
 		fmt.Fprintln(w, "egress: enforce; each OpenTofu run reaches the network only through writ's egress proxy, which refuses a destination its env's egress does not list")
 	}
-	if cfg.EgressMode != egress.Off {
+	if cfg.EgressMode.On() {
 		for _, name := range sortedKeys(cfg.Envs) {
 			allows := "nothing"
 			if e := cfg.Envs[name].Egress; len(e) > 0 {
