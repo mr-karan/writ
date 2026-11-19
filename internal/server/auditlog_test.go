@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"slices"
 	"strings"
@@ -409,5 +410,75 @@ func TestAuditCursorIsSealed(t *testing.T) {
 	q.Set("cursor", doc.Next)
 	if doc, r := f.auditPage(tok["rita"], q); r.status != 200 || seeded(doc.Rows) != "a" || doc.Next != "" {
 		t.Fatalf("the next page: %d %s", r.status, r.body)
+	}
+}
+
+// An approval of a pipeline's plans in two environments writes one audit
+// row for each environment, with only that environment's stacks, so a
+// principal that reads only staging sees the approval of staging and
+// nothing of prod. A refused one, here bob's of his own plans, is split
+// the same way.
+func TestAuditPipelineApprovalRowPerEnv(t *testing.T) {
+	staging := func(text string) string {
+		text = strings.ReplaceAll(text, `envs = ["prod"]`, `envs = ["prod", "staging"]`)
+		return text + `
+env "staging" {
+  key = "staging.key"
+}
+
+team "stg_readers" {
+  issuer = "gitlab"
+  match = { user_login = ["sam"] }
+}
+
+grant {
+  teams = ["stg_readers"]
+  stacks = ["**"]
+  envs = ["staging"]
+  can = ["read"]
+}
+`
+	}
+	f := planFixture(t, withApprovals(t, staging))
+	f.addInfra()
+	mr := f.gitlab.Commit(4242, "add-subnet-d", changed("resource \"random_pet\" \"pet2\" {}\n"))
+	pipeline := map[string]any{"sha": mr, "pipeline_id": "555", "ref": "add-subnet-d", "ref_path": "refs/heads/add-subnet-d"}
+	for _, p := range []struct{ env, stack string }{{"staging", "database"}, {"prod", "network"}} {
+		tok := bob(f, pipeline)
+		r := f.do("POST", "/v1/plans", tok, planRequest(func(m map[string]any) { m["env"], m["stacks"] = p.env, []string{p.stack} }))
+		if r.status != http.StatusAccepted {
+			t.Fatalf("plan %s@%s: %d %s", p.stack, p.env, r.status, r.body)
+		}
+		f.waitPlan(tok, r.doc["plan"].(map[string]any)["ref"].(string))
+	}
+	body := runRequestBody(`{"format":"writ.approve-request/v0","pipeline":true}`)
+	refused := f.do("POST", "/v1/approvals", bob(f, map[string]any{"pipeline_id": "555"}), body())
+	if refused.status != http.StatusForbidden {
+		t.Fatalf("bob's approval of his own plans: %d %s", refused.status, refused.body)
+	}
+	approved := f.do("POST", "/v1/approvals", bob(f, map[string]any{"pipeline_id": "555", "user_id": "3003", "user_login": "carol"}), body())
+	if approved.status != http.StatusOK {
+		t.Fatalf("carol's approval: %d %s", approved.status, approved.body)
+	}
+	want := map[string]string{"staging": "database", "prod": "network"}
+	for _, r := range []response{refused, approved} {
+		rows := f.audit(controltest.AuditFilter{Request: r.header.Get("X-Request-Id")})
+		if len(rows) != 2 {
+			t.Fatalf("rows of %s: %+v", r.body, rows)
+		}
+		for _, row := range rows {
+			if row.Op != "approve" || strings.Join(row.Stacks, ",") != want[row.Env] || row.Status != r.status {
+				t.Errorf("a row of %d names %v@%s: %+v", r.status, row.Stacks, row.Env, row)
+			}
+		}
+	}
+	seen, _ := f.auditAll(f.token(map[string]any{"user_login": "sam", "project_id": "5000"}), url.Values{"op": {"approve"}})
+	for _, row := range seen {
+		if row.Env != "staging" || strings.Join(row.Stacks, ",") != "database" {
+			t.Errorf("sam, who reads only staging, sees %v@%s", row.Stacks, row.Env)
+		}
+	}
+	if len(seen) != 2 {
+		t.Errorf("sam sees %d approval rows, want bob's and carol's of staging: %+v", len(seen), seen)
 	}
 }

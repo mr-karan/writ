@@ -124,6 +124,8 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request, plans []control
 	var grants []int
 	for _, p := range plans {
 		e.Stacks = append(e.Stacks, p.Stack)
+		part := req.part(p.Env)
+		part.stacks = append(part.stacks, p.Stack)
 		ids = append(ids, p.ID)
 		d := s.cfg.Policy.Decide(pr.teams, authz.Approve, []string{p.Stack}, p.Env, nil)
 		if !d.Allowed {
@@ -131,6 +133,7 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request, plans []control
 			return
 		}
 		grants = append(grants, oneBased(d.Grants)...)
+		part.grants = append(part.grants, oneBased(d.Grants)...)
 		if !s.rules().Approvable(p) {
 			s.refuse(w, r, FormatApprove, diag.Usage, http.StatusBadRequest, "plan %s is a speculative plan, of files a client sent, which a team's control plane never applies, so it takes no approval", p.ID)
 			return
@@ -177,7 +180,7 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request, plans []control
 	e.Decision, e.Grants, e.At, e.Status = control.Allowed, grants, req.start, http.StatusOK
 	e.Elapsed = now.Sub(req.start)
 	approver := control.Approval{Person: pr.info.Person, Display: pr.info.Display, Issuer: pr.info.Issuer, Subject: pr.info.Subject, Via: pr.via(), ApprovedAt: now}
-	out, err := s.store.Approve(r.Context(), approver, ids, s.rules(), pr.use("approve"), *e)
+	out, err := s.store.Approve(r.Context(), approver, ids, s.rules(), pr.use("approve"), req.rows(*e)...)
 	var ae *control.ApprovalError
 	switch {
 	case errors.Is(err, control.ErrReplay):
