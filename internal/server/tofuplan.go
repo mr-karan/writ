@@ -123,27 +123,19 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 		}
 	}
 	started := s.now()
-	work := filepath.Join(s.cfg.Data, "work", ref)
-	defer os.RemoveAll(work)
-	if err := writeTofuFiles(work, ts.Files, in.source.Commit); err != nil {
-		return res, err
-	}
-	launch, done, err := s.launch(ctx, ref, env, planRole, p)
+	run, err := s.startRun(ctx, runSpec{id: ref, env: env, commit: in.source.Commit, ts: ts, dir: in.dir, role: planRole, p: p, stateCreds: onS3,
+		what: fmt.Sprintf("stack %s is an OpenTofu stack", stack)})
 	if err != nil {
 		return res, err
 	}
-	defer done()
-	if launch.User == nil && !s.cfg.Dev {
-		return res, tofuRefused("stack %s is an OpenTofu stack, and this writ serve has no provider_uids to run it as, so it would run as writ's own user: set provider_uids", stack)
-	}
-	runEnv, creds, secrets := s.tofuEnv(launch.Env)
+	defer run.done()
 	key, err := s.stateKey(env)
 	if err != nil {
 		return res, fmt.Errorf("the state key of env %s: %w", env, err)
 	}
 	// A stack on S3 reads its state with the plan role, and a stack on
 	// the http backend with a token that reads its state and nothing else.
-	read := planRead{key: key, env: env, stack: stack, secrets: secrets, launch: launch, started: started}
+	read := planRead{key: key, env: env, stack: stack, run: run, started: started}
 	if onS3 {
 		read.s3 = ts.Backend
 	} else {
@@ -152,21 +144,13 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 			return res, fmt.Errorf("read the state version of %s@%s: %w", stack, env, err)
 		}
 		read.version = v.Version
-		token, err := s.tfstate.Issue(ctx, control.StateToken{RunID: ref, Env: env, Stack: stack, Scope: control.StatePlan, ExpiresAt: s.now().Add(s.cfg.Limits.PlanTimeout + time.Minute)})
-		if err != nil {
+		if err := run.stateToken(ctx, stack, control.StatePlan, s.cfg.Limits.PlanTimeout+time.Minute); err != nil {
 			return res, err
 		}
-		defer s.endState(ref)
-		runEnv = append(runEnv, tfstate.ClientEnv(s.cfg.URL, stack, token)...)
-		read.secrets = append(read.secrets, token)
 	}
-	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
+	stk, err := run.stack(ctx, run.mask())
 	if err != nil {
-		return res, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(read.launch.mask(read.secrets), err))
-	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: in.dir, Lock: lock, Env: runEnv, Creds: creds, StateCreds: onS3}
-	if launch.User != nil {
-		stk.User = &tofu.User{UID: launch.User.UID, GID: launch.User.GID}
+		return res, err
 	}
 	raw, err := s.tofuRunner.Plan(ctx, stk)
 	se, refused := errors.AsType[*tofu.StepError](err)
@@ -283,10 +267,7 @@ func (s *Server) knownSecrets(ctx context.Context, key *tfstate.Key, env, stack 
 type planRead struct {
 	key        *tfstate.Key
 	env, stack string
-	// secrets are the run's own: its environment's and its state token.
-	secrets []string
-	// launch follows the role credentials served to the run.
-	launch runLaunch
+	run        *tofuRun
 	// s3 is the stack's S3 backend, nil on the http backend.
 	s3 *repo.Backend
 	// version is, on the http backend, the newest state version when the
@@ -324,7 +305,7 @@ func (s *Server) planMask(ctx context.Context, r planRead, saved []byte, refused
 		if err != nil {
 			return nil, 0, err
 		}
-		return r.launch.mask(r.secrets, known), 0, nil
+		return r.run.mask(known), 0, nil
 	default:
 		// The serial the plan read is the one its apply must find, and one
 		// that no apply of writ serve wrote is drift.
@@ -340,7 +321,7 @@ func (s *Server) planMask(ctx context.Context, r planRead, saved []byte, refused
 	if err != nil {
 		return nil, 0, err
 	}
-	m := r.launch.mask(r.secrets, sealed)
+	m := r.run.mask(sealed)
 	if r.s3 != nil {
 		return m, 0, nil
 	}
@@ -375,39 +356,6 @@ func (s *Server) endState(run string) {
 	if err := s.tfstate.End(ctx, run); err != nil {
 		s.log.Error("end a run's state token", "run", run, "err", err)
 	}
-}
-
-// tofuEnv is the environment of an OpenTofu run, the credentials that
-// only its plan and apply see, and the values of both that the mask
-// sweeps. A team's control plane gives the run the environment launch
-// built from the run alone, whose provider_env and role session are the
-// credentials. The dev control plane gives it PATH and the TF_VAR_
-// variables of the shell it started in, which set the stack's variables,
-// and nothing else of that shell.
-func (s *Server) tofuEnv(launch []string) (env, creds, secrets []string) {
-	env = slices.Clone(baseProviderEnv)
-	if s.cfg.Dev {
-		for _, kv := range os.Environ() {
-			if strings.HasPrefix(kv, "TF_VAR_") {
-				env = append(env, kv)
-			}
-		}
-	} else {
-		for _, kv := range launch {
-			if !slices.Contains(baseProviderEnv, kv) {
-				creds = append(creds, kv)
-			}
-		}
-	}
-	for _, kv := range append(slices.Clone(env), creds...) {
-		if slices.Contains(baseProviderEnv, kv) {
-			continue
-		}
-		if _, v, ok := strings.Cut(kv, "="); ok {
-			secrets = append(secrets, v)
-		}
-	}
-	return env, creds, secrets
 }
 
 // refusedTofu is the result of a plan whose step tofu failed: refused.

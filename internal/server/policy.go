@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -168,7 +167,7 @@ func (s *Server) judgeApply(w http.ResponseWriter, r *http.Request, plan control
 // plan read. A policy can build a past secret that the state keeps where
 // nothing marks it, and only that set names it.
 func (s *Server) applyPointMask(ctx context.Context, plan control.Plan) (*mask.Mask, error) {
-	secrets, err := s.envSecrets(plan.Env)
+	vars, err := s.runVars(plan.Env)
 	if err != nil {
 		return nil, err
 	}
@@ -199,37 +198,7 @@ func (s *Server) applyPointMask(ctx context.Context, plan control.Plan) (*mask.M
 	if err != nil {
 		return nil, err
 	}
-	return mask.New(append(secrets, learned...)), nil
-}
-
-// envSecrets are the values a run of env would get from writ serve: its
-// provider_env, or, under --dev, the TF_VAR_ variables of the shell writ
-// serve started in.
-func (s *Server) envSecrets(env string) ([]string, error) {
-	var vars []string
-	if s.cfg.Dev {
-		for _, kv := range os.Environ() {
-			if strings.HasPrefix(kv, "TF_VAR_") {
-				vars = append(vars, kv)
-			}
-		}
-	} else {
-		e, ok := s.envOf(env)
-		if !ok {
-			return nil, fmt.Errorf("env %s is not served", env)
-		}
-		var err error
-		if vars, err = readProviderEnv(e); err != nil {
-			return nil, err
-		}
-	}
-	var out []string
-	for _, kv := range vars {
-		if _, v, ok := strings.Cut(kv, "="); ok {
-			out = append(out, v)
-		}
-	}
-	return out, nil
+	return mask.New(append(values(vars), learned...)), nil
 }
 
 // refusePolicy answers an apply that a policy denies at the apply point:

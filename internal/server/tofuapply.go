@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/mr-karan/writ/internal/control"
@@ -97,32 +95,19 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 			return ApplyOutput{}, err
 		}
 	}
-	work := filepath.Join(s.cfg.Data, "work", run.ID)
-	defer os.RemoveAll(work)
-	if err := writeTofuFiles(work, ts.Files, plan.Source.Commit); err != nil {
-		return ApplyOutput{}, err
-	}
-	launch, done, err := s.launch(startCtx, run.ID, plan.Env, applyRole, p)
+	tr, err := s.startRun(startCtx, runSpec{id: run.ID, env: plan.Env, commit: plan.Source.Commit, ts: ts, dir: dir, role: applyRole, p: p, stateCreds: onS3,
+		what: fmt.Sprintf("plan %s is of an OpenTofu stack", plan.ID)})
 	if err != nil {
 		return ApplyOutput{}, err
 	}
-	defer done()
-	if launch.User == nil && !s.cfg.Dev {
-		return ApplyOutput{}, tofuRefused("plan %s is of an OpenTofu stack, and this writ serve has no provider_uids to run it as, so it would run as writ's own user: set provider_uids", plan.ID)
-	}
-	runEnv, creds, secrets := s.tofuEnv(launch.Env)
+	defer tr.done()
 	// A stack on S3 writes its state and its lock file with the apply
 	// role. tofu writes the state it reached after an interrupt at the
 	// apply's timeout, within ApplyStop.
 	if !onS3 {
-		token, err := s.tfstate.Issue(startCtx, control.StateToken{RunID: run.ID, Env: plan.Env, Stack: plan.Stack, Scope: control.StateApply,
-			ExpiresAt: s.now().Add(s.cfg.Limits.ApplyStartTimeout + s.cfg.Limits.ApplyTimeout + tofu.ApplyStop + time.Minute)})
-		if err != nil {
+		if err := tr.stateToken(startCtx, plan.Stack, control.StateApply, s.cfg.Limits.ApplyStartTimeout+s.cfg.Limits.ApplyTimeout+tofu.ApplyStop+time.Minute); err != nil {
 			return ApplyOutput{}, err
 		}
-		defer s.endState(run.ID)
-		runEnv = append(runEnv, tfstate.ClientEnv(s.cfg.URL, plan.Stack, token)...)
-		secrets = append(secrets, token)
 	}
 	// The mask learns the secret set of the state the plan read, as the
 	// plan's mask did, so the events of a resource whose address holds a
@@ -132,14 +117,10 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 	if err != nil {
 		return ApplyOutput{}, err
 	}
-	m := launch.mask(secrets, learned)
-	lock, err := s.tofuRunner.Fill(startCtx, ts.Lock)
+	m := tr.mask(learned)
+	stk, err := tr.stack(startCtx, m)
 	if err != nil {
-		return ApplyOutput{}, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
-	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Lock: lock, Env: runEnv, Creds: creds, StateCreds: onS3}
-	if launch.User != nil {
-		stk.User = &tofu.User{UID: launch.User.UID, GID: launch.User.GID}
+		return ApplyOutput{}, err
 	}
 	res, err := s.tofuRunner.Apply(ctx, stk, saved)
 	doc := TofuApply{Format: FormatTofuApply, Status: "apply-failed", Events: []TofuApplyEvent{}, Diagnostics: []Diagnostic{}}

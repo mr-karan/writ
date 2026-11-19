@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -236,27 +234,16 @@ func (s *Server) refreshS3(ctx context.Context, st control.S3Stack) error {
 	if err := s.s3Role(st.Env, st.Stack, planRole); err != nil {
 		return err
 	}
-	id := "index-" + newID()
-	work := filepath.Join(s.cfg.Data, "work", id)
-	defer os.RemoveAll(work)
-	if err := writeTofuFiles(work, ts.Files, plan.Source.Commit); err != nil {
-		return err
-	}
-	launch, done, err := s.launch(ctx, id, st.Env, planRole, indexPrincipal)
+	tr, err := s.startRun(ctx, runSpec{id: "index-" + newID(), env: st.Env, commit: plan.Source.Commit, ts: ts, dir: dir, role: planRole, p: indexPrincipal, stateCreds: true})
 	if err != nil {
 		return err
 	}
-	defer done()
-	if launch.User == nil {
-		return tofuRefused("this writ serve has no provider_uids to run OpenTofu as, so it would run as writ's own user: set provider_uids")
-	}
-	runEnv, creds, secrets := s.tofuEnv(launch.Env)
-	m := launch.mask(secrets)
-	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
+	defer tr.done()
+	m := tr.mask()
+	stk, err := tr.stack(ctx, m)
 	if err != nil {
-		return fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
+		return err
 	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Lock: lock, Env: runEnv, Creds: creds, StateCreds: true, User: &tofu.User{UID: launch.User.UID, GID: launch.User.GID}}
 	state, err := s.tofuRunner.Pull(ctx, stk)
 	if err != nil {
 		return fmt.Errorf("%w%s", err, stepLines(m, err))
@@ -294,7 +281,7 @@ func (s *Server) refreshS3(ctx context.Context, st control.S3Stack) error {
 	if err != nil {
 		return err
 	}
-	if stored, err := s.fillIndex(ctx, st.Env, st.Stack, control.BackendS3, read, seq, launch.mask(secrets, learned), state); err != nil || !stored {
+	if stored, err := s.fillIndex(ctx, st.Env, st.Stack, control.BackendS3, read, seq, tr.mask(learned), state); err != nil || !stored {
 		return err
 	}
 	s.log.Info("state index refreshed", "stack", st.Stack, "env", st.Env, "serial", read.Serial)
