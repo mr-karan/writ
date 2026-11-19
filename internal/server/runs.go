@@ -36,11 +36,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	req.entry.Op = string(authz.Apply)
 	var body RunRequest
 	if err := s.readBody(r, &body); err != nil {
-		status := http.StatusBadRequest
-		if _, ok := err.(errTooLarge); ok {
-			status = http.StatusRequestEntityTooLarge
-		}
-		s.refuse(w, r, FormatRemoteRun, diag.Usage, status, "%v", err)
+		s.refuseBody(w, r, FormatRemoteRun, err)
 		return
 	}
 	if body.Format != FormatRunRequest {

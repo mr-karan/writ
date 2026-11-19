@@ -970,6 +970,16 @@ func (s *Server) readBody(r *http.Request, v any) error {
 	return nil
 }
 
+// refuseBody answers a body that readBody refused: 413 when it is too
+// large, 400 otherwise.
+func (s *Server) refuseBody(w http.ResponseWriter, r *http.Request, format string, err error) {
+	status := http.StatusBadRequest
+	if _, ok := err.(errTooLarge); ok {
+		status = http.StatusRequestEntityTooLarge
+	}
+	s.refuse(w, r, format, diag.Usage, status, "%v", err)
+}
+
 type errBadBody struct{ msg string }
 
 func (e errBadBody) Error() string { return e.msg }

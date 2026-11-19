@@ -75,11 +75,7 @@ func (s *Server) adoptState(w http.ResponseWriter, r *http.Request) {
 	pr := req.principal
 	var body StateAdoptRequest
 	if err := s.readBody(r, &body); err != nil {
-		status := http.StatusBadRequest
-		if _, ok := err.(errTooLarge); ok {
-			status = http.StatusRequestEntityTooLarge
-		}
-		s.refuse(w, r, FormatStateAdopt, diag.Usage, status, "%v", err)
+		s.refuseBody(w, r, FormatStateAdopt, err)
 		return
 	}
 	if body.Format != FormatStateAdoptRequest {
