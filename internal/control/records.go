@@ -134,8 +134,6 @@ type Plan struct {
 	// was the same as an earlier request's, which has no id, it is that
 	// plan's id.
 	SupersededBy string
-	// Saved is the saved plan. Only Store.SavedPlan returns it.
-	Saved []byte
 	// Source is the commit the plan was made from. Its zero value is a
 	// plan of sources the client sent.
 	Source PlanSource
@@ -143,9 +141,6 @@ type Plan struct {
 	// made, and NeedRules the 1-based positions of those rules.
 	Need      int
 	NeedRules []int
-	// Lock is the writ.lock the plan was made with. Only Store.SavedPlan
-	// returns it.
-	Lock string
 	// SupersededWhy says why the plan was superseded, "" otherwise.
 	SupersededWhy string
 	// Tofu is set on a plan of an OpenTofu stack, nil on one of Writ's
@@ -338,8 +333,6 @@ type PlanResult struct {
 	// Need and NeedRules are what the approval rules ask of the plan.
 	Need      int
 	NeedRules []int
-	// Lock is the writ.lock the plan was made with.
-	Lock string
 	// Tofu is set on a plan of an OpenTofu stack.
 	Tofu *TofuPlan
 	// Policy is the decision of the plan point, nil when no policy judged
@@ -435,7 +428,7 @@ func finishOwn(ctx context.Context, tx *sqldb.Tx, ref, env, stack string, reques
 				need = ?, need_rules = ?, lock = ?, tofu_state = ?, policy = ?
 			WHERE ref = ?`,
 		id, r.MadeAt.UnixMilli(), msOrNil(r.ExpiresAt), list(r.Risks), r.Changes, doc, r.Text, r.Saved, r.SourceDigest, r.SourceDigest,
-		r.Need, list(r.NeedRules), r.Lock, tofuState, rawOrNil(r.Policy), ref)
+		r.Need, list(r.NeedRules), "", tofuState, rawOrNil(r.Policy), ref)
 	if err != nil {
 		return err
 	}
@@ -576,12 +569,12 @@ func (s *Store) Plan(ctx context.Context, key string, now time.Time) (Plan, erro
 
 // SavedPlan returns the saved form of the plan with id, and the writ.lock
 // it was made with.
-func (s *Store) SavedPlan(ctx context.Context, id string) (saved []byte, lock string, err error) {
-	err = s.db.QueryRowContext(ctx, "SELECT saved, lock FROM plans WHERE id = ?", id).Scan(&saved, &lock)
+func (s *Store) SavedPlan(ctx context.Context, id string) (saved []byte, err error) {
+	err = s.db.QueryRowContext(ctx, "SELECT saved FROM plans WHERE id = ?", id).Scan(&saved)
 	if errors.Is(err, sqldb.ErrNoRows) {
-		return nil, "", ErrNotFound
+		return nil, ErrNotFound
 	}
-	return saved, lock, err
+	return saved, err
 }
 
 // PlanFilter narrows Plans. Empty fields match every plan.

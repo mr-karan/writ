@@ -186,7 +186,7 @@ func (s *Server) applyPointMask(ctx context.Context, plan control.Plan) (*mask.M
 	onS3 := backend == control.BackendS3
 	var saved []byte
 	if onS3 {
-		sealed, _, err := s.store.SavedPlan(ctx, plan.ID)
+		sealed, err := s.store.SavedPlan(ctx, plan.ID)
 		if err != nil {
 			return nil, fmt.Errorf("read the saved plan: %w", err)
 		}

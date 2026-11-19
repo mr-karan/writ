@@ -167,10 +167,10 @@ func testPlanLifecycle(t *testing.T, s *control.Store, loc string) {
 		t.Fatal("finished a plan twice")
 	}
 	byID, err := s.Plan(ctx, res.ID, t0.Add(time.Hour))
-	if err != nil || byID.Ref != "REF1" || byID.Status != "pending" || byID.Changes != 1 || byID.Saved != nil {
+	if err != nil || byID.Ref != "REF1" || byID.Status != "pending" || byID.Changes != 1 {
 		t.Fatalf("got %+v, %v", byID, err)
 	}
-	if saved, _, err := s.SavedPlan(ctx, res.ID); err != nil || string(saved) != "saved" {
+	if saved, err := s.SavedPlan(ctx, res.ID); err != nil || string(saved) != "saved" {
 		t.Fatalf("saved %q, %v", saved, err)
 	}
 	if late, _ := s.Plan(ctx, res.ID, t0.Add(25*time.Hour)); late.Status != "expired" {

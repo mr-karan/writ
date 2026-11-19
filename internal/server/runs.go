@@ -89,7 +89,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 	// A plan of an OpenTofu stack made before writ serve kept saved plans
 	// has none.
-	if saved, _, err := s.store.SavedPlan(r.Context(), plan.ID); err != nil {
+	if saved, err := s.store.SavedPlan(r.Context(), plan.ID); err != nil {
 		s.dbFailed(w, r, FormatRemoteRun, err)
 		return
 	} else if len(saved) == 0 && plan.Status.Live() {

@@ -66,7 +66,7 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 	if s.tofuRunner == nil {
 		return ApplyOutput{}, tofuRefused("plan %s is of an OpenTofu stack, and this writ serve runs no OpenTofu", plan.ID)
 	}
-	sealed, _, err := s.store.SavedPlan(startCtx, plan.ID)
+	sealed, err := s.store.SavedPlan(startCtx, plan.ID)
 	if err != nil {
 		return ApplyOutput{}, fmt.Errorf("read the saved plan: %w", err)
 	}

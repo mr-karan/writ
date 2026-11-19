@@ -69,7 +69,7 @@ func writeStateIn(t *testing.T, l *lifecycle, env, stack, run string, serial int
 
 func savedOf(t *testing.T, s *control.Store, id string) []byte {
 	t.Helper()
-	saved, _, err := s.SavedPlan(context.Background(), id)
+	saved, err := s.SavedPlan(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -51,7 +51,7 @@ func (l *lifecycle) plan(stack string, at time.Time, status control.PlanStatus, 
 		l.t.Fatal(err)
 	}
 	res := control.PlanResult{ID: id, Status: status, MadeAt: at, ExpiresAt: at.Add(24 * time.Hour), Risks: []string{"create"}, Changes: 1,
-		Saved: []byte("saved"), Lock: "lock text", Need: need, NeedRules: []int{1}}
+		Saved: []byte("saved"), Need: need, NeedRules: []int{1}}
 	if err := l.s.FinishPlan(ctx, ref, res, l.entry("plan")); err != nil {
 		l.t.Fatal(err)
 	}

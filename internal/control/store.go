@@ -109,27 +109,6 @@ func (s *Store) Ping(ctx context.Context) error {
 	return s.db.Ping(ctx)
 }
 
-// PendingPlans counts the live plans, pending or approved, of each
-// stack@env that have not expired, keyed by env and stack: the plans that
-// wait to be applied.
-func (s *Store) PendingPlans(ctx context.Context, now time.Time) (map[[2]string]int, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT env, stack, count(*) FROM plans WHERE status IN ('pending', 'approved') AND expires_at > ? GROUP BY env, stack`, now.UnixMilli())
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[[2]string]int{}
-	for rows.Next() {
-		var env, stack string
-		var n int
-		if err := rows.Scan(&env, &stack, &n); err != nil {
-			return nil, s.db.Error(err)
-		}
-		out[[2]string{env, stack}] = n
-	}
-	return out, s.db.Error(rows.Err())
-}
-
 // fromMS reads a time the store keeps as Unix milliseconds.
 func fromMS(ms int64) time.Time { return time.UnixMilli(ms).UTC() }
 

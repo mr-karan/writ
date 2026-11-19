@@ -82,7 +82,7 @@ func TestTofuApproveApply(t *testing.T) {
 	if p.Plan.Status != "pending" || p.Plan.Approvals.Need != 1 {
 		t.Fatalf("plan %+v", p.Plan)
 	}
-	sealed, _, err := f.store.SavedPlan(context.Background(), id)
+	sealed, err := f.store.SavedPlan(context.Background(), id)
 	if err != nil || len(sealed) == 0 || bytes.Contains(sealed, []byte("saved")) {
 		t.Fatalf("the stored saved plan %q, %v: want it sealed", sealed, err)
 	}
@@ -146,7 +146,7 @@ func TestTofuApproveApply(t *testing.T) {
 	if got := runner.call(a.token, "LOCK", "/lock", `{"ID":"late"}`); got != http.StatusUnauthorized {
 		t.Fatalf("the apply's state token answered %d after the run, want 401", got)
 	}
-	if saved, _, err := f.store.SavedPlan(context.Background(), id); err != nil || saved != nil {
+	if saved, err := f.store.SavedPlan(context.Background(), id); err != nil || saved != nil {
 		t.Fatalf("the applied plan keeps its saved plan: %q, %v", saved, err)
 	}
 	writes := auditKind(f, "state-write")
@@ -462,7 +462,7 @@ func TestTofuFailedApply(t *testing.T) {
 			t.Errorf("the failed run holds %q:\n%s", bad, served.body)
 		}
 	}
-	if saved, _, err := f.store.SavedPlan(context.Background(), id); err != nil || saved != nil {
+	if saved, err := f.store.SavedPlan(context.Background(), id); err != nil || saved != nil {
 		t.Fatalf("the failed plan keeps its saved plan: %q, %v", saved, err)
 	}
 }
