@@ -33,7 +33,8 @@ type AuditFilter struct {
 	Cursor string
 	// Keep, when set, drops each row it reports false for before the
 	// limit, so a row it drops neither takes a place nor shows in the
-	// page.
+	// page. It sees a row before its teams, addrs, risks, and grants are
+	// read.
 	Keep func(Entry) bool
 }
 
