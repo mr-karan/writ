@@ -206,13 +206,8 @@ func (m *Mask) Plan(raw []byte) (*Plan, error) {
 	slices.SortFunc(out.Configuration.Providers, func(a, b Provider) int { return strings.Compare(a.Key, b.Key) })
 	out.Configuration.Modules = modules("", in.Configuration.RootModule, nil)
 
-	s, err := m.scan()
-	if err != nil {
+	if err := m.Sweep(out); err != nil {
 		return nil, err
-	}
-	s.walk(reflect.ValueOf(out).Elem())
-	if s.err != nil {
-		return nil, s.err
 	}
 	return out, nil
 }
