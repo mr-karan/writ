@@ -566,7 +566,7 @@ func literal(e hclsyntax.Expression) (string, bool) {
 	if diags.HasErrors() || !v.IsKnown() || v.IsNull() {
 		return "", false
 	}
-	// The type is matched by name: only internal/provider imports cty.
+	// The type is matched by name: repo may not import cty.
 	switch v.Type().FriendlyName() {
 	case "string":
 		return v.AsString(), true

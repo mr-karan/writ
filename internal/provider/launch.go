@@ -9,7 +9,7 @@ import (
 
 // Launch says how provider processes start. The zero value starts them as
 // writ's own user with writ's environment, filtered by providerEnv, as
-// writ plan on a laptop does.
+// writ import bulk on a laptop does.
 type Launch struct {
 	nomadPlanResponse bool
 	// OwnEnv makes Env the provider's whole environment, apart from the
@@ -25,9 +25,7 @@ type Launch struct {
 
 // User is an OS user and group with no name. writ serve gives each run its
 // own from the config's provider_uids.
-type User runas.User
-
-func (u User) String() string { return runas.User(u).String() }
+type User = runas.User
 
 // ErrIsolationUnsupported is returned where providers cannot run as another
 // user.

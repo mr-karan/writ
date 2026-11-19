@@ -75,11 +75,7 @@ func (s *Server) approveBody(w http.ResponseWriter, r *http.Request, required bo
 		return body, true
 	}
 	if err := s.readBody(r, &body); err != nil {
-		status := http.StatusBadRequest
-		if _, ok := err.(errTooLarge); ok {
-			status = http.StatusRequestEntityTooLarge
-		}
-		s.refuse(w, r, FormatApprove, diag.Usage, status, "%v", err)
+		s.refuseBody(w, r, FormatApprove, err)
 		return body, false
 	}
 	if body.Format != "" && body.Format != FormatApproveReq || required && body.Format == "" {

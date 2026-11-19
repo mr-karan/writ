@@ -148,7 +148,7 @@ func start(ctx context.Context, binary string, launch Launch) (*process, error) 
 			p.kill()
 			return nil, fmt.Errorf("provider %s offered %s; a provider that runs as another user must offer a unix socket", binary, network)
 		}
-		if err := runas.CheckIsolated(p.cmd.Process.Pid, runas.User(*u)); err != nil {
+		if err := runas.CheckIsolated(p.cmd.Process.Pid, *u); err != nil {
 			p.kill()
 			return nil, fmt.Errorf("provider %s: %w", binary, err)
 		}

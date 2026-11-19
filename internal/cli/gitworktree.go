@@ -230,7 +230,7 @@ func (a *App) findWorkTree(ctx context.Context, r *remote, dir string) workTree 
 	}
 	if wt.repo.Kind != "dir" {
 		if on, _ := git.output(ctx, "branch", "-r", "--contains", head); on == "" {
-			wt.why = "commit " + short(head) + " is on no remote branch; push it"
+			wt.why = "commit " + forge.Short(head) + " is on no remote branch; push it"
 			return wt
 		}
 	}
@@ -394,7 +394,7 @@ func (g gitTree) blankFilters(ctx context.Context) ([]string, error) {
 }
 
 func differsWords(head string, files []string) string {
-	return fmt.Sprintf("the work tree differs from commit %s in %s (%s)", short(head), plural(len(files), "file"), firstThree(files))
+	return fmt.Sprintf("the work tree differs from commit %s in %s (%s)", forge.Short(head), plural(len(files), "file"), firstThree(files))
 }
 
 func firstThree(files []string) string {

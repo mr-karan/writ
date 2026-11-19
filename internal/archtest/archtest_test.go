@@ -27,6 +27,9 @@ var owned = []struct {
 	// The mask parses a plan's addresses with HCL, which gives each index
 	// key as a cty value; no cty value leaves it.
 	{"github.com/zclconf/go-cty", []string{"internal/provider", "internal/tfcode", "internal/mask"}},
+	// The importer's client of the plugin protocol. writ serve runs
+	// providers only through OpenTofu, so the control plane never needs it.
+	{module + "/internal/provider", []string{"internal/importer", "internal/cli"}},
 	{"database/sql", []string{"internal/sqldb"}},
 	{"modernc.org/sqlite", []string{"internal/sqldb"}},
 	{"github.com/jackc/pgx", []string{"internal/sqldb"}},

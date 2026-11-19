@@ -18,7 +18,7 @@ import (
 )
 
 // ErrFailed means the command ran and reported its failure on stdout
-// (diagnostics, a contract violation, a failing goal, a failed apply). Exit 1.
+// (diagnostics, a refused or failed plan, a failed apply). Exit 1.
 var ErrFailed = errors.New("command failed")
 
 // Options configures an App. main fills it once.
@@ -48,9 +48,6 @@ type Options struct {
 	Env string
 	// Version is writ's own version.
 	Version string
-	// ProviderLaunch is how the importer's and the schema tool's providers
-	// start; the zero value is a laptop's.
-	ProviderLaunch provider.Launch
 	// Server is the control plane the remote commands use, from --server:
 	// a URL, or "dev". Empty means WRIT_SERVER, then the dev control plane.
 	Server string

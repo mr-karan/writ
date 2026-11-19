@@ -3,7 +3,6 @@ package mask
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -83,13 +82,8 @@ func (m *Mask) Index(raw []byte, attrs func(typ string) []string) ([]Row, error)
 		}
 	}
 	walk(st.Values.RootModule)
-	s, err := m.scan()
-	if err != nil {
+	if err := m.Sweep(&rows); err != nil {
 		return nil, err
-	}
-	s.walk(reflect.ValueOf(rows))
-	if s.err != nil {
-		return nil, s.err
 	}
 	slices.SortFunc(rows, func(a, b Row) int { return strings.Compare(a.Address, b.Address) })
 	return rows, nil

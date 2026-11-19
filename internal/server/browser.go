@@ -1,9 +1,7 @@
 package server
 
 import (
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/base64"
 	"errors"
 	"net/http"
 	"slices"
@@ -104,12 +102,6 @@ func unreserved(s string, min, max int) bool {
 		}
 	}
 	return true
-}
-
-func random32() string {
-	raw := make([]byte, 32)
-	_, _ = rand.Read(raw)
-	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 // browserProvider picks the people issuer a browser sign-in uses: the one

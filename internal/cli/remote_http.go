@@ -33,7 +33,6 @@ type remote struct {
 	// stack with no environment in its environment dev.
 	dev  bool
 	http *http.Client
-	app  *App
 }
 
 // Where a remote command's token came from.
@@ -55,7 +54,7 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 		return nil, err
 	}
 	clientPath := filepath.Join(dir, DevClientFile)
-	ciToken, _ := a.opts.LookupEnv("WRIT_ID_TOKEN")
+	ciToken, _ := a.opts.LookupEnv(tokenCI)
 	ciToken = strings.TrimSpace(ciToken)
 	if base == "" || base == "dev" {
 		c, err := readDevClient(clientPath)
@@ -69,7 +68,7 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 		case !answersDev(ctx, c):
 			return nil, usagef("the dev control plane in %s does not answer at %s: start it with writ serve --dev", dir, c.URL)
 		}
-		r := &remote{base: strings.TrimSuffix(c.URL, "/"), token: c.Token, from: "the dev control plane", tokenFrom: tokenDev, dev: true, http: apiClient(), app: a}
+		r := &remote{base: strings.TrimSuffix(c.URL, "/"), token: c.Token, from: "the dev control plane", tokenFrom: tokenDev, dev: true, http: apiClient()}
 		if from == "--server" {
 			r.from = "--server dev"
 		}
@@ -81,7 +80,7 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 	if base, err = checkServer(base, from); err != nil {
 		return nil, err
 	}
-	r := &remote{base: base, from: from, http: apiClient(), app: a}
+	r := &remote{base: base, from: from, http: apiClient()}
 	if ciToken != "" {
 		r.token, r.tokenFrom = ciToken, tokenCI
 		return r, nil

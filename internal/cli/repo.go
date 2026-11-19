@@ -19,8 +19,8 @@ import (
 	"github.com/mr-karan/writ/internal/server"
 )
 
-// repoAddTimeout bounds writ repo add, whose request reads every estate
-// file of the default branch the first time.
+// repoAddTimeout bounds writ repo add, whose request reads every file of
+// the default branch's stacks the first time.
 const repoAddTimeout = 2*time.Minute + 10*time.Second
 
 var repoNameRE = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
@@ -146,7 +146,7 @@ func (a *App) printRepo(asJSON bool, doc []byte, added bool) error {
 		if rp.Kind == "dir" {
 			how = "from the local repository"
 		}
-		fmt.Fprintf(out, "Read %s at %s %s: %s, %s.\n", escapeHuman(rp.DefaultBranch, false), short(c.SHA), how, plural(c.Files, "file"), plural(len(d.Stacks), "stack"))
+		fmt.Fprintf(out, "Read %s at %s %s: %s, %s.\n", escapeHuman(rp.DefaultBranch, false), forge.Short(c.SHA), how, plural(c.Files, "file"), plural(len(d.Stacks), "stack"))
 	}
 	if rp.Error != "" {
 		fmt.Fprintf(out, "The last poll, %s, failed: %s\n", rp.ErrorAt, escapeHuman(rp.Error, false))
@@ -192,13 +192,6 @@ func hostOf(u string) string {
 	return u
 }
 
-func short(sha string) string {
-	if len(sha) > 8 {
-		return sha[:8]
-	}
-	return sha
-}
-
 // RepoList is `writ repo list`.
 func (a *App) RepoList(ctx context.Context, asJSON bool) (err error) {
 	defer escapeError(&err, asJSON)
@@ -237,7 +230,7 @@ func (a *App) RepoList(ctx context.Context, asJSON bool) (err error) {
 		if rp.Error != "" {
 			poll += " failed: " + rp.Error
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", rp.Name, escapeHuman(rp.Project, true), dirWords(rp.Path), escapeHuman(rp.DefaultBranch, true), dash(short(rp.Head)), n, escapeHuman(dash(poll), true))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", rp.Name, escapeHuman(rp.Project, true), dirWords(rp.Path), escapeHuman(rp.DefaultBranch, true), dash(forge.Short(rp.Head)), n, escapeHuman(dash(poll), true))
 	}
 	return tw.Flush()
 }

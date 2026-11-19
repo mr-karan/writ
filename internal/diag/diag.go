@@ -4,7 +4,6 @@
 package diag
 
 import (
-	"cmp"
 	"fmt"
 	"slices"
 )
@@ -36,35 +35,23 @@ func (s Span) String() string {
 	return fmt.Sprintf("%s:%d:%d", s.File, s.Start.Line, s.Start.Col)
 }
 
-// Class groups diagnostics so agents can branch on them. The first eight
-// come from a language Writ no longer has. Contract, State, and StateIO are engine classes: State
-// means the plan no longer fits the state, so plan again; StateIO means the
-// state database failed, so the same command may pass later. SavedPlan
-// means apply refused a saved plan, most often because it was changed after
-// writ plan wrote it, so make the plan again. Policy means a policy that
-// writ serve judges with refused. Usage and
-// Internal are for a command that could not run: Usage means the command line
-// was wrong, Internal anything else, such as a file it could not read.
+// Class groups diagnostics so agents can branch on them; docs/errors.md
+// lists what each means. A plan or run kept by a build from before the
+// first release can carry a class that no longer exists, such as type or
+// goal, which is why Class is a string.
 type Class string
 
 const (
-	Syntax     Class = "syntax"
-	Name       Class = "name"
-	Type       Class = "type"
-	Field      Class = "field"
-	SecretFlow Class = "secret-flow"
-	Identity   Class = "identity"
-	Goal       Class = "goal"
-	Provider   Class = "provider"
-	Contract   Class = "contract"
-	State      Class = "state"
-	StateIO    Class = "state-io"
-	SavedPlan  Class = "saved-plan"
-	Usage      Class = "usage"
-	Internal   Class = "internal"
-	Auth       Class = "auth"
-	Denied     Class = "denied"
-	Policy     Class = "policy"
+	Syntax    Class = "syntax"
+	Provider  Class = "provider"
+	State     Class = "state"
+	StateIO   Class = "state-io"
+	SavedPlan Class = "saved-plan"
+	Usage     Class = "usage"
+	Internal  Class = "internal"
+	Auth      Class = "auth"
+	Denied    Class = "denied"
+	Policy    Class = "policy"
 )
 
 // Severity is error or warning. Errors fail the command.
@@ -116,17 +103,4 @@ func (l *List) Warnf(class Class, span Span, format string, args ...any) {
 // HasErrors reports whether any diagnostic is an error.
 func (l List) HasErrors() bool {
 	return slices.ContainsFunc(l, func(d Diagnostic) bool { return d.Severity == Error })
-}
-
-// Sort orders diagnostics by file, line, column, then class, so output is
-// stable across runs and parallel checks.
-func (l List) Sort() {
-	slices.SortStableFunc(l, func(a, b Diagnostic) int {
-		return cmp.Or(
-			cmp.Compare(a.Span.File, b.Span.File),
-			cmp.Compare(a.Span.Start.Line, b.Span.Start.Line),
-			cmp.Compare(a.Span.Start.Col, b.Span.Start.Col),
-			cmp.Compare(a.Class, b.Class),
-		)
-	})
 }

@@ -224,15 +224,13 @@ type scratch struct {
 	name string
 	run  *os.Root
 	// work is the stack's directory within run.
-	work  string
-	env   []string
-	creds []string
-	// stateCreds is the Stack's StateCreds.
+	work       string
+	env        []string
+	creds      []string
 	stateCreds bool
 	user       *User
 	// fill marks Fill's run, the one that may write the plugin cache.
 	fill bool
-	// stop is the command's stop.
 	stop time.Duration
 }
 

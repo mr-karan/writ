@@ -287,7 +287,7 @@ func (a *App) Login(ctx context.Context, o LoginOptions) (err error) {
 	if base, err = checkServer(base, from); err != nil {
 		return err
 	}
-	r := &remote{base: base, http: apiClient(), app: a}
+	r := &remote{base: base, http: apiClient()}
 	prompt := a.humanOutput()
 	if o.JSON {
 		prompt = humanOut(a.opts.Stderr)
@@ -471,7 +471,7 @@ func (a *App) keepSession(ctx context.Context, base string, doc *server.SessionD
 		return err
 	}
 	if old, ok := file.Sessions[base]; ok && a.opts.Now().Before(old.EndsAt) {
-		r := &remote{base: base, token: old.Token, http: apiClient(), app: a}
+		r := &remote{base: base, token: old.Token, http: apiClient()}
 		if status, _, err := r.once(ctx, http.MethodDelete, "/v1/auth/session", nil, remoteTimeout, nil); err != nil || status != http.StatusOK && status != http.StatusUnauthorized {
 			a.opts.Log.Warn("the session this sign-in replaces did not end on the server; it ends on its own", "session", old.ID, "ends", old.EndsAt, "status", status, "err", err)
 		}
@@ -537,7 +537,7 @@ func (a *App) Logout(ctx context.Context, o LogoutOptions) (err error) {
 		return usagef("you hold no session for %s", base)
 	}
 	delete(file.Sessions, base)
-	r := &remote{base: base, token: sess.Token, http: apiClient(), app: a}
+	r := &remote{base: base, token: sess.Token, http: apiClient()}
 	status, resp, callErr := r.call(ctx, http.MethodDelete, "/v1/auth/session", nil, remoteTimeout)
 	if err := a.writeSessions(path, file); err != nil {
 		return err

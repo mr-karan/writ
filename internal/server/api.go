@@ -480,13 +480,6 @@ type ReposDoc struct {
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
-// ErrorDoc is the document of a request that names no route.
-type ErrorDoc struct {
-	Format      string       `json:"format"`
-	OK          bool         `json:"ok"`
-	Diagnostics []Diagnostic `json:"diagnostics"`
-}
-
 func stamp(t time.Time) string {
 	if t.IsZero() {
 		return ""

@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/mr-karan/writ/internal/control"
@@ -239,38 +237,18 @@ func (s *Server) refreshIndex(ctx context.Context, st control.StaleIndex) error 
 	if err != nil {
 		return err
 	}
-	id := "index-" + newID()
-	work := filepath.Join(s.cfg.Data, "work", id)
-	defer os.RemoveAll(work)
-	if err := writeTofuFiles(work, ts.Files, plan.Source.Commit); err != nil {
-		return err
-	}
-	user, done, err := s.takeUID(ctx)
+	// The run has no role: tofu gets none of the environment's secrets,
+	// and the mask still learns them, as a state holds one where nothing
+	// marks it, as an address keyed by nonsensitive(var.NAME) does.
+	tr, err := s.startRun(ctx, runSpec{id: "index-" + newID(), env: st.Env, commit: plan.Source.Commit, ts: ts, dir: dir})
 	if err != nil {
 		return err
 	}
-	defer done()
-	if user == nil && !s.cfg.Dev {
-		return tofuRefused("this writ serve has no provider_uids to run OpenTofu as, so it would run as writ's own user: set provider_uids")
-	}
-	// tofu gets none of the run's secrets, and the mask still learns them:
-	// a state holds one where nothing marks it, as an address keyed by
-	// nonsensitive(var.NAME) does.
-	var pe []string
-	if !s.cfg.Dev {
-		if pe, err = readProviderEnv(s.cfg.Envs[st.Env]); err != nil {
-			return err
-		}
-	}
-	_, _, secrets := s.tofuEnv(pe)
-	m := mask.New(append(secrets, learned...))
-	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
+	defer tr.done()
+	m := tr.mask(learned)
+	stk, err := tr.stack(ctx, m)
 	if err != nil {
-		return fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
-	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Lock: lock, Env: baseProviderEnv}
-	if user != nil {
-		stk.User = &tofu.User{UID: user.UID, GID: user.GID}
+		return err
 	}
 	state, err := s.tofuRunner.Show(ctx, stk, raw)
 	if err != nil {

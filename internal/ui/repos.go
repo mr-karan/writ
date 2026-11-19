@@ -65,7 +65,6 @@ func (u *UI) start(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	f.render("start", &page{Title: "Getting started", Data: d})
 }
 
-// repos lists the repositories.
 func (u *UI) repos(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	f := u.fetcher(w, r, s)
 	var doc server.ReposDoc

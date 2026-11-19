@@ -2,9 +2,7 @@ package server
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -198,9 +196,7 @@ func (s *Server) startDevice(w http.ResponseWriter, r *http.Request) {
 	req := reqOf(r)
 	req.entry.Issuer, req.entry.Kind = p.Name, "sign-in-started"
 	now := s.now()
-	raw := make([]byte, 32)
-	_, _ = rand.Read(raw)
-	handle := base64.RawURLEncoding.EncodeToString(raw)
+	handle := random32()
 	key := handleKey(handle)
 	// The place is taken before the identity provider is asked, so
 	// concurrent starts cannot pass the bound together.

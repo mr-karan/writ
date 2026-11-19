@@ -24,13 +24,13 @@ func TestPrintDiags(t *testing.T) {
 		{
 			name: "spec example with a fix",
 			in: diag.List{{
-				Severity: diag.Error, Class: diag.Type, Span: span("certs.writ", 22, 25, 400),
-				Message: "cert_request_pem expects Pem<tls.CertRequest>, got Pem<tls.SelfSignedCert>",
-				Fix:     &diag.Fix{Message: "replace `ca.cert_pem` with `server_req.cert_request_pem`"},
+				Severity: diag.Error, Class: diag.Syntax, Span: span("serve.hcl", 22, 25, 400),
+				Message: "provider_uids must be a range such as \"61000-61063\"",
+				Fix:     &diag.Fix{Message: "write provider_uids = \"61000-61063\""},
 			}},
-			want: "error[type] certs.writ:22:25\n" +
-				"  cert_request_pem expects Pem<tls.CertRequest>, got Pem<tls.SelfSignedCert>\n" +
-				"  fix: replace `ca.cert_pem` with `server_req.cert_request_pem`\n",
+			want: "error[syntax] serve.hcl:22:25\n" +
+				"  provider_uids must be a range such as \"61000-61063\"\n" +
+				"  fix: write provider_uids = \"61000-61063\"\n",
 		},
 		{
 			name: "no location and no fix",
@@ -40,10 +40,10 @@ func TestPrintDiags(t *testing.T) {
 		{
 			name: "two diagnostics in order",
 			in: diag.List{
-				{Severity: diag.Error, Class: diag.Name, Span: span("a.writ", 1, 5, 4), Message: "unknown name x"},
-				{Severity: diag.Error, Class: diag.Contract, Span: span("a.writ", 8, 14, 90), Message: "replacing ca_key loses data"},
+				{Severity: diag.Error, Class: diag.Usage, Span: span("main.tf", 1, 5, 4), Message: "unknown name x"},
+				{Severity: diag.Error, Class: diag.Provider, Span: span("main.tf", 8, 14, 90), Message: "the provider could not read the object"},
 			},
-			want: "error[name] a.writ:1:5\n  unknown name x\nerror[contract] a.writ:8:14\n  replacing ca_key loses data\n",
+			want: "error[usage] main.tf:1:5\n  unknown name x\nerror[provider] main.tf:8:14\n  the provider could not read the object\n",
 		},
 	}
 	for _, tt := range tests {

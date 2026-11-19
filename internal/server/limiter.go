@@ -73,7 +73,6 @@ func (l *limiter) evict(now time.Time) {
 	}
 }
 
-// size is how many buckets the limiter holds.
 func (l *limiter) size() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()

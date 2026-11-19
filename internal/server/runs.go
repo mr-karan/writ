@@ -36,11 +36,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	req.entry.Op = string(authz.Apply)
 	var body RunRequest
 	if err := s.readBody(r, &body); err != nil {
-		status := http.StatusBadRequest
-		if _, ok := err.(errTooLarge); ok {
-			status = http.StatusRequestEntityTooLarge
-		}
-		s.refuse(w, r, FormatRemoteRun, diag.Usage, status, "%v", err)
+		s.refuseBody(w, r, FormatRemoteRun, err)
 		return
 	}
 	if body.Format != FormatRunRequest {
@@ -89,7 +85,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 	// A plan of an OpenTofu stack made before writ serve kept saved plans
 	// has none.
-	if saved, _, err := s.store.SavedPlan(r.Context(), plan.ID); err != nil {
+	if saved, err := s.store.SavedPlan(r.Context(), plan.ID); err != nil {
 		s.dbFailed(w, r, FormatRemoteRun, err)
 		return
 	} else if len(saved) == 0 && plan.Status.Live() {
@@ -466,7 +462,7 @@ func (s *Server) releaseApply() {
 // the environment names no apply role.
 func (s *Server) roleSessionOf(env, run string, p *principal) string {
 	e, ok := s.cfg.Envs[env]
-	if !ok || e.ApplyRole == "" {
+	if !ok || e.role(applyRole) == "" {
 		return ""
 	}
 	return awsrole.SessionName(p.sessionName(), run)

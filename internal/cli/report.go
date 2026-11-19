@@ -30,14 +30,12 @@ type jsonFix struct {
 	Edits   []struct{} `json:"edits"`
 }
 
-// writeJSON writes one compact document and a newline.
 func writeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	return enc.Encode(v)
 }
 
-// toDiags converts diagnostics.
 func toDiags(l diag.List) []jsonDiag {
 	out := make([]jsonDiag, 0, len(l))
 	for _, d := range l {

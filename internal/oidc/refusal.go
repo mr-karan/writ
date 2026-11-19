@@ -514,7 +514,6 @@ func lookup(names []string, i int) string {
 	return names[i]
 }
 
-// refuse starts a refusal of stage for reason.
 func refuse(stage Stage, reason Reason) *Refusal { return &Refusal{stage: stage, reason: reason} }
 
 // failed is a token that failed check for reason.

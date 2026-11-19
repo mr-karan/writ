@@ -34,7 +34,6 @@ import (
 	"github.com/mr-karan/writ/internal/diag"
 	"github.com/mr-karan/writ/internal/oidc"
 	"github.com/mr-karan/writ/internal/policy"
-	"github.com/mr-karan/writ/internal/provider"
 	"github.com/mr-karan/writ/internal/tfstate"
 )
 
@@ -81,7 +80,6 @@ type Server struct {
 	now         func() time.Time
 	withTimeout func(context.Context, time.Duration, error) (context.Context, context.CancelFunc)
 	configID    int64
-	platform    string
 	// dev is the one identity of a Config.Dev server.
 	dev devIdentity
 
@@ -174,7 +172,7 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 	s := &Server{
 		dev: devIdentity{token: opts.DevToken, user: opts.DevUser},
 		cfg: cfg, store: opts.Store, verifier: opts.Verifier, people: opts.People, tofuRunner: opts.Tofu,
-		version: opts.Version, log: opts.Log, now: opts.Now, withTimeout: opts.WithTimeout, platform: provider.CurrentPlatform(),
+		version: opts.Version, log: opts.Log, now: opts.Now, withTimeout: opts.WithTimeout,
 		limiter: newLimiter(cfg.Limits.RequestsPerSecond, maxBuckets, opts.Now),
 		clients: newLimiter(cfg.Limits.RequestsPerAddress, maxBuckets, opts.Now),
 		running: map[string]int{}, done: map[string]chan struct{}{}, runDone: map[string]chan struct{}{}, devCodes: map[string]time.Time{}, logins: map[[32]byte]*login{}, browserLogins: map[[32]byte]*browserLogin{},
@@ -970,6 +968,16 @@ func (s *Server) readBody(r *http.Request, v any) error {
 		return errBadBody{"the body holds more than one JSON document"}
 	}
 	return nil
+}
+
+// refuseBody answers a body that readBody refused: 413 when it is too
+// large, 400 otherwise.
+func (s *Server) refuseBody(w http.ResponseWriter, r *http.Request, format string, err error) {
+	status := http.StatusBadRequest
+	if _, ok := err.(errTooLarge); ok {
+		status = http.StatusRequestEntityTooLarge
+	}
+	s.refuse(w, r, format, diag.Usage, status, "%v", err)
 }
 
 type errBadBody struct{ msg string }

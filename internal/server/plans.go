@@ -30,11 +30,7 @@ func (s *Server) createPlan(w http.ResponseWriter, r *http.Request) {
 	p := req.principal
 	var body PlanRequest
 	if err := s.readBody(r, &body); err != nil {
-		status := http.StatusBadRequest
-		if _, ok := err.(errTooLarge); ok {
-			status = http.StatusRequestEntityTooLarge
-		}
-		s.refuse(w, r, FormatRemotePlan, diag.Usage, status, "%v", err)
+		s.refuseBody(w, r, FormatRemotePlan, err)
 		return
 	}
 	if body.Format != FormatPlanRequest {

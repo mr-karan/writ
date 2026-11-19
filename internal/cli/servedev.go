@@ -57,8 +57,6 @@ type DevServeOptions struct {
 	// at a forge; empty for none.
 	Config  string
 	Version string
-	// Ready, when set, is called with the address it listens on.
-	Ready func(addr string)
 }
 
 // devDir is the dev control plane's data directory: $XDG_DATA_HOME/writ/dev,
@@ -186,13 +184,9 @@ func (a *App) ServeDev(ctx context.Context, o DevServeOptions) error {
 		fmt.Fprintf(out, "forges: %s; repositories polled every %s\n", strings.Join(names, ", "), cfg.PollEvery)
 	}
 	fmt.Fprintf(out, "control UI: %s (works once, for 10 minutes; writ ui prints another)\n", srv.DevLink().URL)
-	ready := func(addr string) {
+	return srv.ServeOn(ctx, ln, func(string) {
 		fmt.Fprintf(out, "ready in %d ms\n", time.Since(start).Milliseconds())
-		if o.Ready != nil {
-			o.Ready(addr)
-		}
-	}
-	return srv.ServeOn(ctx, ln, ready)
+	})
 }
 
 // devRunPath is the PATH of a dev OpenTofu run: the base PATH, after the

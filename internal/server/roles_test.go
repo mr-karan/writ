@@ -178,3 +178,47 @@ func envMap(env []string) map[string]string {
 	}
 	return m
 }
+
+// TestApplyRoleAlone applies in an environment that names an apply role
+// and no plan role: the plan assumes nothing, and the apply's providers
+// get the apply role's credentials.
+func TestApplyRoleAlone(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AWS_ACCESS_KEY_ID", "AKIACONTROLPLANE0001")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "control-plane-secret")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_PROFILE", "")
+	t.Setenv("AWS_CONFIG_FILE", filepath.Join(dir, "config"))
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(dir, "credentials"))
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	st := ststest.New()
+	defer st.Close()
+	assumer, err := awsrole.NewSTS(context.Background(), awsrole.STSOptions{Region: "eu-west-1", Endpoint: st.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const role = "arn:aws:iam::000000000000:role/writ-apply"
+	runner := &fakeTofu{}
+	f := tofuApplyFixtureEdit(t, runner, func(s string) string {
+		s = strings.Replace(s, "key = \"prod.key\"\n", fmt.Sprintf("key = \"prod.key\"\n  apply_role = %q\n", role), 1)
+		return s + fmt.Sprintf("aws {\n  region = \"eu-west-1\"\n  sts_endpoint = %q\n}\n", st.URL)
+	}, func(o *server.Options) { o.Assumer = assumer })
+	p, _ := f.planCommit(tofuFiles(), "add-cert")
+	if len(st.Requests()) != 0 {
+		t.Fatalf("the plan assumed a role: %+v", st.Requests())
+	}
+	if r := f.do("POST", "/v1/plans/"+p.Plan.ID+"/approvals", bob(f), nil); r.status != http.StatusOK {
+		t.Fatalf("bob's approval: %d %s", r.status, r.body)
+	}
+	run := f.tofuRun(bob(f), map[string]any{"plan": p.Plan.ID})
+	if run.Run.Status != "applied" {
+		t.Fatalf("run %+v\n%s", run.Run, run.Text)
+	}
+	reqs := st.Requests()
+	if len(reqs) != 1 || reqs[0].Form.Get("RoleArn") != role {
+		t.Fatalf("STS got %+v, want one AssumeRole of the apply role", reqs)
+	}
+	if env := envMap(runner.applied[0].stack.Creds); !strings.HasPrefix(env["AWS_CONTAINER_CREDENTIALS_FULL_URI"], "http://127.0.0.1:") {
+		t.Fatalf("the apply's credentials: %v", env)
+	}
+}

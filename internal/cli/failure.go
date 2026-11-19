@@ -13,10 +13,10 @@ import (
 
 // With --json, stdout is one JSON document whatever happens. A command that
 // reports its own failure prints its report. This file prints the document
-// for every other way a command stops: a wrong command line, a plan file
-// that is not there, a state database that will not open, a bug. It is the
-// command's own shape, empty, with ok false and one diagnostic, so a reader
-// of writ.apply/v0 reads writ.apply/v0 on every exit path.
+// for every other way a command stops: a wrong command line, a file that
+// is not there, a control plane it cannot reach, a bug. It is the command's
+// own shape, empty, with ok false and one diagnostic, so a reader of
+// writ.remote-run/v0 reads writ.remote-run/v0 on every exit path.
 
 const (
 	// errorFormat is for a command line that names no command writ knows,
@@ -54,7 +54,7 @@ func WriteVersion(w io.Writer, version string) error {
 
 // WriteFailure prints the document of a command that stopped on err before
 // it printed one. command is the command's name and args the rest of its
-// command line, which tells `state forget` from `state`.
+// command line, which tells `import accept` from `import bulk`.
 func WriteFailure(w io.Writer, command string, args []string, err error) error {
 	return writeJSON(w, failureReport(command, args, diag.List{failureDiag(err)}))
 }

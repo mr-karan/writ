@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mr-karan/writ/internal/forge"
 	"github.com/mr-karan/writ/internal/server"
 )
 
@@ -125,7 +126,7 @@ func (a *App) RemoteApply(ctx context.Context, o RemoteApplyOptions) (err error)
 	req := server.RunRequest{Format: server.FormatRunRequest, Plan: o.ID, Override: o.Override}
 	switch {
 	case o.Merged:
-		if o.Commit != "" && !commitRE.MatchString(o.Commit) {
+		if o.Commit != "" && !forge.IsSHA(o.Commit) {
 			return usagef("--commit %q is not a commit's full id", o.Commit)
 		}
 		if o.Stack == "" {
@@ -437,7 +438,7 @@ func (a *App) waitRun(ctx context.Context, r *remote, id string) ([]byte, error)
 }
 
 // printRemoteRun prints a writ.remote-run/v0 document: as is with --json,
-// else the apply as writ apply prints it and a line that names the run.
+// else the apply's text and a line that names the run.
 func (a *App) printRemoteRun(asJSON bool, doc []byte) error {
 	var run server.RemoteRun
 	if err := json.Unmarshal(doc, &run); err != nil {

@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"time"
@@ -77,11 +75,7 @@ func (s *Server) adoptState(w http.ResponseWriter, r *http.Request) {
 	pr := req.principal
 	var body StateAdoptRequest
 	if err := s.readBody(r, &body); err != nil {
-		status := http.StatusBadRequest
-		if _, ok := err.(errTooLarge); ok {
-			status = http.StatusRequestEntityTooLarge
-		}
-		s.refuse(w, r, FormatStateAdopt, diag.Usage, status, "%v", err)
+		s.refuseBody(w, r, FormatStateAdopt, err)
 		return
 	}
 	if body.Format != FormatStateAdoptRequest {
@@ -248,20 +242,15 @@ func (s *Server) adoptRun(ctx context.Context, a adoption) (adopted, error) {
 	if err != nil {
 		return adopted{}, fmt.Errorf("the state key of env %s: %w", a.env, err)
 	}
-	id := "adopt-" + newID()
-	work := filepath.Join(s.cfg.Data, "work", id)
-	defer os.RemoveAll(work)
-	if err := writeTofuFiles(work, ts.Files, rp.Head); err != nil {
-		return adopted{}, err
-	}
+	spec := runSpec{id: "adopt-" + newID(), env: a.env, commit: rp.Head, ts: ts, dir: dir}
 	out := adopted{repo: rp.Name, commit: rp.Head}
 	var state tofu.State
 	var m *mask.Mask
 	if a.backend == control.BackendS3 {
-		if state, m, out.seq, err = s.adoptPull(ctx, a, id, ts, dir, work); err != nil {
+		if state, m, out.seq, err = s.adoptPull(ctx, a, spec); err != nil {
 			return adopted{}, err
 		}
-	} else if state, m, err = s.adoptShow(ctx, a, key, ts, dir, work); err != nil {
+	} else if state, m, err = s.adoptShow(ctx, a, key, spec); err != nil {
 		return adopted{}, err
 	}
 	if out.rows, err = maskedRows(m, state); err != nil {
@@ -277,8 +266,10 @@ func (s *Server) adoptRun(ctx context.Context, a adoption) (adopted, error) {
 
 // adoptShow runs show -json of the newest stored version of a's stack on
 // the http backend, which must still be the version a names, and returns
-// it with a mask that knows the environment's secrets.
-func (s *Server) adoptShow(ctx context.Context, a adoption, key *tfstate.Key, ts repo.TofuStack, dir, work string) (tofu.State, *mask.Mask, error) {
+// it with a mask that knows the environment's secrets. The run has no
+// role: tofu gets none of the environment's secrets, and the mask learns
+// them, as a refresh of the index does.
+func (s *Server) adoptShow(ctx context.Context, a adoption, key *tfstate.Key, spec runSpec) (tofu.State, *mask.Mask, error) {
 	v, err := s.store.LatestState(ctx, a.env, a.stack)
 	if err != nil {
 		return tofu.State{}, nil, fmt.Errorf("read the state version of %s@%s: %w", a.stack, a.env, err)
@@ -290,31 +281,15 @@ func (s *Server) adoptShow(ctx context.Context, a adoption, key *tfstate.Key, ts
 	if err != nil {
 		return tofu.State{}, nil, err
 	}
-	user, done, err := s.takeUID(ctx)
+	run, err := s.startRun(ctx, spec)
 	if err != nil {
 		return tofu.State{}, nil, err
 	}
-	defer done()
-	if user == nil && !s.cfg.Dev {
-		return tofu.State{}, nil, tofuRefused("this writ serve has no provider_uids to run OpenTofu as, so it would run as writ's own user: set provider_uids")
-	}
-	// tofu gets none of the environment's secrets, and the mask learns
-	// them, as a refresh of the index does.
-	var pe []string
-	if !s.cfg.Dev {
-		if pe, err = readProviderEnv(s.cfg.Envs[a.env]); err != nil {
-			return tofu.State{}, nil, err
-		}
-	}
-	_, _, secrets := s.tofuEnv(pe)
-	m := mask.New(secrets)
-	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
+	defer run.done()
+	m := run.mask()
+	stk, err := run.stack(ctx, m)
 	if err != nil {
-		return tofu.State{}, nil, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
-	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Lock: lock, Env: baseProviderEnv}
-	if user != nil {
-		stk.User = &tofu.User{UID: user.UID, GID: user.GID}
+		return tofu.State{}, nil, err
 	}
 	// The output of a failed show or pull can hold a value of the state
 	// that the mask has not learned yet, so only the step and its exit
@@ -330,26 +305,22 @@ func (s *Server) adoptShow(ctx context.Context, a adoption, key *tfstate.Key, ts
 // timer's refresh does, records the read, and returns the state, a mask
 // of the run, and the read's place. The pulled serial must be the one a
 // names.
-func (s *Server) adoptPull(ctx context.Context, a adoption, id string, ts repo.TofuStack, dir, work string) (tofu.State, *mask.Mask, int64, error) {
+func (s *Server) adoptPull(ctx context.Context, a adoption, spec runSpec) (tofu.State, *mask.Mask, int64, error) {
 	if err := s.s3Role(a.env, a.stack, planRole); err != nil {
 		return tofu.State{}, nil, 0, err
 	}
 	started := s.now()
-	launch, done, err := s.launch(ctx, id, a.env, planRole, a.p)
+	spec.role, spec.p, spec.stateCreds = planRole, a.p, true
+	run, err := s.startRun(ctx, spec)
 	if err != nil {
 		return tofu.State{}, nil, 0, err
 	}
-	defer done()
-	if launch.User == nil {
-		return tofu.State{}, nil, 0, tofuRefused("this writ serve has no provider_uids to run OpenTofu as, so it would run as writ's own user: set provider_uids")
-	}
-	runEnv, creds, secrets := s.tofuEnv(launch.Env)
-	m := launch.mask(secrets)
-	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
+	defer run.done()
+	m := run.mask()
+	stk, err := run.stack(ctx, m)
 	if err != nil {
-		return tofu.State{}, nil, 0, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
+		return tofu.State{}, nil, 0, err
 	}
-	stk := tofu.Stack{Files: os.DirFS(work), Dir: dir, Lock: lock, Env: runEnv, Creds: creds, StateCreds: true, User: &tofu.User{UID: launch.User.UID, GID: launch.User.GID}}
 	state, err := s.tofuRunner.Pull(ctx, stk)
 	if err != nil {
 		return tofu.State{}, nil, 0, err
@@ -359,7 +330,7 @@ func (s *Server) adoptPull(ctx context.Context, a adoption, id string, ts repo.T
 		return tofu.State{}, nil, 0, &classedError{diag.State, fmt.Errorf("the bucket holds serial %d of lineage %s of the state of %s@%s, not serial %d of lineage %s, so writ serve kept nothing: adopt the newest",
 			got.Serial, got.Lineage, a.stack, a.env, a.want.Serial, a.want.Lineage)}
 	}
-	_, seq, err := s.observeSerial(ctx, a.env, a.stack, ts.Backend, got, started)
+	_, seq, err := s.observeSerial(ctx, a.env, a.stack, spec.ts.Backend, got, started)
 	if err != nil {
 		return tofu.State{}, nil, 0, fmt.Errorf("record the serial of the state of %s@%s that the adoption read: %w", a.stack, a.env, err)
 	}

@@ -227,8 +227,8 @@ func attributeType(ra rawAttribute) (cty.Type, types.Type, error) {
 	if err != nil {
 		return cty.NilType, types.Type{}, err
 	}
-	// Optional object attributes matter to the checker, not to the wire,
-	// where values carry every attribute.
+	// Optional object attributes do not matter on the wire, where values
+	// carry every attribute.
 	return ty.WithoutOptionalAttributesDeep(), wt, nil
 }
 

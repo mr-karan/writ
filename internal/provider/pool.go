@@ -17,8 +17,8 @@ type Config struct {
 	Source  schema.Source
 	Version string
 	Value   value.Value // wholly known; secret leaves marked
-	// Digest identifies Value. The caller computes it, with the state's
-	// keyed hasher, so the pool never hashes a secret itself.
+	// Digest identifies Value. The caller computes it with a keyed
+	// hasher, so the pool never hashes a secret itself.
 	Digest value.Digest
 }
 
@@ -189,8 +189,7 @@ func (p *Pool) start(ctx context.Context, key ConfigKey) (*Client, error) {
 	return c, nil
 }
 
-// Started returns how many provider processes this pool started. `plan
-// --json` reports it so a test can assert a no-change plan started none.
+// Started returns how many provider processes this pool started.
 func (p *Pool) Started() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()

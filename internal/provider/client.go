@@ -40,7 +40,7 @@ type Client struct {
 }
 
 // Diag is a provider diagnostic. Path is the attribute it is about, empty
-// when it is about the whole resource; the engine maps it to a source line.
+// when it is about the whole resource.
 type Diag struct {
 	Error   bool
 	Summary string

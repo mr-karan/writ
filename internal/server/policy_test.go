@@ -91,7 +91,7 @@ warn contains "the provider env holds `+tofuEnvSecret+`" if input.writ.decision 
 			t.Errorf("the plan's text lacks %q:\n%s", line, p.Text)
 		}
 	}
-	if saved, _, err := f.store.SavedPlan(context.Background(), p.Plan.ID); err != nil || saved != nil {
+	if saved, err := f.store.SavedPlan(context.Background(), p.Plan.ID); err != nil || saved != nil {
 		t.Fatalf("the refused plan keeps a saved plan: %q, %v", saved, err)
 	}
 	if got := f.do("GET", "/v1/plans/"+p.Plan.ID, author, nil); got.status != http.StatusOK || !strings.Contains(string(got.body), `"outcome":"deny"`) {

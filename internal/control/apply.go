@@ -386,7 +386,7 @@ func lockPlan(ctx context.Context, tx *sqldb.Tx, id string, now time.Time) (Plan
 // liveApprovals are the approvals of a plan that were not withdrawn,
 // oldest first.
 func liveApprovals(ctx context.Context, tx *sqldb.Tx, id string) ([]Approval, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT id, plan_id, person, display, issuer, subject, via, approved_at FROM approvals
+	rows, err := tx.QueryContext(ctx, `SELECT `+approvalColumns+` FROM approvals
 		WHERE plan_id = ? AND withdrawn_at IS NULL ORDER BY approved_at, id`, id)
 	if err != nil {
 		return nil, err
@@ -394,15 +394,24 @@ func liveApprovals(ctx context.Context, tx *sqldb.Tx, id string) ([]Approval, er
 	defer rows.Close()
 	var out []Approval
 	for rows.Next() {
-		var a Approval
-		var at int64
-		if err := rows.Scan(&a.ID, &a.PlanID, &a.Person, &a.Display, &a.Issuer, &a.Subject, &a.Via, &at); err != nil {
+		a, err := scanApproval(rows)
+		if err != nil {
 			return nil, err
 		}
-		a.ApprovedAt = fromMS(at)
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// approvalColumns are the columns scanApproval reads, in its order.
+const approvalColumns = "id, plan_id, person, display, issuer, subject, via, approved_at"
+
+func scanApproval(rows *sqldb.Rows) (Approval, error) {
+	var a Approval
+	var at int64
+	err := rows.Scan(&a.ID, &a.PlanID, &a.Person, &a.Display, &a.Issuer, &a.Subject, &a.Via, &at)
+	a.ApprovedAt = fromMS(at)
+	return a, err
 }
 
 // Approvals returns the approvals not withdrawn of each plan in ids, keyed
@@ -416,19 +425,17 @@ func (s *Store) Approvals(ctx context.Context, ids []string) (map[string][]Appro
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, plan_id, person, display, issuer, subject, via, approved_at FROM approvals
+	rows, err := s.db.QueryContext(ctx, `SELECT `+approvalColumns+` FROM approvals
 		WHERE withdrawn_at IS NULL AND plan_id IN (?`+strings.Repeat(", ?", len(ids)-1)+`) ORDER BY approved_at, id`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var a Approval
-		var at int64
-		if err := rows.Scan(&a.ID, &a.PlanID, &a.Person, &a.Display, &a.Issuer, &a.Subject, &a.Via, &at); err != nil {
+		a, err := scanApproval(rows)
+		if err != nil {
 			return nil, s.db.Error(err)
 		}
-		a.ApprovedAt = fromMS(at)
 		out[a.PlanID] = append(out[a.PlanID], a)
 	}
 	return out, s.db.Error(rows.Err())
@@ -483,7 +490,7 @@ func (s *Store) PipelinePlans(ctx context.Context, p Pipeline, now time.Time, li
 	if !p.ok() {
 		return nil, nil
 	}
-	return s.queryPlans(ctx, `SELECT `+planColumns+` FROM plans WHERE `+plansOfRequests(ofPipeline)+`
+	return s.scanPlans(ctx, `SELECT `+planColumns+` FROM plans WHERE `+plansOfRequests(ofPipeline)+`
 		AND status IN ('pending', 'approved') AND expires_at > ? ORDER BY requested_at, ref LIMIT ?`,
 		now.UnixMilli(), p.Issuer, p.ProjectID, p.Pipeline, now.UnixMilli(), limit)
 }
@@ -520,7 +527,7 @@ func (s *Store) MergedPlan(ctx context.Context, repo, env, stack, digest string,
 	after := ""
 	args := []any{now.UnixMilli(), repo, env, stack, digest, now.UnixMilli()}
 	for {
-		plans, err := s.queryPlans(ctx, `SELECT `+planColumns+` FROM plans WHERE `+plansOfRequests(`repo = ? AND env = ? AND stack = ? AND source_digest = ?
+		plans, err := s.scanPlans(ctx, `SELECT `+planColumns+` FROM plans WHERE `+plansOfRequests(`repo = ? AND env = ? AND stack = ? AND source_digest = ?
 			AND source_commit <> ''`)+` AND status IN ('pending', 'approved') AND expires_at > ?`+after+`
 			ORDER BY made_at DESC, ref DESC LIMIT ?`, append(args, mergedPage)...)
 		if err != nil {
@@ -559,7 +566,7 @@ func (s *Store) MergedPlan(ctx context.Context, repo, env, stack, digest string,
 // LastApplied returns the newest plan of stack@env whose run applied it,
 // or ErrNotFound when none did.
 func (s *Store) LastApplied(ctx context.Context, env, stack string, now time.Time) (Plan, error) {
-	plans, err := s.queryPlans(ctx, `SELECT `+planColumns+` FROM plans WHERE id = (SELECT plan_id FROM runs
+	plans, err := s.scanPlans(ctx, `SELECT `+planColumns+` FROM plans WHERE id = (SELECT plan_id FROM runs
 		WHERE env = ? AND stack = ? AND status = 'applied' ORDER BY ended_at DESC LIMIT 1)`, now.UnixMilli(), env, stack)
 	if err != nil {
 		return Plan{}, err
@@ -568,23 +575,6 @@ func (s *Store) LastApplied(ctx context.Context, env, stack string, now time.Tim
 		return Plan{}, ErrNotFound
 	}
 	return plans[0], nil
-}
-
-func (s *Store) queryPlans(ctx context.Context, q string, args ...any) ([]Plan, error) {
-	rows, err := s.db.QueryContext(ctx, q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Plan
-	for rows.Next() {
-		p, err := scanPlan(rows)
-		if err != nil {
-			return nil, s.db.Error(err)
-		}
-		out = append(out, p)
-	}
-	return out, s.db.Error(rows.Err())
 }
 
 // Supersede moves the live plan with id to superseded, for a check outside

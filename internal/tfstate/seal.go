@@ -76,8 +76,7 @@ func ReadKey(path string) (*Key, error) {
 }
 
 // OpenKey reads an environment's state key file, as ReadKey does, and
-// makes the file with a new key when it does not exist, as the state of
-// writ's own stacks makes the same file. Two processes that make it at
+// makes the file with a new key when it does not exist. Two processes that make it at
 // once share one key: each writes a temporary file and links it into
 // place, and the one that loses reads the winner's.
 func OpenKey(path string) (*Key, error) {
