@@ -26,7 +26,7 @@
 <td data-record="{{planRecord .}}"><span class="ref" data-field="author.display">{{.Author.Display}}</span>{{with from .Origin}} <span class="under"><span class="ref" data-field="origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span></span>{{end}}</td>
 {{- if $.Approvals}}<td data-label="Approvals">{{template "n" (exact (len .Approvals.ApprovedBy))}} of {{template "n" (exact .Approvals.Need)}}</td>{{end -}}
 <td class="end" data-label="Made">{{template "when" .MadeAt}}</td>
-<td class="end" data-label="Expires">{{if and .ExpiresAt (or (eq .Status "pending") (eq .Status "approved"))}}<time datetime="{{.ExpiresAt}}">{{since .ExpiresAt}}</time>{{end}}</td>
+<td class="end" data-label="Expires">{{if and .ExpiresAt (live .Status)}}<time datetime="{{.ExpiresAt}}">{{since .ExpiresAt}}</time>{{end}}</td>
 </tr>
 {{- end}}
 </tbody>

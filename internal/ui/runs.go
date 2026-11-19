@@ -98,7 +98,7 @@ func (u *UI) tofuRun(f *fetch, id string) bool {
 	p := &page{Title: "Run " + short(id), Section: "runs", CLI: "writ runs --remote --env " + rr.Run.Env + " --stack " + rr.Run.Stack, Data: newTofuRun(rr, plan.Plan)}
 	p.Here.Env, p.Here.Stack = rr.Run.Env, rr.Run.Stack
 	p.Crumbs = []crumb{{rr.Run.Env, link("/ui/", "env", rr.Run.Env)}, {rr.Run.Stack, link("/ui/stack", "stack", rr.Run.Stack, "env", rr.Run.Env)}, {"Run " + short(id), ""}}
-	if rr.Run.Status == "applying" {
+	if rr.Run.Status == server.RunApplying {
 		p.Refresh = 5
 	}
 	f.render("tofu-run", p)

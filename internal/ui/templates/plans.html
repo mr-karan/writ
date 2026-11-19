@@ -36,7 +36,7 @@
 {{end}}
 
 {{define "plan"}}{{template "head" .}}
-{{with .Data}}{{$p := .Plan}}{{$name := planName $p}}{{$live := or (eq $p.Status "pending") (eq $p.Status "approved")}}
+{{with .Data}}{{$p := .Plan}}{{$name := planName $p}}{{$o := offer $p $.Session}}
 <div class="page-head">
 <h1>Plan <code class="id">{{short $name}}</code> {{template "status" $p.Status}}</h1>
 </div>
@@ -58,15 +58,15 @@
 </ul>{{end}}
 {{if $p.Run}}<p>Run <a class="id" href="/ui/runs/{{$p.Run}}?env={{$p.Env}}&amp;stack={{range $i, $s := $p.Stacks}}{{if not $i}}{{$s.Stack}}{{end}}{{end}}">{{$p.Run}}</a> {{.RunLine}}.</p>{{end}}
 </section>
-{{if or .DocError .Older $live (eq $p.Source.Kind "speculative")}}
+{{if or .DocError .Older $o.Live $o.Speculative}}
 <div class="next">
 {{if .DocError}}<p class="note note-error" role="alert">writ serve could not read this plan's document, so this page offers no approval: <span class="msg">{{.DocError}}</span>. Review it with <code>writ show --remote {{$p.ID}}</code>.</p>
 {{else if .Older}}<p>An older Writ made this plan, so this page offers no approval.</p>
-{{else if and $live (eq $p.Source.Kind "commit") (ne $p.Author.Person $.Session.Person)}}
+{{else if $o.Approve}}
 <form method="post" action="/ui/plans/{{$p.ID}}/approve" class="cmd-line"><button type="submit" class="primary">Approve this plan</button> <span class="muted">as <span class="ref">{{$.Session.Display}}</span></span></form>
-{{else if and $live (eq $p.Source.Kind "commit")}}<p>You made this plan, so you cannot approve it.</p>
-{{else if eq $p.Source.Kind "speculative"}}<p>A speculative plan, of files a client sent, never applies on a team's control plane, so it takes no approval.</p>{{end}}
-{{if $live}}<p class="cmd-line"><span class="muted">Apply</span> <code class="cmd">writ apply --remote {{$p.ID}}</code> <span class="muted">or the apply job, after the merge</span></p>{{end}}
+{{else if $o.Own}}<p>You made this plan, so you cannot approve it.</p>
+{{else if $o.Speculative}}<p>A speculative plan, of files a client sent, never applies on a team's control plane, so it takes no approval.</p>{{end}}
+{{if $o.Live}}<p class="cmd-line"><span class="muted">Apply</span> <code class="cmd">writ apply --remote {{$p.ID}}</code> <span class="muted">or the apply job, after the merge</span></p>{{end}}
 </div>
 {{end}}
 <dl class="kv kv-2">
@@ -75,8 +75,8 @@
 {{with from $p.Origin}}<div><dt>From</dt><dd><span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{with $.Data.Origin}}{{with index . "sha"}} <span class="muted">commit <code>{{short (print .)}}</code></span>{{end}}{{end}}</dd></div>{{end}}
 <div><dt>Requested</dt><dd>{{template "time" $p.RequestedAt}}</dd></div>
 {{if $p.MadeAt}}<div><dt>Made</dt><dd>{{template "time" $p.MadeAt}}</dd></div>{{end}}
-{{if $p.ExpiresAt}}<div><dt>Expires</dt><dd>{{template "time" $p.ExpiresAt}}{{if $live}} <time class="muted" datetime="{{$p.ExpiresAt}}">{{since $p.ExpiresAt}}</time>{{end}}</dd></div>{{end}}
-{{if $live}}<div{{if not $p.TeamsThatMayApply}} class="wide"{{end}}><dt>May apply</dt><dd>{{if $p.TeamsThatMayApply}}{{join $p.TeamsThatMayApply ", "}}{{else}}<strong>no team.</strong> No grant gives every risk class of this plan on {{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}{{$s.Stack}}{{end}}@{{$p.Env}}.{{end}}</dd></div>{{end}}
+{{if $p.ExpiresAt}}<div><dt>Expires</dt><dd>{{template "time" $p.ExpiresAt}}{{if $o.Live}} <time class="muted" datetime="{{$p.ExpiresAt}}">{{since $p.ExpiresAt}}</time>{{end}}</dd></div>{{end}}
+{{if $o.Live}}<div{{if not $p.TeamsThatMayApply}} class="wide"{{end}}><dt>May apply</dt><dd>{{if $p.TeamsThatMayApply}}{{join $p.TeamsThatMayApply ", "}}{{else}}<strong>no team.</strong> No grant gives every risk class of this plan on {{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}{{$s.Stack}}{{end}}@{{$p.Env}}.{{end}}</dd></div>{{end}}
 {{if $p.Risks}}<div><dt>Risks</dt><dd>{{template "risks" $p.Risks}}</dd></div>{{end}}
 {{with .Policy}}<div><dt>Policy</dt><dd>{{template "status" .Status}}</dd></div>{{end}}
 {{with .Tofu}}<div><dt>OpenTofu</dt><dd><code>{{.Version}}</code></dd></div>{{end}}

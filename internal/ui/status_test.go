@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -160,12 +161,94 @@ func decisionText(t *testing.T, page *bytes.Buffer) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 
-// Every status a plan, a run, a drift check, or a policy decision can
-// have has a tone, so none renders as a plain grey stamp.
-func TestEveryStatusHasATone(t *testing.T) {
-	for _, s := range []string{"planning", "pending", "approved", "applying", "applied", "refused", "failed", "expired", "superseded", "clean", "drifted", "passed", "warned", "denied"} {
-		if tone(s) == "" {
-			t.Errorf("status %s has no tone", s)
+// Every status a plan, a run, a drift check, a policy decision, or the
+// server's health can have renders as a stamp of its tone, so none
+// renders as a plain grey stamp, and a status no table knows does.
+func TestStatusStamps(t *testing.T) {
+	a, err := loadAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := &UI{assets: a, now: time.Now}
+	if u.tmpl, err = parseTemplates(u); err != nil {
+		t.Fatal(err)
+	}
+	tones := map[string]string{
+		"planning": "run", "applying": "run",
+		"pending": "wait", "drifted": "wait", "warned": "wait",
+		"approved": "ok", "applied": "ok", "clean": "ok", "ok": "ok", "passed": "ok",
+		"refused": "bad", "failed": "bad", "failing": "bad", "denied": "bad",
+		"expired": "void", "superseded": "void",
+		"unheard-of": "",
+	}
+	for _, s := range server.PlanStatuses {
+		if _, ok := tones[s]; !ok {
+			t.Errorf("plan status %s is missing from the test", s)
 		}
+	}
+	for status, tone := range tones {
+		t.Run(status, func(t *testing.T) {
+			class := "stamp"
+			if tone != "" {
+				class += " stamp-" + tone
+			}
+			want := fmt.Sprintf(`<span class="%s status-%s"><span class="dot" aria-hidden="true"></span>%s</span>`, class, status, status)
+			var b bytes.Buffer
+			if err := u.tmpl.ExecuteTemplate(&b, "status", status); err != nil {
+				t.Fatal(err)
+			}
+			if b.String() != want {
+				t.Errorf("got  %s\nwant %s", b.String(), want)
+			}
+		})
+	}
+}
+
+// The plan page offers its reader the approval of a live plan of a
+// commit that someone else made, tells the author they cannot approve
+// their own, says a speculative plan takes no approval, and shows the
+// apply command while the plan is live.
+func TestPlanOffer(t *testing.T) {
+	a, err := loadAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := &UI{assets: a, now: time.Now}
+	if u.tmpl, err = parseTemplates(u); err != nil {
+		t.Fatal(err)
+	}
+	const approve, own, speculative, apply = "Approve this plan", "You made this plan, so you cannot approve it.", "A speculative plan, of files a client sent", "writ apply --remote"
+	me, other := "gitlab/user/2002", "gitlab/user/1001"
+	for _, tc := range []struct {
+		status, kind, author string
+		want                 []string
+	}{
+		{"pending", "commit", other, []string{approve, apply}},
+		{"approved", "commit", other, []string{approve, apply}},
+		{"pending", "commit", me, []string{own, apply}},
+		{"approved", "commit", me, []string{own, apply}},
+		{"pending", "speculative", other, []string{speculative, apply}},
+		{"applied", "speculative", other, []string{speculative}},
+		{"planning", "commit", other, nil},
+		{"applying", "commit", other, nil},
+		{"applied", "commit", other, nil},
+		{"refused", "commit", other, nil},
+		{"failed", "commit", other, nil},
+		{"expired", "commit", other, nil},
+		{"superseded", "commit", other, nil},
+	} {
+		t.Run(tc.status+" "+tc.kind+" "+tc.author, func(t *testing.T) {
+			p := server.PlanInfo{ID: strings.Repeat("a", 32), Ref: "ref1", Env: "prod", Status: tc.status, Stacks: []server.PlanStack{{Stack: "app"}}, Origin: json.RawMessage(`{}`),
+				Author: server.Principal{Person: tc.author, Display: "alice"}, Source: server.PlanSourceInfo{Kind: tc.kind}}
+			var b bytes.Buffer
+			if err := u.tmpl.ExecuteTemplate(&b, "plan", &page{Session: &server.Session{Person: me}, Data: newPlanView(&p, "", 1)}); err != nil {
+				t.Fatal(err)
+			}
+			for _, line := range []string{approve, own, speculative, apply} {
+				if got, want := strings.Contains(b.String(), line), slices.Contains(tc.want, line); got != want {
+					t.Errorf("the page shows %q: %v, want %v", line, got, want)
+				}
+			}
+		})
 	}
 }

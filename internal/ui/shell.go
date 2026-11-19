@@ -194,7 +194,7 @@ func (f *fetch) shell(p *page) *shell {
 	sh.StacksMore = a.StacksMore
 	more := plansMore(a, "")
 	sh.Counts["approvals"] = count{figure{len(a.Pending), more}, "waiting"}
-	sh.Counts["runs"] = count{figure{len(a.Applying), more}, "applying"}
+	sh.Counts["runs"] = count{figure{len(a.Applying), more}, server.PlanApplying}
 	if r := a.Repos; r != nil {
 		sh.Repos = &repoHealth{Count: exact(r.Count), PolledAt: r.PolledAt, Failed: exact(len(r.Failed))}
 		sh.Counts["repos"] = count{exact(r.Count), "repositories"}
@@ -283,11 +283,11 @@ func look(st server.OverviewStack, more bool) (tone string, note []part) {
 	switch {
 	case st.Plans.Planning > 0 || st.Plans.Applying > 0:
 		tone = "run"
-	case check != nil && check.Status == "failed":
+	case check != nil && check.Status == server.DriftFailed:
 		tone = "bad"
 	case st.Plans.Pending > 0 || st.Plans.Approved > 0:
 		tone = "wait"
-	case check != nil && check.Status == "drifted":
+	case check != nil && check.Status == server.DriftDrifted:
 		tone = "wait"
 	case check != nil && !more:
 		tone = "ok"
@@ -304,7 +304,7 @@ func look(st server.OverviewStack, more bool) (tone string, note []part) {
 			word = "no state yet"
 		case check == nil:
 			word = "not checked"
-		case check.Status == "failed":
+		case check.Status == server.DriftFailed:
 			word = "check failed"
 		default:
 			word = check.Status
@@ -322,7 +322,7 @@ func liveNote(n server.LiveCounts, more bool) []part {
 	for _, c := range []struct {
 		n    int
 		word string
-	}{{n.Applying, "applying"}, {n.Planning, "planning"}, {n.Pending, "pending"}, {n.Approved, "approved"}} {
+	}{{n.Applying, server.PlanApplying}, {n.Planning, server.PlanPlanning}, {n.Pending, server.PlanPending}, {n.Approved, server.PlanApproved}} {
 		if c.n > 0 {
 			parts = append(parts, counted(figure{c.n, more}, c.word))
 		}
@@ -400,17 +400,17 @@ func alertOf(a server.Alert) alert {
 	r := alert{Subject: a.Stack + "@" + a.Env, Href: link("/ui/stack", "stack", a.Stack, "env", a.Env), Detail: a.Message, At: a.At,
 		Record: record("kind", a.Kind, "env", a.Env, "stack", a.Stack)}
 	switch a.Kind {
-	case "drifted":
+	case server.AlertDrifted:
 		r.Tone, r.Kind, r.AtWord = "wait", "Drift found", "first found"
-	case "drift-check-failed":
+	case server.AlertDriftCheckFailed:
 		r.Tone, r.Kind, r.AtWord = "bad", "Drift check failed", "checked"
-	case "outside-write":
+	case server.AlertOutsideWrite:
 		r.Tone, r.Kind, r.AtWord = "wait", "State written outside writ serve", "seen"
-	case "run-failed":
+	case server.AlertRunFailed:
 		r.Tone, r.Kind, r.AtWord, r.Href, r.Record = "bad", "Run failed", "ended", "/ui/runs/"+a.Run, record("kind", a.Kind, "run", a.Run)
-	case "plan-expiring":
+	case server.AlertPlanExpiring:
 		r.Tone, r.Kind, r.AtWord, r.Href, r.Record = "wait", "Plan expires soon", "expires", "/ui/plans/"+a.Plan, record("kind", a.Kind, "plan", a.Plan)
-	case "repo-poll-failed":
+	case server.AlertRepoPollFailed:
 		r.Tone, r.Kind, r.AtWord, r.Subject, r.Href, r.Record = "bad", "Repository poll failed", "failed", a.Repo, "/ui/repos/"+a.Repo, record("kind", a.Kind, "repo", a.Repo)
 	}
 	return r
@@ -446,7 +446,7 @@ func (f *fetch) newOverview(env string, a *server.OverviewDoc) overviewData {
 			d.Applying.N++
 			row := f.row(p, "run", "/ui/plans/"+planName(&p), "", "started")
 			// The row links the run, so it names the plan by its run.
-			if r := lp.Run; r != nil && r.Status == "applying" {
+			if r := lp.Run; r != nil && r.Status == server.RunApplying {
 				row.Href, row.At = "/ui/runs/"+r.ID, r.StartedAt
 				row.Record, row.Field = record("run.id", r.ID), "plan.author.display"
 			}
@@ -473,7 +473,7 @@ func (f *fetch) newOverview(env string, a *server.OverviewDoc) overviewData {
 	for _, al := range a.Alerts {
 		if al.Repo != "" || in(al.Env) {
 			d.Alerts = append(d.Alerts, alertOf(al))
-			if al.Kind != "plan-expiring" {
+			if al.Kind != server.AlertPlanExpiring {
 				d.Steady.N++
 			}
 		}

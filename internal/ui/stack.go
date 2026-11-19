@@ -66,7 +66,7 @@ func (u *UI) stack(w http.ResponseWriter, r *http.Request, s *server.Session) {
 		d.Drift = &drift.Stacks[0]
 		if c := d.Drift.Check; c != nil {
 			d.Adopt, _ = server.AdoptCommand(c.Error, d.Stack, d.Env, d.Drift.Backend)
-			if c.Status == "drifted" {
+			if c.Status == server.DriftDrifted {
 				d.DriftCount = exact(c.Outside + c.Code)
 			}
 		}
