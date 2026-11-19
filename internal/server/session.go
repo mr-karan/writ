@@ -143,20 +143,33 @@ func (s *Server) startSession(ctx context.Context, tok *oidc.Token, carrier cont
 	if sess.Teams == nil {
 		sess.Teams = []string{}
 	}
-	raw := make([]byte, 32)
-	_, _ = rand.Read(raw)
-	token := SessionPrefix + base64.RawURLEncoding.EncodeToString(raw)
 	e.Kind, e.Issuer, e.Subject, e.Person, e.Principal, e.Teams = "sign-in", tok.Issuer, tok.Subject, sess.Person, sess.Display, sess.Teams
 	e.PrincipalKind, e.Via = "person", viaOf(carrier)
 	e.Reason, e.Elapsed = "session "+sess.ID, s.now().Sub(now)
-	row := control.Session{ID: sess.ID, Carrier: carrier, Person: sess.Person, Display: sess.Display, Issuer: sess.Issuer,
-		Subject: sess.Subject, Teams: sess.Teams, CreatedAt: now, EndsAt: sess.EndsAt}
-	if err := s.store.CreateSession(ctx, row, hashToken(token), *e); err != nil {
+	token, err := s.createSession(ctx, sess, carrier, now, *e)
+	if err != nil {
 		s.log.Error("store a session", "request", e.Request, "err", err)
 		return "", nil, errors.New("the control database failed; the request id is " + e.Request)
 	}
 	s.log.Info("signed in", "request", e.Request, "session", sess.ID, "issuer", tok.Issuer, "person", sess.Person, "teams", sess.Teams, "carrier", carrier)
 	return token, sess, nil
+}
+
+// createSession stores sess, carried by carrier, with row as its audit
+// row, and returns its token, which only the cookie or the one answer
+// that issues it may hold. The store keeps only the token's hash.
+func (s *Server) createSession(ctx context.Context, sess *Session, carrier control.Carrier, now time.Time, row control.Entry) (string, error) {
+	token := SessionPrefix + random32()
+	srow := control.Session{ID: sess.ID, Carrier: carrier, Person: sess.Person, Display: sess.Display, Issuer: sess.Issuer,
+		Subject: sess.Subject, Teams: sess.Teams, CreatedAt: now, EndsAt: sess.EndsAt}
+	return token, s.store.CreateSession(ctx, srow, hashToken(token), row)
+}
+
+// random32 is 32 random bytes in base64url.
+func random32() string {
+	raw := make([]byte, 32)
+	_, _ = rand.Read(raw)
+	return base64.RawURLEncoding.EncodeToString(raw)
 }
 
 func viaOf(c control.Carrier) string {

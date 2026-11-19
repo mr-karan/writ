@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base32"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -188,16 +187,12 @@ func (s *Server) DevSignIn(ctx context.Context, r *http.Request, code string) (s
 		return "", nil, errors.New("this sign-in link was used already, or it is older than 10 minutes; run writ ui for a new one")
 	}
 	user := s.dev.user
-	sess := &Session{ID: newID(), Display: user + " (dev)", Person: devPersons + "/" + user, Issuer: "dev", Subject: user, Teams: []string{DevTeam}, EndsAt: now.Add(s.cfg.SessionTTL)}
-	raw := make([]byte, 32)
-	_, _ = rand.Read(raw)
-	token := SessionPrefix + base64.RawURLEncoding.EncodeToString(raw)
+	sess := &Session{ID: newID(), Display: user + " (dev)", Person: devPersons + "/" + user, Issuer: devIssuer, Subject: user, Teams: []string{DevTeam}, EndsAt: now.Add(s.cfg.SessionTTL)}
 	e.Subject, e.Person, e.Principal, e.Teams = user, sess.Person, sess.Display, sess.Teams
 	row := *e
 	row.At, row.Decision, row.Status, row.Reason = now, control.Allowed, http.StatusSeeOther, "session "+sess.ID
-	srow := control.Session{ID: sess.ID, Carrier: control.Browser, Person: sess.Person, Display: sess.Display, Issuer: sess.Issuer,
-		Subject: sess.Subject, Teams: sess.Teams, CreatedAt: now, EndsAt: sess.EndsAt}
-	if err := s.store.CreateSession(ctx, srow, hashToken(token), row); err != nil {
+	token, err := s.createSession(ctx, sess, control.Browser, now, row)
+	if err != nil {
 		s.log.Error("store a session", "request", e.Request, "err", err)
 		e.Decision, e.Reason = control.Errored, "store session "+sess.ID+": "+err.Error()
 		return "", nil, errors.New("the control database failed; the request id is " + e.Request)
