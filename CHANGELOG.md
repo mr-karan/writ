@@ -4,6 +4,10 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Changed
+
+- The control UI is redesigned: a sidebar with stack counts, every page set in cards with labels in one column, and no lines that say what a button does. A stack's resources group by service, module, or none, with a strip of categories and counts, a filter on address, type, and ID that works with scripts off, and rows that open to show the full ID, ARN, and region. A plan keeps its approval, apply, and facts in one head card, with Action and Risk pickers over its changes. Access no longer shows your own grants; Who you are does.
+
 ### Fixed
 
 - A provider error or resource address that quoted the AWS role credentials the credential endpoint served a run kept the secret access key and session token in the stored plan or apply, because the mask knew only the endpoint's token. Each run's mask now knows the secret of every set of credentials the endpoint assumed for the run, refreshes included, on plans, refused plans, applies, index refreshes, and adoptions on S3. Those credentials aren't sealed into a state's secret set.
