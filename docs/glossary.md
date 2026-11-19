@@ -11,6 +11,7 @@ Each term in Writ's docs has one meaning, listed here. Where Terraform or OpenTo
 | provider | A Terraform provider binary. OpenTofu runs it for a plan or an apply, and `writ import bulk` runs it through Writ's own client of the plugin protocol. | Provider |
 | provider configuration | One `provider` block of OpenTofu code, identified by its address, such as `aws.west`. | Provider configuration, alias |
 | provider uid | One of the config's `provider_uids`: the user that OpenTofu and its providers run as for one run, with no groups and no access to the keys or the database of `writ serve`. See [How providers are kept from the keys](serve.md#how-providers-are-kept-from-the-keys). | |
+| egress proxy | The proxy inside `writ serve` that a run under `egress_mode` `report` or `enforce` reaches the network through, from a network namespace of its own. It checks each host and port against the environment's `egress` list before it connects, and records each one. See [Egress](serve.md#egress). | |
 | address | OpenTofu's name of a resource in a stack, such as `random_pet.name` or `module.net.aws_subnet.a["eu"]`. | Resource address |
 | variable | An input of a stack, declared with `variable`. One declared `sensitive = true` contains a secret. | Input variable |
 | output | A value that a stack exposes, declared with `output`. | Output value |

@@ -161,12 +161,13 @@ env "prod" {
 | `team "NAME"` | A rule over token claims, one block each: `issuer`, and `match`, an object of claims and the values that match. See [Teams and grants](serve.md#teams-and-grants). |
 | `grant` | What teams can do, one block each, numbered from 1 in the order written. |
 | `approval` | Optional. How many approvals a plan needs, one block for each rule, by `stacks`, `envs`, and `risks`, with `need` from 1 to 10. Without one, no plan needs an approval. See [Approvals](approvals.md#set-how-many-approvals-a-plan-needs). |
-| `env "NAME"` | An environment, one block each: its state key file, and optionally `plan_role`, `apply_role`, `s3_endpoints`, and `provider_env`. See below. |
+| `env "NAME"` | An environment, one block each: its state key file, and optionally `plan_role`, `apply_role`, `s3_endpoints`, `provider_env`, and `egress`. See below. |
 | `forge "NAME"` | Optional. Where [repositories](repos.md#forges-and-their-tokens) are read from, one block each: `kind = "gitlab"`, `url`, and `read_token_file`, a token with `read_api`. |
 | `repo` | Optional. Pins the list of repositories, one block each, with `name`, `forge`, `project`, `path`, and `prefix`. Without one, an admin adds them with `writ repo add`. |
 | `poll_every` | How often each repository's default branch is polled. Default `60s`. |
 | `tofu` | Optional. A block: how `writ serve` runs OpenTofu for [stacks of `.tf` files](serve.md#opentofu-stacks). See below. |
 | `drift` | Optional. A block: `every`, how often `writ serve` runs a [drift check](serve.md#drift-checks) of each OpenTofu `stack@env` it keeps state for, at least `1m`. It needs the `tofu` block and `limits.plans` of at least 2. Without it, `writ serve` runs no drift checks. |
+| `egress_mode` | Optional. `"off"`, `"report"`, or `"enforce"`. Under `report` and `enforce`, each OpenTofu run gets a network namespace of its own, whose one way out is Writ's egress proxy: `enforce` refuses a destination its env's `egress` doesn't list, and `report` lets it through and records it. Default `"off"`: runs share the host's network, as they always have. `report` and `enforce` need the `tofu` block. See [Egress](serve.md#egress). |
 
 ### issuer
 
@@ -180,6 +181,16 @@ env "prod" {
 - `apply_role`: the ARN of the role applies use.
 - `s3_endpoints`: a list of the custom endpoint URLs a stack's [S3 backend](serve.md#stacks-on-s3) can point to.
 - `provider_env`: an object of variables for the providers, read from files.
+- `egress`: a list of the destinations the env's runs can reach under `egress_mode` `report` or `enforce`. Each item is `HOST`, `*.DOMAIN`, or an IP address, with an optional `:PORT`. An item with no port allows 443 only, so plain HTTP needs `HOST:80`. A wildcard matches subdomains, not the domain itself, and needs a domain of two labels or more. Write an IPv6 address with a port as `[ADDR]:PORT`. The list holds what the stack's providers and modules reach, not the providers' registry: see [What a run fetches](serve.md#what-a-run-fetches).
+
+```hcl
+egress_mode = "enforce"
+
+env "prod" {
+  key    = "/var/lib/writ/keys/prod.key"
+  egress = ["*.amazonaws.com", "nomad.example.internal:80"]
+}
+```
 
 ### tofu
 
@@ -210,6 +221,8 @@ State has no field. An OpenTofu stack's state is on the http backend that `writ 
 - An element of `trusted_proxies` that isn't a CIDR or that sets bits past its prefix length.
 - A `drift` block without `every`, with an empty `every`, an `every` of zero or under a minute, in a config with no `tofu` block, or with `limits.plans` under 2.
 - A `tofu` block without `provider_uids`.
+- An `egress_mode` other than `off`, `report`, and `enforce`, and `report` or `enforce` in a config with no `tofu` block, or with an env whose `s3_endpoints` lists an `http://` endpoint on loopback, which a run's own namespace can't reach.
+- An `egress` item that isn't `HOST`, `*.DOMAIN`, or an IP address with an optional port, a wildcard of one label, such as `*.com`, and an IP address the proxy never connects to: loopback, link-local, multicast, unspecified, or `fd00:ec2::254`.
 - A stack pattern that isn't one, as [Stack patterns](serve.md#stack-patterns) says.
 - An `approve` grant to a team of a CI issuer that matches no claim of the person who ran the job, and an `override` grant to any team of a CI issuer.
 
@@ -220,8 +233,9 @@ It warns on:
 - A provider that acts on the host, such as `hashicorp/local`.
 - A config without `provider_uids`.
 - Issuers of two identities whose URLs look like one host.
+- An env that sets `egress` under `egress_mode` `off`, where the list has no effect.
 
-It prints the approval rules.
+It prints the approval rules, and under `egress_mode` `report` or `enforce`, the mode and each env's `egress` list.
 
 A config that sets one of these removed settings is refused, and the setting is named: `provider` and `providers_dir`, because a stack runs the providers its `.terraform.lock.hcl` pins; `limits.files`; and an environment's `secret_env` or `state`. Delete them.
 

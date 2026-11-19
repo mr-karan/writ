@@ -25,9 +25,10 @@ Writ is at version 0. Fixes go to `main` and into the next release. Older releas
 - `writ serve`: sign-in, tokens, teams and grants, approval rules, the binding of an approval to one plan id, overrides, policy, and the `http` state backend.
 - The mask: a secret that reaches anything Writ stores or shows, in a case that [Secrets and the mask](docs/secrets.md) does not list as one the mask cannot catch.
 - The run's view: a way for a stack's code, a module, or a provider to read the control plane's database, keys, or another run's files, or to get the apply role without an allowed apply.
+- A run's egress under `egress_mode` `report` or `enforce`: a way for a run's code to connect outside its own network namespace, or through Writ's egress proxy to a loopback, link-local, or metadata address, to a private address through a wildcard, or under `enforce` to a destination its env's egress list doesn't allow.
 - The CLI, `writ mcp`, the control UI, the install script, the release artifacts, the container image, and the NixOS module.
 
 ## Out of scope
 
 - Bugs in OpenTofu or in a provider. Report them upstream.
-- The limits that the docs state: the cases the mask cannot catch, which [Secrets and the mask](docs/secrets.md#what-the-mask-cant-do) lists, a provider that uses the open network with the role its run holds, and a `writ serve --dev` that someone shares, which its banner says not to do.
+- The limits that the docs state: the cases the mask cannot catch, which [Secrets and the mask](docs/secrets.md#what-the-mask-cant-do) lists, a provider that uses the open network with the role its run holds, under `egress_mode` `off` or through a host its env's egress list allows, as [Egress](docs/serve.md#what-egress-doesnt-cover) lists, and a `writ serve --dev` that someone shares, which its banner says not to do.

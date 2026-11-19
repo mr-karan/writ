@@ -484,7 +484,7 @@ func TestConnectionsAreBounded(t *testing.T) {
 	if status != "200 Connection established" {
 		t.Fatal(status)
 	}
-	if _, _, status := connect(t, addr, "api.example.com:443"); status != "503 writ egress refused api.example.com:443: the run has 1 connections open through the proxy" {
+	if _, _, status := connect(t, addr, "api.example.com:443"); status != "503 writ egress refused api.example.com:443: the run has as many connections open through the proxy as it may" {
 		t.Fatalf("a second CONNECT past MaxConns: %s", status)
 	}
 	c.Close()

@@ -227,7 +227,8 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer func() { <-p.slots }()
 	default:
 		host := recordedHost(rawHost)
-		why := fmt.Sprintf("the run has %d connections open through the proxy", cap(p.slots))
+		// The count stays out of the reason, which a page shows as words.
+		const why = "the run has as many connections open through the proxy as it may"
 		p.record(host, port, decision{verdict: Refused, reason: why})
 		answer(w, r, http.StatusServiceUnavailable, fmt.Sprintf("writ egress refused %s: %s", hostPort(host, port), why))
 		return
