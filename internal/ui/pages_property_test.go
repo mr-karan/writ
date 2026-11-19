@@ -472,21 +472,15 @@ func (pc *pageCheck) start() {
 	})
 }
 
-// config holds access and who you are to the config and the session they
-// read, and settings to the words it may say.
+// config holds access to the config it reads, who you are to the session
+// it reads, and settings to the words it may say.
 func (pc *pageCheck) config() {
 	var cfg struct {
 		Grants []json.RawMessage `json:"grants"`
 		Teams  []json.RawMessage `json:"teams"`
 	}
 	pc.getJSON("/ui/access?as=json", &cfg)
-	var me struct {
-		Teams  []string          `json:"teams"`
-		Grants []json.RawMessage `json:"grants"`
-	}
-	pc.getJSON("/ui/whoami?as=json", &me)
-	facts := map[string]int{"teams": len(me.Teams), "grants": len(me.Grants)}
-	pc.page("/ui/access", facts, func(n *html.Node) (string, int, bool) {
+	pc.page("/ui/access", map[string]int{}, func(n *html.Node) (string, int, bool) {
 		h := up(n, isTag("h2"))
 		if h == nil {
 			return "", 0, false
@@ -499,6 +493,12 @@ func (pc *pageCheck) config() {
 		}
 		return "", 0, false
 	})
+	var me struct {
+		Teams  []string          `json:"teams"`
+		Grants []json.RawMessage `json:"grants"`
+	}
+	pc.getJSON("/ui/whoami?as=json", &me)
+	facts := map[string]int{"teams": len(me.Teams), "grants": len(me.Grants)}
 	pc.page("/ui/whoami", facts, func(n *html.Node) (string, int, bool) {
 		if h := up(n, isTag("h2")); h != nil && strings.HasPrefix(folded(h), "What you may do") {
 			return "the reader's grants", len(me.Grants), true

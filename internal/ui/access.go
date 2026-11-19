@@ -7,20 +7,13 @@ import (
 	"github.com/mr-karan/writ/internal/server"
 )
 
-type accessData struct {
-	Me     server.Whoami
-	Config server.ConfigDoc
-}
-
-// access shows who may do what: the signed-in person, every team's rule,
-// and every grant.
+// access shows who may do what: every grant and every team's rule.
 func (u *UI) access(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	f := u.fetcher(w, r, s)
-	var d accessData
-	if !f.main("/v1/config", &d.Config) {
+	var d server.ConfigDoc
+	if !f.main("/v1/config", &d) {
 		return
 	}
-	f.also("/v1/whoami", &d.Me)
 	f.render("access", &page{Title: "Access", Section: "access", CLI: "writ serve --check", Data: d})
 }
 

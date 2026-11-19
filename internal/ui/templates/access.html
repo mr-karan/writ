@@ -2,30 +2,22 @@
 {{with .Data}}
 <div class="page-head">
 <h1>Access</h1>
-<p class="subtitle">Teams and grants come from the config file of writ serve. To change them, edit that file, review the change as code, and restart writ serve. This page only reads them.</p>
+<a class="button" href="/ui/whoami">Your access</a>
 </div>
-{{with .Me.Principal}}
-<section aria-labelledby="h-you">
-<h2 id="h-you">You</h2>
-<p>You are <span class="ref" data-field="principal.display">{{.Display}}</span>, by a {{if eq .Kind "person"}}browser session{{else}}{{.Kind}} token{{end}} of {{.Issuer}}, person <code>{{.Person}}</code>. It ends {{template "at" .Expires}}.</p>
-<p>Teams: {{if $.Data.Me.Teams}}{{join $.Data.Me.Teams ", "}}{{else}}{{none "no-team"}}{{end}} <a href="/ui/whoami">What you may do</a></p>
+<p class="meta">Read from the config file of writ serve</p>
+<section class="card" aria-labelledby="h-grants">
+<div class="card-head"><h2 id="h-grants">Grants <span class="count">{{template "n" (exact (len .Grants))}}</span></h2></div>
+{{template "grant-rows" (grants "Every grant of the config, in order" .Grants true)}}
 </section>
-{{end}}
-<section aria-labelledby="h-grants">
-<h2 id="h-grants">Grants ({{template "n" (exact (len .Config.Grants))}})</h2>
-<p class="muted">Grants only add. A team may do what any grant that names it gives.</p>
-{{template "grant-rows" (grants "Every grant of the config, in order" .Config.Grants true)}}
-</section>
-<section aria-labelledby="h-teams">
-<h2 id="h-teams">Teams ({{template "n" (exact (len .Config.Teams))}})</h2>
-<p class="muted">A team is a rule over the claims of one issuer's tokens. Every claim must match one of its values. Its members are not listed.</p>
+<section class="card" aria-labelledby="h-teams">
+<div class="card-head"><h2 id="h-teams">Teams <span class="count">{{template "n" (exact (len .Teams))}}</span></h2></div>
 <div class="scroll">
-<table>
+<table class="list">
 <caption class="sr-only">Every team and the claims it matches</caption>
 <thead><tr><th scope="col">Team</th><th scope="col">Issuer</th><th scope="col">Matches</th></tr></thead>
 <tbody>
-{{- range .Config.Teams}}
-<tr><th scope="row">{{.Name}}</th><td>{{.Issuer}}</td><td>{{range $i, $m := .Match}}{{if $i}}, and {{end}}<code>{{$m.Claim}}</code> is {{range $j, $v := $m.Values}}{{if $j}} or {{end}}<code>{{$v}}</code>{{end}}{{else}}<span class="muted">no claim: only the one user of writ serve --dev is in it</span>{{end}}</td></tr>
+{{- range .Teams}}
+<tr><th scope="row" class="c-main">{{.Name}}</th><td data-label="Issuer">{{.Issuer}}</td><td data-label="Matches">{{range $i, $m := .Match}}{{if $i}}, and {{end}}<code>{{$m.Claim}}</code> is {{range $j, $v := $m.Values}}{{if $j}} or {{end}}<code>{{$v}}</code>{{end}}{{else}}<span class="muted">no claim: only the one user of writ serve --dev is in it</span>{{end}}</td></tr>
 {{- end}}
 </tbody>
 </table>
@@ -39,20 +31,22 @@
 <div class="page-head">
 <h1>Who you are</h1>
 </div>
-{{with .Principal}}
-<dl class="facts">
-<dt>Name</dt><dd><span class="ref" data-field="principal.display">{{.Display}}</span></dd>
-<dt>Kind</dt><dd>{{.Kind}}{{if eq .Kind "person"}}, signed in with a browser session{{end}}</dd>
-<dt>Issuer</dt><dd>{{.Issuer}}</dd>
-<dt>Subject</dt><dd><code>{{.Subject}}</code></dd>
-<dt>Person</dt><dd><code>{{.Person}}</code> <span class="muted">a CI job you start carries the same id, so you cannot approve your own plan through it</span></dd>
-<dt>Ends</dt><dd>{{template "time" .Expires}} <time class="muted" datetime="{{.Expires}}">{{since .Expires}}</time></dd>
+<div class="card">
+<dl class="kv kv-2">
+{{- with .Principal}}
+<div><dt>Name</dt><dd><span class="ref" data-field="principal.display">{{.Display}}</span></dd></div>
+<div><dt>Kind</dt><dd>{{.Kind}}{{if eq .Kind "person"}}, browser session{{end}}</dd></div>
+<div><dt>Issuer</dt><dd>{{.Issuer}}</dd></div>
+<div><dt>Subject</dt><dd><code>{{.Subject}}</code></dd></div>
+<div><dt>Person</dt><dd><code>{{.Person}}</code></dd></div>
+<div><dt>Session ends</dt><dd>{{template "time" .Expires}} <time class="muted" datetime="{{.Expires}}">{{since .Expires}}</time></dd></div>
+{{- end}}
+<div><dt>Teams</dt><dd>{{if .Teams}}<span class="chips">{{range .Teams}}<span class="chip">{{.}}</span>{{end}}</span>{{else}}{{none "no-team"}}{{end}}</dd></div>
 </dl>
-{{end}}
-<h2>Teams</h2>
-<p>{{if .Teams}}{{join .Teams ", "}}{{else}}{{none "no-team"}}{{end}}</p>
-<p class="muted">Teams are fixed when the session starts. A change at the identity provider shows after the next sign-in.</p>
-<h2>What you may do ({{template "n" (exact (len .Grants))}})</h2>
-{{if .Grants}}{{template "grant-rows" (myGrants "The grants that name one of your teams" .Grants)}}{{else}}<p class="muted">{{none "no-grant" (exact (len .Grants))}}</p>{{end}}
+</div>
+<section class="card" aria-labelledby="h-may">
+<div class="card-head"><h2 id="h-may">What you may do <span class="count">{{template "n" (exact (len .Grants))}}</span></h2></div>
+{{if .Grants}}{{template "grant-rows" (myGrants "The grants that name one of your teams" .Grants)}}{{else}}<p class="empty">{{none "no-grant" (exact (len .Grants))}}</p>{{end}}
+</section>
 {{end}}
 {{template "foot" .}}{{end}}
