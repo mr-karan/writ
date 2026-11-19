@@ -230,6 +230,9 @@ func QuoteIdent(s string) string {
 // Close closes the pool.
 func (d *DB) Close() error { return d.db.Close() }
 
+// Postgres reports whether the pool is on Postgres.
+func (d *DB) Postgres() bool { return d.pg }
+
 // Ping checks the database answers.
 func (d *DB) Ping(ctx context.Context) error { return d.Error(d.db.PingContext(ctx)) }
 
