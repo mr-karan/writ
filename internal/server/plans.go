@@ -217,8 +217,8 @@ func (s *Server) planInfo(p control.Plan, approvals []control.Approval) *PlanInf
 	t := s.rules().Tally(p, approvals)
 	info := &PlanInfo{
 		Ref: p.Ref, ID: p.ID, Status: string(t.Status), Env: p.Env,
-		Stacks:      []PlanStack{{Stack: p.Stack, Changes: p.Changes, SourceDigest: p.SourceDigest}},
-		Author:      author, StartedBy: control.StartedByOf(author.Kind),
+		Stacks: []PlanStack{{Stack: p.Stack, Changes: p.Changes, SourceDigest: p.SourceDigest}},
+		Author: author, StartedBy: control.StartedByOf(author.Kind),
 		RequestedAt: stamp(p.RequestedAt), MadeAt: stamp(p.MadeAt), ExpiresAt: stamp(p.ExpiresAt),
 		Risks: orEmpty(p.Risks), TeamsThatMayApply: []string{}, Origin: p.Origin, SupersededBy: p.SupersededBy, SupersededWhy: p.SupersededWhy,
 		Approvals: PlanApprovals{Need: t.Need, Rules: orEmptyInts(p.NeedRules), ApprovedBy: approvalInfos(t.Approvals), TeamsThatMayApprove: []string{}},
