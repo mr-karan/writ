@@ -58,8 +58,10 @@ const (
 	// DefaultLife ends a connection this long after it opened. A client
 	// that holds one open, as an SDK's pool does, connects again.
 	DefaultLife = time.Hour
-	// dialTimeout bounds each connect to one address.
-	dialTimeout = 15 * time.Second
+	// dialTimeout bounds each connect to one address, and lookupTimeout
+	// each lookup of a name.
+	dialTimeout   = 15 * time.Second
+	lookupTimeout = 10 * time.Second
 	// maxAddrs is how many of a name's addresses the proxy tries.
 	maxAddrs = 4
 	// MaxRecorded bounds the destinations a Proxy names. It counts the
@@ -169,7 +171,9 @@ func (p *Proxy) decide(ctx context.Context, host string, port uint16) (string, d
 		// data out through DNS.
 		return name, refuse(reasonNotListed), nil
 	}
-	addrs, err := p.resolve.LookupNetIP(ctx, "ip", name)
+	lctx, cancel := context.WithTimeout(ctx, lookupTimeout)
+	addrs, err := p.resolve.LookupNetIP(lctx, "ip", name)
+	cancel()
 	if err != nil || len(addrs) == 0 {
 		d := decision{verdict: Allowed}
 		if !listed {
