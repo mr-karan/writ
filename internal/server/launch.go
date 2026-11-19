@@ -46,7 +46,7 @@ func (s *Server) initProviders(opts Options) error {
 	}
 	roles := false
 	for _, e := range s.cfg.Envs {
-		roles = roles || e.PlanRole != ""
+		roles = roles || e.role(planRole) != "" || e.role(applyRole) != ""
 	}
 	if !roles {
 		return nil
@@ -128,11 +128,7 @@ func (s *Server) launch(ctx context.Context, run, env string, role roleKind, p *
 			undo[i]()
 		}
 	}
-	arn := e.PlanRole
-	if role == applyRole {
-		arn = e.ApplyRole
-	}
-	if arn != "" {
+	if arn := e.role(role); arn != "" {
 		sess, err := s.broker.Start(ctx, awsrole.Session{
 			Role:           arn,
 			Name:           awsrole.SessionName(p.sessionName(), run),
@@ -192,6 +188,14 @@ const (
 	planRole  roleKind = "plan"
 	applyRole roleKind = "apply"
 )
+
+// role is the ARN of e's role of kind, "" when e names none.
+func (e Env) role(kind roleKind) string {
+	if kind == applyRole {
+		return e.ApplyRole
+	}
+	return e.PlanRole
+}
 
 // freeUID ends what still runs as uid and returns it to the pool. A uid
 // whose processes will not end stays out of the pool.

@@ -466,7 +466,7 @@ func (s *Server) releaseApply() {
 // the environment names no apply role.
 func (s *Server) roleSessionOf(env, run string, p *principal) string {
 	e, ok := s.cfg.Envs[env]
-	if !ok || e.ApplyRole == "" {
+	if !ok || e.role(applyRole) == "" {
 		return ""
 	}
 	return awsrole.SessionName(p.sessionName(), run)

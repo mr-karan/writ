@@ -105,8 +105,7 @@ func (s *Server) s3Role(env, stack string, role roleKind) error {
 	if s.cfg.Dev {
 		return tofuRefused("stack %s keeps its state in S3, and writ serve --dev runs no stack on S3: it has no roles to read the state with", stack)
 	}
-	e := s.cfg.Envs[env]
-	if role == applyRole && e.ApplyRole == "" || role == planRole && e.PlanRole == "" {
+	if s.cfg.Envs[env].role(role) == "" {
 		return tofuRefused("stack %s keeps its state in S3, and env %s has no %s_role to reach it with: set one", stack, env, role)
 	}
 	return nil
