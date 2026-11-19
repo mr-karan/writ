@@ -30,7 +30,7 @@ Each term in Writ's docs has one meaning, listed here. Where Terraform or OpenTo
 | row | One record of a table in the control database. | |
 | plan | The changes that OpenTofu proposes for one commit of a stack in one environment, and the command that asks `writ serve` for them, `writ plan --remote`. | Plan |
 | commit plan | A plan of the files of one commit, which the control plane fetched from the repository. | |
-| speculative plan | A plan of files that a client sent, kept from before `writ serve` planned only commits. No control plane applies one. | Speculative plan |
+| speculative plan | A plan of files that a client sent, kept from before `writ serve` planned only commits. A team's control plane never applies one; `writ serve --dev` applies one that needs no approval. | Speculative plan |
 | saved plan | OpenTofu's plan file of a plan, sealed under the environment's key. An apply runs `tofu apply` of it. No API route returns it. | Saved plan |
 | risk class | What a change risks, which grants and approval rules list: `create`, `update`, `replace`, `delete`, or `data-loss`. In an OpenTofu plan, a forget counts as `delete` and an import as `create`, and no change carries `data-loss`. | |
 | apply | The run of an approved saved plan on the control plane, and the command that asks for it, `writ apply --remote`. | Apply |
