@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/control/controltest"
+	"github.com/mr-karan/writ/internal/sqldb"
 )
 
 func indexWrite(stack string, version int64, rows ...control.IndexRow) control.IndexWrite {
@@ -122,4 +124,29 @@ func TestIndexSecrets(t *testing.T) {
 			t.Fatalf("%d rows still hold index secrets: %v", left, err)
 		}
 	})
+}
+
+// A read of the run's state versions that fails is reported as that
+// failure, not as a failed commit of no versions.
+func TestPutIndexSecretsReadFails(t *testing.T) {
+	s, loc := controltest.Open(t, controltest.Postgres)
+	ctx := context.Background()
+	l := newLifecycle(t, s)
+	writeState(t, l, "app", "RUN1", 1)
+	writeState(t, l, "app", "RUN2", 2)
+	raw := controltest.Raw(t, loc)
+	// The view gives both versions to RUN1 and divides by zero in the row
+	// of version 2, so the query starts and its rows fail.
+	for _, q := range []string{
+		"ALTER TABLE tfstate_versions RENAME TO tfstate_versions_kept",
+		"CREATE VIEW tfstate_versions AS SELECT env, stack, 'RUN1' AS run_id, version / (2 - version) AS version, index_secrets FROM tfstate_versions_kept",
+	} {
+		if _, err := raw.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := s.PutIndexSecrets(ctx, "prod", "app", "RUN1", func(int64) []byte { return []byte("sealed") })
+	if _, commit := errors.AsType[*sqldb.CommitError](err); n != 0 || err == nil || commit || !strings.Contains(err.Error(), "SQLSTATE 22012") {
+		t.Fatalf("sealed %d versions: %v, want the read's division by zero", n, err)
+	}
 }

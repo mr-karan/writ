@@ -245,7 +245,7 @@ func (s *Store) PutIndexSecrets(ctx context.Context, env, stack, runID string, s
 			}
 			versions = append(versions, v)
 		}
-		if err := rows.Close(); err != nil {
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 			return err
 		}
 		for _, v := range versions {
