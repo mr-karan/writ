@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,12 +37,14 @@ func init() {
 
 // The helper's descriptors after stdin, stdout, and stderr: the status pipe,
 // which closes when tofu starts and carries the error when the view fails,
-// and the run's directory and its home, which the view's binds of them must
-// match.
+// the run's directory and its home, which the view's binds of them must
+// match, and with a run's own network, its end of the socket pair through
+// which it hands writ the listeners it makes in the run's namespace.
 const (
 	statusFD = 3
 	runFD    = 4
 	homeFD   = 5
+	netFD    = 6
 )
 
 // viewTmp is where the view binds the run's home again, for TMPDIR. Each
@@ -78,6 +82,10 @@ type viewSpec struct {
 	Dir   string `json:"dir"`
 	Binds []bind `json:"binds"`
 	User  *User  `json:"user,omitempty"`
+	// Net starts the helper in a network namespace of its own, where it
+	// listens on Ports of 127.0.0.1 and hands writ the listeners.
+	Net   bool  `json:"net,omitempty"`
+	Ports []int `json:"ports,omitempty"`
 }
 
 // bind puts Source of the host at Target in the view, read-only unless
@@ -106,22 +114,27 @@ const nsswitch = "hosts: files dns\n"
 // tofu may write, the plugin cache, which only Fill may write, tofu's
 // binary, the view's tools, and the libraries they load, the CA
 // certificates and resolver files, a few devices, and a /proc of the
-// run's own processes. A failure to make it fails the step: tofu never
-// runs without it.
-func startConfined(cmd *exec.Cmd, c command) error {
+// run's own processes. With c.net, the helper also starts in a new
+// network namespace and writ serves c.net's ports there until the stop it
+// returns is called. A failure to make the view or the network fails the
+// step: tofu never runs without them.
+func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 	if cmd.Err != nil {
-		return cmd.Err
+		return nil, cmd.Err
 	}
 	if c.user != nil && (c.user.UID == 0 || c.user.GID == 0) {
-		return fmt.Errorf("tofu: refuse to run as %s: id 0 is root", c.user)
+		return nil, fmt.Errorf("tofu: refuse to run as %s: id 0 is root", c.user)
+	}
+	if c.net != nil && c.view.run == nil {
+		return nil, errors.New("tofu: a run's own network needs the run's directory")
 	}
 	bin, err := filepath.Abs(cmd.Path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	binds, err := c.binds(bin)
 	if err != nil {
-		return fmt.Errorf("tofu: list what the run's filesystem view holds: %w", err)
+		return nil, fmt.Errorf("tofu: list what the run's filesystem view holds: %w", err)
 	}
 	dir := "/"
 	if c.view.run != nil {
@@ -133,13 +146,17 @@ func startConfined(cmd *exec.Cmd, c command) error {
 			}
 		}
 	}
-	spec, err := json.Marshal(viewSpec{Binary: bin, Args: cmd.Args, Dir: dir, Binds: binds, User: c.user})
+	vs := viewSpec{Binary: bin, Args: cmd.Args, Dir: dir, Binds: binds, User: c.user}
+	if c.net != nil {
+		vs.Net, vs.Ports = true, c.net.ports()
+	}
+	spec, err := json.Marshal(vs)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	status, w, err := os.Pipe()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer status.Close()
 	cmd.Path, cmd.Args = "/proc/self/exe", []string{viewHelper, string(spec)}
@@ -147,25 +164,121 @@ func startConfined(cmd *exec.Cmd, c command) error {
 	if c.view.run != nil {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, c.view.run, c.view.home)
 	}
-	cmd.SysProcAttr = viewAttr(c.user)
+	var lnRecv, lnSend *os.File
+	if c.net != nil {
+		if lnRecv, lnSend, err = socketPair(); err != nil {
+			w.Close()
+			return nil, fmt.Errorf("tofu: make the socket pair that hands writ the run's listeners: %w", err)
+		}
+		defer lnRecv.Close()
+		cmd.ExtraFiles = append(cmd.ExtraFiles, lnSend)
+	}
+	cmd.SysProcAttr = viewAttr(c.user, c.net != nil)
 	err = cmd.Start()
 	w.Close()
+	if lnSend != nil {
+		lnSend.Close()
+	}
 	if err != nil {
-		return fmt.Errorf("tofu: start tofu in new user, mount, and pid namespaces, which its private filesystem view needs: %w", err)
+		return nil, fmt.Errorf("tofu: start tofu in new user, mount, and pid namespaces, which its private filesystem view needs: %w", err)
+	}
+	stop = func() {}
+	var lns []net.Listener
+	var netErr error
+	if c.net != nil {
+		// The helper sends the listeners before it makes the view, or
+		// exits with its error, which closes its end.
+		lns, netErr = receiveListeners(lnRecv, vs.Ports)
 	}
 	msg, err := io.ReadAll(io.LimitReader(status, 4<<10))
-	if err == nil && len(msg) == 0 {
-		return nil
+	if err == nil && len(msg) == 0 && netErr == nil {
+		if c.net != nil {
+			stop = c.net.serve(lns, vs.Ports)
+		}
+		return stop, nil
+	}
+	for _, ln := range lns {
+		ln.Close()
 	}
 	_ = killGroup(cmd.Process.Pid)
 	_ = cmd.Wait()
-	if err != nil {
-		return fmt.Errorf("tofu: make the run's private filesystem view: %w", err)
+	switch {
+	case err != nil:
+		return nil, fmt.Errorf("tofu: make the run's private filesystem view: %w", err)
+	case len(msg) > 0:
+		return nil, fmt.Errorf("tofu: make the run's private filesystem view: %s", msg)
 	}
-	return fmt.Errorf("tofu: make the run's private filesystem view: %s", msg)
+	return nil, fmt.Errorf("tofu: make the run's own network: %w", netErr)
 }
 
-// viewAttr starts the helper in its own process group and namespaces. Its
+// socketPair is a pair of connected Unix sockets that keep message
+// boundaries, each closed on exec.
+func socketPair() (*os.File, *os.File, error) {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	return os.NewFile(uintptr(fds[0]), "listeners"), os.NewFile(uintptr(fds[1]), "listeners"), nil
+}
+
+// receiveListeners reads the listeners the helper made on ports of the
+// run's 127.0.0.1, one message with one descriptor for each port, in
+// order, and checks that each is that port's listener. The descriptors
+// arrive closed on exec, so no other process writ starts inherits one.
+func receiveListeners(f *os.File, ports []int) ([]net.Listener, error) {
+	buf := make([]byte, 1)
+	oob := make([]byte, syscall.CmsgSpace(4*len(ports)))
+	n, oobn, _, _, err := syscall.Recvmsg(int(f.Fd()), buf, oob, syscall.MSG_CMSG_CLOEXEC)
+	if err != nil {
+		return nil, err
+	}
+	var fds []int
+	if n > 0 {
+		msgs, err := syscall.ParseSocketControlMessage(oob[:oobn])
+		if err != nil {
+			return nil, err
+		}
+		for i := range msgs {
+			got, err := syscall.ParseUnixRights(&msgs[i])
+			if err != nil {
+				return nil, err
+			}
+			fds = append(fds, got...)
+		}
+	}
+	var lns []net.Listener
+	fail := func(err error) ([]net.Listener, error) {
+		for _, ln := range lns {
+			ln.Close()
+		}
+		return nil, err
+	}
+	files := make([]*os.File, len(fds))
+	for i, fd := range fds {
+		files[i] = os.NewFile(uintptr(fd), "run listener")
+		defer files[i].Close()
+	}
+	if n == 0 {
+		return nil, errors.New("the view's helper ended before it handed writ the listeners")
+	}
+	if len(fds) != len(ports) || int(buf[0]) != len(ports) {
+		return nil, fmt.Errorf("the view's helper handed writ %d listeners, not %d", len(fds), len(ports))
+	}
+	for i, f := range files {
+		ln, err := net.FileListener(f)
+		if err != nil {
+			return fail(err)
+		}
+		lns = append(lns, ln)
+		if want := netip.AddrPortFrom(netip.AddrFrom4([4]byte{127, 0, 0, 1}), uint16(ports[i])); ln.Addr().String() != want.String() {
+			return fail(fmt.Errorf("the view's helper handed writ a listener on %s, not %s", ln.Addr(), want))
+		}
+	}
+	return lns, nil
+}
+
+// viewAttr starts the helper in its own process group and namespaces, and
+// with netns in a network namespace of its own too. Its
 // user namespace maps uid and gid 0 to writ's own, so the helper keeps the
 // namespace's capabilities through its exec and may make the view, and the
 // run's ids to themselves, so it may become the run's user. Mapping ids
@@ -174,7 +287,7 @@ func startConfined(cmd *exec.Cmd, c command) error {
 // as a user namespace an unprivileged writ makes requires. The helper sets
 // the parent-death signal itself: Go's check of it after a fork reads the
 // parent's pid, which a new pid namespace hides.
-func viewAttr(u *User) *syscall.SysProcAttr {
+func viewAttr(u *User, netns bool) *syscall.SysProcAttr {
 	a := &syscall.SysProcAttr{
 		Setpgid:     true,
 		Cloneflags:  syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS | syscall.CLONE_NEWPID,
@@ -185,6 +298,9 @@ func viewAttr(u *User) *syscall.SysProcAttr {
 		a.UidMappings = append(a.UidMappings, syscall.SysProcIDMap{ContainerID: int(u.UID), HostID: int(u.UID), Size: 1})
 		a.GidMappings = append(a.GidMappings, syscall.SysProcIDMap{ContainerID: int(u.GID), HostID: int(u.GID), Size: 1})
 		a.GidMappingsEnableSetgroups = true
+	}
+	if netns {
+		a.Cloneflags |= syscall.CLONE_NEWNET
 	}
 	return a
 }
@@ -374,6 +490,11 @@ func enterView(arg string) error {
 	if err := watchParent(); err != nil {
 		return err
 	}
+	if spec.Net {
+		if err := enterNet(spec.Ports); err != nil {
+			return err
+		}
+	}
 	if err := syscall.Mount("", "/", "", syscall.MS_REC|syscall.MS_PRIVATE, ""); err != nil {
 		return fmt.Errorf("make the mounts private: %w", err)
 	}
@@ -436,6 +557,82 @@ func enterView(arg string) error {
 		syscall.CloseOnExec(fd)
 	}
 	return syscall.Exec(spec.Binary, spec.Args, os.Environ())
+}
+
+// enterNet runs in the helper, in its new network namespace, which holds
+// only a loopback interface that is down. It brings loopback up, listens
+// on each of ports of 127.0.0.1, hands writ the listeners in one message
+// through netFD, and closes its copies. tofu then starts with those ports
+// taken, so no process of the run can listen in writ's place.
+func enterNet(ports []int) error {
+	if err := loopbackUp(); err != nil {
+		return fmt.Errorf("bring up loopback in the run's network namespace: %w", err)
+	}
+	var fds []int
+	defer func() {
+		for _, fd := range fds {
+			syscall.Close(fd)
+		}
+	}()
+	for _, port := range ports {
+		fd, err := listenLoopback(port)
+		if err != nil {
+			return fmt.Errorf("listen on 127.0.0.1:%d in the run's network namespace: %w", port, err)
+		}
+		fds = append(fds, fd)
+	}
+	var rights []byte
+	if len(fds) > 0 {
+		rights = syscall.UnixRights(fds...)
+	}
+	if err := syscall.Sendmsg(netFD, []byte{byte(len(fds))}, rights, nil, 0); err != nil {
+		return fmt.Errorf("hand writ the listeners of the run's network namespace: %w", err)
+	}
+	return syscall.Close(netFD)
+}
+
+// ifreqFlags is struct ifreq with its ifr_flags member, as SIOCGIFFLAGS
+// and SIOCSIFFLAGS read and write it: 40 bytes on a 64-bit kernel.
+type ifreqFlags struct {
+	name  [syscall.IFNAMSIZ]byte
+	flags uint16
+	_     [22]byte
+}
+
+// loopbackUp sets IFF_UP on lo, which a new network namespace makes down.
+func loopbackUp() error {
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(fd)
+	var req ifreqFlags
+	copy(req.name[:], "lo")
+	if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), syscall.SIOCGIFFLAGS, uintptr(unsafe.Pointer(&req))); e != 0 {
+		return e
+	}
+	req.flags |= syscall.IFF_UP
+	if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), syscall.SIOCSIFFLAGS, uintptr(unsafe.Pointer(&req))); e != 0 {
+		return e
+	}
+	return nil
+}
+
+// listenLoopback returns a socket that listens on 127.0.0.1:port.
+func listenLoopback(port int) (int, error) {
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return -1, err
+	}
+	if err := syscall.Bind(fd, &syscall.SockaddrInet4{Port: port, Addr: [4]byte{127, 0, 0, 1}}); err != nil {
+		syscall.Close(fd)
+		return -1, err
+	}
+	if err := syscall.Listen(fd, syscall.SOMAXCONN); err != nil {
+		syscall.Close(fd)
+		return -1, err
+	}
+	return fd, nil
 }
 
 // bindInto binds b at its target under root, and reports whether it is a

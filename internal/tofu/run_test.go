@@ -135,6 +135,12 @@ func fakeTofuMain(behaviour string, args []string) int {
 		case "show":
 			fmt.Println("{}")
 		}
+	case "net":
+		// What the step's network lets it reach, for TestRunNetwork.
+		fmt.Print(netProbe())
+		if cmd == "plan" {
+			err = os.WriteFile(planFile, []byte("saved"), 0o600)
+		}
 	case "creds":
 		// init fails if it sees the run's credential or lacks the
 		// backend's address; the other steps print what they saw.
