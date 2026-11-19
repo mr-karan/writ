@@ -261,22 +261,11 @@ func short(id string) string {
 	return id
 }
 
-// sign is the CLI's sign for an action, which every change prints beside
-// its word, so color is never the only sign.
-func sign(action string) string {
-	switch action {
-	case "create":
-		return "+"
-	case "update", "settings-only", "forget":
-		return "~"
-	case "replace":
-		return "-/+"
-	case "delete":
-		return "-"
-	case "move":
-		return "→"
-	case "import":
-		return "<-"
+// sign is the CLI's sign for a kind of change, which every change prints
+// beside its word, so color is never the only sign.
+func sign(kind string) string {
+	if s := server.ChangeSign(kind); s != "" {
+		return s
 	}
 	return " "
 }

@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -292,10 +291,7 @@ func (s *Server) refreshS3(ctx context.Context, st control.S3Stack) error {
 // tofu began to change a resource.
 func changedResources(log []byte) bool {
 	for line := range bytes.Lines(log) {
-		var ev struct {
-			Type string `json:"type"`
-		}
-		if json.Unmarshal(bytes.TrimSpace(line), &ev) == nil && ev.Type == "apply_start" {
+		if ev, ok := decodeEvent(line); ok && ev.Type == "apply_start" {
 			return true
 		}
 	}

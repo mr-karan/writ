@@ -204,17 +204,8 @@ func (s *Server) planSecrets(ctx context.Context, key *tfstate.Key, plan control
 func applyEvents(m *mask.Mask, log []byte) []TofuApplyEvent {
 	out := []TofuApplyEvent{}
 	for line := range bytes.Lines(log) {
-		var ev struct {
-			Type string `json:"type"`
-			Hook struct {
-				Resource struct {
-					Addr string `json:"addr"`
-				} `json:"resource"`
-				Action  string `json:"action"`
-				Elapsed int    `json:"elapsed_seconds"`
-			} `json:"hook"`
-		}
-		if json.Unmarshal(bytes.TrimSpace(line), &ev) != nil {
+		ev, ok := decodeEvent(line)
+		if !ok {
 			continue
 		}
 		switch ev.Type {
@@ -233,14 +224,7 @@ func applyEvents(m *mask.Mask, log []byte) []TofuApplyEvent {
 func applySummary(log []byte) *TofuApplySummary {
 	var sum *TofuApplySummary
 	for line := range bytes.Lines(log) {
-		var ev struct {
-			Type    string `json:"type"`
-			Changes *struct {
-				TofuApplySummary
-				Operation string `json:"operation"`
-			} `json:"changes"`
-		}
-		if json.Unmarshal(bytes.TrimSpace(line), &ev) == nil && ev.Type == "change_summary" && ev.Changes != nil && ev.Changes.Operation == "apply" {
+		if ev, ok := decodeEvent(line); ok && ev.Type == "change_summary" && ev.Changes != nil && ev.Changes.Operation == "apply" {
 			s := ev.Changes.TofuApplySummary
 			sum = &s
 		}

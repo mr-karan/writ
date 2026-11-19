@@ -396,6 +396,43 @@ func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask, unrea
 // times or more is not matched.
 var instanceKeys = regexp.MustCompile(`\["(?:[^"\\]|\\.)*"\]|\[\\"(?:[^\\]|\\\\(?:\\[\\"]|[^\\])|\\[^"\\])*\\"\]`)
 
+// tofuEvent is one line of OpenTofu's -json event stream, with the fields
+// writ serve reads: a diagnostic, an apply hook, or a change summary.
+type tofuEvent struct {
+	Type       string `json:"type"`
+	Diagnostic struct {
+		Severity string `json:"severity"`
+		Summary  string `json:"summary"`
+		Detail   string `json:"detail"`
+		Range    *struct {
+			Filename string `json:"filename"`
+			Start    struct {
+				Line   int `json:"line"`
+				Column int `json:"column"`
+			} `json:"start"`
+		} `json:"range"`
+	} `json:"diagnostic"`
+	Hook struct {
+		Resource struct {
+			Addr string `json:"addr"`
+		} `json:"resource"`
+		Action  string `json:"action"`
+		Elapsed int    `json:"elapsed_seconds"`
+	} `json:"hook"`
+	Changes *struct {
+		TofuApplySummary
+		Operation string `json:"operation"`
+	} `json:"changes"`
+}
+
+// decodeEvent reads one line of an event stream. A line that is not an
+// event is skipped.
+func decodeEvent(line []byte) (tofuEvent, bool) {
+	var ev tofuEvent
+	err := json.Unmarshal(bytes.TrimSpace(line), &ev)
+	return ev, err == nil
+}
+
 // stepDiagnostics returns the diagnostics of a -json event stream as
 // "file:line:column: summary", at most maxTofuDiagnostics of them, each
 // swept by the mask, and with sweepKeys each quoted instance key swept
@@ -403,21 +440,8 @@ var instanceKeys = regexp.MustCompile(`\["(?:[^"\\]|\\.)*"\]|\[\\"(?:[^\\]|\\\\(
 func stepDiagnostics(m *mask.Mask, log []byte, sweepKeys bool) []Diagnostic {
 	var out []Diagnostic
 	for line := range bytes.Lines(log) {
-		var ev struct {
-			Type       string `json:"type"`
-			Diagnostic struct {
-				Severity string `json:"severity"`
-				Summary  string `json:"summary"`
-				Range    *struct {
-					Filename string `json:"filename"`
-					Start    struct {
-						Line   int `json:"line"`
-						Column int `json:"column"`
-					} `json:"start"`
-				} `json:"range"`
-			} `json:"diagnostic"`
-		}
-		if json.Unmarshal(bytes.TrimSpace(line), &ev) != nil || ev.Type != "diagnostic" {
+		ev, ok := decodeEvent(line)
+		if !ok || ev.Type != "diagnostic" {
 			continue
 		}
 		d := ev.Diagnostic
@@ -500,21 +524,8 @@ func movedNotes(moved []tofu.Moved) []string {
 func tofuEvents(m *mask.Mask, log []byte, severity string) []string {
 	var out []string
 	for line := range bytes.Lines(log) {
-		var ev struct {
-			Type       string `json:"type"`
-			Diagnostic struct {
-				Severity string `json:"severity"`
-				Summary  string `json:"summary"`
-				Detail   string `json:"detail"`
-				Range    *struct {
-					Filename string `json:"filename"`
-					Start    struct {
-						Line int `json:"line"`
-					} `json:"start"`
-				} `json:"range"`
-			} `json:"diagnostic"`
-		}
-		if json.Unmarshal(m.Event(bytes.TrimSpace(line)), &ev) != nil || ev.Type != "diagnostic" || ev.Diagnostic.Severity != severity {
+		ev, ok := decodeEvent(m.Event(bytes.TrimSpace(line)))
+		if !ok || ev.Type != "diagnostic" || ev.Diagnostic.Severity != severity {
 			continue
 		}
 		d := ev.Diagnostic
@@ -548,23 +559,27 @@ func tofuPlanID(doc, saved []byte, commit, stack, env string) string {
 	return hex.EncodeToString(h.Sum(nil))[:32]
 }
 
-// tofuAction is what Writ calls one action list of a resource change, and
-// the risk class that approval rules and grants match it by.
-type tofuAction struct{ kind, risk string }
+// tofuAction is what Writ calls one action list of a resource change, the
+// risk class that approval rules and grants match it by, and what it
+// counts toward in OpenTofu's summary of a plan.
+type tofuAction struct {
+	kind, risk                   string
+	add, change, destroy, forget int
+}
 
 // tofuActions is every action list OpenTofu 1.13 writes in a plan. A plan
 // with any other is refused, so a kind of change Writ does not know never
 // applies without the approvals its risk would need.
 var tofuActions = map[string]tofuAction{
-	"create":        {"create", authz.RiskCreate},
-	"update":        {"update", authz.RiskUpdate},
-	"delete":        {"delete", authz.RiskDelete},
-	"delete,create": {"replace", authz.RiskReplace},
-	"create,delete": {"replace", authz.RiskReplace},
+	"create":        {kind: "create", risk: authz.RiskCreate, add: 1},
+	"update":        {kind: "update", risk: authz.RiskUpdate, change: 1},
+	"delete":        {kind: "delete", risk: authz.RiskDelete, destroy: 1},
+	"delete,create": {kind: "replace", risk: authz.RiskReplace, add: 1, destroy: 1},
+	"create,delete": {kind: "replace", risk: authz.RiskReplace, add: 1, destroy: 1},
 	// A forget leaves the object where it is and stops managing it, so
 	// the stack loses control of it as a delete loses it.
-	"forget":        {"forget", authz.RiskDelete},
-	"forget,create": {"replace", authz.RiskReplace},
+	"forget":        {kind: "forget", risk: authz.RiskDelete, forget: 1},
+	"forget,create": {kind: "replace", risk: authz.RiskReplace, add: 1, forget: 1},
 	"no-op":         {},
 	"read":          {},
 }
@@ -622,6 +637,10 @@ func tofuChanges(p *mask.Plan) (int, []string, error) {
 
 var changeMarks = map[string]string{"create": "+", "update": "~", "delete": "-", "replace": "-/+", "forget": "~", "import": "<-"}
 
+// ChangeSign is the sign writ plan --remote prints beside a change of
+// kind, as TofuChange names it, "" for a kind that changes nothing.
+func ChangeSign(kind string) string { return changeMarks[kind] }
+
 // tofuText is the plan as writ plan --remote prints it: each change, the
 // summary OpenTofu prints, the outputs that change, and the warnings. The
 // plan's changes passed tofuChanges.
@@ -643,22 +662,8 @@ func tofuText(stack, env string, p *mask.Plan, warnings []string) string {
 			line = fmt.Sprintf("%3s %s (replace, because of %s)", changeMarks[k], printable(c.Address), strings.Join(paths, ", "))
 		}
 		b.WriteString(line + "\n")
-		switch strings.Join(c.Change.Actions, ",") {
-		case "create":
-			add++
-		case "update":
-			change++
-		case "delete":
-			destroy++
-		case "delete,create", "create,delete":
-			add++
-			destroy++
-		case "forget":
-			forget++
-		case "forget,create":
-			add++
-			forget++
-		}
+		a := tofuActions[strings.Join(c.Change.Actions, ",")]
+		add, change, destroy, forget = add+a.add, change+a.change, destroy+a.destroy, forget+a.forget
 		if c.Change.Importing != nil {
 			imports++
 		}
