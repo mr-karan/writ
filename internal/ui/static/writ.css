@@ -308,14 +308,11 @@ table a { font-weight: 500; }
 .row > .i { margin-top: 0.1875rem; align-self: flex-start; }
 .tone-wait { color: var(--chg); }
 .tone-bad { color: var(--del); }
-/* Package 3. A card's parts set their own insets, so Oat's padding and
-   shadow on .card go, and so do Oat's gap under each li and its form
-   field's margin on [data-field], which here names a record's field, and
-   Oat's spread of a summary's parts. An alert's icon sits in a span of its
-   tone, on the line of its title. */
-.card { padding: 0; box-shadow: none; }
-li, [data-field] { margin-block-end: 0; }
-.fold > summary { justify-content: flex-start; }
+/* Package 3, overview and runs. Oat's shadow on .card and its gap under
+   each li go, so the stat cards sit flush in their card. An alert's icon
+   sits in a span of its tone, on the line of its title. */
+.card { box-shadow: none; }
+li { margin-block-end: 0; }
 .row > .tone-wait, .row > .tone-bad { display: flex; align-self: flex-start; margin-top: 0.1875rem; }
 
 /* Facts: every label in one column, every value in the next. */
