@@ -420,6 +420,9 @@ type tofuRunData struct {
 	TookFor string
 	Text    string
 	Steps   []step
+	// Network is what the run asked writ's egress proxy for, nil when it
+	// had none.
+	Network *networkView
 }
 
 // tofuRunResource is what the apply did to one resource, from its events.
@@ -434,6 +437,10 @@ type tofuRunResource struct {
 func newTofuRun(rr server.RemoteRun, plan *server.PlanInfo) tofuRunData {
 	d := tofuRunData{Run: rr.Run, Plan: plan, Text: rr.Text, Steps: runSteps(rr.Run)}
 	d.Took, d.TookFor = took(rr.Run.StartedAt, rr.Run.EndedAt)
+	var err error
+	if d.Network, err = readNetwork(rr.Network); err != nil {
+		d.DocError = err.Error()
+	}
 	if len(rr.Document) == 0 || string(rr.Document) == "null" {
 		return d
 	}
