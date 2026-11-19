@@ -6,7 +6,7 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 
 ### Added
 
-- `GET /v1/audit` and `writ audit --remote` read the audit log: newest first, by plan (with its approvals, run, and state writes), run, `stack@env`, person, operation, and time, in pages. A token sees the rows of the stacks it may read, and the rows of no stack only with `admin` on every stack in every environment. A refused row's reason, which can quote what its request sent, is withheld, and no row shows a client address.
+- `GET /v1/audit` and `writ audit --remote` read the audit log: newest first, by plan (with its approvals, run, and state writes), run, `stack@env`, person, operation, and time, in pages. A token sees the rows of the stacks it may read, and the rows of no stack only with `admin` on every stack in every environment. A filter of a stack the token can't read returns an empty page, the cursor is encrypted, and an approval across environments leaves one row for each. A refused row's reason, which can quote what its request sent, is withheld, a state write's reason is shown without the state's hash, and no row shows a client address or a nonstandard method.
 
 ### Changed
 
