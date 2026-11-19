@@ -42,7 +42,7 @@
 </div>
 <p class="meta">{{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}} in {{$p.Env}} · by <span class="ref" data-record="{{planDoc $p}}" data-field="plan.author.display">{{$p.Author.Display}}</span>{{with from $p.Origin}} · <span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{end}}</p>
 {{if $p.SupersededBy}}<div class="note note-warning" role="note">{{template "icon" "warn"}}<div><strong>A newer plan exists.</strong> <a class="id" href="/ui/plans/{{$p.SupersededBy}}">{{short $p.SupersededBy}}</a></div></div>{{end}}
-{{if eq $p.Status "expired"}}<p class="note">Expired {{template "time" $p.ExpiresAt}}. It can no longer be applied.</p>{{end}}
+{{if eq $p.Status "expired"}}<div class="note" role="note"><p>Expired {{template "time" $p.ExpiresAt}}. It can no longer be applied.</p></div>{{end}}
 {{if eq $p.Status "superseded"}}<p class="note">Superseded: {{$p.SupersededWhy}}. It can no longer be applied.</p>{{end}}
 {{with .Adopt}}{{template "adopt-hint" .}}{{end}}
 

@@ -11,6 +11,8 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 
 ### Fixed
 
+- The note of an expired plan set a space before its full stop.
+- The current stack in the sidebar, set in bold, wrapped its note onto a second line where the other stacks did not.
 - A provider error or resource address that quoted the AWS role credentials the credential endpoint served a run kept the secret access key and session token in the stored plan or apply, because the mask knew only the endpoint's token. Each run's mask now knows the secret of every set of credentials the endpoint assumed for the run, refreshes included, on plans, refused plans, applies, index refreshes, and adoptions on S3. Those credentials aren't sealed into a state's secret set.
 - A refused plan on S3 read and opened every secret set of the `stack@env` before the mask checked its 4 MiB limit. It now reads them one at a time, counts each secret once, and fails the plan when they pass the limit.
 - A plan of a stack on S3 that tofu refused, as for a permission the plan role lacks, kept only `tofu plan exited with code 1`. It now keeps each diagnostic's summary and place, swept by a mask that knows every secret set `writ serve` keeps for the stack, with each instance key quoted once or twice shown as `["(sensitive)"]`.

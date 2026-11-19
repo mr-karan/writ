@@ -53,7 +53,7 @@
 {{- if .Stacks}}
 <ul class="stacks">
 {{- range .Stacks}}
-<li><a href="{{link "/ui/stack" "stack" .Name "env" .Env}}"{{if .Current}} aria-current="page"{{end}}><span class="dot dot-{{.Tone}}" aria-hidden="true"></span><span class="t-name">{{.Name}}</span> <span class="t-note{{if .Quiet}} sr-only{{end}}">{{template "note" .Note}}</span></a></li>
+<li><a href="{{link "/ui/stack" "stack" .Name "env" .Env}}"{{if .Current}} aria-current="page"{{end}}><span class="dot dot-{{.Tone}}" aria-hidden="true"></span><span class="t-name" data-name="{{.Name}}">{{.Name}}</span> <span class="t-note{{if .Quiet}} sr-only{{end}}">{{template "note" .Note}}</span></a></li>
 {{- end}}
 </ul>
 {{- end}}

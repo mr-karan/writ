@@ -252,3 +252,70 @@ func TestPlanOffer(t *testing.T) {
 		})
 	}
 }
+
+// A note is a flex box, so its text sits in one child beside its icon:
+// text and a time loose in it would be set apart, as "Expired 19:34 UTC
+// . It can no longer be applied." was.
+func TestNoteHoldsItsTextInOneBox(t *testing.T) {
+	a, err := loadAssets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := &UI{assets: a, now: time.Now}
+	if u.tmpl, err = parseTemplates(u); err != nil {
+		t.Fatal(err)
+	}
+	id := strings.Repeat("a", 32)
+	for _, p := range []server.PlanInfo{
+		{ID: id, Status: "expired", ExpiresAt: "2026-11-18T19:34:00Z"},
+		{ID: id, Status: "superseded", SupersededWhy: "a newer plan of app was approved"},
+	} {
+		t.Run(p.Status, func(t *testing.T) {
+			p.Ref, p.Env, p.Stacks, p.Origin = "ref1", "prod", []server.PlanStack{{Stack: "app"}}, json.RawMessage(`{}`)
+			var b bytes.Buffer
+			if err := u.tmpl.ExecuteTemplate(&b, "plan", &page{Session: &server.Session{Person: "gitlab/user/2002"}, Data: newPlanView(&p, "", 1)}); err != nil {
+				t.Fatal(err)
+			}
+			root, err := html.Parse(&b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			notes := 0
+			var walk func(*html.Node)
+			walk = func(n *html.Node) {
+				if n.Type == html.ElementNode && slices.Contains(strings.Fields(attrOf(n, "class")), "note") {
+					notes++
+					var boxes []string
+					for c := n.FirstChild; c != nil; c = c.NextSibling {
+						switch {
+						case c.Type == html.TextNode && strings.TrimSpace(c.Data) != "":
+							boxes = append(boxes, fmt.Sprintf("%q", c.Data))
+						case c.Type == html.ElementNode && c.Data != "svg":
+							boxes = append(boxes, "<"+c.Data+">")
+						}
+					}
+					if len(boxes) > 1 {
+						t.Errorf("a note sets apart %s", strings.Join(boxes, ", "))
+					}
+				}
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					walk(c)
+				}
+			}
+			walk(root)
+			if notes == 0 {
+				t.Error("the page shows no note")
+			}
+		})
+	}
+}
+
+// attrOf is n's attribute key, "" when it has none.
+func attrOf(n *html.Node, key string) string {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
