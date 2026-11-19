@@ -30,7 +30,6 @@ import (
 
 // The database/sql types callers need, so that no other package imports it.
 type (
-	Rows       = sql.Rows
 	Result     = sql.Result
 	TxOptions  = sql.TxOptions
 	NullInt64  = sql.NullInt64
@@ -287,8 +286,40 @@ func (d *DB) ExecContext(ctx context.Context, q string, args ...any) (Result, er
 
 // QueryContext runs a query.
 func (d *DB) QueryContext(ctx context.Context, q string, args ...any) (*Rows, error) {
-	r, err := d.db.QueryContext(ctx, Rebind(q, d.pg), args...)
-	return r, d.Error(err)
+	return d.rows(d.db.QueryContext(ctx, Rebind(q, d.pg), args...))
+}
+
+func (d *DB) rows(r *sql.Rows, err error) (*Rows, error) {
+	if err != nil {
+		return nil, d.Error(err)
+	}
+	return &Rows{rows: r, db: d}, nil
+}
+
+// Rows is the result of QueryContext. Its errors are classified as every
+// error of the pool is: a failed scan names the value it read.
+type Rows struct {
+	rows *sql.Rows
+	db   *DB
+}
+
+// Next prepares the next row for Scan, and reports false after the last
+// row or an error, which Err then returns.
+func (r *Rows) Next() bool { return r.rows.Next() }
+
+// Scan copies the current row's columns into dest.
+func (r *Rows) Scan(dest ...any) error { return r.db.Error(r.rows.Scan(dest...)) }
+
+// Err returns the error that stopped Next, nil at the end of the rows.
+func (r *Rows) Err() error { return r.db.Error(r.rows.Err()) }
+
+// Close frees the rows; it is safe to call more than once.
+func (r *Rows) Close() error { return r.db.Error(r.rows.Close()) }
+
+// Columns returns the names of the columns.
+func (r *Rows) Columns() ([]string, error) {
+	cols, err := r.rows.Columns()
+	return cols, r.db.Error(err)
 }
 
 // QueryRowContext runs a query that returns at most one row.
@@ -336,8 +367,7 @@ func (t *Tx) ExecContext(_ context.Context, q string, args ...any) (Result, erro
 
 // QueryContext runs a query in the transaction.
 func (t *Tx) QueryContext(_ context.Context, q string, args ...any) (*Rows, error) {
-	r, err := t.tx.QueryContext(t.ctx, Rebind(q, t.db.pg), args...)
-	return r, t.db.Error(err)
+	return t.db.rows(t.tx.QueryContext(t.ctx, Rebind(q, t.db.pg), args...))
 }
 
 // QueryRowContext runs a query that returns at most one row.

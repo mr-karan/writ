@@ -91,7 +91,7 @@ func (d *DB) Migrate(ctx context.Context, m Migrations) error {
 			applied[v] = name
 		}
 		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-			return d.Error(err)
+			return err
 		}
 		versions := make([]int, len(names))
 		for i, file := range names {
