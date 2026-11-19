@@ -267,14 +267,14 @@ The landing page's sections:
 
 | Section | What it shows |
 | --- | --- |
-| Hero | The headline, the lede, and two buttons at the top left. The picture of the keep runs the full width under them, and on a wide page the keep rises to the right of the text. Four facts close the hero under it (license, where it runs, price, status with a link to the limits). Under 980 px the picture moves under the text and shows the keep. |
-| What Writ is | A strip of sea: two huts on the left, the keep in the middle, the cloud on the right, with ochre cubes going from the tower to the cloud. Under it the three parties in three columns, in the same order. Then three plain columns on what goes wrong without a control plane. |
-| How a change gets applied | Plan, approve, apply down a line, with each step's real output from `TestTofuApproveApply` beside it, and the refusal of a stale plan as a limit. |
-| The control UI | Four screenshots behind text tabs: the overview, a plan, drift, and runs. |
-| What changes | Five rows, each a claim, its limit, and a docs link beside its evidence: who holds which credential, a secret shown as `(sensitive)`, a drift table, a policy refusal, and `writ mcp`. Four short notes under them. |
-| Compare | Six rows against Spacelift and HCP Terraform, cut from `docs/compare.md`, then what Writ isn't yet and what a reader can check. On a phone each row is a block with one line for each tool. |
+| Hero | The headline, the lede, and clear CTAs (Quick start, GitHub, Docs) at the top left. The picture of the keep runs full width under them, and on a wide page the keep rises to the right of the text. Four facts close the hero under it (license, deployment, price, status with a link to the limits). Under 980 px the picture moves under the text and shows the keep. |
+| What Writ is | A strip of sea: two huts on the left, the keep in the middle, the cloud on the right, with ochre cubes going from the tower to the cloud. Under it the three parties in three columns, in the same order. Then a 2x2 grid covering the four problems when CI runs OpenTofu directly (CI holding credentials, applies differing from reviewed plans, no audit log, unnoticed drift). |
+| How a change gets applied | A six-stage pipeline rail (MR, Plan in Writ, Review & approve, Merge, Apply, Audit) above the three-station Plan/Approve/Apply flow with real output from `TestTofuApproveApply` beside it, and the refusal of a stale plan as a limit. |
+| The control UI | Five screenshots of the redesigned control UI behind pure-CSS text tabs: Overview, Plan review, Resources (categorized state index), Drift, and Runs. |
+| Built to keep keys, secrets, and policy under control | Six rows, each a claim, its limit, and a docs link beside its evidence: who holds which credential, a build-time highlighted HCL server config snippet, a secret shown as `(sensitive)`, a drift table, real `writ audit --remote` output, and a Rego policy refusal. Four columns under them cover sandboxed runs and egress controls, exact sealed plans, `writ mcp`, and S3 state / `writ import bulk`. |
+| When to use Writ & Compare | First, an honest two-column guide contrasting when plain CI + OIDC is enough with when to reach for Writ. Then six rows against Spacelift and HCP Terraform, cut from `docs/compare.md`, followed by "What Writ isn't, yet" and "What you can check yourself". On a phone each comparison row stacks as a block. |
 | Questions | Six questions. |
-| Run it on your machine | What you need, two buttons, the install commands with a copy button, and a cut real run. The commands are the last thing to read. |
+| Try it locally | What you need, Quick start and GitHub buttons, the install commands with a copy button, and a real dev run transcript. |
 | Footer | The name, set large, with the keep's island seen from farther off, then the license line and the links. |
 
 Rules the page keeps:
@@ -364,10 +364,9 @@ A 60 px opaque header: the wordmark with its caret laid in slabs, four text link
 
 | Image | Page | Size |
 | --- | --- | --- |
-| `hero-{1280,390}` | A plan in a reviewer's view, the top 680 and 470 px. The page no longer shows it: the hero has the picture of the keep | 54 KB and 17 KB AVIF, light |
-| `overview`, `plan`, `stack`, `runs` at 1280 and 390 | The tour's pages, up to 1,600 px tall | 24 to 84 KB AVIF each |
-| `secret` | The replaced resource whose keepers show `(sensitive)` | 20 KB AVIF |
-| `drift` | The stack page's drift table | 12 KB AVIF |
+| `overview`, `plan`, `resources`, `stack`, `runs` at 1280 and 390 | The five tour pages (overview, plan review, categorized stack Resources view `stack-many`, stack Drift view `stack-drift`, and runs), up to 1,600 px tall | 11 to 85 KB AVIF each |
+| `secret` | The replaced resource whose keepers show `(sensitive)` | 15 KB AVIF |
+| `drift` | The stack page's `#drift-changes` drift table | 10 KB AVIF |
 
 Re-shoot after the control UI changes:
 

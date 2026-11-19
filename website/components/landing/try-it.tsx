@@ -3,6 +3,7 @@ import { Inline } from '@/components/inline';
 import landing from '@/content/landing.json';
 import { Transcript } from '@/lib/code';
 import { tryIt } from '@/lib/landing';
+import { site } from '@/lib/site';
 import { CopyButton } from './copy-button';
 import { Term } from './term';
 import { SlabRule } from './voxel';
@@ -29,11 +30,11 @@ export function TryIt() {
             </ul>
             <div className="cta">
               <Link className="btn btn-primary" href="/docs/quick-start">
-                Follow the quick start
+                Quick start
               </Link>
-              <Link className="btn btn-ghost" href="/docs/quick-start#set-up-writ-for-a-team">
-                Set it up for a team
-              </Link>
+              <a className="btn btn-ghost" href={site.repo}>
+                GitHub
+              </a>
             </div>
           </div>
           <div className="stack-gap">

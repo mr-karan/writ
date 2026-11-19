@@ -1,121 +1,151 @@
 // The landing page's copy, in one place for review. Strings take the inline
 // Markdown that components/inline.tsx renders: `code`, **bold**, and links.
-// Every terminal output and the list of limits come from content/landing.json
-// instead, which scripts/gen-content.ts cuts from the README and the docs.
+// Every terminal output, HCL snippet, and the list of limits come from
+// content/landing.json instead, which scripts/gen-content.ts cuts from the
+// README and the docs.
 
 export const hero = {
   // The headline, with the phrase the page sets in color.
   title: { plain: 'Plan, approve, and apply infra changes.', accent: 'The cloud keys stay home.' },
   art: 'An island drawn in small cubes, seen from above. A stone keep stands on it, with ochre in its court and a tall tower that bears a key, and ochre cubes rise from the tower to a cloud. Two small huts on the shore face its gate. Part of the land at the lower left is drawn as a wire frame.',
-  lede: 'Writ is an open-source control plane for OpenTofu. It plans the commits you or your CI job send it, waits for your team to approve, and applies the plan they approved. Plans and applies run on that server with its cloud roles, so your CI jobs and laptops need no cloud keys for them.',
+  lede: 'Writ is a self-hosted, open-source control plane for OpenTofu. CI jobs prove identity with OIDC and hold no cloud credentials. Writ plans commits on your server, waits for your team to approve that exact sealed plan, applies it in a sandbox, and records every step in an audit log.',
   facts: [
     { label: 'License', text: 'Apache 2.0' },
-    { label: 'Runs on', text: 'Your own server, as one Go binary' },
-    { label: 'Price', text: 'Free, with no limit on users, runs, or resources' },
-    { label: 'Status', text: 'Version 0, and OpenTofu 1.13.9 only.' },
+    { label: 'Deployment', text: 'Self-hosted, single Go binary' },
+    { label: 'Price', text: 'Free, no seat, run, or resource meter' },
+    { label: 'Status', text: 'Version 0, OpenTofu 1.13.9 only.' },
   ],
   notYet: { text: 'What Writ isn’t, yet', href: '#notyet' },
 };
 
 export const what = {
-  title: 'Production keys live on one server, not in every pipeline',
-  lede: 'Today every CI job and laptop that runs `tofu apply` holds keys that can change production. With Writ, only the server you host holds them. Your team and your CI job sign in and ask. Writ plans, waits for approval, and applies.',
+  title: 'Cloud credentials live on one server, not in every pipeline',
+  lede: 'When CI runners execute `tofu apply`, every job holds keys that can alter production. With Writ, only the server you operate holds cloud roles and state keys. People and CI jobs authenticate and request work; Writ plans, gates approvals, applies, and audits.',
   diagram: {
     left: [
-      { name: 'Your Git host', text: 'Commits of your OpenTofu stacks' },
-      { name: 'You and your CI job', text: 'Ask for a plan, approve it, ask for the apply' },
+      { name: 'Your Git host', text: 'Commits of your OpenTofu stacks, fetched by Git blob ID' },
+      { name: 'You and your CI job', text: 'Authenticate via OIDC or session; hold no cloud keys' },
     ],
     center: {
       name: 'Writ, on your server',
-      items: ['Plans the commits you send it', 'Takes approvals for one exact plan', 'Checks policy and drift', 'Keeps the state keys and the cloud roles'],
+      items: [
+        'Runs OpenTofu in per-run UID namespaces',
+        'Seals plans and binds approvals to one plan ID',
+        'Enforces grants, approval rules, and Rego policy',
+        'Masks secrets, checks drift, and writes an audit log',
+      ],
     },
     right: {
       name: 'Your cloud',
-      text: 'Writ plans with the plan role you configure, so make it read-only. It takes the apply role only for a plan that’s approved, or one overridden by someone you allow.',
+      text: 'Writ assumes your read-only `plan_role` for plans, and your `apply_role` only for an approved plan or a recorded override.',
     },
     alt: 'Your Git host, you, and your CI job talk to Writ on your server. Only Writ talks to your cloud.',
   },
-  without: 'What goes wrong without one',
-  cards: [
-    { title: 'You review code, not a plan', text: 'A merge request approval says the code can merge. It doesn’t tie the apply to the plan you read.' },
+  without: 'What breaks when CI runs OpenTofu directly',
+  problems: [
     {
-      title: 'The job holds the keys',
-      text: 'In plain CI, the job that runs `tofu` holds the cloud credentials, the state, and the plan. A merge request can change what that job runs.',
+      title: 'CI runners hold cloud credentials',
+      text: 'A pipeline job that runs `tofu` carries production credentials and state access. A merge request can alter what that job runs.',
     },
-    { title: 'Plans print secrets', text: '`tofu plan` and `tofu apply` print secrets. A log that keeps their output shows them to everyone who can read it.' },
+    {
+      title: 'Applies differ from reviewed plans',
+      text: 'A merge request approval approves code, not the exact plan that runs after merge. State or branches can move in between.',
+    },
+    {
+      title: 'No reliable audit log',
+      text: 'CI logs scatter across jobs and expire, and raw `tofu` output prints secrets into logs anyone with repo access can read.',
+    },
+    {
+      title: 'Drift goes unnoticed',
+      text: 'Console edits and out-of-band applies accumulate silently in cloud accounts until the next deploy collides with them.',
+    },
   ],
 } as const;
 
 export const how = {
   title: 'How a change gets applied',
-  lede: 'Writ runs OpenTofu on a server you host. From your laptop or your CI job, you send it requests: plan this commit, approve this plan, apply it.',
+  lede: 'Every change moves through one verifiable chain on your server. Approvals and grants live in server config, so a merge request cannot weaken its own gate.',
+  rail: [
+    { step: '01', name: 'MR', detail: 'Push OpenTofu changes' },
+    { step: '02', name: 'Plan in Writ', detail: 'CI sends commit via OIDC' },
+    { step: '03', name: 'Review & approve', detail: 'Teammate approves plan ID' },
+    { step: '04', name: 'Merge', detail: 'Land commit on default branch' },
+    { step: '05', name: 'Apply', detail: 'Writ applies exact sealed plan' },
+    { step: '06', name: 'Audit', detail: 'Every step recorded in Postgres' },
+  ],
   steps: [
     {
       name: 'Plan',
       idle: { tone: 'idle', text: 'waiting for a commit' },
       live: { tone: 'info', text: 'plan 927b69ec' },
-      text: 'Ask for a commit’s plan with `writ plan --remote`, or from your CI job. Writ fetches the commit from your Git host and runs `tofu plan` on your server. A plan writes nothing to your state.',
-      output: '1. The plan your teammate reads',
+      text: 'Your CI job or `writ plan --remote` sends a commit SHA. Writ fetches the commit from GitLab, runs `tofu plan -lock=false` in a sandbox, masks secrets, and seals the saved plan.',
+      output: '1. The masked plan your teammate reads',
     },
     {
       name: 'Approve',
       idle: { tone: 'warn', text: 'needs 1 approval' },
       live: { tone: 'ok', text: '1 of 1, by bob' },
-      text: 'A teammate reads the plan, with its secrets hidden, and approves it by its id. Where an approval rule applies, the author’s own approval doesn’t count.',
+      text: 'A reviewer inspects the masked plan in the CLI or control UI and approves its SHA-256 plan ID. Where an approval rule applies, the author’s approval never counts.',
       output: '2. alice made the plan, so only bob can approve it',
     },
     {
       name: 'Apply',
       idle: { tone: 'idle', text: 'waits for approval' },
       live: { tone: 'ok', text: 'applied' },
-      text: 'Writ applies the plan it kept, not a new one. Only this step gets the apply role.',
+      text: 'After merge, Writ matches the merged commit’s sources to the approved plan, re-runs Rego policy, assumes `apply_role`, and applies the exact sealed plan.',
       output: '3. The apply of the plan bob approved',
     },
   ],
-  refusal: 'If a newer plan replaced the approved one, or the state moved, Writ refuses the apply. You plan and approve again.',
+  refusal: 'If a newer plan replaced the approved one, the state moved, or the branch changed, Writ refuses the apply. You plan and approve again.',
   caption:
-    'Output of `TestTofuApproveApply`, 2026-11-16. The prompts `alice $` and `bob $` are added to show who ran each command. [How approvals work](/docs/approvals)',
+    'Output of `TestTofuApproveApply`, 2026-11-16. Prompts `alice $` and `bob $` show who ran each command. [How a plan becomes an apply](/docs/plan-to-apply)',
 } as const;
 
 export const tour = {
-  title: 'See what’s waiting, what ran, and what drifted',
-  lede: 'The control UI comes with `writ serve`. It shows the same plans your terminal does.',
+  title: 'Calm control UI built for daily review',
+  lede: 'The control UI ships inside the `writ serve` binary with no external assets. Review masked plans, inspect categorized stack resources, track drift, and approve changes in light or dark mode.',
   tabs: [
     {
       id: 'overview',
       label: 'Overview',
-      caption: 'Plans waiting for approval, applies in progress, failed runs, and drifted stacks, for each environment.',
-      alt: 'The control UI’s overview: stat cards for plans waiting for approval, applies, failed runs, and drift, two alerts, and the plans waiting for approval.',
+      caption: 'Plans waiting for approval, active applies, recent failures, drift alerts, and stacks with state across environments.',
+      alt: 'Writ control UI overview showing stat cards for plans waiting for approval, applying, failed, and drifted stacks, alerts, queues, and stacks with state.',
     },
     {
       id: 'plan',
-      label: 'A plan',
-      caption: 'One plan: who made it, how many approvals it needs, and every change. A secret shows as (sensitive).',
-      alt: 'The control UI’s page for one plan, as a reviewer sees it: pending, 0 of 1 approvals, an Approve this plan button, and a summary of the changes.',
+      label: 'Plan review',
+      caption: 'Plan stations, approval status, Approve button, risk chips, attribute diffs, and sensitive values shown as (sensitive).',
+      alt: 'Writ control UI plan review page showing Plan, Approve, and Apply stations, Approve this plan button, and masked attribute changes.',
+    },
+    {
+      id: 'resources',
+      label: 'Resources',
+      caption: 'The state index for a stack, grouped by service category (Networking, IAM, Compute, Nomad, Storage, DNS) or by module, with search.',
+      alt: 'Writ control UI stack Resources view showing 63 resources grouped into category cards for Networking, IAM, Compute, Nomad, Storage, DNS, Certificates, and Other.',
     },
     {
       id: 'stack',
       label: 'Drift',
-      caption: 'A stack’s drift check: what changed outside OpenTofu, and what the code would change.',
-      alt: 'The control UI’s page for the stack app in dev: drifted, with one change outside OpenTofu and five that the code would change.',
+      caption: 'A stack’s latest drift check, separating changes made outside OpenTofu from changes in your default branch code.',
+      alt: 'Writ control UI stack Drift view showing outside changes and code changes for each affected resource address.',
     },
     {
       id: 'runs',
       label: 'Runs',
-      caption: 'Every apply Writ started, with its plan and who asked for it.',
-      alt: 'The control UI’s list of runs: one applying, one applied, and one failed, each with its stack, plan, and who started it.',
+      caption: 'Every apply Writ started, linked to its plan ID, stack, actor, status, and duration.',
+      alt: 'Writ control UI Runs list showing applying, applied, and failed runs with their stacks, plans, and actors.',
     },
   ],
-  limit: 'You can approve a plan in the control UI. To apply one, use `writ apply --remote` or your CI job.',
+  limit: 'You can inspect plans, resources, drift, and runs and approve plans in the control UI. To trigger an apply, use `writ apply --remote` or your CI job.',
 } as const;
 
 export const benefits = {
-  title: 'What changes when Writ runs OpenTofu',
+  title: 'Built to keep keys, secrets, and policy under control',
   keys: {
-    title: 'No cloud keys in CI or on laptops',
-    text: 'Your CI job sends a commit and holds no credentials. Writ takes the plan role you configure for a plan, so make it read-only. Only an apply gets the apply role: an approved one, or one overridden by someone you allow, with the reason recorded.',
-    limit: 'Roles are AWS roles today.',
-    link: { text: 'Roles and credentials', href: '/docs/serve#roles-and-credentials' },
+    title: 'CI holds no cloud credentials',
+    text: 'CI jobs authenticate with OIDC tokens and never touch cloud keys or state keys. Writ assumes `plan_role` for plans and `apply_role` only for approved applies or recorded overrides, tagging every STS session for CloudTrail.',
+    limit: 'Built-in role assumption supports AWS STS roles today; other providers use `provider_env` secret files on the server.',
+    link: { text: 'AWS roles and credentials', href: '/docs/aws-credentials' },
     holds: [
       { who: 'Your laptop', creds: 'none, only a session', state: 'no state key', yes: false },
       { who: 'Your CI job', creds: 'none, only its OIDC token', state: 'no state key', yes: false },
@@ -123,67 +153,99 @@ export const benefits = {
       { who: 'Writ, for an apply', creds: 'apply role', state: 'locks and writes', yes: true },
     ],
   },
+  config: {
+    title: 'Approvals and grants live in server config, not CI YAML',
+    text: 'Teams, grants, approval rules, policies, and environment IAM roles live in one HCL config on the server. A merge request cannot edit `.gitlab-ci.yml` to bypass reviewers or swap roles.',
+    limit: 'Config changes take effect after `writ serve --check` and a server restart.',
+    link: { text: 'Server config reference', href: '/docs/config' },
+    caption: 'Excerpt from `docs/quick-start.md` and `docs/aws-credentials.md`. Checked with `writ serve --check`.',
+  },
   secrets: {
-    title: 'Secrets stay out of what Writ stores and shows',
-    text: 'One mask covers the plan you read, the apply’s output, and the errors. You see that a secret changed without seeing it.',
-    limit: 'The mask is a filter. The docs list the cases it can’t catch.',
-    link: { text: 'Secrets and the mask', href: '/docs/secrets' },
-    alt: 'Part of a plan in the control UI: a replaced resource whose keepers show {"secret":"(sensitive)"} before and after, marked sensitive value changes.',
+    title: 'Secrets masked from every log and record',
+    text: 'One mask covers plans, apply logs, diagnostics, and the state index. Sensitive values, `provider_env` secrets, and assumed STS keys become `(sensitive)`, including URL, JSON, hex, and base64 encodings.',
+    limit: 'The mask is an output filter, not taint tracking. The docs list every edge case it cannot catch.',
+    link: { text: 'Handle secrets and masking', href: '/docs/secrets' },
+    alt: 'A replaced resource in the Writ control UI whose keepers show {"secret":"(sensitive)"} before and after, marked sensitive value changes.',
   },
   drift: {
-    title: 'Drift checks on a schedule',
-    text: 'Writ plans each stack on a timer. It marks what changed outside OpenTofu, and what your code would change.',
-    limit: 'You see drift in the control UI and the API. Writ doesn’t notify anyone yet.',
-    link: { text: 'Drift checks', href: '/docs/serve#drift-checks' },
-    alt: 'A stack’s drift check in the control UI: drifted, with one change outside OpenTofu and five that the code would change, each with its address and action.',
+    title: 'Scheduled drift checks',
+    text: 'Add a `drift { every = "6h" }` block and Writ plans each stack on a timer, separating out-of-band cloud changes from unapplied code without storing secret values.',
+    limit: 'Drift appears in the control UI, `GET /v1/drift`, and server logs. Push notifications are not built yet.',
+    link: { text: 'Enable drift checks', href: '/docs/drift-checks' },
+    alt: 'A stack drift table in the Writ control UI separating changes outside OpenTofu from code changes.',
+  },
+  audit: {
+    title: 'Synchronous audit log in Postgres',
+    text: 'Every API, control UI, and state-backend request commits an audit row before Writ sends a response; if the database cannot commit the row, the request fails with 503. Query it with `writ audit --remote` or `GET /v1/audit`.',
+    limit: 'No audit page in the control UI yet. Refusal reasons are withheld from the API and kept in Postgres.',
+    link: { text: 'Read the audit log', href: '/docs/audit-log' },
+    caption: 'Output of `writ audit --remote` under `writ serve --dev`, 2026-11-19.',
   },
   policy: {
-    title: 'Policy checks every plan, twice',
-    text: 'You write rules in Rego. Writ checks each plan when it’s created and again before the apply. No approval gets past a mandatory deny.',
-    limit: 'There’s no `writ policy test` yet. Use `conftest`.',
-    link: { text: 'Policy', href: '/docs/policy' },
+    title: 'Rego policy checked at plan and apply',
+    text: 'Policies run in an isolated child process with a strict built-in allow-list and match `conftest` verdicts locally. Writ checks every plan at creation and again before apply; nothing overrides a mandatory deny.',
+    limit: 'Test rules locally with `conftest verify` and `conftest test`; there is no `writ policy test` yet.',
+    link: { text: 'Write and test policies', href: '/docs/write-a-policy' },
     caption: 'Output of `TestTofuPlanByCommit`, 2026-11-15, with lines cut.',
-  },
-  agents: {
-    title: 'Your coding agent plans, and only people approve',
-    text: 'With `writ mcp`, your coding agent plans a commit and reads the plan and its policy verdict. It never holds a cloud credential, and it can’t approve or apply.',
-    link: { text: 'Use Writ with an agent', href: '/docs/agents' },
-    caption: 'Output of Claude Code 2.1.318, 2026-11-10.',
   },
   also: [
     {
-      title: 'The approved plan is exactly what applies',
-      text: 'An approval is for one plan id, and the apply runs the plan Writ kept. [Approvals](/docs/approvals)',
+      title: 'Sandboxed runs and egress controls',
+      text: 'On Linux, each `tofu` run gets its own `provider_uids` UID, user/mount/PID namespaces, a read-only filesystem view, an `nftables` EC2 metadata block, and a strict module-source allow-list. [Run isolation and egress](/docs/run-isolation)',
     },
     {
-      title: 'Sign in with your identity provider',
-      text: '`writ login` signs you in from a terminal, by device code or through a browser. [Sign in](/docs/sign-in)',
+      title: 'Exact sealed plan applies',
+      text: 'Saved plans are sealed with AES-256-GCM per environment and deleted once no longer live. Stale plans and moved branches are refused. [How a plan becomes an apply](/docs/plan-to-apply)',
     },
     {
-      title: 'Bring what you already run',
-      text: '`writ import bulk` writes resource and import blocks for cloud objects you already have. [Import many objects](/docs/import-bulk)',
+      title: 'Coding agents plan without keys',
+      text: '`writ mcp` lets coding agents plan commits and inspect masked plans, drift, and policies, and never approve or apply. [Use Writ with a coding agent](/docs/agents)',
     },
-    { title: 'Your state can stay where it is', text: 'A stack on `backend "s3"` keeps its bucket. [Stacks on S3](/docs/serve#stacks-on-s3)' },
+    {
+      title: 'Keep S3 state or import existing infra',
+      text: 'Use Writ’s built-in sealed `http` backend or keep `backend "s3"`, and generate import blocks with `writ import bulk`. [Migrate from Terraform](/docs/migrate-from-terraform)',
+    },
   ],
+} as const;
+
+export const whenToUse = {
+  title: 'When to use Writ, and when plain CI is enough',
+  lede: 'Running a control plane adds Postgres, a Linux host, and state keys to back up. Make sure the trade-off fits your team.',
+  plainCi: {
+    title: 'Plain CI + OIDC may be enough when',
+    items: [
+      'One small team owns the repo and runners, and everyone who can merge is already trusted to change production.',
+      'You prefer zero extra server infrastructure beyond GitLab runners and your existing state bucket.',
+      'You need GitHub Actions, Terraform (not OpenTofu), or merge-request plan comments right now.',
+    ],
+  },
+  writ: {
+    title: 'Reach for Writ when',
+    items: [
+      'CI pipelines and developer laptops must not hold cloud credentials or state encryption keys.',
+      'Approvals must bind to the exact saved plan that applies, and a plan’s author must never self-approve.',
+      'You want masked plans, Rego policy at plan and apply, scheduled drift checks, and a synchronous audit log without per-resource SaaS billing.',
+    ],
+  },
 } as const;
 
 export const compare = {
   title: 'Writ, Spacelift, or HCP Terraform?',
-  lede: 'The paid control planes do this job as a hosted service, priced by plan. Writ does it on your own host, with nothing metered.',
+  lede: 'Hosted control planes meter seats, runs, or managed resources. Writ runs as one Apache 2.0 binary on your own server with nothing metered.',
   columns: ['Spacelift', 'HCP Terraform', 'Writ'],
   rows: [
-    ['Source and hosting', 'Closed source, as SaaS. Self-hosted with the Enterprise plan', 'Closed source, as SaaS. Terraform Enterprise is self-managed', 'Apache 2.0, on your own host. There’s no hosted service'],
-    ['Price', 'Free for 2 users. Starter starts at $399 a month', 'Free to 500 managed resources, then from $0.10 a resource a month', 'Free, with no limit on users, runs, or resources'],
-    ['OpenTofu', 'Yes', 'Runs Terraform. Its pages don’t mention OpenTofu', 'OpenTofu 1.13.9 only, and no Terraform'],
-    ['Policy', 'OPA, from the Starter plan', 'Sentinel and OPA, in Standard and Premium. Free has one policy set of up to five policies', 'OPA, at the plan and again before the apply'],
-    ['Drift checks', 'Business plan and up', 'Standard and Premium', 'On a schedule, with no alerts yet'],
-    ['Audit log', 'Enterprise plan', 'Premium plan', 'A row before each answer, in your database, except health checks, server discovery, and rate-limited requests. Nothing reads it yet'],
+    ['Source and hosting', 'Closed source, as SaaS. Self-hosted with Enterprise', 'Closed source, as SaaS. Terraform Enterprise is self-managed', 'Apache 2.0, on your own host. No hosted service'],
+    ['Price', 'Free for 2 users. Starter starts at $399/mo', 'Free to 500 managed resources, then from $0.10/resource/mo', 'Free, with no limit on users, runs, or resources'],
+    ['OpenTofu', 'Yes', 'Runs Terraform; docs do not mention OpenTofu', 'OpenTofu 1.13.9 only, no Terraform'],
+    ['Policy', 'OPA, from Starter plan', 'Sentinel and OPA in Standard and Premium', 'OPA Rego, at plan and again before apply'],
+    ['Drift checks', 'Business plan and up', 'Standard and Premium', 'Scheduled drift checks in UI and API; no push alerts yet'],
+    ['Audit log', 'Enterprise plan', 'Premium plan', 'Synchronous row before each response in Postgres; read via `GET /v1/audit` or `writ audit --remote`'],
   ],
   caption:
-    'Facts about Spacelift and HCP Terraform come from their pricing and docs pages, read 2026-11-16. [The comparison page](/docs/compare) has each source, and adds Atlantis, OTF, Terrakube, env zero, and Scalr.',
+    'Facts about Spacelift and HCP Terraform come from their pricing and docs pages, read 2026-11-16. [The comparison page](/docs/compare) cites every source and also covers Atlantis, OTF, Terrakube, env zero, and Scalr.',
   missing:
-    'They have what Writ doesn’t: a hosted service, support, Terraform, GitHub, and notifications. If you need one of those today, choose one of them.',
-  gitlab: { text: 'Running `tofu` from GitLab CI today? Read Writ compared with plain GitLab CI', href: '/docs/compare-gitlab-ci' },
+    'They offer what Writ doesn’t: a hosted service, commercial support, Terraform, GitHub, and notifications. If you need those today, pick one of them.',
+  gitlab: { text: 'Running `tofu` in GitLab CI today? Read Writ vs plain GitLab CI', href: '/docs/compare-gitlab-ci' },
 } as const;
 
 export const trust = {
@@ -191,56 +253,56 @@ export const trust = {
   items: [
     {
       title: 'The code.',
-      text: 'Apache 2.0, one Go binary, with its records in your Postgres.',
+      text: 'Apache 2.0, single Go binary, records in your Postgres, import boundaries enforced by `internal/archtest`.',
       link: { text: 'The repository', href: 'https://github.com/mr-karan/writ' },
     },
     {
       title: 'The tests.',
-      text: 'The end-to-end tests run `writ` against OpenTofu 1.13.9 and real provider binaries. None of them reaches a real cloud.',
+      text: 'End-to-end tests run `writ` against real OpenTofu 1.13.9 and real providers in network namespaces, plus differential secret-mask verification.',
       link: { text: 'How it’s tested', href: '/docs/status#how-its-tested' },
     },
     {
       title: 'The audit log.',
-      text: 'Writ writes a row before it answers a request, and the request fails if it can’t. Health checks, server discovery, and rate-limited requests leave no row.',
-      link: { text: 'The audit log', href: '/docs/api#every-answer-waits-for-its-audit-row' },
+      text: 'Every response waits for its Postgres audit row (except health checks, server discovery, and rate-limited 429s).',
+      link: { text: 'Read the audit log', href: '/docs/audit-log' },
     },
   ],
   notYet: { title: 'What Writ isn’t, yet', link: { text: 'Status and limits', href: '/docs/status' } },
 } as const;
 
 export const tryIt = {
-  title: 'Run it on your machine',
-  lede: '`writ serve --dev` runs a control plane of your own, on loopback, with its records in SQLite.',
+  title: 'Try it locally in four steps',
+  lede: '`writ serve --dev` runs the same control plane on loopback with SQLite and a built-in UI, with no cloud account needed.',
   needs: [
-    'You don’t need a cloud account.',
-    'You need Linux, minisign, Git, and OpenTofu 1.13.9.',
-    'The install script checks the release’s signature. [Install](/docs/install) has the other ways.',
+    'No cloud account required; uses `hashicorp/random`.',
+    'Needs Linux, `minisign`, Git, and OpenTofu 1.13.9.',
+    'The install script checks the minisign signature and SHA-256. [Install](/docs/install) has container, Nix, and source builds.',
   ],
   build: 'Install Writ and start the dev control plane',
   run: 'In a second terminal, plan a commit and apply the plan',
-  caption: 'Output of a real run, 2026-11-16, with some lines cut. The [quick start](/docs/quick-start) has the stack and every line.',
+  caption: 'Output of a real run, 2026-11-16, with some lines cut. Follow the [quick start](/docs/quick-start) for the full stack and every line.',
 };
 
 export const questions: { q: string; a: string }[] = [
-  { q: 'Does Writ run Terraform?', a: 'No. Writ runs OpenTofu 1.13.9 and no other version.' },
+  { q: 'Does Writ run Terraform?', a: 'No. Writ runs OpenTofu 1.13.9 only. If you are moving from Terraform, [Migrate from Terraform](/docs/migrate-from-terraform) shows how Writ handles existing lock files and state.' },
   {
     q: 'Does it work with GitHub?',
-    a: 'Not yet. GitLab is the only Git host Writ reads, and its CI jobs are for GitLab CI. Nobody has run those jobs on a real GitLab yet.',
+    a: 'Not yet. GitLab is the only Git host Writ fetches from today, and the CI components target GitLab CI. Nobody has run those jobs on a real GitLab instance yet.',
   },
   {
     q: 'Should I move production to it?',
-    a: 'Not yet. Writ is at version 0, and no test has reached a real cloud account. [Status and limits](/docs/status) lists what’s built, how it’s tested, and what’s missing.',
+    a: 'Not yet. Writ is at version 0, and end-to-end tests run against local stand-ins rather than live cloud accounts. Read [Status and limits](/docs/status) first.',
   },
   {
-    q: 'What does it cost?',
-    a: 'Writ is under the Apache 2.0 license, with no limit on users, runs, or resources. You pay for the host and the Postgres you run it on.',
+    q: 'How are runs isolated on the server?',
+    a: 'On Linux, each `tofu` run executes under a dedicated `provider_uids` UID inside private user, mount, and PID namespaces with a read-only filesystem view, an `nftables` block on EC2 metadata, and a strict module-source allow-list. See [Run isolation and egress](/docs/run-isolation).',
   },
   {
     q: 'Where does my state live?',
-    a: 'A new stack can use the `http` backend that `writ serve` serves, where each state is encrypted with its environment’s key and versioned. A stack on `backend "s3"` keeps its bucket.',
+    a: 'New stacks can use `writ serve`’s built-in `http` backend (AES-256-GCM sealed and versioned in Postgres). Existing stacks on `backend "s3"` can stay in their S3 bucket with separate read-only plan and write-capable apply IAM roles.',
   },
   {
-    q: 'How does it compare with Atlantis and the paid control planes?',
-    a: '[The comparison page](/docs/compare) covers Atlantis, OTF, Terrakube, Spacelift, HCP Terraform, env zero, and Scalr, each with its source and date, and says what those tools have that Writ doesn’t.',
+    q: 'How does it compare with Atlantis, Spacelift, and HCP Terraform?',
+    a: '[Writ vs other control planes](/docs/compare) compares Atlantis, OTF, Terrakube, Spacelift, HCP Terraform, env zero, and Scalr with sources and dates, and [Writ vs plain GitLab CI](/docs/compare-gitlab-ci) covers plain CI.',
   },
 ];

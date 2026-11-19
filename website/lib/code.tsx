@@ -12,7 +12,7 @@ interface Token {
 
 const plain = 'var(--syn-fg)';
 const highlighter = getHighlighter('js', {
-  langs: [sessionLanguage],
+  langs: [sessionLanguage, 'hcl'],
   themes: [writThemes.light],
 });
 
@@ -59,6 +59,24 @@ export async function Transcript({ text, wrap = false, label = 'Terminal output'
           {lines.map((tokens, i) => (
             <span key={i} className="tl">
               {body[i].startsWith('$ ') && prompts[command] && <span className="who">{prompts[command++]} </span>}
+              <Tokens tokens={tokens} />
+            </span>
+          ))}
+        </code>
+      </pre>
+    </figure>
+  );
+}
+
+/** Syntax-highlighted code block (e.g. HCL server config), tokenized at build time. */
+export async function CodeBlock({ code, lang = 'hcl', label = 'Code example' }: { code: string; lang?: string; label?: string }) {
+  const lines = await tokenize(code, lang);
+  return (
+    <figure className="transcript">
+      <pre tabIndex={0} role="group" aria-label={label}>
+        <code>
+          {lines.map((tokens, i) => (
+            <span key={i} className="tl">
               <Tokens tokens={tokens} />
             </span>
           ))}
