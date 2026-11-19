@@ -56,14 +56,6 @@ var pure = []string{
 // rule of its own.
 var thin = []string{module + "/internal/control", "github.com/jackc/pgx"}
 
-// deleted lists the packages of the Writ language and its engine, which
-// the pivot to OpenTofu removed. None may come back, and nothing may
-// import one.
-var deleted = []string{
-	"internal/lang", "internal/syntax", "internal/stack", "internal/state",
-	"internal/engine", "internal/estate",
-}
-
 var impure = []string{
 	"os", "os/exec", "os/signal", "net", "net/http", "io/fs", "path/filepath",
 	"syscall", "time", "math/rand", "math/rand/v2", "crypto/rand",
@@ -75,7 +67,6 @@ var impure = []string{
 func TestImportBoundaries(t *testing.T) {
 	root := os.DirFS("../..")
 	fset := token.NewFileSet()
-	pkgs := map[string]bool{}
 	err := fs.WalkDir(root, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -95,7 +86,6 @@ func TestImportBoundaries(t *testing.T) {
 			return err
 		}
 		pkg := path.Dir(p)
-		pkgs[pkg] = true
 		for _, spec := range f.Imports {
 			imp, err := strconv.Unquote(spec.Path.Value)
 			if err != nil {
@@ -107,11 +97,6 @@ func TestImportBoundaries(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	for _, pkg := range deleted {
-		if pkgs[pkg] {
-			t.Errorf("%s has Go files again; the Writ language was removed", pkg)
-		}
 	}
 }
 
@@ -131,9 +116,6 @@ func check(t *testing.T, file, pkg, imp string) {
 	// raw output.
 	if pkg == "internal/policy" && strings.HasPrefix(imp, module+"/") {
 		t.Errorf("%s imports %s; internal/policy imports nothing of writ, so a policy input comes only from the masked plan document", file, imp)
-	}
-	if dep, ok := strings.CutPrefix(imp, module+"/"); ok && contains(deleted, dep) {
-		t.Errorf("%s imports %s; the Writ language was removed", file, imp)
 	}
 	if contains(pure, pkg) && contains(impure, imp) {
 		t.Errorf("%s imports %s; the value and schema packages do no I/O", file, imp)

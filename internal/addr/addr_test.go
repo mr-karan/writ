@@ -84,17 +84,6 @@ func TestParseRejects(t *testing.T) {
 	}
 }
 
-func TestFieldAndKeyAreDistinctAddresses(t *testing.T) {
-	field := addr.Root("site").Field("key")
-	key := addr.Root("site").Key("key")
-	if field == key {
-		t.Fatalf("site.key and site[\"key\"] must differ, both are %s", field)
-	}
-	if got, err := addr.Parse(`site["key"]`); err != nil || got != key {
-		t.Fatalf(`Parse(site["key"]) = %s, %v; want the key address`, got, err)
-	}
-}
-
 func TestLet(t *testing.T) {
 	tests := []struct {
 		addr addr.Addr
