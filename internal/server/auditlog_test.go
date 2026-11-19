@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -381,6 +382,10 @@ func TestAuditUnreadableFilterGivesNoCursor(t *testing.T) {
 	}
 }
 
+// plainCursor is a cursor of control.AuditRows in the clear: the time in
+// milliseconds and the row id.
+var plainCursor = regexp.MustCompile(`^[0-9]+\|[0-9]+$`)
+
 // A cursor is sealed: it does not show the time and the row id it holds,
 // and a cursor writ serve did not make, such as one of that time and id in
 // the clear or a real one with a byte changed, is a usage error.
@@ -396,13 +401,21 @@ func TestAuditCursorIsSealed(t *testing.T) {
 	if r.status != 200 || seeded(doc.Rows) != "b" || doc.Next == "" {
 		t.Fatalf("the first page: %d %s", r.status, r.body)
 	}
-	if b, err := base64.RawURLEncoding.DecodeString(doc.Next); err == nil && strings.Contains(string(b), "|") {
-		t.Fatalf("the cursor %q decodes to %q", doc.Next, b)
+	sealed, err := base64.RawURLEncoding.DecodeString(doc.Next)
+	if err != nil {
+		t.Fatalf("the cursor %q: %v", doc.Next, err)
 	}
-	clear := base64.RawURLEncoding.EncodeToString(fmt.Appendf(nil, "%d|%d", at.Add(time.Second).UnixMilli(), 1<<40))
-	changed := []byte(doc.Next)
+	if plainCursor.Match(sealed) {
+		t.Fatalf("the cursor %q decodes to the time and row id %q", doc.Next, sealed)
+	}
+	plain := fmt.Appendf(nil, "%d|%d", at.Add(time.Second).UnixMilli(), 1<<40)
+	if !plainCursor.Match(plain) {
+		t.Fatalf("a cursor in the clear %q is not of the plain form", plain)
+	}
+	clear := base64.RawURLEncoding.EncodeToString(plain)
+	changed := slices.Clone(sealed)
 	changed[len(changed)/2] ^= 1
-	for name, c := range map[string]string{"in the clear": clear, "changed": string(changed)} {
+	for name, c := range map[string]string{"in the clear": clear, "changed": base64.RawURLEncoding.EncodeToString(changed)} {
 		q.Set("cursor", c)
 		bad, r := f.auditPage(tok["rita"], q)
 		if r.status != 400 || r.class() != "usage" || bad.OK || !strings.Contains(string(r.body), "cursor") {
