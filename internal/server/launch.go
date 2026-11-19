@@ -61,7 +61,9 @@ func (s *Server) initProviders(opts Options) error {
 		return errors.New("an environment names a role, and writ serve has no way to assume it")
 	}
 	b, err := awsrole.NewBroker(awsrole.BrokerOptions{Assumer: opts.Assumer, Now: s.now, Log: s.log.With("component", "credentials"),
-		Assumed: s.store.RecordRoleSession})
+		Assumed: func(ctx context.Context, a awsrole.AssumedSession) error {
+			return s.store.RecordRoleSession(ctx, control.RoleSession(a))
+		}})
 	if err != nil {
 		return err
 	}
