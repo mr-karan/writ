@@ -210,6 +210,14 @@ h2 .count, .card-head .count { margin: 0; font-size: var(--fs-2); }
 .pad { padding: var(--space-3) var(--inset); }
 .scroll { overflow-x: auto; }
 
+/* Package 2, plans and approvals. Oat pads every .card, spreads a
+   summary's children apart, and spaces [data-field] as a form field,
+   which here names the record field a value shows. */
+.card { padding: 0; }
+[data-field] { margin-block-end: 0; }
+.fold > summary { justify-content: flex-start; }
+.card-foot .pages { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+
 /* Dots, status pills, chips. Each tone is also a shape, beside a word. */
 .dot { display: inline-block; flex: none; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--rule-strong); }
 .dot-ok { background: var(--add); }
