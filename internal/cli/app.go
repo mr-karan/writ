@@ -18,7 +18,7 @@ import (
 )
 
 // ErrFailed means the command ran and reported its failure on stdout
-// (diagnostics, a contract violation, a failing goal, a failed apply). Exit 1.
+// (diagnostics, a refused or failed plan, a failed apply). Exit 1.
 var ErrFailed = errors.New("command failed")
 
 // Options configures an App. main fills it once.

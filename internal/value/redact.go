@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// Redactor removes secret strings from error text before it reaches the
-// journal, a log, or the terminal. Providers echo inputs in diagnostics, so
+// Redactor removes secret strings from error text before it reaches a log
+// or the terminal. Providers echo inputs in diagnostics, so
 // any secret sent to or read from a provider may come back inside an error.
 type Redactor []string
 
@@ -47,7 +47,7 @@ func (r Redactor) Text(s string) string {
 }
 
 // Error returns err with every secret replaced. The result keeps only the
-// text, which is all the journal and the terminal see.
+// text, which is all a log and the terminal see.
 func (r Redactor) Error(err error) error {
 	if err == nil {
 		return nil

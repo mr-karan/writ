@@ -64,8 +64,7 @@ func (p Path) HasPrefix(q Path) bool {
 
 // String renders subject.common_name or keepers.a or keepers["my key"] or
 // allowed_uses[0]. A name that is an identifier follows a dot; any other name
-// is quoted in brackets like an address key. It is also the key of
-// lang.Resource.Fields and of a Fingerprint.
+// is quoted in brackets like an address key.
 func (p Path) String() string {
 	var b strings.Builder
 	for i, s := range p {

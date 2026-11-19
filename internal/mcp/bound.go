@@ -140,7 +140,7 @@ func joinObject(fields []field) json.RawMessage {
 }
 
 // jsonString encodes s as a JSON string without escaping <, >, and &, so a
-// type such as Secret<String> reads as itself.
+// text such as a <-> b reads as itself.
 func jsonString(s string) []byte {
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
@@ -152,7 +152,7 @@ func jsonString(s string) []byte {
 }
 
 // documentFormat is the shape of a "format" field that a truncated
-// document keeps, such as writ.check/v0. Any other format, which a control
+// document keeps, such as writ.remote-plan/v0. Any other format, which a control
 // plane may send, is dropped, so the head of a truncated document is bounded.
 var documentFormat = regexp.MustCompile(`^writ\.[a-z0-9.-]{1,48}/v[0-9]{1,4}$`)
 
@@ -259,8 +259,8 @@ func resultRank(r json.RawMessage) int {
 	return 2
 }
 
-// diagnosticLine starts a diagnostic in Writ's text output: error[type]
-// main.writ:3:5 from a command, or error: usage: ... from a control plane.
+// diagnosticLine starts a diagnostic in Writ's text output: error[usage]
+// main.tf:3:5 from a command, or error: usage: ... from a control plane.
 var diagnosticLine = regexp.MustCompile(`^(error|warning)(\[[a-z0-9-]+\]|: [a-z0-9-]+: )`)
 
 // boundText keeps the first MaxDiagnostics diagnostics of text, each its

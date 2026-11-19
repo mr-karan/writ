@@ -9,7 +9,7 @@ import (
 
 // Launch says how provider processes start. The zero value starts them as
 // writ's own user with writ's environment, filtered by providerEnv, as
-// writ plan on a laptop does.
+// writ import bulk on a laptop does.
 type Launch struct {
 	nomadPlanResponse bool
 	// OwnEnv makes Env the provider's whole environment, apart from the

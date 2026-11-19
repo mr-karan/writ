@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -46,7 +47,8 @@ type importBulkReport struct {
 	// Imports is, in an OpenTofu stack, the imports file written beside
 	// File, "" when nothing was written.
 	Imports string `json:"imports_file,omitempty"`
-	// Imported is true when state records every object.
+	// Imported, Run, and Plan stay false, "", and null: writ import bulk
+	// writes no state and plans nothing. The JSON shape keeps them.
 	Imported bool             `json:"imported"`
 	Run      string           `json:"run"`
 	Objects  []jsonBulkObject `json:"objects"`
@@ -55,11 +57,10 @@ type importBulkReport struct {
 	Linked   int              `json:"linked"`
 	Literals int              `json:"literals"`
 	// Params never carry their values.
-	Params   []jsonDeclaredParam `json:"params"`
-	Problems []jsonImportProblem `json:"problems"`
-	// Plan is the plan after the import, null when none ran.
-	Plan        *jsonBulkPlan `json:"plan"`
-	Diagnostics []jsonDiag    `json:"diagnostics"`
+	Params      []jsonDeclaredParam `json:"params"`
+	Problems    []jsonImportProblem `json:"problems"`
+	Plan        json.RawMessage     `json:"plan"`
+	Diagnostics []jsonDiag          `json:"diagnostics"`
 }
 
 type jsonBulkObject struct {
@@ -69,15 +70,6 @@ type jsonBulkObject struct {
 	ID       string `json:"id"`
 	SecretID bool   `json:"secret_id"`
 	Origin   string `json:"origin"`
-}
-
-type jsonBulkPlan struct {
-	// Changes counts the changes that are not no-ops.
-	Changes int `json:"changes"`
-	Errors  int `json:"errors"`
-	// Goals counts the goals that failed or held vacuously.
-	Goals int  `json:"goals"`
-	OK    bool `json:"ok"`
 }
 
 // ImportBulkOptions are the arguments of `writ import bulk`.

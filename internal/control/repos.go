@@ -73,7 +73,8 @@ type Commit struct {
 	ReadAt time.Time
 	// Tree lists every regular file under the repository's path.
 	Tree []TreeEntry
-	// Files and Bytes count the estate's own files, which were fetched.
+	// Files and Bytes count the files of the repository's stacks, which
+	// were fetched.
 	Files int
 	Bytes int64
 	// Stacks and Diagnostics are the discovery result, as the server

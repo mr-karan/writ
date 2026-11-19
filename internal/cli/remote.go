@@ -27,16 +27,12 @@ import (
 // plane the user holds a session of writ login for, and the dev control
 // plane. The token is the
 // first of WRIT_ID_TOKEN, the session for that server, and the dev token
-// when the server is the dev control plane. They print what the local
-// commands print: the server runs the same code and sends the same
-// documents. No command starts a control plane: a process that a command
-// leaves running has no owner.
+// when the server is the dev control plane. No command starts a control
+// plane: a process that a command leaves running has no owner.
 
 // RemoteOptions are the flags every --remote command shares.
 type RemoteOptions struct {
-	// Stack names the stack on the server. Empty means the stack
-	// directory's path from the bundle root: the Git work tree, else the
-	// directory above the stack.
+	// Stack names the stack on the server.
 	Stack string
 }
 
@@ -200,7 +196,7 @@ func (a *App) waitPlan(ctx context.Context, r *remote, ref string) ([]byte, erro
 }
 
 // printRemotePlan prints a writ.remote-plan/v0 document: as is with --json,
-// else the plan as writ plan prints it and a line that names the plan.
+// else the plan's text and a line that names the plan.
 func (a *App) printRemotePlan(asJSON bool, doc []byte) error {
 	var p server.RemotePlan
 	if err := json.Unmarshal(doc, &p); err != nil {

@@ -18,11 +18,11 @@ import (
 	"github.com/mr-karan/writ/internal/repo"
 )
 
-// addTimeout bounds POST /v1/repos, which reads the default branch's
-// estate files: the first read of a repository fetches every one of them.
+// addTimeout bounds POST /v1/repos, which reads the files of the default
+// branch's stacks: the first read of a repository fetches every one of them.
 const addTimeout = 2 * time.Minute
 
-// readTimeout bounds one read of a commit for a poll or a plan.
+// commitReadTimeout bounds one read of a commit for a poll or a plan.
 const commitReadTimeout = 2 * time.Minute
 
 // discovered is one stack as the control database keeps a commit's

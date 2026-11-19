@@ -438,7 +438,7 @@ func (a *App) waitRun(ctx context.Context, r *remote, id string) ([]byte, error)
 }
 
 // printRemoteRun prints a writ.remote-run/v0 document: as is with --json,
-// else the apply as writ apply prints it and a line that names the run.
+// else the apply's text and a line that names the run.
 func (a *App) printRemoteRun(asJSON bool, doc []byte) error {
 	var run server.RemoteRun
 	if err := json.Unmarshal(doc, &run); err != nil {

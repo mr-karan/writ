@@ -33,8 +33,8 @@ const LockFile = "writ.lock"
 //	hashicorp/tls 4.1.0 linux_amd64 archive=sha256:<hex> binary=sha256:<hex>
 //
 // The archive hash is what a second machine verifies on install. The binary
-// hash keys the schema cache, so `check` finds a schema without hashing a
-// 30 MB binary on every run.
+// hash keys the schema cache, so a read finds a schema without hashing a
+// 30 MB binary every time.
 type Lock struct {
 	entries []LockEntry
 }
@@ -48,7 +48,8 @@ type LockEntry struct {
 	Binary   [32]byte
 }
 
-// Requirement is one `use`: a source and an exact version.
+// Requirement is one provider a stack requires: a source and an exact
+// version.
 type Requirement struct {
 	StackDir string // owning stack, for shared-lock diagnostics
 	Name     string // local name, for messages

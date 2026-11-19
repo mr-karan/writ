@@ -854,7 +854,7 @@ type Retention struct {
 	// Audit is the age past which audit rows are deleted.
 	Audit time.Duration
 	// Plans is the age past which plans that can no longer be applied
-	// (refused, failed, expired, void) are deleted, with their saved form.
+	// (refused, failed, expired, superseded) are deleted, with their saved form.
 	Plans time.Duration
 }
 

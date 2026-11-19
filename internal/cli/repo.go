@@ -19,8 +19,8 @@ import (
 	"github.com/mr-karan/writ/internal/server"
 )
 
-// repoAddTimeout bounds writ repo add, whose request reads every estate
-// file of the default branch the first time.
+// repoAddTimeout bounds writ repo add, whose request reads every file of
+// the default branch's stacks the first time.
 const repoAddTimeout = 2*time.Minute + 10*time.Second
 
 var repoNameRE = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)

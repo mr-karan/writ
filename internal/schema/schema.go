@@ -1,7 +1,7 @@
 // Package schema is Writ's own view of a provider's schema: resource types
 // with Writ types on every attribute, refined by the annotation layer. The
-// provider package builds it from the wire schema; the checker, the planner,
-// and `writ schema` read it. Nothing here knows about protobuf or cty.
+// provider package builds it from the wire schema; the importer and the
+// schema tool of writ mcp read it. Nothing here knows about protobuf or cty.
 package schema
 
 import (
@@ -21,7 +21,7 @@ type Source struct {
 	Type      string // also the resource type prefix: tls_
 }
 
-// DefaultHost is the registry used when a `use` names no host.
+// DefaultHost is the registry used when a source names no host.
 const DefaultHost = "registry.opentofu.org"
 
 // ParseSource reads "hashicorp/tls" or "example.com/acme/tls". A source that

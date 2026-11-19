@@ -9,12 +9,12 @@ import (
 	"strconv"
 )
 
-// Digest is an HMAC-SHA256 of a value's canonical encoding. The state package
-// owns the key, so a digest of a config that holds a low-entropy secret cannot
-// be brute-forced from state.db or a plan file alone.
+// Digest is an HMAC-SHA256 of a value's canonical encoding. Its caller owns
+// the key, so a digest of a config that holds a low-entropy secret cannot
+// be brute-forced from the digest alone.
 type Digest [32]byte
 
-// Hasher computes digests under one key. state.Store hands one out.
+// Hasher computes digests under one key.
 type Hasher interface {
 	Sum(parts ...[]byte) Digest
 }

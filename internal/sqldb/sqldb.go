@@ -1,9 +1,8 @@
 // Package sqldb owns Writ's SQL drivers: it opens SQLite files and Postgres
 // databases behind one type, rewrites the ? placeholders that every
 // statement is written with into Postgres's $n, and turns driver errors into
-// an *IOError that holds no connection detail. Both state and the control
-// store run their statements through it, so each is written once for both
-// engines.
+// an *IOError that holds no connection detail. The control store runs its
+// statements through it, so each is written once for both engines.
 //
 // It is the only package that imports database/sql, pgx, or the SQLite
 // driver. Callers see the aliases below for the few database/sql types a
