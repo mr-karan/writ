@@ -479,17 +479,21 @@ func TestSecretSets(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		sets, err := s.SecretSets(ctx, "prod", "app")
-		if err != nil {
-			t.Fatal(err)
-		}
 		var got []string
-		for _, set := range sets {
+		if err := s.SecretSets(ctx, "prod", "app", func(set control.SealedSet) error {
 			got = append(got, fmt.Sprintf("%d: %s", set.Version, set.Sealed))
+			return nil
+		}); err != nil {
+			t.Fatal(err)
 		}
 		slices.Sort(got)
 		if want := []string{"1: L2 serial 1", "2: version 2", "3: L1 serial 3"}; !slices.Equal(got, want) {
 			t.Fatalf("the secret sets of app@prod: %q, want %q", got, want)
+		}
+		stop := errors.New("stop")
+		calls := 0
+		if err := s.SecretSets(ctx, "prod", "app", func(control.SealedSet) error { calls++; return stop }); err != stop || calls != 1 {
+			t.Fatalf("a read stopped at the first set: %v after %d sets, want the caller's error after 1", err, calls)
 		}
 	})
 }

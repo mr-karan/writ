@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -644,4 +645,147 @@ func TestTofuS3PartialApplyCarriesSecretSet(t *testing.T) {
 		t.Fatalf("the plan of serial 2: changes %q, want %q\n%s", got, want, p.Text)
 	}
 	scanForCanaries(t, f, tofuCanary, tofuRotated, tofuEnvSecret)
+}
+
+// servedCreds fetches the role credentials of stk from the credential
+// endpoint, as a provider does.
+func servedCreds(t *testing.T, stk tofu.Stack) (secret, token string) {
+	t.Helper()
+	req, err := http.NewRequest("GET", envValue(stk.Creds, "AWS_CONTAINER_CREDENTIALS_FULL_URI"), nil)
+	if err != nil {
+		t.Error(err)
+		return "", ""
+	}
+	req.Header.Set("Authorization", envValue(stk.Creds, "AWS_CONTAINER_AUTHORIZATION_TOKEN"))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Error(err)
+		return "", ""
+	}
+	defer resp.Body.Close()
+	var doc struct{ SecretAccessKey, Token string }
+	if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil || doc.SecretAccessKey == "" || doc.Token == "" {
+		t.Errorf("the credential endpoint answered %d %+v %v", resp.StatusCode, doc, err)
+	}
+	return doc.SecretAccessKey, doc.Token
+}
+
+// echoed is a -json stream that quotes secret and token as a provider's
+// error and a resource address can.
+func echoed(secret, token string) []byte {
+	diag, _ := json.Marshal(map[string]any{"type": "diagnostic", "diagnostic": map[string]any{"severity": "error",
+		"summary": "provider rejected " + secret, "detail": "session " + token}})
+	warn, _ := json.Marshal(map[string]any{"type": "diagnostic", "diagnostic": map[string]any{"severity": "warning",
+		"summary": "retrying with " + secret}})
+	ev, _ := json.Marshal(map[string]any{"type": "apply_errored", "hook": map[string]any{"resource": map[string]any{"addr": `random_id.i["` + token + `"]`}, "action": "create"}})
+	return slices.Concat(diag, []byte("\n"), warn, []byte("\n"), ev, []byte("\n"))
+}
+
+// The role credentials the broker serves a run are known to the run's
+// mask, though the run's environment holds only the token that fetches
+// them: a refused plan, a plan, or a failed apply whose provider quotes
+// them keeps none of them.
+func TestTofuMasksServedCredentials(t *testing.T) {
+	var mu sync.Mutex
+	var served []string
+	serve := func(r *fakeTofu, applied bool) (string, string) {
+		r.mu.Lock()
+		stk := r.stacks[len(r.stacks)-1]
+		if applied {
+			stk = r.applied[len(r.applied)-1].stack
+		}
+		r.mu.Unlock()
+		secret, token := servedCreds(t, stk)
+		mu.Lock()
+		served = append(served, secret, token)
+		mu.Unlock()
+		return secret, token
+	}
+	leaks := func(t *testing.T, what string, docs ...string) {
+		t.Helper()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, d := range docs {
+			for _, s := range served {
+				if strings.Contains(d, s) {
+					t.Fatalf("%s keeps served credential %q:\n%s", what, s, d)
+				}
+			}
+		}
+	}
+
+	t.Run("a refused plan", func(t *testing.T) {
+		r := &fakeTofu{}
+		r.plan = func() (tofu.Plan, error) {
+			out := echoed(serve(r, false))
+			return tofu.Plan{}, &tofu.StepError{Step: "plan", Code: 1, Stdout: out}
+		}
+		f := tofuS3Fixture(t, r)
+		p, _ := f.planCommit(tofuS3Files(), "refused")
+		if p.Plan.Status != string(control.RefusedPlan) || !strings.Contains(p.Text, "provider rejected") {
+			t.Fatalf("plan %s:\n%s", p.Plan.Status, p.Text)
+		}
+		leaks(t, "the refused plan", p.Text, string(p.Document))
+	})
+
+	t.Run("a plan", func(t *testing.T) {
+		r := &fakeTofu{}
+		r.plan = func() (tofu.Plan, error) {
+			secret, _ := serve(r, false)
+			log, _ := json.Marshal(map[string]any{"type": "diagnostic", "diagnostic": map[string]any{"severity": "warning", "summary": "retrying with " + secret}})
+			return tofu.Plan{File: savedPlan(t, "L1", 0), JSON: []byte(tofuPlanJSON), Log: append(log, '\n')}, nil
+		}
+		f := tofuS3Fixture(t, r)
+		p, _ := f.planCommit(tofuS3Files(), "plan")
+		if p.Plan.Status != "pending" || !strings.Contains(p.Text, "retrying with") {
+			t.Fatalf("plan %s:\n%s", p.Plan.Status, p.Text)
+		}
+		leaks(t, "the plan", p.Text, string(p.Document))
+	})
+
+	t.Run("a failed apply", func(t *testing.T) {
+		r := &fakeTofu{plan: func() (tofu.Plan, error) {
+			return tofu.Plan{File: savedPlan(t, "L1", 0), JSON: []byte(tofuPlanJSON)}, nil
+		}}
+		r.applyS3 = func() (tofu.Applied, error) {
+			out := echoed(serve(r, true))
+			return tofu.Applied{Plan: []byte(tofuPlanJSON), Log: out}, &tofu.StepError{Step: "apply", Code: 1, Stdout: out}
+		}
+		f := tofuS3Fixture(t, r)
+		p, _ := f.planCommit(tofuS3Files(), "apply")
+		if res := f.do("POST", "/v1/plans/"+p.Plan.ID+"/approvals", bob(f), nil); res.status != http.StatusOK {
+			t.Fatalf("bob's approval: %d %s", res.status, res.body)
+		}
+		run := f.tofuRun(bob(f), map[string]any{"plan": p.Plan.ID})
+		if run.Run.Status != "failed" || !strings.Contains(string(run.Document), "provider rejected") || !strings.Contains(string(run.Document), "apply_errored") {
+			t.Fatalf("run %+v\n%s\n%s", run.Run, run.Text, run.Document)
+		}
+		leaks(t, "the failed apply", run.Text, string(run.Document))
+	})
+}
+
+// A secret of provider_env that spans lines is masked whole in a refused
+// plan's diagnostics, which fold newlines.
+func TestTofuMasksMultilineSecret(t *testing.T) {
+	const secret = "canary-multiline-first\ncanary-multiline-second"
+	file := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(file, []byte(secret), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := &fakeTofu{plan: func() (tofu.Plan, error) {
+		out, _ := json.Marshal(map[string]any{"type": "diagnostic", "diagnostic": map[string]any{"severity": "error", "summary": "provider rejected " + secret}})
+		return tofu.Plan{}, &tofu.StepError{Step: "plan", Code: 1, Stdout: out}
+	}}
+	f := tofuS3Fixture(t, r, func(text string) string {
+		return strings.Replace(text, "provider_env = {", "provider_env = { TF_VAR_multiline = \""+file+"\",", 1)
+	})
+	p, _ := f.planCommit(tofuS3Files(), "multiline")
+	if !strings.Contains(p.Text, "provider rejected") {
+		t.Fatalf("plan %s:\n%s", p.Plan.Status, p.Text)
+	}
+	for _, half := range strings.Split(secret, "\n") {
+		if strings.Contains(p.Text, half) || strings.Contains(string(p.Document), half) {
+			t.Fatalf("the plan keeps %q:\n%s\n%s", half, p.Text, p.Document)
+		}
+	}
 }

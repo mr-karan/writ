@@ -42,7 +42,10 @@ const Sensitive = "(sensitive)"
 // Mask removes one run's secrets from what the run outputs.
 type Mask struct {
 	secrets map[string]struct{}
-	sweep   *sweeper
+	// live and followed are the secrets of Follow.
+	live     func() []string
+	followed map[string]struct{}
+	sweep    *sweeper
 }
 
 // New returns a Mask that knows the secrets writ serve put into the run's
@@ -59,6 +62,15 @@ func New(env []string) *Mask {
 // with and those it has learned.
 func (m *Mask) Secrets() []string {
 	return slices.Sorted(maps.Keys(m.secrets))
+}
+
+// Follow makes the Mask sweep every value live returns too, and call live
+// again before each sweep, so it covers secrets the run is handed after
+// the Mask is made, as role credentials the broker refreshes. Secrets
+// leaves them out: they belong to the run, not to the state it writes.
+func (m *Mask) Follow(live func() []string) {
+	m.live = live
+	m.followed = map[string]struct{}{}
 }
 
 func (m *Mask) add(s string) {
@@ -98,8 +110,21 @@ func (m *Mask) collect(v any) {
 // scan returns a sweep of one document with the secrets the Mask has
 // learned so far.
 func (m *Mask) scan() (*scan, error) {
+	if m.live != nil {
+		for _, s := range m.live() {
+			if _, ok := m.followed[s]; !ok && s != "" {
+				m.followed[s] = struct{}{}
+				m.sweep = nil
+			}
+		}
+	}
 	if m.sweep == nil {
-		sw, err := newSweeper(m.secrets)
+		all := m.secrets
+		if len(m.followed) > 0 {
+			all = maps.Clone(m.secrets)
+			maps.Copy(all, m.followed)
+		}
+		sw, err := newSweeper(all)
 		if err != nil {
 			return nil, err
 		}

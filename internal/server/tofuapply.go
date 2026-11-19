@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/mr-karan/writ/internal/control"
@@ -133,7 +132,7 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 	if err != nil {
 		return ApplyOutput{}, err
 	}
-	m := mask.New(append(slices.Clone(secrets), learned...))
+	m := launch.mask(secrets, learned)
 	lock, err := s.tofuRunner.Fill(startCtx, ts.Lock)
 	if err != nil {
 		return ApplyOutput{}, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))

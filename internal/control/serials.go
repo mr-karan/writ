@@ -230,27 +230,29 @@ type SealedSet struct {
 	Sealed  []byte
 }
 
-// SecretSets returns every secret set that writ serve keeps for a
-// stack@env: those of its kept serials on S3, of any lineage, and those
-// of its kept state versions on the http backend, from before the stack
-// moved to S3. putSerial and the http backend's own pruning bound the
-// rows.
-func (s *Store) SecretSets(ctx context.Context, env, stack string) ([]SealedSet, error) {
+// SecretSets calls each with every secret set that writ serve keeps for a
+// stack@env, one at a time: those of its kept serials on S3, of any
+// lineage, and those of its kept state versions on the http backend, from
+// before the stack moved to S3. putSerial and the http backend's own
+// pruning bound the rows. An error of each stops the read and is
+// returned, so a caller holds no more sets than it needs.
+func (s *Store) SecretSets(ctx context.Context, env, stack string, each func(SealedSet) error) error {
 	rows, err := s.db.QueryContext(ctx, `SELECT serial, index_secrets FROM state_serials WHERE env = ? AND stack = ? AND index_secrets IS NOT NULL
 		UNION ALL SELECT version, index_secrets FROM tfstate_versions WHERE env = ? AND stack = ? AND index_secrets IS NOT NULL`, env, stack, env, stack)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
-	var out []SealedSet
 	for rows.Next() {
 		var set SealedSet
 		if err := rows.Scan(&set.Version, &set.Sealed); err != nil {
-			return nil, s.db.Error(err)
+			return s.db.Error(err)
 		}
-		out = append(out, set)
+		if err := each(set); err != nil {
+			return err
+		}
 	}
-	return out, s.db.Error(rows.Err())
+	return s.db.Error(rows.Err())
 }
 
 // S3Stack is a stack@env on S3 that an apply of writ serve wrote, with

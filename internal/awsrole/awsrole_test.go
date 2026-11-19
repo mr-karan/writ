@@ -136,7 +136,8 @@ func (f *fakeAssumer) Assume(_ context.Context, s awsrole.Session) (awsrole.Cred
 	}
 	f.calls = append(f.calls, s)
 	n := len(f.calls)
-	return awsrole.Credentials{AccessKeyID: "ASIA" + string(rune('0'+n)), SecretAccessKey: "secret", SessionToken: "token", Expires: f.now().Add(f.life)}, nil
+	id := string(rune('0' + n))
+	return awsrole.Credentials{AccessKeyID: "ASIA" + id, SecretAccessKey: "secret" + id, SessionToken: "token" + id, Expires: f.now().Add(f.life)}, nil
 }
 
 type clock struct {
@@ -198,7 +199,7 @@ func TestBroker(t *testing.T) {
 
 	t.Run("the run's token gets the run's credentials", func(t *testing.T) {
 		status, doc := fetch(t, url, token)
-		if status != 200 || doc["AccessKeyId"] != "ASIA1" || doc["Token"] != "token" || doc["Expiration"] != "2026-11-10T13:00:00Z" || doc["AccountId"] != "222222222222" {
+		if status != 200 || doc["AccessKeyId"] != "ASIA1" || doc["SecretAccessKey"] != "secret1" || doc["Token"] != "token1" || doc["Expiration"] != "2026-11-10T13:00:00Z" || doc["AccountId"] != "222222222222" {
 			t.Fatalf("%d %v", status, doc)
 		}
 	})
@@ -220,6 +221,9 @@ func TestBroker(t *testing.T) {
 		}
 		if len(fa.calls) != 2 || fa.calls[1] != sess {
 			t.Fatalf("the refresh assumed %v", fa.calls)
+		}
+		if got := run.Secrets(); !slices.Equal(got, []string{"secret1", "token1", "secret2", "token2"}) {
+			t.Fatalf("Secrets() after a refresh = %q, want both credentials' secrets", got)
 		}
 	})
 	t.Run("a failed refresh serves the old credentials while they last", func(t *testing.T) {

@@ -143,7 +143,7 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 	}
 	// A stack on S3 reads its state with the plan role, and a stack on
 	// the http backend with a token that reads its state and nothing else.
-	read := planRead{key: key, env: env, stack: stack, secrets: secrets, started: started}
+	read := planRead{key: key, env: env, stack: stack, secrets: secrets, launch: launch, started: started}
 	if onS3 {
 		read.s3 = ts.Backend
 	} else {
@@ -162,7 +162,7 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 	}
 	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
 	if err != nil {
-		return res, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(mask.New(read.secrets), err))
+		return res, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(read.launch.mask(read.secrets), err))
 	}
 	stk := tofu.Stack{Files: os.DirFS(work), Dir: in.dir, Lock: lock, Env: runEnv, Creds: creds, StateCreds: onS3}
 	if launch.User != nil {
@@ -248,19 +248,33 @@ func (s *Server) stateSecrets(ctx context.Context, key *tfstate.Key, env, stack 
 }
 
 // knownSecrets opens every secret set writ serve keeps for stack@env, of
-// any lineage, serial, or state version.
+// any lineage, serial, or state version, and returns each secret once.
+// The sets carry most secrets on from one to the next, and it stops once
+// the distinct secrets pass what a mask sweeps, so a stack with many sets
+// costs no more than that.
 func (s *Server) knownSecrets(ctx context.Context, key *tfstate.Key, env, stack string) ([]string, error) {
-	sets, err := s.store.SecretSets(ctx, env, stack)
-	if err != nil {
-		return nil, fmt.Errorf("read the secret sets of %s@%s: %w", stack, env, err)
-	}
+	seen := map[string]struct{}{}
 	var out []string
-	for _, set := range sets {
+	total := 0
+	err := s.store.SecretSets(ctx, env, stack, func(set control.SealedSet) error {
 		secrets, err := key.OpenIndexSecrets(set.Sealed, env, stack, set.Version)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		out = append(out, secrets...)
+		for _, x := range secrets {
+			if _, ok := seen[x]; !ok {
+				seen[x] = struct{}{}
+				out = append(out, x)
+				total += len(x)
+			}
+		}
+		if total > mask.MaxSecretBytes {
+			return fmt.Errorf("they hold more than %d bytes of secrets, more than the mask sweeps", mask.MaxSecretBytes)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read the secret sets of %s@%s: %w", stack, env, err)
 	}
 	return out, nil
 }
@@ -271,6 +285,8 @@ type planRead struct {
 	env, stack string
 	// secrets are the run's own: its environment's and its state token.
 	secrets []string
+	// launch follows the role credentials served to the run.
+	launch runLaunch
 	// s3 is the stack's S3 backend, nil on the http backend.
 	s3 *repo.Backend
 	// version is, on the http backend, the newest state version when the
@@ -308,7 +324,7 @@ func (s *Server) planMask(ctx context.Context, r planRead, saved []byte, refused
 		if err != nil {
 			return nil, 0, err
 		}
-		return mask.New(slices.Concat(r.secrets, known)), 0, nil
+		return r.launch.mask(r.secrets, known), 0, nil
 	default:
 		// The serial the plan read is the one its apply must find, and one
 		// that no apply of writ serve wrote is drift.
@@ -324,7 +340,7 @@ func (s *Server) planMask(ctx context.Context, r planRead, saved []byte, refused
 	if err != nil {
 		return nil, 0, err
 	}
-	m := mask.New(slices.Concat(r.secrets, sealed))
+	m := r.launch.mask(r.secrets, sealed)
 	if r.s3 != nil {
 		return m, 0, nil
 	}

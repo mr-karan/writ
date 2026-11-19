@@ -252,7 +252,7 @@ func (s *Server) refreshS3(ctx context.Context, st control.S3Stack) error {
 		return tofuRefused("this writ serve has no provider_uids to run OpenTofu as, so it would run as writ's own user: set provider_uids")
 	}
 	runEnv, creds, secrets := s.tofuEnv(launch.Env)
-	m := mask.New(secrets)
+	m := launch.mask(secrets)
 	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
 	if err != nil {
 		return fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
@@ -295,7 +295,7 @@ func (s *Server) refreshS3(ctx context.Context, st control.S3Stack) error {
 	if err != nil {
 		return err
 	}
-	if stored, err := s.fillIndex(ctx, st.Env, st.Stack, control.BackendS3, read, seq, mask.New(append(secrets, learned...)), state); err != nil || !stored {
+	if stored, err := s.fillIndex(ctx, st.Env, st.Stack, control.BackendS3, read, seq, launch.mask(secrets, learned), state); err != nil || !stored {
 		return err
 	}
 	s.log.Info("state index refreshed", "stack", st.Stack, "env", st.Env, "serial", read.Serial)
