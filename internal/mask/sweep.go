@@ -39,9 +39,9 @@ const maxDepth = 2
 // escape, writes one byte as six, so each layer multiplies by six.
 const maxWholeEncoded = 6 * 6 * (minSubstring - 1)
 
-// maxSecretBytes bounds the secrets one run may collect, and with them the
+// MaxSecretBytes bounds the secrets one run may collect, and with them the
 // matcher the sweep builds, at about 20 bytes a secret byte.
-const maxSecretBytes = 4 << 20
+const MaxSecretBytes = 4 << 20
 
 // maxStringWork bounds the bytes the sweep may decode and match for one
 // string. Undoing up to maxDepth encodings costs at most about 30 bytes for
@@ -49,7 +49,7 @@ const maxSecretBytes = 4 << 20
 const maxStringWork = 32 << 20
 
 var (
-	errTooManySecrets = fmt.Errorf("the run holds more than %d bytes of secrets, more than the mask sweeps", maxSecretBytes)
+	errTooManySecrets = fmt.Errorf("the run holds more than %d bytes of secrets, more than the mask sweeps", MaxSecretBytes)
 	errTooMuchWork    = fmt.Errorf("a string costs more than %d bytes of decoding to sweep, more than the mask allows", maxStringWork)
 )
 
@@ -72,7 +72,7 @@ func newSweeper(secrets map[string]struct{}) (*sweeper, error) {
 		}
 		long = append(long, s)
 	}
-	if total > maxSecretBytes {
+	if total > MaxSecretBytes {
 		return nil, errTooManySecrets
 	}
 	if len(long) > 0 {

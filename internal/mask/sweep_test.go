@@ -92,7 +92,7 @@ func TestPlanRefusesTooManySecrets(t *testing.T) {
 	for _, size := range []int{1024, minSubstring - 1} {
 		t.Run(fmt.Sprintf("%d-byte secrets", size), func(t *testing.T) {
 			var vals []string
-			for i := 0; len(vals)*size <= maxSecretBytes; i++ {
+			for i := 0; len(vals)*size <= MaxSecretBytes; i++ {
 				n := strconv.FormatInt(int64(i), 36)
 				vals = append(vals, strings.Repeat("0", size-len(n))+n)
 			}

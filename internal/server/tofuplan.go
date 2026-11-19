@@ -248,19 +248,33 @@ func (s *Server) stateSecrets(ctx context.Context, key *tfstate.Key, env, stack 
 }
 
 // knownSecrets opens every secret set writ serve keeps for stack@env, of
-// any lineage, serial, or state version.
+// any lineage, serial, or state version, and returns each secret once.
+// The sets carry most secrets on from one to the next, and it stops once
+// the distinct secrets pass what a mask sweeps, so a stack with many sets
+// costs no more than that.
 func (s *Server) knownSecrets(ctx context.Context, key *tfstate.Key, env, stack string) ([]string, error) {
-	sets, err := s.store.SecretSets(ctx, env, stack)
-	if err != nil {
-		return nil, fmt.Errorf("read the secret sets of %s@%s: %w", stack, env, err)
-	}
+	seen := map[string]struct{}{}
 	var out []string
-	for _, set := range sets {
+	total := 0
+	err := s.store.SecretSets(ctx, env, stack, func(set control.SealedSet) error {
 		secrets, err := key.OpenIndexSecrets(set.Sealed, env, stack, set.Version)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		out = append(out, secrets...)
+		for _, x := range secrets {
+			if _, ok := seen[x]; !ok {
+				seen[x] = struct{}{}
+				out = append(out, x)
+				total += len(x)
+			}
+		}
+		if total > mask.MaxSecretBytes {
+			return fmt.Errorf("they hold more than %d bytes of secrets, more than the mask sweeps", mask.MaxSecretBytes)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read the secret sets of %s@%s: %w", stack, env, err)
 	}
 	return out, nil
 }

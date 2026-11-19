@@ -801,7 +801,7 @@ func TestFollow(t *testing.T) {
 	if got := m.Secrets(); !slices.Equal(got, []string{label}) {
 		t.Fatalf("Secrets() = %q, want only what the Mask was made with", got)
 	}
-	live = append(live, strings.Repeat("x", maxSecretBytes))
+	live = append(live, strings.Repeat("x", MaxSecretBytes))
 	if got := string(m.Event([]byte("anything"))); got != Sensitive {
 		t.Fatalf("past the limit: %s", got)
 	}
