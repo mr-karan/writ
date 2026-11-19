@@ -221,3 +221,16 @@ go run ./bench/skilleval -writ /var/tmp/eval/writ -plugins PLUGIN_CACHE -out /va
 ```
 
 For `PLUGIN_CACHE`, give an OpenTofu plugin cache that has `random` 3.9.1, `local` 2.9.1, and `tls` 4.4.2, such as the one `just e2e` fills under `writ-e2e/tofu-plugins` in the user cache directory. Each run appends a line to `results.jsonl` in `-out`, and keeps the agent's transcript and the server's log in its own directory there.
+
+## Troubleshooting
+
+- **`writ agent init` warns `kept .agents/skills/writ/...`**: The existing skill file differs from this version of `writ`. Run `writ agent init --force` to overwrite both copies.
+- **Agent gets refused when calling `plan` twice**: `writ mcp` allows only one concurrent plan per server process to protect shared plan slots. Wait for the first plan to finish before requesting another.
+- **`import_bulk` tool is missing**: Start the MCP server with `writ mcp --allow-providers` only when you want the agent to read live objects using your local credentials.
+- **Symlink errors in `writ agent init`**: `writ serve` refuses repositories containing symlinks, so `writ agent init` writes two regular copies (`.agents/skills/writ` and `.claude/skills/writ`) and refuses symlinks leading outside `--dir`.
+
+## Next steps
+
+- [Agent MCP reference](agent-reference.md): exact input schemas, outputs, and refusal recovery rules for every MCP tool.
+- [Write and test policies](write-a-policy.md): enforce rules that coding agents cannot override.
+- [Plan and apply](apply.md): review and approve the plans your agent creates.

@@ -409,10 +409,20 @@ Output of `TestTofuApproveApply`, 2026-11-16.
 
 If alice pushes a new commit to the merge request, the pipeline creates a new plan, and the approved one stops applying. [Why an approved plan can still be refused](approvals.md#why-an-approved-plan-can-still-be-refused) shows that refusal.
 
+## Troubleshooting
+
+- **`writ: no control plane`**: Start `writ serve --dev` in another terminal and keep it running, or check that `XDG_DATA_HOME` matches in both terminals.
+- **`writ: git is not installed`**: Install `git` on your `PATH`. Neither the install script nor the container image bundles `git`; see [Install: Git](install.md#git).
+- **`tofu providers lock` or `writ plan --remote` fails with an OpenTofu version error**: Writ runs OpenTofu `1.13.9` and no other version. Check `tofu version`.
+- **`writ plan --remote` refuses a dirty work tree**: Commit your edits first. Writ plans commits, never uncommitted files.
+- **Control UI sign-in link expired**: Dev sign-in links work once for 10 minutes. Run `writ ui` in your second terminal to print a fresh link.
+- **GitLab redirect URI error during team `writ login`**: Confirm your GitLab OAuth application lists both `https://writ.example.com/ui/callback` and `http://127.0.0.1/callback` on separate lines.
+
 ## Next steps
 
-- [Approvals](approvals.md) and [Approve and apply a plan](apply.md): approval rules, who can approve, stale plans, and overrides.
+- [Configure approvals](approvals.md) and [Plan and apply](apply.md): approval rules, who can approve, stale plans, and overrides.
 - [Set up GitLab CI](set-up-gitlab-ci.md): the three jobs, and how each gets its token.
-- [Sign in](sign-in.md): `writ login` in both its flows, and the control UI.
-- [Policy](policy.md): Rego policy that checks each plan.
+- [Configure sign-in](sign-in.md): `writ login` in both its flows, and the control UI.
+- [Write and test policies](write-a-policy.md): Rego policy that checks each plan.
+- [Read the audit log](audit-log.md) and [Enable drift checks](drift-checks.md): inspect every action and watch for drift.
 - [Writ compared with OpenTofu in plain GitLab CI](compare-gitlab-ci.md): what Writ adds to a pipeline that runs `tofu` itself, and what it costs.

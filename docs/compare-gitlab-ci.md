@@ -22,7 +22,7 @@ In plain CI, your job runs OpenTofu and holds what OpenTofu needs: the cloud cre
 | Policy | An experimental OPA template that evaluates the plan in the pipeline [component] | Rego from the server's config, checked when the plan is created and again before the apply. A mandatory deny has no override |
 | Drift | A `detect-drift` template that fails or warns the job on drift [component] | Scheduled drift checks in `writ serve`, shown in the control UI and the API. No alert |
 | What the log shows | What `tofu` prints, in the job log | One mask over everything Writ stores or shows, tested by `just verify-mask`, with [three named gaps](secrets.md#what-the-mask-cant-do) |
-| Audit | The pipeline and job history | A row in the control database's audit log before each answer, except health checks, server discovery, and rate-limited requests. A request fails if its row can't be written. No API or page reads it yet |
+| Audit | The pipeline and job history | A row in the control database's audit log before each answer, except health checks, server discovery, and rate-limited requests. A request fails if its row can't be written. Read with `GET /v1/audit` or `writ audit --remote`; no UI page yet ([Read the audit log](audit-log.md)) |
 
 ## What plain CI gives you that Writ doesn't
 

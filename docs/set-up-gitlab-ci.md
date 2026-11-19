@@ -123,7 +123,16 @@ From there, the client reads `WRIT_SERVER` and `WRIT_ID_TOKEN`. It sends a token
 
 To see what a job did, use `writ plan --remote --json`, which prints the `writ.remote-plan/v0` document. You can also run `writ show --remote ID` and `writ runs --remote` to print what the control plane keeps.
 
+## Troubleshooting
+
+- **`401 auth: audience: aud is not writ serve's URL`**: Make sure `id_tokens.WRIT_ID_TOKEN.aud` matches `url` in `/etc/writ/serve` exactly, including scheme and no trailing slash.
+- **`401 auth: this token already made a plan` (or `already applied`)**: Each CI OIDC token can perform only one write (plan, approve, or apply). Re-run the job so GitLab issues a fresh token with a new `jti`.
+- **`403 denied` on merge request from a fork**: Fork merge requests run under the fork's `project_id`, which does not match your `repo` or `team` rules. Writ refuses fork plans by design.
+- **Approve job fails with `403 denied` when the MR author runs it**: Wherever an approval rule applies, the plan's author cannot approve it. Ask a teammate in `infra_reviewers` to run the manual approve job or approve in the control UI.
+- **Apply job on `main` fails with `saved-plan: no approved plan matches`**: The merge request was rebased or edited after the last approved plan. Re-run the plan job and approve the new plan, or plan the merged commit and approve it.
+
 ## Next steps
 
-- [Approve and apply a plan](apply.md): what the approve and apply jobs do, and how to recover when an answer is lost.
-- [Sign in](sign-in.md): sign-in for people.
+- [Plan and apply](apply.md): what the approve and apply jobs do, and how to recover when an answer is lost.
+- [Configure approvals](approvals.md): customize approval counts by stack, environment, and risk class.
+- [Configure sign-in](sign-in.md): sign-in for people.

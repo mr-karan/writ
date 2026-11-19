@@ -194,3 +194,15 @@ Output of a real run, 2026-11-10.
 | Path | What it contains |
 | --- | --- |
 | `WRIT_CACHE_DIR` | Provider binaries and cached provider schemas. It defaults to `writ` inside your user cache directory. On Linux that's `~/.cache/writ`, unless `XDG_CACHE_HOME` is set. In the container image it's `/var/lib/writ/cache`. |
+
+## Troubleshooting
+
+- **`install.sh: minisign is not installed`**: Install `minisign` using your package manager (listed under [Before you begin](#before-you-begin)) and rerun the install script.
+- **`writ: command not found` after running the install script**: Add `~/.local/bin` to your shell profile (`export PATH="$HOME/.local/bin:$PATH"`).
+- **`writ repo add .` fails inside the container image**: The container image omits `git` on purpose because a team's `writ serve` reads repositories over the GitLab API. Use the binary or Nix package to try `writ serve --dev` with local repositories.
+- **Container exits with permission denied on port 443**: The container runs as non-root user `writ` (uid 65532). Listen on a port above 1024 (such as `"0.0.0.0:7340"`) and terminate TLS at a reverse proxy.
+
+## Next steps
+
+- [Quick start](quick-start.md): start `writ serve --dev` and apply your first stack in four steps.
+- [Run a server](run.md): deploy a team's `writ serve` with Postgres, containers, or NixOS.
