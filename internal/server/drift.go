@@ -310,10 +310,13 @@ func (s *Server) driftRefusal(w http.ResponseWriter, r *http.Request, format, id
 // DriftDoc is GET /v1/drift: each OpenTofu stack@env writ serve keeps
 // state for that the principal may read, with its drift.
 type DriftDoc struct {
-	Format      string       `json:"format"`
-	OK          bool         `json:"ok"`
-	Stacks      []DriftStack `json:"stacks"`
-	More        bool         `json:"more"`
+	Format string       `json:"format"`
+	OK     bool         `json:"ok"`
+	Stacks []DriftStack `json:"stacks"`
+	More   bool         `json:"more"`
+	// Every is drift.every, how often writ serve checks each stack@env,
+	// such as 6h; "" when the config runs no drift checks.
+	Every       string       `json:"every"`
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
@@ -346,6 +349,9 @@ type OutsideWrite struct {
 
 // DriftCheckInfo is a drift check as writ.drift/v0 names it.
 type DriftCheckInfo struct {
+	// StartedBy is always StartedByDrift: writ serve's drift timer
+	// started the check.
+	StartedBy string `json:"started_by"`
 	// Plan is the id of the drift plan, "" when the check made none.
 	Plan         string                `json:"plan"`
 	Status       string                `json:"status"`
@@ -395,6 +401,9 @@ func (s *Server) listDrift(w http.ResponseWriter, r *http.Request) {
 	}
 	req.entry.Op, req.entry.Env, req.entry.Decision = string(authz.Read), env, control.Allowed
 	doc := DriftDoc{Format: FormatDrift, OK: true, Stacks: []DriftStack{}, More: more, Diagnostics: []Diagnostic{}}
+	if s.cfg.DriftEvery > 0 {
+		doc.Every = shortDuration(s.cfg.DriftEvery)
+	}
 	for _, st := range stacks {
 		doc.Stacks = append(doc.Stacks, *driftRow(st))
 		req.entry.Stacks = append(req.entry.Stacks, st.Stack)
@@ -411,7 +420,7 @@ func driftRow(st control.DriftStack) *DriftStack {
 		row.OutsideWrite = &OutsideWrite{Serial: st.OutsideSerial, SeenAt: stamp(st.OutsideAt)}
 	}
 	if c := st.Last; c != nil {
-		row.Check = &DriftCheckInfo{Plan: c.PlanID, Status: string(c.Status), StartedAt: stamp(c.StartedAt), CheckedAt: stamp(c.MadeAt), Repo: c.Repo,
+		row.Check = &DriftCheckInfo{StartedBy: StartedByDrift, Plan: c.PlanID, Status: string(c.Status), StartedAt: stamp(c.StartedAt), CheckedAt: stamp(c.MadeAt), Repo: c.Repo,
 			Commit: c.Commit, Outside: c.Outside, Code: c.Code, DriftedSince: stamp(c.DriftedSince), Changes: c.Changes, Error: c.Error}
 		if row.Check.Changes == nil {
 			row.Check.Changes = []control.DriftChange{}

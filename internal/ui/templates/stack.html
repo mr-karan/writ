@@ -1,8 +1,9 @@
 {{define "adopt-hint"}}<div class="note note-warning" id="adopt" role="note">{{template "icon" "warn"}}<div><p><strong>{{none "no-secret"}}</strong> A person with <code>adopt</code> on the stack can seal a set for it from the values the state marks sensitive. A secret the state holds without a sensitive mark is not in that set and may show in later plans.</p><p class="cmd-line"><code class="cmd">{{.}}</code></p></div></div>{{end}}
 
-{{define "drift-box"}}
-{{with .Check}}
-<div class="card">
+{{define "drift-box"}}{{$every := .Every}}
+{{with .Drift}}{{with .Check}}
+<section class="card" aria-labelledby="h-check">
+<div class="card-head"><h2 id="h-check" class="by">{{template "icon" "timer"}}<span>Drift check{{with $every.Text}}, every <time datetime="{{$every.ISO}}">{{.}}</time>{{end}}</span></h2></div>
 <dl class="kv kv-2" id="drift-facts">
 <div><dt>Status</dt><dd>{{template "status" .Status}}</dd></div>
 <div><dt>Checked</dt><dd>{{template "time" .CheckedAt}}</dd></div>
@@ -10,8 +11,8 @@
 {{if .Commit}}<div><dt>Commit</dt><dd><code>{{short .Commit}}</code> of {{.Repo}}</dd></div>{{end}}
 {{if .Plan}}<div class="wide"><dt>Plan</dt><dd><code class="id-full">{{.Plan}}</code>, never applied</dd></div>{{end}}
 </dl>
-</div>
-{{if eq .Status "failed"}}<div class="note note-error" role="alert">{{template "icon" "fail"}}<div><span class="msg" data-record="{{record "env" $.Env "stack" $.Stack "check.status" .Status}}" data-field="check.error">{{.Error}}</span></div></div>{{end}}
+</section>
+{{if eq .Status "failed"}}<div class="note note-error" role="alert">{{template "icon" "fail"}}<div><span class="msg" data-record="{{record "env" $.Drift.Env "stack" $.Drift.Stack "check.status" .Status}}" data-field="check.error">{{.Error}}</span></div></div>{{end}}
 {{if .Changes}}
 <section class="card" aria-labelledby="h-drift">
 <div class="card-head"><h2 id="h-drift">Changes <span class="count">{{template "n" (exact (add .Outside .Code))}}</span></h2><span class="meta">{{template "n" (exact .Outside)}} changed outside OpenTofu, {{template "n" (exact .Code)}} that the code would change{{if lt (len .Changes) (add .Outside .Code)}}, the first {{template "n" (exact (len .Changes))}} shown{{end}}</span></div>
@@ -33,7 +34,7 @@
 </div>
 </section>
 {{end}}
-{{else}}{{if not .Checking}}<div class="card"><p class="empty">{{none "unchecked"}}</p></div>{{end}}{{end}}
+{{else}}{{if not .Checking}}<div class="card"><p class="empty">{{none "unchecked"}}</p></div>{{end}}{{end}}{{end}}
 {{end}}
 
 {{define "stack-tabs"}}
@@ -128,7 +129,7 @@
 {{template "stack-tabs" .}}
 {{if eq .View "resources"}}{{template "resources" .}}
 {{else if eq .View "drift"}}
-{{with .Drift}}{{template "drift-box" .}}{{else}}<div class="card"><p class="empty">{{none "no-state"}}</p></div>{{end}}
+{{if .Drift}}{{template "drift-box" (driftBox .Drift .DriftEvery)}}{{else}}<div class="card"><p class="empty">{{none "no-state"}}</p></div>{{end}}
 {{else if eq .View "runs"}}
 <div class="card">{{if .Applies.Runs}}{{template "applies-table" .Applies}}{{else}}<p class="empty">{{none "no-run" (exact (len .Applies.Runs))}}</p>{{end}}</div>
 {{else}}

@@ -10,16 +10,20 @@
 {{- with .Status}}
 <input type="hidden" name="status" value="{{.}}">
 {{- end}}
+{{- with .StartedBy}}
+<input type="hidden" name="started_by" value="{{.}}">
+{{- end}}
 <div class="find"><label for="stack" class="sr-only">Filter by stack</label>{{template "icon" "search"}}<input id="stack" name="stack" type="search" value="{{.Stack}}" placeholder="Filter by stack" autocomplete="off"></div>
 {{template "pick" .StatusPick}}
+{{template "pick" .StartedByPick}}
 </form>
 {{if .Plans}}
 {{template "plan-table" (plans (print "Plans in " .Env ", newest first") .Plans "status" "stack")}}
-{{if .Next}}<p class="card-foot"><span class="muted">{{if not .Cursor}}The newest {{end}}{{template "n" (exact (len .Plans))}} plans that match</span> <a href="{{link "/ui/plans" "env" .Env "stack" .Stack "status" .Status "cursor" .Next}}">Older plans</a></p>{{end}}
+{{if .Next}}<p class="card-foot"><span class="muted">{{if not .Cursor}}The newest {{end}}{{template "n" (exact (len .Plans))}} plans that match</span> <a href="{{link "/ui/plans" "env" .Env "stack" .Stack "status" .Status "started_by" .StartedBy "cursor" .Next}}">Older plans</a></p>{{end}}
 {{else if .Cursor}}
-<p class="empty">Every older plan that matches is listed before this page.<br><a class="button" href="{{link "/ui/plans" "env" .Env "stack" .Stack "status" .Status}}">The newest plans</a></p>
+<p class="empty">Every older plan that matches is listed before this page.<br><a class="button" href="{{link "/ui/plans" "env" .Env "stack" .Stack "status" .Status "started_by" .StartedBy}}">The newest plans</a></p>
 {{else}}
-<p class="empty">{{none "no-plan" (exact (len .Plans))}}{{if or .Stack .Status}}<br><a class="button" href="{{link "/ui/plans" "env" .Env}}">Clear the filter</a>{{end}}</p>
+<p class="empty">{{none "no-plan" (exact (len .Plans))}}{{if or .Stack .Status .StartedBy}}<br><a class="button" href="{{link "/ui/plans" "env" .Env}}">Clear the filter</a>{{end}}</p>
 {{end}}
 </div>
 {{end}}
@@ -40,7 +44,7 @@
 <div class="page-head">
 <h1>Plan <code class="id">{{short $name}}</code> {{template "status" $p.Status}}</h1>
 </div>
-<p class="meta">{{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}} in {{$p.Env}} · by <span class="ref" data-record="{{planDoc $p}}" data-field="plan.author.display">{{$p.Author.Display}}</span>{{with from $p.Origin}} · <span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{end}}</p>
+<p class="meta">{{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}} in {{$p.Env}} · by <span class="by">{{template "started-by" $p.StartedBy}}<span class="ref" data-record="{{planDoc $p}}" data-field="plan.author.display">{{$p.Author.Display}}</span></span>{{with from $p.Origin}} · <span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{end}}</p>
 {{if $p.SupersededBy}}<div class="note note-warning" role="note">{{template "icon" "warn"}}<div><strong>A newer plan exists.</strong> <a class="id" href="/ui/plans/{{$p.SupersededBy}}">{{short $p.SupersededBy}}</a></div></div>{{end}}
 {{if eq $p.Status "expired"}}<div class="note" role="note"><p>Expired {{template "time" $p.ExpiresAt}}. It can no longer be applied.</p></div>{{end}}
 {{if eq $p.Status "superseded"}}<p class="note">Superseded: {{$p.SupersededWhy}}. It can no longer be applied.</p>{{end}}
@@ -72,6 +76,7 @@
 <dl class="kv kv-2">
 <div class="wide"><dt>Id</dt><dd>{{if $p.ID}}<code class="id-full">{{$p.ID}}</code>{{else}}<span class="muted">none yet; ref</span> <code>{{$p.Ref}}</code>{{end}}</dd></div>
 <div><dt>By</dt><dd><span class="ref" data-record="{{planDoc $p}}" data-field="plan.author.display">{{$p.Author.Display}}</span> <code class="muted">{{$p.Author.Person}}</code></dd></div>
+<div><dt>Started by</dt><dd>{{if eq $p.StartedBy "ci"}}a CI job{{else}}a person{{end}}</dd></div>
 {{with from $p.Origin}}<div><dt>From</dt><dd><span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{with $.Data.Origin}}{{with index . "sha"}} <span class="muted">commit <code>{{short (print .)}}</code></span>{{end}}{{end}}</dd></div>{{end}}
 <div><dt>Requested</dt><dd>{{template "time" $p.RequestedAt}}</dd></div>
 {{if $p.MadeAt}}<div><dt>Made</dt><dd>{{template "time" $p.MadeAt}}</dd></div>{{end}}

@@ -23,6 +23,20 @@ const (
 	DriftFailed  = string(control.DriftFailed)
 )
 
+// What started a plan or a drift check, as started_by names it: a
+// person's session or the dev user, a CI job's token, or writ serve's
+// drift timer. A plan is started by a person or a CI job; only a drift
+// check is started by the timer.
+const (
+	StartedByPerson = control.StartedByPerson
+	StartedByCI     = control.StartedByCI
+	StartedByDrift  = control.StartedByDrift
+)
+
+// PlanStartedBy are the values of a plan's started_by, which GET
+// /v1/plans filters on.
+var PlanStartedBy = []string{StartedByPerson, StartedByCI}
+
 // PlanStatuses are the statuses of a plan in the order of its lifecycle.
 var PlanStatuses = []string{PlanPlanning, PlanPending, PlanApproved, PlanApplying, PlanApplied, PlanRefused, PlanFailed, PlanExpired, PlanSuperseded}
 

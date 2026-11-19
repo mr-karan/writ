@@ -154,6 +154,7 @@ A read that fails is never read as empty. A page whose main document failed show
 | Empty (`.empty`), all clear (`.calm`) | A quiet centred sentence in a card, with at most one button under it; a green dot and the all-clear sentence. |
 | Command (`code.cmd`, `.cmd-line`) | A command in a 1 px box, with a copy button `writ.js` adds. |
 | Icons (template `sprite`, template `icon`) | One inline sprite at the top of the page. `{{template "icon" "warn"}}` draws one by its name. |
+| Started by (`.by`, template `started-by`) | What started a plan: a grey person or CI icon before its author in every list of plans and on the plan's head line, with the words for a screen reader, and "Started by" in the plan's facts. The plans list filters on it with the Started by picker. A drift check's card is headed with the timer icon, "Drift check", and the interval `GET /v1/drift` gives. |
 
 ## The plan page
 

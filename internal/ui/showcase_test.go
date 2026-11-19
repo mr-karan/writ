@@ -105,8 +105,15 @@ func showcaseSites(t *testing.T) []showSite {
 			if name == "not-found" {
 				want = http.StatusNotFound
 			}
-			if status, _, body := visit(t, c, "GET", s.Base+path, nil); status != want {
+			status, _, body := visit(t, c, "GET", s.Base+path, nil)
+			if status != want {
 				t.Errorf("%s: %s %s: %d, want %d: %.300s", s.Name, name, path, status, want, tagless(body))
+			}
+			// The full site shows each thing that starts a plan or a check.
+			for _, mark := range map[string][]string{"plans": {`href="#i-person"`, `href="#i-ci"`}, "stack-drift": {"Drift check, every <time"}}[name] {
+				if s.Name == "full" && !strings.Contains(body, mark) {
+					t.Errorf("%s: %s %s lacks %s", s.Name, name, path, mark)
+				}
 			}
 		}
 	}
@@ -228,10 +235,15 @@ deny contains sprintf("%s is forgotten in prod; remove it with a removed block r
 `}},
 	}}
 	st := &showTofu{t: t, rec: map[string]tofuRecording{}, release: make(chan struct{})}
-	srv, err := server.New(ctx, server.Options{Config: cfg, Store: store, Tofu: st, DevToken: strings.Repeat("d", 40), DevUser: "tester", Version: "showcase"})
+	served := *cfg
+	srv, err := server.New(ctx, server.Options{Config: &served, Store: store, Tofu: st, DevToken: strings.Repeat("d", 40), DevUser: "tester", Version: "showcase"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The pages say drift checks run every 6h, as a config's drift block
+	// says, while the seed runs each check when it needs one: set after
+	// New, drift.every starts no checks of this control plane.
+	served.DriftEvery = 6 * time.Hour
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { close(st.release) })
 	u, err := ui.New(ui.Options{Server: srv})
@@ -409,6 +421,7 @@ func (x *showcase) seed() map[string]string {
 	x.tofu.set("app", second)
 
 	pending := x.plan(x.srv, "app", server.DevEnv, true)
+	ci := x.ciPlan(pending)
 	approved := x.plan(x.srv, "network", server.DevEnv, true)
 	x.approve(reviewer, approved.ID)
 	others := x.plan(reviewer, "network", server.DevEnv, true)
@@ -459,6 +472,7 @@ func (x *showcase) seed() map[string]string {
 		"approvals":       "/ui/approvals",
 		"plan-pending":    "/ui/plans/" + pending.ID,
 		"plan-others":     "/ui/plans/" + others.ID,
+		"plan-ci":         "/ui/plans/" + ci,
 		"plan-approved":   "/ui/plans/" + approved.ID,
 		"plan-applied":    "/ui/plans/" + applied.ID,
 		"plan-applying":   "/ui/plans/" + slow.ID,
@@ -488,6 +502,38 @@ func (x *showcase) seed() map[string]string {
 		"settings":        "/ui/settings",
 		"not-found":       "/ui/plans/" + strings.Repeat("0", 32),
 	}
+}
+
+// ciPlan stores a pending plan that a CI job of merge request 42 of
+// acme/infra started, with the document and the source of plan from, as
+// writ serve stores a CI job's plan, and returns its id. A dev control
+// plane verifies no CI token, so the plan is written to the store.
+func (x *showcase) ciPlan(from *server.PlanInfo) string {
+	x.t.Helper()
+	ctx := context.Background()
+	src, err := x.store.Plan(ctx, from.ID, time.Now())
+	if err != nil {
+		x.t.Fatal(err)
+	}
+	const ref, id = "GL1849213GL1849213GL184921", "5be0c1d27f3a4e968b2d0a71c4f9e352"
+	now := time.Now()
+	p := control.Plan{Ref: ref, Env: src.Env, Stack: src.Stack, RequestedAt: now, SourceDigest: src.SourceDigest, ConfigID: src.ConfigID, Source: src.Source,
+		Author: control.Principal{Issuer: "gitlab", Subject: "project_path:acme/infra:ref_type:branch:ref:add-subnet", Person: "gitlab/user/1001",
+			Display: "gitlab acme/infra #1849213 (alice)", Detail: json.RawMessage(`{"kind":"ci-job","issuer":"gitlab","subject":"project_path:acme/infra:ref_type:branch:ref:add-subnet",` +
+				`"display":"gitlab acme/infra #1849213 (alice)","person":"gitlab/user/1001","teams":["infra_mr"],"matched":{}}`)},
+		Teams: []string{"infra_mr"},
+		Origin: json.RawMessage(`{"kind":"gitlab-merge-request","issuer":"https://gitlab.example.com","project_id":"4242","project":"acme/infra",` +
+			`"pipeline":"1849213","job":"9922140","merge_request":42,"sha":"` + src.Source.Commit + `","ref":"refs/merge-requests/42/head"}`)}
+	e := control.Entry{At: now, Request: ref, Kind: "request", Decision: control.Allowed}
+	if err := x.store.CreatePlan(ctx, p, control.TokenUse{}, e); err != nil {
+		x.t.Fatal(err)
+	}
+	res := control.PlanResult{ID: id, Status: control.Pending, MadeAt: now, ExpiresAt: src.ExpiresAt, Risks: src.Risks, Changes: src.Changes,
+		Document: src.Document, Text: src.Text, Saved: []byte("saved"), Need: src.Need, NeedRules: src.NeedRules, Tofu: src.Tofu}
+	if err := x.store.FinishPlan(ctx, ref, res, control.Entry{At: now, Request: ref, Kind: "plan-finished", Decision: control.NoDecision}); err != nil {
+		x.t.Fatal(err)
+	}
+	return id
 }
 
 // seedMany gives stack platform an index of 64 resources across eight
