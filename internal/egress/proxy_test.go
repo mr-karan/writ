@@ -165,6 +165,54 @@ func TestDecide(t *testing.T) {
 	}
 }
 
+// A provider install's proxy has no list: its registry sends it to
+// download hosts of the registry's choosing. It allows any public
+// destination, on any port, in either mode, and refuses a private one as
+// well as what no proxy connects to.
+func TestDecideInstall(t *testing.T) {
+	res := &stubResolver{answers: map[string][][]string{
+		"registry.opentofu.org":  {{"198.51.100.20"}},
+		"releases.example.com":   {{"203.0.113.30", "2001:db8::30"}},
+		"vpc.example.com":        {{"198.51.100.21", "10.1.2.3"}},
+		"ula.example.com":        {{"fd12:3456::1"}},
+		"meta.example.com":       {{"169.254.169.254"}},
+		"nat64p.example.com":     {{"64:ff9b::a00:5"}},
+		"nomad.example.internal": {{"10.0.0.20"}},
+	}}
+	const private = "resolves to " + reasonInstallPrivate
+	for _, mode := range []Mode{Report, Enforce} {
+		p, err := New(Options{Mode: mode, Install: true, List: mustList(t, "nomad.example.internal:80"), Resolver: res})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range []struct {
+			host    string
+			port    uint16
+			verdict Verdict
+			reason  string
+		}{
+			{"registry.opentofu.org", 443, Allowed, ""},
+			{"releases.example.com", 8443, Allowed, ""},
+			{"203.0.113.40", 443, Allowed, ""},
+			{"vpc.example.com", 443, Refused, private},
+			{"ula.example.com", 443, Refused, private},
+			{"nat64p.example.com", 443, Refused, private},
+			// The list is no exception for an install.
+			{"nomad.example.internal", 80, Refused, private},
+			{"10.0.0.5", 443, Refused, reasonInstallPrivate},
+			{"meta.example.com", 443, Refused, "resolves to a link-local address, where the instance metadata service is"},
+			{"169.254.169.254", 80, Refused, "a link-local address, where the instance metadata service is"},
+			{"127.0.0.1", 8080, Refused, "a loopback address"},
+			{"gone.example.com", 443, Unresolved, reasonUnresolved},
+		} {
+			_, d, _ := p.decide(context.Background(), c.host, c.port)
+			if d.verdict != c.verdict || d.reason != c.reason {
+				t.Errorf("%s: decide(%s:%d) = %s %q, want %s %q", mode, c.host, c.port, d.verdict, d.reason, c.verdict, c.reason)
+			}
+		}
+	}
+}
+
 // upstream is a destination for the proxy: an echo server, and a dial
 // that sends every address the proxy checked to it and records them.
 type upstream struct {

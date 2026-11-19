@@ -76,6 +76,11 @@ const (
 type Options struct {
 	Mode Mode
 	List List
+	// Install makes the proxy of a provider install, which ignores List:
+	// the registry chooses the hosts it downloads from. In either mode it
+	// allows any destination whose addresses are all public, and refuses
+	// a private one along with what the proxy never connects to.
+	Install bool
 	// Resolver resolves host names. Nil uses net.DefaultResolver, which
 	// is writ serve's own.
 	Resolver Resolver
@@ -93,6 +98,7 @@ type Options struct {
 type Proxy struct {
 	mode    Mode
 	list    List
+	install bool
 	resolve Resolver
 	dial    func(ctx context.Context, network, address string) (net.Conn, error)
 	slots   chan struct{}
@@ -109,7 +115,7 @@ func New(o Options) (*Proxy, error) {
 	if o.Mode != Report && o.Mode != Enforce {
 		return nil, fmt.Errorf("egress: a proxy runs in %s or %s mode, not %q", Report, Enforce, o.Mode)
 	}
-	p := &Proxy{mode: o.Mode, list: o.List, resolve: o.Resolver, dial: o.Dial,
+	p := &Proxy{mode: o.Mode, list: o.List, install: o.Install, resolve: o.Resolver, dial: o.Dial,
 		slots: make(chan struct{}, cmp.Or(o.MaxConns, DefaultMaxConns)),
 		idle:  cmp.Or(o.Idle, DefaultIdle), life: cmp.Or(o.Life, DefaultLife),
 		seen: map[Destination]int{}}
@@ -138,6 +144,7 @@ const (
 	reasonIPUnlisted         = "an IP address the list does not have"
 	reasonUnresolved         = "the name did not resolve"
 	reasonUnlistedUnresolved = "not in the list, and the name did not resolve"
+	reasonInstallPrivate     = "a private address, which a provider install never connects to"
 )
 
 // decide decides the destination host:port as the request wrote it. It
@@ -162,7 +169,10 @@ func (p *Proxy) decide(ctx context.Context, host string, port uint16) (string, d
 		if why := never(a); why != "" {
 			return name, refuse(why), nil
 		}
-		if listed, _ := p.list.match("", a, port); !listed {
+		if p.install && isPrivate(a) {
+			return name, refuse(reasonInstallPrivate), nil
+		}
+		if listed, _ := p.list.match("", a, port); !listed && !p.install {
 			return name, unlisted(reasonIPUnlisted, []netip.Addr{a}), nil
 		}
 		return name, decision{verdict: Allowed, addrs: []netip.Addr{a}}, nil
@@ -170,7 +180,11 @@ func (p *Proxy) decide(ctx context.Context, host string, port uint16) (string, d
 	if name == notHost {
 		return name, refuse(reasonNotHost), nil
 	}
-	listed, exact := p.list.match(name, netip.Addr{}, port)
+	// An install lists every name, and allows only public addresses.
+	listed, exact := p.install, false
+	if !p.install {
+		listed, exact = p.list.match(name, netip.Addr{}, port)
+	}
 	if !listed && p.mode == Enforce {
 		// An unlisted name is never looked up, so a lookup cannot carry
 		// data out through DNS.
@@ -197,6 +211,8 @@ func (p *Proxy) decide(ctx context.Context, host string, port uint16) (string, d
 	}
 	addrs = addrs[:min(len(addrs), maxAddrs)]
 	switch {
+	case p.install && private:
+		return name, refuse("resolves to " + reasonInstallPrivate), nil
 	case !listed:
 		return name, unlisted(reasonNotListed, addrs), nil
 	case private && !exact:
