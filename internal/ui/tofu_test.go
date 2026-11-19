@@ -400,11 +400,11 @@ func TestTofuPlanReview(t *testing.T) {
 	_, doc := x.page("/ui/plans/" + p.Plan.ID)
 	body := words(doc)
 	for _, want := range []string{
-		"+ 2 to add ~ 0 to change - 0 to destroy -/+ 1 to replace 1 to forget 1 to import",
-		"Changes (5)",
-		"Changed outside OpenTofu (1)",
-		"Outputs that change (2)",
+		"Changes 5 + 2 to add ~ 0 to change - 0 to destroy -/+ 1 to replace 1 to forget 1 to import 1 unchanged",
+		"Changed outside OpenTofu 1",
+		"Outputs 2",
 		"May apply dev",
+		"OpenTofu 1.13.9",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page lacks %q:\n%s", want, body)
@@ -413,7 +413,7 @@ func TestTofuPlanReview(t *testing.T) {
 
 	// The changes run by module, the root module first, then by address.
 	root, inner := words(byID(t, doc, "h-module-0")), words(byID(t, doc, "h-module-1"))
-	if root != "Root module (4)" || inner != "Module module.inner (1)" {
+	if root != "Root module 4" || inner != "Module module.inner 1" {
 		t.Errorf("the module headings: %q, %q", root, inner)
 	}
 	var order []string
@@ -433,24 +433,23 @@ func TestTofuPlanReview(t *testing.T) {
 	}{
 		{"a replace with replace_paths", "change-4", []string{
 			"-/+ random_pet.rotated replace sensitive value changes",
-			"Actions: delete, create. Reason: replace_because_cannot_update, the provider cannot update it in place.",
-			"Replaced because keepers cannot change in place.",
+			"delete, then create · the provider cannot update it in place replace_because_cannot_update",
 			`keepers {"secret":"(sensitive)"} {"secret":"(sensitive)"} forces replace sensitive value changes`,
 			`id "`, "(known after apply)",
 		}},
 		{"a forget", "change-3", []string{
 			"~ random_pet.gone forget delete",
-			"Actions: forget. Reason: delete_because_no_resource_config, the code no longer declares it.",
+			"the code no longer declares it delete_because_no_resource_config",
 			"OpenTofu removes this object from the state and leaves the object itself in place.",
 			"What OpenTofu stops managing",
 		}},
 		{"an import", "change-2", []string{
 			"<- random_id.imported import create",
-			"Imports an object that exists, id p-9hUg, into the state.",
+			"Imports p-9hUg.",
 			"6 attributes stay the same",
 			`b64_url "p-9hUg"`, "byte_length 4",
 		}},
-		{"a create in a module", "change-5", []string{"+ module.inner.random_pet.p create", `length 3`, "id (known after apply)"}},
+		{"a create in a module", "change-5", []string{"+ module.inner.random_pet.p create", `length 3`, "1 attribute known after apply", "id (known after apply)"}},
 		{"drift", "drift-1", []string{
 			"- local_file.note delete",
 			"What changed",
@@ -480,7 +479,18 @@ func TestTofuPlanReview(t *testing.T) {
 	if masked != 1 {
 		t.Errorf("local_file.note marks %d values as masked, want its content", masked)
 	}
-	outputs := words(byID(t, doc, "h-outputs").Parent)
+	// A create lists the values it sets, and folds apart those known only
+	// after apply.
+	note := byID(t, doc, "change-1")
+	for _, table := range everyOf(note, isTag("table")) {
+		if words(first(table, isTag("caption"))) == "What changes" && strings.Contains(words(table), "known after apply") {
+			t.Errorf("the values local_file.note sets list one known after apply:\n%s", words(table))
+		}
+	}
+	if got := words(note); !strings.Contains(got, "7 attributes known after apply") {
+		t.Errorf("local_file.note does not fold its values known after apply:\n%s", got)
+	}
+	outputs := words(up(byID(t, doc, "h-outputs"), isTag("section")))
 	for _, want := range []string{`rotated ~ update "`, "(known after apply)", "secret ~ update (sensitive) (sensitive) sensitive value changes"} {
 		if !strings.Contains(outputs, want) {
 			t.Errorf("the outputs lack %q:\n%s", want, outputs)
