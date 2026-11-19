@@ -83,7 +83,7 @@ var nones = map[string]string{
 	"no-resource":   "The state index holds no resource of this stack.",
 	"unchecked":     "No drift check of this stack has run.",
 	"no-secret":     "No secret set. writ serve keeps no detail of a plan of this state and approves none.",
-	"no-found":      "The commit read holds no stack: no directory under the path holds .writ files.",
+	"no-found":      "The commit read holds no stack: no directory under the path has a committed .terraform.lock.hcl and .tf or .tofu files.",
 	"no-team":       "None. No team's rule matches your claims, so you may read nothing.",
 	"no-grant":      "No grant names one of your teams.",
 	"no-plan-yet":   "No plan yet.",

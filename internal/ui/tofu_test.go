@@ -503,7 +503,7 @@ func TestTofuPlanReview(t *testing.T) {
 func TestDevAccess(t *testing.T) {
 	x := newTofuUI(t)
 	_, doc := x.page("/ui/access")
-	if got := words(byID(t, doc, "h-teams").Parent); !strings.Contains(got, "Teams (1)") || !strings.Contains(got, "dev dev no claim: only the one user of writ serve --dev is in it") {
+	if got := words(up(byID(t, doc, "h-teams"), isTag("section"))); !strings.Contains(got, "Teams 1") || !strings.Contains(got, "dev dev no claim: only the one user of writ serve --dev is in it") {
 		t.Errorf("the teams of the dev control plane:\n%s", got)
 	}
 }

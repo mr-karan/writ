@@ -130,7 +130,7 @@ func TestDevAddRepository(t *testing.T) {
 	}
 	form.Set("project", dir)
 	status, at, body = visit(t, c, "POST", base+"/ui/repos/new", form)
-	if status != 200 || at != "/ui/repos/demo" || !strings.Contains(tagless(body), "Stacks found (1)") || !strings.Contains(body, "app") {
+	if status != 200 || at != "/ui/repos/demo" || !strings.Contains(tagless(body), "Stacks found 1") || !strings.Contains(body, "app") {
 		t.Fatalf("add: %d %s %s", status, at, body)
 	}
 	if _, _, body := visit(t, c, "GET", base+"/ui/repos", nil); !strings.Contains(body, `<a href="/ui/repos/demo">demo</a>`) {
