@@ -510,17 +510,17 @@ func (x *showcase) seedMany(ctx context.Context) {
 	for _, c := range []string{"blue", "green"} {
 		arn(add(`aws_lb_target_group.web["`+c+`"]`, "aws_lb_target_group", "tg-web-"+c), "elasticloadbalancing", "targetgroup/tg-web-"+c+"/0f3b")
 	}
-	add("module.vpc.aws_vpc.main", "aws_vpc", "vpc-0b1c2d3e4f")
+	add("module.vpc.aws_vpc.main", "aws_vpc", "vpc-000000001")
 	for i, z := range []string{"a", "b", "c"} {
 		add(`module.vpc.aws_subnet.private["`+z+`"]`, "aws_subnet", fmt.Sprintf("subnet-0a%d1c7d2e7", i))
 		add(`module.vpc.aws_subnet.public["`+z+`"]`, "aws_subnet", fmt.Sprintf("subnet-0b%d4e9f1a2", i))
 	}
-	add("module.vpc.aws_route_table.private", "aws_route_table", "rtb-07c1d2e3f4")
-	add("module.vpc.aws_nat_gateway.main", "aws_nat_gateway", "nat-0d1e2f3a4b")
-	add("module.vpc.aws_internet_gateway.main", "aws_internet_gateway", "igw-0e1f2a3b4c")
-	add("module.vpc.aws_eip.nat", "aws_eip", "eipalloc-0f1a2b3c4d")
-	add("module.cluster.aws_security_group.nomad_client", "aws_security_group", "sg-0a41c7d2e7")
-	add("module.cluster.aws_security_group.nomad_server", "aws_security_group", "sg-0b52d8e3f8")
+	add("module.vpc.aws_route_table.private", "aws_route_table", "rtb-000000002")
+	add("module.vpc.aws_nat_gateway.main", "aws_nat_gateway", "nat-000000003")
+	add("module.vpc.aws_internet_gateway.main", "aws_internet_gateway", "igw-000000004")
+	add("module.vpc.aws_eip.nat", "aws_eip", "eipalloc-0a1b2c3d4e")
+	add("module.cluster.aws_security_group.nomad_client", "aws_security_group", "sg-000000005")
+	add("module.cluster.aws_security_group.nomad_server", "aws_security_group", "sg-000000006")
 	add("module.cluster.aws_security_group_rule.ingress_https", "aws_security_group_rule", "sgrule-3107714bd2")
 	add("module.cluster.aws_vpc_security_group_ingress_rule.ssh", "aws_vpc_security_group_ingress_rule", "sgr-0a1b2c3d4e")
 	for _, r := range []string{"nomad_client", "nomad_server"} {
