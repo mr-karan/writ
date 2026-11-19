@@ -536,20 +536,19 @@ func TestTofuRunPages(t *testing.T) {
 	body := words(doc)
 	for _, want := range []string{
 		"Run " + ok.Run.ID[:8] + " applied",
-		"Stack app@dev, an OpenTofu stack",
+		"app in dev · plan " + p.Plan.ID[:8] + " · applied by tester",
 		"Plan " + p.Plan.ID,
 		"Applied by tester",
-		"+ 3 added ~ 0 changed - 1 destroyed 1 imported",
-		"Resources (4)",
-		"random_pet.rotated delete complete 0",
-		"local_file.note create complete 0",
+		"Resources 4 + 3 added ~ 0 changed - 1 destroyed 1 imported",
+		"random_pet.rotated delete complete 0 s",
+		"local_file.note create complete 0 s",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the applied run's page lacks %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "The apply failed") || strings.Contains(body, "Diagnostics") {
-		t.Errorf("the applied run's page shows a failure:\n%s", body)
+	if strings.Contains(body, "Diagnostics") || strings.Contains(body, "an OpenTofu stack") {
+		t.Errorf("the applied run's page shows a failure or a stack row:\n%s", body)
 	}
 
 	p3 := x.plan(third)
@@ -561,12 +560,11 @@ func TestTofuRunPages(t *testing.T) {
 	body = words(doc)
 	for _, want := range []string{
 		"Run " + failed.Run.ID[:8] + " failed",
-		"The apply failed. The diagnostics below say why.",
-		"Diagnostics (2)",
+		"Diagnostics 2",
 		"error usage tofu apply exited with code 1",
 		"error usage main.tf:23:32: Create local file error",
-		"Resources (1)",
-		"local_file.broken create errored 0",
+		"Resources 1",
+		"local_file.broken create errored 0 s",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the failed run's page lacks %q:\n%s", want, body)
@@ -575,14 +573,32 @@ func TestTofuRunPages(t *testing.T) {
 	if strings.Contains(body, "is a directory") {
 		t.Errorf("the failed run's page shows a diagnostic's detail:\n%s", body)
 	}
+	// The failed pill and the diagnostics card say the run failed; no
+	// banner repeats it.
+	if got := words(first(doc, isTag("h1"))); !strings.Contains(got, "failed") || first(first(doc, isTag("h1")), classed("status-failed")) == nil {
+		t.Errorf("the failed run's title has no failed pill: %s", got)
+	}
+	if sec := first(doc, labelledBy("h-diagnostics")); sec == nil || !hasClass(sec, "card") || first(sec, classed("diags")) == nil {
+		t.Errorf("the failed run's page has no diagnostics card")
+	}
+	if first(doc, classed("note-error")) != nil || strings.Contains(body, "The apply failed") {
+		t.Errorf("the failed run's page repeats the failure in a banner:\n%s", body)
+	}
 
-	// Each list is of one environment, dev, so a row names the stack alone.
-	for _, path := range []string{"/ui/runs", "/ui/runs?env=dev&stack=app", "/ui/stack?stack=app&env=dev&view=runs"} {
-		_, doc := x.page(path)
+	// Each list is of one environment, dev, so a row names the stack alone,
+	// and a list of one stack's runs leaves the stack out.
+	for _, c := range []struct {
+		path, stack string
+	}{
+		{"/ui/runs", " app"},
+		{"/ui/runs?env=dev&stack=app", ""},
+		{"/ui/stack?stack=app&env=dev&view=runs", " app"},
+	} {
+		_, doc := x.page(c.path)
 		body := words(doc)
-		for _, want := range []string{"failed " + failed.Run.ID[:8] + " app " + p3.Plan.ID[:8] + " tester", "applied " + ok.Run.ID[:8] + " app " + p.Plan.ID[:8] + " tester"} {
+		for _, want := range []string{"failed " + failed.Run.ID[:8] + c.stack + " " + p3.Plan.ID[:8] + " tester", "applied " + ok.Run.ID[:8] + c.stack + " " + p.Plan.ID[:8] + " tester"} {
 			if !strings.Contains(body, want) {
-				t.Errorf("%s lacks %q:\n%s", path, want, body)
+				t.Errorf("%s lacks %q:\n%s", c.path, want, body)
 			}
 		}
 	}
