@@ -3,49 +3,51 @@
 <div class="page-head">
 <h1>Settings</h1>
 </div>
-<section aria-labelledby="h-browser">
-<h2 id="h-browser">This browser</h2>
+<section class="card" aria-labelledby="h-browser">
+<div class="card-head"><h2 id="h-browser">This browser</h2></div>
 <form method="post" action="/ui/settings" class="theme">
 <fieldset>
 <legend>Theme</legend>
-<label><input type="radio" name="theme" value="system"{{if eq $.Theme "system"}} checked{{end}}> System</label>
-<label><input type="radio" name="theme" value="light"{{if eq $.Theme "light"}} checked{{end}}> Light</label>
-<label><input type="radio" name="theme" value="dark"{{if eq $.Theme "dark"}} checked{{end}}> Dark</label>
+<span class="seg"><label><input type="radio" name="theme" value="system"{{if eq $.Theme "system"}} checked{{end}}> System</label><label><input type="radio" name="theme" value="light"{{if eq $.Theme "light"}} checked{{end}}> Light</label><label><input type="radio" name="theme" value="dark"{{if eq $.Theme "dark"}} checked{{end}}> Dark</label></span>
 </fieldset>
 <button type="submit">Save</button>
 </form>
-<p class="muted">The theme is a cookie of this browser, and the one setting writ serve keeps for you.</p>
 </section>
 
-<section aria-labelledby="h-server">
-<h2 id="h-server">Server</h2>
-<dl class="facts">
-<dt>Version</dt><dd>writ <code>{{.Server.Version}}</code></dd>
-<dt>URL</dt><dd><code>{{.Server.URL}}</code></dd>
-<dt>Sign-in</dt><dd>{{if .Server.Login}}authorization code flow with PKCE{{else}}not set up{{end}}</dd>
-<dt>Health</dt><dd>{{if .Health.OK}}{{template "status" "ok"}}{{else}}{{template "status" "failing"}}{{end}} <span class="muted"><code>GET /healthz</code> answered <code>{{.HealthCode}}</code></span></dd>
-<dt>Control database</dt><dd>{{if .Health.Database}}answers{{else}}<strong>does not answer</strong>{{end}}</dd>
-{{range .Health.Issuers}}<dt>Issuer {{.Name}}</dt><dd>key set fetched {{template "time" .KeysAt}}{{if .ClockOffsetMS}}, clock offset <code>{{deref64 .ClockOffsetMS}} ms</code>{{end}}</dd>{{end}}
+<section class="card" aria-labelledby="h-server">
+<div class="card-head"><h2 id="h-server">Server</h2><span class="end">{{if .Health.OK}}{{template "status" "ok"}}{{else}}{{template "status" "failing"}}{{end}}</span></div>
+<dl class="kv kv-2">
+<div><dt>Version</dt><dd>writ <code>{{.Server.Version}}</code></dd></div>
+<div><dt>URL</dt><dd><code>{{.Server.URL}}</code></dd></div>
+<div><dt>Sign-in</dt><dd>{{if .Server.Login}}authorization code flow with PKCE{{else}}not set up{{end}}</dd></div>
+<div><dt>Health</dt><dd><code>GET /healthz</code> answered <code>{{.HealthCode}}</code></dd></div>
+<div><dt>Control database</dt><dd>{{if .Health.Database}}answers{{else}}<strong>does not answer</strong>{{end}}</dd></div>
+{{- range .Health.Issuers}}
+<div><dt>Issuer {{.Name}}</dt><dd>key set fetched {{template "when" .KeysAt}}{{if .ClockOffsetMS}}, clock offset <code>{{deref64 .ClockOffsetMS}} ms</code>{{end}}</dd></div>
+{{- end}}
 </dl>
 {{if .Health.Diagnostics}}<div data-record="format=writ.health/v0">{{template "diags" .Health.Diagnostics}}</div>{{end}}
 </section>
 
 {{with .Config}}
-<section aria-labelledby="h-config">
-<h2 id="h-config">Config</h2>
-<dl class="facts">
-<dt>Issuers</dt><dd><ul class="plain">{{range .Issuers}}<li>{{.Name}}: {{.Kind}}, <code>{{.URL}}</code></li>{{end}}</ul></dd>
-<dt>Environments</dt><dd><ul class="plain">{{range .Envs}}<li>{{.Name}}</li>{{end}}</ul></dd>
-{{if .Forges}}<dt>Forges</dt><dd><ul class="plain">{{range .Forges}}<li>{{.Name}}: {{.Kind}}, <code>{{.URL}}</code></li>{{end}}</ul>Each default branch is polled every <code>{{.PollEvery}}</code>.</dd>{{end}}
-<dt>Lifetimes</dt><dd>plan <code>{{.PlanTTL}}</code>, session <code>{{.SessionTTL}}</code></dd>
-{{with .Admin}}
-<dt>Limits</dt><dd><code>{{.Limits.RequestsPerSecond}}</code> requests a second and <code>{{.Limits.PlansPerPrincipal}}</code> running plans for each principal, <code>{{.Limits.Plans}}</code> running plans in all, and bodies up to <code>{{.Limits.Body}}</code> bytes</dd>
-<dt>Retention</dt><dd>audit rows {{if .Retention.Audit}}<code>{{.Retention.Audit}}</code>{{else}}forever{{end}}, spent plans {{if .Retention.Plans}}<code>{{.Retention.Plans}}</code>{{else}}forever{{end}}</dd>
-{{end}}
+<section class="card" aria-labelledby="h-config">
+<div class="card-head"><h2 id="h-config">Config</h2><span class="end meta">Read from the config file of writ serve</span></div>
+<dl class="kv">
+{{if .Issuers}}<div><dt>Issuers</dt><dd>{{range $i, $is := .Issuers}}{{if $i}}<br>{{end}}{{$is.Name}} <span class="muted">{{$is.Kind}}</span> <code>{{$is.URL}}</code>{{end}}</dd></div>{{end}}
+<div><dt>Environments</dt><dd>{{range $i, $e := .Envs}}{{if $i}}, {{end}}{{$e.Name}}{{end}}</dd></div>
+{{if .Forges}}<div><dt>Forges</dt><dd>{{range $i, $fg := .Forges}}{{if $i}}<br>{{end}}{{$fg.Name}} <span class="muted">{{$fg.Kind}}</span> <code>{{$fg.URL}}</code>{{end}} <span class="muted">polled every <code>{{.PollEvery}}</code></span></dd></div>{{end}}
+<div><dt>Plan lifetime</dt><dd><code>{{.PlanTTL}}</code></dd></div>
+<div><dt>Session lifetime</dt><dd><code>{{.SessionTTL}}</code></dd></div>
+{{- with .Admin}}
+<div><dt>Requests a second</dt><dd><code>{{.Limits.RequestsPerSecond}}</code> for each principal</dd></div>
+<div><dt>Running plans</dt><dd><code>{{.Limits.PlansPerPrincipal}}</code> for each principal, <code>{{.Limits.Plans}}</code> in all</dd></div>
+<div><dt>Request body</dt><dd>up to <code>{{.Limits.Body}}</code> bytes</dd></div>
+<div><dt>Audit rows kept</dt><dd>{{if .Retention.Audit}}<code>{{.Retention.Audit}}</code>{{else}}forever{{end}}</dd></div>
+<div><dt>Spent plans kept</dt><dd>{{if .Retention.Plans}}<code>{{.Retention.Plans}}</code>{{else}}forever{{end}}</dd></div>
+{{- end}}
 </dl>
-<p class="muted">To change any of these, edit the config file and restart writ serve. <code>writ serve --check</code> prints the config on the host.</p>
 </section>
 {{end}}
-<p class="muted">The control UI uses <a href="{{.License}}">Oat 1.0.0</a> by Kailash Nadh, under the MIT license.</p>
+<p class="meta">Built with <a href="{{.License}}">Oat 1.0.0</a> by Kailash Nadh, MIT license</p>
 {{end}}
 {{template "foot" .}}{{end}}
