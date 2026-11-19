@@ -3,7 +3,6 @@ package ui
 import (
 	"net/http"
 
-	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/server"
 )
 
@@ -19,10 +18,9 @@ type stackData struct {
 	// Adopt is the command that adopts the stack's state, when its drift
 	// check says the state has no secret set.
 	Adopt string
-	// Indexed reports that the state index holds the stack, and Resources
-	// is the resources view of it, grouped by GroupBy and filtered by
-	// Query.
-	Indexed        bool
+	// Resources is the resources view of the stack's state index, nil
+	// when the index holds nothing of it, grouped by GroupBy and filtered
+	// by Query.
 	Resources      *resourcesView
 	Query, GroupBy string
 	Applies        *appliesTable
@@ -68,7 +66,7 @@ func (u *UI) stack(w http.ResponseWriter, r *http.Request, s *server.Session) {
 		d.Drift = &drift.Stacks[0]
 		if c := d.Drift.Check; c != nil {
 			d.Adopt, _ = server.AdoptCommand(c.Error, d.Stack, d.Env, d.Drift.Backend)
-			if c.Status == string(control.DriftDrifted) {
+			if c.Status == "drifted" {
 				d.DriftCount = exact(c.Outside + c.Code)
 			}
 		}
@@ -99,12 +97,11 @@ func (u *UI) stack(w http.ResponseWriter, r *http.Request, s *server.Session) {
 		if !f.main(target, &index) {
 			return
 		}
-		var changes []control.DriftChange
-		if d.Drift != nil && d.Drift.Check != nil {
-			changes = d.Drift.Check.Changes
+		var check *server.DriftCheckInfo
+		if d.Drift != nil {
+			check = d.Drift.Check
 		}
-		d.Indexed = true
-		v := groupResources(index.Resources, changes, d.Query, d.GroupBy)
+		v := groupResources(index.Resources, check, d.Query, d.GroupBy)
 		v.linkDrift(link("/ui/stack", "stack", d.Stack, "env", d.Env, "view", "drift"))
 		d.Resources = &v
 	}

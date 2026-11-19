@@ -232,7 +232,7 @@ func TestResourceDriftMarks(t *testing.T) {
 	}
 	want := map[string]string{"aws_s3_bucket.logs[3]": "outside", "module.vpc.aws_subnet.private[1]": "outside", "module.vpc.aws_subnet.private[2]": "code"}
 	for _, by := range []string{"service", "module", "flat"} {
-		v := groupResources(rs, changes, "", by)
+		v := groupResources(rs, &server.DriftCheckInfo{Changes: changes}, "", by)
 		v.linkDrift("/drift")
 		if v.Marked.N != len(want) {
 			t.Errorf("group=%s marks %d, want %d", by, v.Marked.N, len(want))
@@ -247,7 +247,7 @@ func TestResourceDriftMarks(t *testing.T) {
 			}
 		}
 	}
-	if v := groupResources(rs, changes, "acme-logs", "flat"); v.Marked.N != len(want) {
+	if v := groupResources(rs, &server.DriftCheckInfo{Changes: changes}, "acme-logs", "flat"); v.Marked.N != len(want) {
 		t.Errorf("a filter changes the marks to %d", v.Marked.N)
 	}
 	if v := groupResources(rs, nil, "", "service"); !v.Marked.None() {

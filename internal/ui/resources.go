@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/server"
 )
 
@@ -121,17 +120,24 @@ type resourcesView struct {
 	Groups []resourceGroup
 }
 
+// driftOutside is the kind of a drift change made outside OpenTofu, which
+// marks a row over a change the code would make.
+const driftOutside = "outside"
+
 // openUpTo is how many resources a stack lists with its groups open.
 const openUpTo = 60
 
 // groupResources sorts the resources rs of a stack into the groups of by,
 // keeping those whose address, type, or ID holds query, case folded.
-// changes are the changes of the stack's last drift check.
-func groupResources(rs []server.IndexResource, changes []control.DriftChange, query, by string) resourcesView {
+// check is the stack's last drift check, nil when none ended; a row it
+// names is marked.
+func groupResources(rs []server.IndexResource, check *server.DriftCheckInfo, query, by string) resourcesView {
 	drift := map[string]string{}
-	for _, c := range changes {
-		if drift[c.Address] != control.DriftOutside {
-			drift[c.Address] = c.Kind
+	if check != nil {
+		for _, c := range check.Changes {
+			if drift[c.Address] != driftOutside {
+				drift[c.Address] = c.Kind
+			}
 		}
 	}
 	query = strings.TrimSpace(query)
