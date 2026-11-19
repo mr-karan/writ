@@ -99,6 +99,9 @@ type Server struct {
 	// broker serves each plan's role credentials to its providers. It is
 	// nil when no environment names a role.
 	broker *awsrole.Broker
+	// stateOnly serves the state backend alone, on the state port of a
+	// run's own network. It is nil under egress_mode off.
+	stateOnly http.Handler
 	// uids holds the free provider_uids. It is nil without them.
 	uids chan uint32
 	reap func(uid uint32) error
@@ -239,6 +242,7 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 	s.mount("/v1/tfstate/", http.HandlerFunc(s.serveState), func(w http.ResponseWriter, r *http.Request, status int, d Diagnostic) {
 		http.Error(w, d.Message, status)
 	}, false)
+	s.initEgress()
 	if s.cfg.PollEvery > 0 {
 		s.wg.Go(func() { s.poll(s.ctx) })
 	}

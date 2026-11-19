@@ -23,6 +23,9 @@ import (
 type ApplyOutput struct {
 	Document []byte // writ.tofu-apply/v0
 	Text     string // the apply as writ apply prints it
+	// Network is the run's writ.network/v1, nil when it had no egress
+	// proxy.
+	Network json.RawMessage
 }
 
 var runIDRE = regexp.MustCompile(`^[A-Z2-7]{26}$`)
@@ -503,7 +506,7 @@ func (s *Server) runApply(run control.Run, plan control.Plan, env Env, p *princi
 		res.Document, _ = json.Marshal(applyRefusal{Format: "writ.apply/v0", Status: "apply-failed", Diagnostics: []Diagnostic{{"error", string(class), err.Error()}}})
 		res.Text = "writ: " + err.Error() + "\n"
 	} else {
-		res.Document, res.Text = out.Document, out.Text
+		res.Document, res.Text, res.Network = out.Document, out.Text, out.Network
 		var head struct {
 			OK bool `json:"ok"`
 		}
@@ -559,12 +562,15 @@ func (s *Server) startApply(startCtx, ctx context.Context, run control.Run, plan
 
 // remoteRun is writ.remote-run/v0 of a run.
 func (s *Server) remoteRun(run control.Run) RemoteRun {
-	doc := RemoteRun{Format: FormatRemoteRun, OK: run.Status != control.RunFailed, Document: run.Document, Text: run.Text, Policy: run.Policy, Diagnostics: []Diagnostic{}, Run: runInfo(run)}
+	doc := RemoteRun{Format: FormatRemoteRun, OK: run.Status != control.RunFailed, Document: run.Document, Text: run.Text, Policy: run.Policy, Network: run.Network, Diagnostics: []Diagnostic{}, Run: runInfo(run)}
 	if doc.Document == nil {
 		doc.Document = json.RawMessage("null")
 	}
 	if doc.Policy == nil {
 		doc.Policy = json.RawMessage("null")
+	}
+	if doc.Network == nil {
+		doc.Network = json.RawMessage("null")
 	}
 	return doc
 }

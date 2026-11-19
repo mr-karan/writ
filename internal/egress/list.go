@@ -37,6 +37,10 @@ const (
 	Enforce Mode = "enforce"
 )
 
+// On reports whether m gives a run its own network: report or enforce.
+// Any other value, the zero value among them, is off.
+func (m Mode) On() bool { return m == Report || m == Enforce }
+
 // ParseMode reads an egress_mode.
 func ParseMode(s string) (Mode, error) {
 	switch m := Mode(s); m {

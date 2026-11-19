@@ -368,7 +368,7 @@ func (d *decoder) egress(top map[string]field, cfg *Config) {
 		}
 		cfg.EgressMode = m
 	}
-	if cfg.EgressMode == egress.Off {
+	if !cfg.EgressMode.On() {
 		return
 	}
 	if _, ok := top["tofu"]; !ok {
@@ -584,7 +584,7 @@ func (d *decoder) lint(cfg *Config) {
 	if cfg.ProviderUIDs == nil {
 		d.warnf(span, "providers run as writ's own user, so they can read the state keys and reach the host's own identity; set provider_uids")
 	}
-	if cfg.EgressMode == egress.Off {
+	if !cfg.EgressMode.On() {
 		for _, name := range slices.Sorted(maps.Keys(cfg.Envs)) {
 			if cfg.Envs[name].Egress != nil {
 				d.warnf(span, "env %s sets egress, and egress_mode is off, so its runs keep the host's network; set egress_mode to report or enforce", name)

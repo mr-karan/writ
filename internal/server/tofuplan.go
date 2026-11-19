@@ -161,8 +161,12 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 	if err != nil {
 		return res, err
 	}
+	// The hosts the run asked for are its output too, so the record of
+	// them waits for the mask that sweeps the rest.
+	net := run.network(m)
+	res.Network = net.raw()
 	if refused {
-		return refusedTofu(res, se, m, onS3), nil
+		return refusedTofu(res, se, m, onS3, egressDiagnostics(net, env, se.Stdout, se.Stderr)), nil
 	}
 	doc, err := m.Plan(raw.JSON)
 	if err != nil {
@@ -375,11 +379,12 @@ func (s *Server) endState(run string) {
 // plan failed, as an AccessDenied names the action the role lacks. So a
 // past secret such a state keeps in an attribute through nonsensitive()
 // shows where a summary quotes that attribute; docs/serve.md states the
-// limit.
-func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask, unread bool) control.PlanResult {
+// limit. extra follows the step's diagnostics: writ's own words on why it
+// failed, such as the egress proxy's refusals.
+func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask, unread bool, extra []Diagnostic) control.PlanResult {
 	diags := []Diagnostic{{"error", string(diag.Usage), se.Error()}}
 	res.Text = "writ: " + se.Error() + "\n"
-	for _, d := range stepDiagnostics(m, se.Stdout, unread) {
+	for _, d := range append(stepDiagnostics(m, se.Stdout, unread), extra...) {
 		diags = append(diags, d)
 		res.Text += d.Severity + ": " + d.Message + "\n"
 	}

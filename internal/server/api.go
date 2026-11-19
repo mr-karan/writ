@@ -159,7 +159,10 @@ type RemotePlan struct {
 	Text string `json:"text"`
 	// Policy is the writ.policy-decision/v1 of the plan point, null when
 	// no policy judged the plan.
-	Policy      json.RawMessage `json:"policy"`
+	Policy json.RawMessage `json:"policy"`
+	// Network is the writ.network/v1 of the plan's run, null under
+	// egress_mode off or when OpenTofu did not run.
+	Network     json.RawMessage `json:"network"`
 	Diagnostics []Diagnostic    `json:"diagnostics"`
 }
 
@@ -291,7 +294,10 @@ type RemoteRun struct {
 	Text string `json:"text"`
 	// Policy is the writ.policy-decision/v1 of the apply point that let
 	// the run begin, null when no policy judged it.
-	Policy      json.RawMessage `json:"policy"`
+	Policy json.RawMessage `json:"policy"`
+	// Network is the writ.network/v1 of the run, null while it applies,
+	// under egress_mode off, or when OpenTofu did not run.
+	Network     json.RawMessage `json:"network"`
 	Diagnostics []Diagnostic    `json:"diagnostics"`
 }
 

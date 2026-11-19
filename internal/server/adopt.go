@@ -291,6 +291,7 @@ func (s *Server) adoptShow(ctx context.Context, a adoption, key *tfstate.Key, sp
 	if err != nil {
 		return tofu.State{}, nil, err
 	}
+	defer run.network(m)
 	// The output of a failed show or pull can hold a value of the state
 	// that the mask has not learned yet, so only the step and its exit
 	// code are kept, as for a refused plan on S3.
@@ -321,6 +322,7 @@ func (s *Server) adoptPull(ctx context.Context, a adoption, spec runSpec) (tofu.
 	if err != nil {
 		return tofu.State{}, nil, 0, err
 	}
+	defer run.network(m)
 	state, err := s.tofuRunner.Pull(ctx, stk)
 	if err != nil {
 		return tofu.State{}, nil, 0, err
