@@ -202,6 +202,8 @@ h2 .count, .card-head .count { margin: 0; font-size: var(--fs-2); }
 
 /* A card: the one box of the UI. */
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-large); overflow: hidden; }
+/* Package 5: Oat's .card pads and shadows; the parts of a card set the inset. */
+.card { padding: 0; box-shadow: none; }
 .card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); min-height: 2.75rem; padding: var(--space-2) var(--inset); border-bottom: 1px solid var(--border); }
 .card-head:last-child { border-bottom: 0; }
 .card-head h2, .card-head h3 { display: flex; align-items: baseline; gap: var(--space-2); font-size: var(--fs-3); font-weight: 600; }
