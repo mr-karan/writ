@@ -33,6 +33,10 @@ func TestDeniedName(t *testing.T) {
 	for name, want := range map[string]bool{
 		"DB_Password": true, "api-token": true, "nomad_secret_id": true, "private_key": true, "user_data": true,
 		"image": false, "replicas": false, "tokenless": true, "": false,
+		"token": true, "access_token": true, "token_value": true, "token_types": true, "token_ttl_secret": true,
+		"secret_token_ttl": true, "token_token_ttl": true, "tokenttl_token": true, "ttl_token": true,
+		"max_token_ttl": false, "token_locality": false, "token_name_format": false, "tokenNameFormat": false,
+		"token_policies": false, "token_explicit_max_ttl": false, "token_type": false,
 	} {
 		if got := value.DeniedName(name); got != want {
 			t.Errorf("DeniedName(%q) = %v, want %v", name, got, want)

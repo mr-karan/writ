@@ -1,0 +1,174 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.13.9",
+  "variables": {},
+  "configuration": {
+    "provider_config": {
+      "nomad": {
+        "name": "nomad",
+        "full_name": "registry.opentofu.org/hashicorp/nomad",
+        "version_constraint": "2.1.0"
+      }
+    },
+    "root_module": {}
+  },
+  "resource_changes": [
+    {
+      "address": "nomad_acl_auth_method.sso",
+      "mode": "managed",
+      "type": "nomad_acl_auth_method",
+      "name": "sso",
+      "provider_name": "registry.opentofu.org/hashicorp/nomad",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "sso",
+          "name": "sso",
+          "type": "OIDC",
+          "default": true,
+          "token_locality": "global",
+          "max_token_ttl": "8h",
+          "token_name_format": "${auth_method_type}-${auth_method_name}",
+          "config": [
+            {
+              "oidc_discovery_url": "https://sso.example.com",
+              "oidc_client_id": "writ-test-client",
+              "oidc_client_secret": "fixture-client-secret-1",
+              "oidc_scopes": [
+                "groups"
+              ],
+              "bound_audiences": [
+                "writ-test-client"
+              ],
+              "allowed_redirect_uris": [
+                "https://nomad.example.com/ui/settings/tokens"
+              ],
+              "discovery_ca_pem": [],
+              "signing_algs": [
+                "RS256"
+              ],
+              "claim_mappings": {
+                "email": "email"
+              },
+              "list_claim_mappings": {
+                "groups": "roles"
+              },
+              "expiration_leeway": "0s",
+              "not_before_leeway": "0s",
+              "clock_skew_leeway": "0s",
+              "oidc_disable_userinfo": false,
+              "verbose_logging": false
+            }
+          ]
+        },
+        "after": {
+          "id": "sso",
+          "name": "sso",
+          "type": "OIDC",
+          "default": true,
+          "token_locality": "global",
+          "max_token_ttl": "12h",
+          "token_name_format": "${auth_method_type}-${auth_method_name}",
+          "config": [
+            {
+              "oidc_discovery_url": "https://sso.example.com",
+              "oidc_client_id": "writ-test-client",
+              "oidc_client_secret": "fixture-client-secret-1",
+              "oidc_scopes": [
+                "groups"
+              ],
+              "bound_audiences": [
+                "writ-test-client"
+              ],
+              "allowed_redirect_uris": [
+                "https://nomad.example.com/ui/settings/tokens"
+              ],
+              "discovery_ca_pem": [],
+              "signing_algs": [
+                "RS256"
+              ],
+              "claim_mappings": {
+                "email": "email"
+              },
+              "list_claim_mappings": {
+                "groups": "roles"
+              },
+              "expiration_leeway": "0s",
+              "not_before_leeway": "0s",
+              "clock_skew_leeway": "0s",
+              "oidc_disable_userinfo": false,
+              "verbose_logging": false
+            }
+          ]
+        },
+        "after_unknown": {
+          "config": [
+            {
+              "allowed_redirect_uris": [
+                false
+              ],
+              "bound_audiences": [
+                false
+              ],
+              "claim_mappings": {},
+              "discovery_ca_pem": [],
+              "list_claim_mappings": {},
+              "oidc_scopes": [
+                false
+              ],
+              "signing_algs": [
+                false
+              ]
+            }
+          ]
+        },
+        "before_sensitive": {
+          "config": [
+            {
+              "oidc_client_secret": true,
+              "oidc_scopes": [
+                false
+              ],
+              "bound_audiences": [
+                false
+              ],
+              "allowed_redirect_uris": [
+                false
+              ],
+              "discovery_ca_pem": [],
+              "signing_algs": [
+                false
+              ],
+              "claim_mappings": {},
+              "list_claim_mappings": {}
+            }
+          ]
+        },
+        "after_sensitive": {
+          "config": [
+            {
+              "oidc_client_secret": true,
+              "oidc_scopes": [
+                false
+              ],
+              "bound_audiences": [
+                false
+              ],
+              "allowed_redirect_uris": [
+                false
+              ],
+              "discovery_ca_pem": [],
+              "signing_algs": [
+                false
+              ],
+              "claim_mappings": {},
+              "list_claim_mappings": {}
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
