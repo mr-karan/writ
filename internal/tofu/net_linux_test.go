@@ -1,7 +1,9 @@
 package tofu
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,9 +17,12 @@ import (
 )
 
 // netProbe runs as a fake tofu inside a step's view. It reports the
-// step's interfaces, a GET of each URL in PROBE_GET, a connect to each
-// address in PROBE_DIAL, and a listen on each in PROBE_LISTEN, one line
-// each, with only the system call's error.
+// step's interfaces, a GET of each URL in PROBE_GET, through HTTP_PROXY
+// as Go's clients send one, a CONNECT of each host:port in PROBE_CONNECT
+// sent to HTTPS_PROXY, a GET of the credential endpoint with its token
+// when PROBE_CREDS is set, a connect to each address in PROBE_DIAL, and a
+// listen on each in PROBE_LISTEN, one line each, with only the system
+// call's error.
 func netProbe() string {
 	var b strings.Builder
 	ifs, err := net.Interfaces()
@@ -43,8 +48,24 @@ func netProbe() string {
 		resp.Body.Close()
 		fmt.Fprintf(&b, "get %s: %d %s\n", u, resp.StatusCode, body)
 	}
+	for _, target := range fields(os.Getenv("PROBE_CONNECT")) {
+		fmt.Fprintf(&b, "connect %s: %s\n", target, connectStatus(strings.TrimPrefix(os.Getenv("HTTPS_PROXY"), "http://"), target))
+	}
+	if os.Getenv("PROBE_CREDS") != "" {
+		req, _ := http.NewRequest("GET", os.Getenv("AWS_CONTAINER_CREDENTIALS_FULL_URI"), nil)
+		req.Header.Set("Authorization", os.Getenv("AWS_CONTAINER_AUTHORIZATION_TOKEN"))
+		resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+		if err != nil {
+			fmt.Fprintf(&b, "creds: %s\n", short(err))
+		} else {
+			var doc struct{ AccessKeyId string }
+			_ = json.NewDecoder(resp.Body).Decode(&doc)
+			resp.Body.Close()
+			fmt.Fprintf(&b, "creds: %d %s\n", resp.StatusCode, doc.AccessKeyId)
+		}
+	}
 	for _, a := range fields(os.Getenv("PROBE_DIAL")) {
-		c, err := net.DialTimeout("tcp", a, 5*time.Second)
+		c, err := net.DialTimeout("tcp", a, 2*time.Second)
 		if err != nil {
 			fmt.Fprintf(&b, "dial %s: %s\n", a, short(err))
 			continue
@@ -65,6 +86,23 @@ func netProbe() string {
 }
 
 func fields(s string) []string { return strings.FieldsFunc(s, func(r rune) bool { return r == ',' }) }
+
+// connectStatus sends CONNECT target to the proxy at addr and returns the
+// status line, or the error.
+func connectStatus(addr, target string) string {
+	c, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return err.Error()
+	}
+	defer c.Close()
+	_ = c.SetDeadline(time.Now().Add(10 * time.Second))
+	fmt.Fprintf(c, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", target, target)
+	resp, err := http.ReadResponse(bufio.NewReader(c), &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		return err.Error()
+	}
+	return resp.Status
+}
 
 // TestRunNetwork runs a probe in tofu's place, as a run with Net and as
 // one without. With Net, each step has only loopback, reaches the port
