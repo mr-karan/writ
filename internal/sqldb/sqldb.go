@@ -19,7 +19,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,8 +26,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
-	"modernc.org/sqlite"
-	sqlite3 "modernc.org/sqlite/lib"
+	_ "modernc.org/sqlite" // the "sqlite" driver of Open
 )
 
 // The database/sql types callers need, so that no other package imports it.
@@ -40,16 +38,8 @@ type (
 	NullString = sql.NullString
 )
 
-var (
-	// ErrNoRows is the answer of a QueryRow that matched nothing.
-	ErrNoRows = sql.ErrNoRows
-	// ErrTxDone is the error of a statement on a finished transaction.
-	ErrTxDone = sql.ErrTxDone
-)
-
-// LevelRepeatableRead is the isolation level of a transaction whose reads
-// must see one snapshot.
-const LevelRepeatableRead = sql.LevelRepeatableRead
+// ErrNoRows is the answer of a QueryRow that matched nothing.
+var ErrNoRows = sql.ErrNoRows
 
 // IsPostgres reports whether a location names a Postgres database, not a
 // SQLite file.
@@ -239,9 +229,6 @@ func QuoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-// Postgres reports whether the pool is on Postgres.
-func (d *DB) Postgres() bool { return d.pg }
-
 // Close closes the pool.
 func (d *DB) Close() error { return d.db.Close() }
 
@@ -252,8 +239,7 @@ func (d *DB) Ping(ctx context.Context) error { return d.Error(d.db.PingContext(c
 func (d *DB) Error(err error) error { return Classify(d.pg, d.what, err) }
 
 // Rebind rewrites a statement written for SQLite into the pool's dialect:
-// on Postgres, each ? becomes $n, and a json_each over a parameter becomes
-// jsonb_array_elements_text. Text inside a '...' literal, a "..." identifier,
+// on Postgres, each ? becomes $n. Text inside a '...' literal, a "..." identifier,
 // a -- comment, or a /* */ comment stays as it is. A doubled quote inside a
 // literal or an identifier needs no case of its own: it closes the text and
 // opens it again. The statements are SQLite's, so Postgres's E'...' and
@@ -262,7 +248,6 @@ func Rebind(query string, pg bool) string {
 	if !pg {
 		return query
 	}
-	const jsonEach = "SELECT value FROM json_each(?)"
 	var b strings.Builder
 	n := 0
 	for i := 0; i < len(query); i++ {
@@ -275,11 +260,6 @@ func Rebind(query string, pg bool) string {
 			open, end = 2, "\n"
 		case strings.HasPrefix(query[i:], "/*"):
 			open, end = 2, "*/"
-		case strings.HasPrefix(query[i:], jsonEach):
-			n++
-			fmt.Fprintf(&b, "SELECT jsonb_array_elements_text($%d::jsonb)", n)
-			i += len(jsonEach) - 1
-			continue
 		case c == '?':
 			n++
 			fmt.Fprintf(&b, "$%d", n)
@@ -345,9 +325,6 @@ func (d *DB) BeginTx(ctx context.Context, opts *TxOptions) (*Tx, error) {
 	}
 	return &Tx{tx: tx, ctx: ctx, db: d}, nil
 }
-
-// Context is the context the transaction began with.
-func (t *Tx) Context() context.Context { return t.ctx }
 
 // Postgres reports whether the transaction is on Postgres.
 func (t *Tx) Postgres() bool { return t.db.pg }
@@ -424,9 +401,6 @@ func (e *CommitError) Unwrap() error { return e.Err }
 // about the caller's own rules.
 type IOError struct {
 	Err error
-	// Transient marks a failure that left nothing behind and may pass:
-	// another writer held the database, or the server gave up on a lock.
-	Transient bool
 }
 
 func (e *IOError) Error() string { return e.Err.Error() }
@@ -437,7 +411,7 @@ func (e *IOError) Unwrap() error { return e.Err }
 // Classify turns a driver error into an *IOError. ErrNoRows is an answer,
 // not a failure, and passes through. Postgres driver errors can contain
 // connection credentials or server-supplied text, so only a fixed summary
-// and the SQLSTATE reach the error. what names the database, such as "postgres state".
+// and the SQLSTATE reach the error. what names the database, such as "control database".
 func Classify(pg bool, what string, err error) error {
 	switch {
 	case err == nil:
@@ -449,7 +423,7 @@ func Classify(pg bool, what string, err error) error {
 		return err
 	}
 	if !pg {
-		return &IOError{Err: err, Transient: IsBusy(err)}
+		return &IOError{Err: err}
 	}
 	for _, safe := range []error{context.Canceled, context.DeadlineExceeded, sql.ErrTxDone} {
 		if errors.Is(err, safe) {
@@ -464,21 +438,7 @@ func Classify(pg bool, what string, err error) error {
 		case "25006":
 			cause = "read-only transaction"
 		}
-		return &IOError{
-			Err:       fmt.Errorf("%s %s (SQLSTATE %s)", what, cause, pgErr.Code),
-			Transient: slices.Contains(transientSQLStates, pgErr.Code),
-		}
+		return &IOError{Err: fmt.Errorf("%s %s (SQLSTATE %s)", what, cause, pgErr.Code)}
 	}
 	return &IOError{Err: fmt.Errorf("%s operation failed", what)}
-}
-
-// transientSQLStates are the Postgres failures that roll the transaction back
-// whole and may pass on a retry: serialization_failure, deadlock_detected,
-// and lock_not_available (lock_timeout).
-var transientSQLStates = []string{"40001", "40P01", "55P03"}
-
-// IsBusy reports a SQLite error that another connection held the lock.
-func IsBusy(err error) bool {
-	var e *sqlite.Error
-	return errors.As(err, &e) && e.Code()&0xff == sqlite3.SQLITE_BUSY
 }
