@@ -33,7 +33,7 @@ func newPrincipal(tok *oidc.Token, identity string, p *authz.Policy) *principal 
 	pr := &principal{tok: tok, teams: p.TeamsOf(tok.Issuer, tok.Claims), matched: map[string][]string{}}
 	c := tok.Claims
 	s := func(name string) string { v, _ := c.String(name); return v }
-	pr.info = Principal{Kind: "ci-job", Issuer: tok.Issuer, Subject: tok.Subject, Expires: stamp(tok.Expires)}
+	pr.info = Principal{Kind: control.CIJob, Issuer: tok.Issuer, Subject: tok.Subject, Expires: stamp(tok.Expires)}
 	switch tok.Kind {
 	case oidc.GitLabCI:
 		pr.info.Person = personID(identity, s("user_id"))

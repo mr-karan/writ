@@ -178,7 +178,11 @@ type PlanInfo struct {
 	ExpiresAt         string          `json:"expires_at,omitempty"`
 	Risks             []string        `json:"risks"`
 	TeamsThatMayApply []string        `json:"teams_that_may_apply"`
-	Origin            json.RawMessage `json:"origin"`
+	// StartedBy is what started the plan: StartedByPerson for a person's
+	// session or the dev user, StartedByCI for a CI job's token, which
+	// Origin then names.
+	StartedBy string          `json:"started_by"`
+	Origin    json.RawMessage `json:"origin"`
 	// SupersededBy is the id of a newer pending plan of the same stack@env
 	// from the same merge request, "" when none.
 	SupersededBy string `json:"superseded_by"`
