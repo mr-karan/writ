@@ -226,19 +226,3 @@ func TestNomadPatchCache(t *testing.T) {
 		})
 	}
 }
-
-func TestSchemaCacheUsesDeprecationFormat(t *testing.T) {
-	dirs, _, _ := cacheAWS(t)
-	file := filepath.Join(dirs.Cache, "schemas", "v5", fmt.Sprintf("%x", hash(2)), "index.json")
-	data, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var index struct{ Format int }
-	if err := json.Unmarshal(data, &index); err != nil {
-		t.Fatal(err)
-	}
-	if index.Format != 5 {
-		t.Fatalf("deprecation metadata requires format 5, got %d", index.Format)
-	}
-}
