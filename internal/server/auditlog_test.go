@@ -240,12 +240,13 @@ func TestAuditReadFiltersAndPages(t *testing.T) {
 		{"limit 0", url.Values{"limit": {"0"}}, "limit must be 1 to 200"},
 		{"limit 201", url.Values{"limit": {"201"}}, "limit must be 1 to 200"},
 		{"a stack with no env", url.Values{"stack": {"network"}}, "stack needs env"},
-		{"an env that is not a name", url.Values{"env": {"Prod!"}}, "env is not a name"},
+		{"an env that is not a name", url.Values{"env": {"Prod!"}}, "is not one writ serve plans in"},
+		{"an env writ serve does not serve", url.Values{"env": {"staging"}}, "is not one writ serve plans in"},
 		{"a stack that is not a name", url.Values{"env": {"prod"}, "stack": {"../etc"}}, "stack name"},
 		{"a plan that is not an id or a ref", url.Values{"plan": {"nope"}}, "plan must be"},
 		{"a run that is not a run id", url.Values{"run": {"nope"}}, "run must be"},
 		{"a person over 256 bytes", url.Values{"person": {strings.Repeat("p", 257)}}, "person is over 256 bytes"},
-		{"an operation over 64 bytes", url.Values{"op": {strings.Repeat("o", 65)}}, "op is over 64 bytes"},
+		{"an operation it does not know", url.Values{"op": {"nope"}}, "op must be one of"},
 		{"since not RFC 3339", url.Values{"since": {"yesterday"}}, "since must be an RFC 3339 time"},
 		{"until not RFC 3339", url.Values{"until": {"1700000000"}}, "until must be an RFC 3339 time"},
 		{"until before since", url.Values{"since": {at.Format(time.RFC3339)}, "until": {at.Add(-time.Second).Format(time.RFC3339)}}, "until must be after since"},
@@ -286,6 +287,10 @@ func TestAuditReadNeverShowsWhatARequestSent(t *testing.T) {
 		{"GET", "/v1/audit?plan=" + secret, tok["root"], ""},
 		{"GET", "/v1/audit?env=prod&stack=" + secret, tok["root"], ""},
 		{"GET", "/v1/audit?person=" + secret, tok["root"], ""},
+		{"GET", "/v1/audit?env=" + secret, tok["root"], ""},
+		{"GET", "/v1/audit?op=" + secret, tok["root"], ""},
+		{"GET", "/v1/audit?cursor=" + secret, tok["root"], ""},
+		{"GET", "/v1/audit?since=" + secret, tok["root"], ""},
 	} {
 		r := f.do(req.method, req.path, req.token, strings.NewReader(req.body))
 		if r.status < 400 && !strings.Contains(req.path, "person=") {

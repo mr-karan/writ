@@ -3,7 +3,9 @@ package server
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mr-karan/writ/internal/authz"
@@ -76,9 +78,6 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		f.Limit = n
 	}
 	switch {
-	case f.Env != "" && !nameRE.MatchString(f.Env):
-		bad("env is not a name: it must match " + nameRE.String())
-		return
 	case f.Stack != "" && f.Env == "":
 		bad("stack needs env: a stack is named within an environment")
 		return
@@ -91,13 +90,12 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	case len(f.Person) > 256:
 		bad("person is over 256 bytes")
 		return
-	case len(f.Op) > 64:
-		bad("op is over 64 bytes")
+	case f.Op != "" && !slices.Contains(auditOps(), f.Op):
+		bad("op must be one of " + strings.Join(auditOps(), ", "))
 		return
 	}
-	if f.Stack != "" {
-		if err := CheckStackName(f.Stack); err != nil {
-			bad(err.Error())
+	if f.Env != "" {
+		if _, ok := s.target(w, r, FormatAudit, f.Env, cmpOr(f.Stack, "x")); !ok {
 			return
 		}
 	}
@@ -160,6 +158,18 @@ func (s *Server) auditVisible(teams []string, every bool, e control.Entry) bool 
 		return s.cfg.Policy.InEnv(teams, authz.Read, e.Env)
 	}
 	return s.cfg.Policy.Decide(teams, authz.Read, e.Stacks, e.Env, nil).Allowed
+}
+
+// auditOps are the operations an audit row can record: those of the
+// grants, and those of the state backend's rows, which internal/tfstate
+// writes. GET /v1/audit takes only these, so no op filter reads the whole
+// log for a value no row holds.
+func auditOps() []string {
+	var ops []string
+	for _, op := range authz.Ops {
+		ops = append(ops, string(op))
+	}
+	return append(ops, "state-read", "state-write", "state-lock", "state-unlock")
 }
 
 func auditRow(e control.Entry) AuditRow {
