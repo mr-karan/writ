@@ -121,8 +121,7 @@ type LivePlan struct {
 // and when writ serve saw it. Message says what happened in words; the
 // ids are in the fields.
 type Alert struct {
-	// Kind is drifted, drift-check-failed, outside-write, run-failed,
-	// plan-expiring, or repo-poll-failed.
+	// Kind is one of the Alert kinds below.
 	Kind    string `json:"kind"`
 	Env     string `json:"env"`
 	Stack   string `json:"stack"`
@@ -132,6 +131,16 @@ type Alert struct {
 	Message string `json:"message"`
 	At      string `json:"at"`
 }
+
+// The kinds of an Alert.
+const (
+	AlertDrifted          = "drifted"
+	AlertDriftCheckFailed = "drift-check-failed"
+	AlertOutsideWrite     = "outside-write"
+	AlertRunFailed        = "run-failed"
+	AlertPlanExpiring     = "plan-expiring"
+	AlertRepoPollFailed   = "repo-poll-failed"
+)
 
 // RepoPolls is how the repositories' polls went.
 type RepoPolls struct {
@@ -236,18 +245,18 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 				switch c.Status {
 				case "drifted":
 					a := alert
-					a.Kind, a.At = "drifted", cmp.Or(c.DriftedSince, c.CheckedAt)
+					a.Kind, a.At = AlertDrifted, cmp.Or(c.DriftedSince, c.CheckedAt)
 					a.Message = plural(c.Outside, "change") + " outside OpenTofu, " + plural(c.Code, "change") + " the code would make"
 					doc.Alerts = append(doc.Alerts, a)
 				case "failed":
 					a := alert
-					a.Kind, a.At, a.Message = "drift-check-failed", c.CheckedAt, c.Error
+					a.Kind, a.At, a.Message = AlertDriftCheckFailed, c.CheckedAt, c.Error
 					doc.Alerts = append(doc.Alerts, a)
 				}
 			}
 			if o := d.OutsideWrite; o != nil {
 				a := alert
-				a.Kind, a.At, a.Message = "outside-write", o.SeenAt, "serial "+strconv.FormatInt(o.Serial, 10)+" of the state was written outside writ serve"
+				a.Kind, a.At, a.Message = AlertOutsideWrite, o.SeenAt, "serial "+strconv.FormatInt(o.Serial, 10)+" of the state was written outside writ serve"
 				doc.Alerts = append(doc.Alerts, a)
 			}
 		}
@@ -340,7 +349,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	slices.SortFunc(doc.Stacks, func(a, b OverviewStack) int { return cmp.Or(cmp.Compare(a.Env, b.Env), cmp.Compare(a.Stack, b.Stack)) })
 	slices.SortStableFunc(failed, func(x, y RunInfo) int { return strings.Compare(y.EndedAt, x.EndedAt) })
 	for _, run := range failed {
-		doc.Alerts = append(doc.Alerts, Alert{Kind: "run-failed", Env: run.Env, Stack: run.Stack, Plan: run.Plan, Run: run.ID, At: run.EndedAt,
+		doc.Alerts = append(doc.Alerts, Alert{Kind: AlertRunFailed, Env: run.Env, Stack: run.Stack, Plan: run.Plan, Run: run.ID, At: run.EndedAt,
 			Message: "the apply by " + run.Actor.Display + " failed"})
 	}
 	soon := min(expiringWindow, s.cfg.PlanTTL/4)
@@ -349,7 +358,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		if err != nil || exp.Sub(now) > soon {
 			continue
 		}
-		doc.Alerts = append(doc.Alerts, Alert{Kind: "plan-expiring", Env: pl.Env, Stack: pl.Stacks[0].Stack, Plan: cmp.Or(pl.ID, pl.Ref), At: pl.ExpiresAt,
+		doc.Alerts = append(doc.Alerts, Alert{Kind: AlertPlanExpiring, Env: pl.Env, Stack: pl.Stacks[0].Stack, Plan: cmp.Or(pl.ID, pl.Ref), At: pl.ExpiresAt,
 			Message: "the " + pl.Status + " plan of " + pl.Author.Display + " expires"})
 	}
 
@@ -364,7 +373,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			doc.Repos.PolledAt = max(doc.Repos.PolledAt, stamp(rp.PolledAt))
 			if rp.Error != "" {
 				doc.Repos.Failed = append(doc.Repos.Failed, RepoPoll{Name: rp.Name, Error: rp.Error, ErrorAt: stamp(rp.ErrorAt)})
-				doc.Alerts = append(doc.Alerts, Alert{Kind: "repo-poll-failed", Repo: rp.Name, Message: rp.Error, At: stamp(cmp.Or(rp.ErrorAt, rp.PolledAt))})
+				doc.Alerts = append(doc.Alerts, Alert{Kind: AlertRepoPollFailed, Repo: rp.Name, Message: rp.Error, At: stamp(cmp.Or(rp.ErrorAt, rp.PolledAt))})
 			}
 		}
 	}

@@ -226,9 +226,9 @@ func (s *Server) planInfo(p control.Plan, approvals []control.Approval) *PlanInf
 	if info.Origin == nil {
 		info.Origin = json.RawMessage("{}")
 	}
-	info.Source = PlanSourceInfo{Kind: "speculative"}
+	info.Source = PlanSourceInfo{Kind: SourceSpeculative}
 	if p.Source.Commit != "" {
-		info.Source = PlanSourceInfo{Kind: "commit", Repo: p.Source.Repo, Ref: p.Source.Ref, Commit: p.Source.Commit, RefCheck: string(p.Source.RefCheck)}
+		info.Source = PlanSourceInfo{Kind: SourceCommit, Repo: p.Source.Repo, Ref: p.Source.Ref, Commit: p.Source.Commit, RefCheck: string(p.Source.RefCheck)}
 	}
 	if p.Status.Live() {
 		info.TeamsThatMayApply = s.cfg.Policy.TeamsWith(authz.Apply, p.Stack, p.Env, p.Risks)
