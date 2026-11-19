@@ -157,8 +157,6 @@
 </html>
 {{end}}
 
-{{define "at"}}<time datetime="{{.}}">{{when .}}</time>{{end}}
-
 {{define "time"}}{{if .}}<time datetime="{{.}}">{{when .}}</time>{{end}}{{end}}
 
 {{define "when"}}{{if .}}<time datetime="{{.}}">{{ago .}}</time>{{end}}{{end}}
