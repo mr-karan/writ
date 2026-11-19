@@ -84,7 +84,7 @@ var dumpMu sync.Mutex
 // dumpable. So the process is dumpable while cmd starts and is put back
 // after, with no AsUser or Start in between. Not dumpable, a process lets
 // nothing of its uid without CAP_SYS_PTRACE trace it or read its memory.
-func StartMapped(cmd *exec.Cmd) error {
+func StartMapped(cmd *exec.Cmd) (err error) {
 	dumpMu.Lock()
 	defer dumpMu.Unlock()
 	was, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_GET_DUMPABLE, 0, 0)
@@ -97,17 +97,19 @@ func StartMapped(cmd *exec.Cmd) error {
 	if _, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0); e != 0 {
 		return fmt.Errorf("make writ dumpable to write the new user namespace's id maps: %w", e)
 	}
-	err := cmd.Start()
-	// The kernel's 2, which fs.suid_dumpable may set, is not one prctl
-	// takes; 0 keeps everything 2 keeps from other users.
-	if _, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 0, 0); e != 0 {
-		if err == nil {
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
+	// Deferred, so a panic in Start leaves writ not dumpable too. The
+	// kernel's 2, which fs.suid_dumpable may set, is not one prctl takes;
+	// 0 keeps everything 2 keeps from other users.
+	defer func() {
+		if _, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 0, 0); e != 0 {
+			if err == nil && cmd.Process != nil {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+			}
+			err = errors.Join(err, fmt.Errorf("make writ not dumpable again: %w", e))
 		}
-		return errors.Join(err, fmt.Errorf("make writ not dumpable again: %w", e))
-	}
-	return err
+	}()
+	return cmd.Start()
 }
 
 // Start starts cmd, whose SysProcAttr may switch the user it runs as.
