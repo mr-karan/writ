@@ -164,7 +164,7 @@ The request for the page leaves a row of its own too, with its `/ui/` route and 
 
 To see the control UI and its redirect URI, look at the `control UI:` line of `writ serve --check`, as the output in [Check the isolation](serve.md#check-the-isolation) shows.
 
-**Limits.** You won't find the audit log in the control UI, because the API doesn't serve one yet. A run's page shows what the apply did and how it ended once the run ends, and reloads every 5 seconds while it applies: no page streams OpenTofu's events as they happen. No run has signed in through a real GitLab: the tests use a test issuer.
+**Limits.** You won't find the audit log in the control UI yet: read it with `GET /v1/audit` or `writ audit --remote`. A run's page shows what the apply did and how it ended once the run ends, and reloads every 5 seconds while it applies: no page streams OpenTofu's events as they happen. No run has signed in through a real GitLab: the tests use a test issuer.
 
 ### Signing in
 

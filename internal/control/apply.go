@@ -277,18 +277,21 @@ type ApprovalError struct {
 func (e *ApprovalError) Error() string { return e.Msg }
 
 // Approve records approver's approval of each plan in ids, in one
-// transaction, with the token's use and the audit row: all of them or
+// transaction, with the token's use and the audit rows: all of them or
 // none. rules count each plan's approvals. A plan whose tally is
 // already approved is skipped, so a second approver's request still
 // passes. Each plan's stored status moves to its tally's status. The
 // author of a plan cannot approve it.
-func (s *Store) Approve(ctx context.Context, approver Approval, ids []string, rules Rules, use TokenUse, e Entry) ([]Plan, error) {
-	if approver.Person == "" {
+func (s *Store) Approve(ctx context.Context, approver Approval, ids []string, rules Rules, use TokenUse, es ...Entry) ([]Plan, error) {
+	switch {
+	case approver.Person == "":
 		return nil, errors.New("an approval needs a person")
+	case len(es) == 0:
+		return nil, errors.New("an approval needs its audit row")
 	}
 	var out []Plan
 	err := s.db.Write(ctx, func(tx *sqldb.Tx) error {
-		if err := useToken(ctx, tx, use, e.At); err != nil {
+		if err := useToken(ctx, tx, use, es[0].At); err != nil {
 			return err
 		}
 		now := approver.ApprovedAt
@@ -334,7 +337,7 @@ func (s *Store) Approve(ctx context.Context, approver Approval, ids []string, ru
 			}
 			out = append(out, p)
 		}
-		return insertAudit(ctx, tx, e)
+		return insertAudits(ctx, tx, es)
 	})
 	return out, err
 }

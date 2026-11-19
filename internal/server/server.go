@@ -13,6 +13,7 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"crypto/cipher"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -152,6 +153,8 @@ type Server struct {
 	browserLogins map[[32]byte]*browserLogin
 	// policy judges the plans of OpenTofu stacks, nil for no policy.
 	policy *policy.Engine
+	// cursorKey seals the cursors of GET /v1/audit.
+	cursorKey cipher.AEAD
 }
 
 // New prepares a server: it marks plans a crash left planning and runs it
@@ -180,6 +183,9 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 	}
 	s.closeKey = s.store.CloseKey
 	var err error
+	if s.cursorKey, err = newCursorKey(); err != nil {
+		return nil, err
+	}
 	if s.policy, err = CompilePolicies(cfg); err != nil {
 		return nil, err
 	}
@@ -280,6 +286,49 @@ type request struct {
 	// its bearer token, so DELETE /v1/auth/session can end it. The token
 	// itself is kept nowhere.
 	sessionHash []byte
+	// envs, when it holds more than one environment, splits the request's
+	// audit row into one row for each, as rows says: an approval of plans
+	// in several environments.
+	envs []envPart
+}
+
+// envPart is what one environment's audit row of a request names.
+type envPart struct {
+	env    string
+	stacks []string
+	grants []int
+}
+
+// part is the envPart of env in req.envs, added when there is none yet.
+func (req *request) part(env string) *envPart {
+	for i := range req.envs {
+		if req.envs[i].env == env {
+			return &req.envs[i]
+		}
+	}
+	req.envs = append(req.envs, envPart{env: env})
+	return &req.envs[len(req.envs)-1]
+}
+
+// rows is e as the request's audit rows: e alone, or with req.envs of
+// more than one environment, one row for each, which names only that
+// environment's stacks and grants. A row is shown to the readers of its
+// one environment, so a row that named the stacks of two would show one
+// environment's stacks to the readers of the other.
+func (req *request) rows(e control.Entry) []control.Entry {
+	if len(req.envs) < 2 {
+		return []control.Entry{e}
+	}
+	out := make([]control.Entry, 0, len(req.envs))
+	for _, p := range req.envs {
+		row := e
+		row.Env, row.Stacks = p.env, p.stacks
+		if e.Grants != nil {
+			row.Grants = p.grants
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 type ctxKey struct{}
@@ -484,6 +533,7 @@ func (s *Server) routeTable() []apiRoute {
 		{"/v1/drift", true, map[string]http.HandlerFunc{"GET": s.listDrift}},
 		{"/v1/index", true, map[string]http.HandlerFunc{"GET": s.stateIndex}},
 		{"/v1/overview", true, map[string]http.HandlerFunc{"GET": s.overview}},
+		{"/v1/audit", true, map[string]http.HandlerFunc{"GET": s.listAudit}},
 		{"/", false, map[string]http.HandlerFunc{}},
 	}
 }
@@ -514,13 +564,26 @@ func unaudited(r *http.Request) bool {
 func (s *Server) audit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := &request{id: newID(), start: s.now()}
-		req.entry = control.Entry{Request: req.id, Kind: "request", Method: r.Method, Remote: s.remoteOf(r), ConfigID: s.configID, Decision: control.NoDecision}
+		req.entry = control.Entry{Request: req.id, Kind: "request", Method: auditMethod(r.Method), Remote: s.remoteOf(r), ConfigID: s.configID, Decision: control.NoDecision}
 		req.fail, req.rec, req.out = s.failOf(r), &recorder{header: http.Header{}}, w
 		r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, req))
 		w.Header().Set("X-Request-Id", req.id)
 		defer s.finish(w, req.rec, r, req)
 		next.ServeHTTP(req.rec, r)
 	})
+}
+
+// auditMethod is the method an audit row records of a request. A method
+// of no standard set is OTHER: the client chose its text, which can be
+// anything an HTTP token allows, and GET /v1/audit shows the row. LOCK
+// and UNLOCK are the state backend's.
+func auditMethod(m string) string {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete,
+		http.MethodConnect, http.MethodOptions, http.MethodTrace, "LOCK", "UNLOCK":
+		return m
+	}
+	return "OTHER"
 }
 
 // wrap is every API route's middleware: the method check, the token check
@@ -586,7 +649,8 @@ func (s *Server) finish(w http.ResponseWriter, rec *recorder, r *http.Request, r
 	_, _ = w.Write(rec.body.Bytes())
 }
 
-// writeRow writes e as the audit row of req, timed from its start.
+// writeRow writes e as the audit row of req, or the rows req.rows splits
+// it into, timed from its start.
 func (s *Server) writeRow(r *http.Request, req *request, e control.Entry) error {
 	if e.Route == "" {
 		e.Route = routeOf(r.Pattern)
@@ -594,7 +658,7 @@ func (s *Server) writeRow(r *http.Request, req *request, e control.Entry) error 
 	e.At, e.Elapsed = req.start, s.now().Sub(req.start)
 	ctx, cancel := context.WithTimeout(context.Background(), auditTimeout)
 	defer cancel()
-	return s.store.Audit(ctx, e)
+	return s.store.Audit(ctx, req.rows(e)...)
 }
 
 // unrecorded replaces the answer of a request whose audit row was not
@@ -755,6 +819,8 @@ func formatOf(route, method string) string {
 		return FormatStateIndex
 	case route == "/v1/overview":
 		return FormatOverview
+	case route == "/v1/audit":
+		return FormatAudit
 	case strings.HasPrefix(route, "/v1/plans"):
 		return FormatRemotePlan
 	case route == "/v1/state/adopt":

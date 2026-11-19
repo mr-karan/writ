@@ -83,6 +83,8 @@ func failureReport(command string, args []string, diags diag.List) any {
 		return errorReport{Format: server.FormatStateAdopt, Diagnostics: d}
 	case "runs":
 		return server.RemoteRuns{Format: server.FormatRemoteRuns, Runs: []server.RunInfo{}, Diagnostics: serverDiags(d)}
+	case "audit":
+		return server.AuditDoc{Format: server.FormatAudit, Rows: []server.AuditRow{}, Diagnostics: serverDiags(d)}
 	case "import":
 		if AcceptsPlan(slices.DeleteFunc(slices.Clone(args), func(a string) bool { return strings.HasPrefix(a, "-") })) {
 			return importAcceptReport{Format: importAcceptFormat, Refusals: []jsonAcceptRefusal{}, Settings: []jsonAcceptSetting{}, Diagnostics: d}

@@ -821,9 +821,18 @@ type Entry struct {
 	Elapsed  time.Duration
 }
 
-// Audit writes one audit row.
-func (s *Store) Audit(ctx context.Context, e Entry) error {
-	return s.db.Write(ctx, func(tx *sqldb.Tx) error { return insertAudit(ctx, tx, e) })
+// Audit writes audit rows, all of them or none.
+func (s *Store) Audit(ctx context.Context, es ...Entry) error {
+	return s.db.Write(ctx, func(tx *sqldb.Tx) error { return insertAudits(ctx, tx, es) })
+}
+
+func insertAudits(ctx context.Context, tx *sqldb.Tx, es []Entry) error {
+	for _, e := range es {
+		if err := insertAudit(ctx, tx, e); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func insertAudit(ctx context.Context, tx *sqldb.Tx, e Entry) error {

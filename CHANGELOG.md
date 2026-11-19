@@ -4,6 +4,10 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 
 ## Unreleased
 
+### Added
+
+- `GET /v1/audit` and `writ audit --remote` read the audit log: newest first, by plan (with its approvals, run, and state writes), run, `stack@env`, person, operation, and time, in pages. A token sees the rows of the stacks it may read, and the rows of no stack only with `admin` on every stack in every environment. A filter of a stack the token can't read returns an empty page, the cursor is encrypted, and an approval across environments leaves one row for each. A refused row's reason, which can quote what its request sent, is withheld, a state write's reason is shown without the state's hash, and no row shows a client address or a nonstandard method.
+
 ### Changed
 
 - The control UI is redesigned: a sidebar with stack counts, every page set in cards with labels in one column, and no lines that say what a button does. A stack's resources group by service, module, or none, with a strip of categories and counts, a filter on address, type, and ID that works with scripts off, and rows that open to show the full ID, ARN, and region. A plan keeps its approval, apply, and facts in one head card, with Action and Risk pickers over its changes. Access no longer shows your own grants; Who you are does.

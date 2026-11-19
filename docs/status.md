@@ -56,7 +56,8 @@ These are missing today. If you need one of them, plan around its absence.
 ### Approvals and applies
 
 - Run events and cancel: `GET /v1/runs/{id}/events`, run events streamed as `writ.event/v0`, and `POST /v1/runs/{id}/cancel`. Your client polls the run.
-- Withdrawing, applying, and cancelling from the control UI. You can only approve there. The control UI's audit page waits for `GET /v1/audit`.
+- Withdrawing, applying, and cancelling from the control UI. You can only approve there. The control UI has no audit page: read the audit log with `GET /v1/audit` or `writ audit --remote`.
+- The reasons of refused audit rows through the API. A row doesn't record whether its reason quotes what the request sent, so `GET /v1/audit` withholds every refusal's reason.
 - Merge request notes, and plans of several stacks as one plan.
 - Destroy through the control plane, and the GitHub Actions jobs.
 - A second factor before an apply. Writ would check it in the transaction that moves a plan to `applying`.

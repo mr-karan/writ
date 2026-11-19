@@ -33,6 +33,7 @@
 | `GET /v1/runs/{id}?wait=60s` | `read` | `writ.remote-run/v0`. With `wait`, the request waits for a run that applies to end, at most 120 seconds. |
 | `GET /v1/applies?env=&stack=&limit=` | `read` | `writ.remote-runs/v0`: the runs `writ serve` started, newest first, with each one's stack, plan, status, and times, only those of stacks the token can read. `more` says older runs were left out. Each run carries its plan's source digest in `sources`. |
 | `POST /v1/apply-requests/{key}/outcome` | a token, and for a `started` key, the run's principal or `admin` | `writ.apply-outcome/v0`: `started` with the run, or `none`. A key with no row gets a `none` row. See [When an answer is lost](apply.md#when-an-answer-is-lost). |
+| `GET /v1/audit?plan=&run=&env=&stack=&person=&op=&since=&until=&limit=&cursor=` | any token | `writ.audit/v0`: a page of the audit log, newest first, only the rows the token may see. See [Read the audit log](#read-the-audit-log). |
 
 ### Error classes
 
@@ -283,6 +284,60 @@ A plan, an approval or its withdrawal, an apply, an adoption, a new repository, 
 
 **Limits.** If a state read fails after its row commits, it returns 500 and logs an error with the state version its row records. Its row still says 200. A panic at that point drops the connection instead of returning 500.
 
+## Read the audit log
+
+`GET /v1/audit` answers the rows of the audit log that the token may see, newest first, so you can follow a change from its plan through its approvals and its apply to its state writes without a database client. `writ audit --remote` prints the same rows as a table.
+
+| Parameter | Rows |
+| --- | --- |
+| `plan` | Of the plan, by its id or its ref, and of its run, so its approvals, its apply, and the run's state reads, writes, and locks come with it |
+| `run` | Of the run |
+| `env`, and `stack` with it | Of the environment, and of the stack there. A row that lists several stacks matches each of them. `env` must be one `writ serve` plans in, as on `GET /v1/plans`. |
+| `person` | Of the person, by the id `writ whoami` prints, such as `gitlab/user/1001` |
+| `op` | Of the operation: `read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`, `state-read`, `state-write`, `state-lock`, or `state-unlock`. Any other value returns 400. |
+| `since`, `until` | At or after `since`, and before `until`, both RFC 3339 times |
+| `limit` | At most this many, from 1 to 200, 50 by default |
+| `cursor` | After the last row of the page whose `next` this is. A cursor works until `writ serve` restarts, and then returns 400: read the first page again. |
+
+Which rows a token sees follows its grants:
+
+- A row of a `stack@env` needs `read` on every stack the row lists there.
+- A row of an environment that lists no stack, such as a list of an environment's plans, needs `read` on some stack there.
+- A row of no environment, or of every one, needs `admin` on every stack in every environment, as `POST /v1/repos` does. These are the server's start, sign-ins and sign-outs, `GET /v1/whoami`, refused tokens, the added repositories, and requests refused before they set a `stack@env`. A principal with that grant sees every row.
+
+An approval of a pipeline's plans in several environments leaves one row for each environment, and each row lists only that environment's stacks and grants. So a token that reads only staging sees the staging part of the approval and nothing of prod.
+
+A row a token may not see takes no place in the page. A page reads at most 5,000 rows, so for a token that may see few of them it can hold fewer than `limit` rows while `next` is set, and that `next` is after a row the token didn't see. `next` is encrypted under a key that `writ serve` makes when it starts, so you can't read the time or the row it points to, or make one of your own.
+
+A filter of a `stack@env` your token can't `read`, or of an environment where it can't `read` any stack, returns an empty page with `next` `""`, without reading the log. It can't match a row your token may see, and this way the number of rows it would read stays hidden.
+
+Limits:
+
+- A read of an environment where your token reads some stack, or of no environment, still reads the rows it can't see. So a page with fewer rows than `limit` and `next` set shows that at least that many hidden rows lie between its rows, and `since` and `until` can narrow down when they happened. So a token that can read one stack of prod can learn when there's activity on the other stacks of prod, but not on which stack or what it was, and a read of no environment shows when there's activity anywhere.
+
+A row has no client address, and `method` is `OTHER` for a method outside the standard set and the state backend's `LOCK` and `UNLOCK`, because a client chooses that text. Its `reason` is shown only when its `decision` is `allowed` or `none`: `writ serve` wrote those reasons from what it holds, except the reason of an override or an adoption, which a person wrote for the log. The reason of a refused row is the message the request got, which can quote what the request sent, such as a path, a field, or a name, so `reason` is `""` and `reason_withheld` is `true`. The control database keeps that reason. A `state-write` row's reason is shown without the SHA-256 of the state it stored, because with it a token that reads the stack could test a guess at the whole state, and the control database keeps the hash. `env`, `stacks`, `plan`, and `run` contain only names and ids that `writ serve` checked. A stack name in a request is shown as what its row concerns, so a value that is a valid stack name, as a token pasted for one would be, shows to the principals who may read that stack. `TestAuditReadNeverShowsWhatARequestSent` sends a secret in a token, a method, a path, a query, and a body, and requires that the control database contains it and that no page of `GET /v1/audit` does.
+
+The read leaves its own row, of operation `read`, with the `env`, `plan`, and `run` it asked for, and the `stack` only when your token can `read` it, so no read adds a row of a stack its token can't see. The row has none of the other parameters.
+
+```
+$ writ audit --remote
+AT                    BY          OP    ON       WHAT                    DECISION  PLAN  RUN  REASON
+2026-11-19T15:54:09Z  root (dev)  read  app@dev  GET /v1/applies 200     allowed   -     -    -
+2026-11-19T15:54:09Z  root (dev)  -     -        GET /v1/runs/{id} 404   refused   -     -    (withheld)
+2026-11-19T15:54:09Z  root (dev)  -     -        GET /v1/plans/{id} 404  refused   -     -    (withheld)
+2026-11-19T15:54:09Z  root (dev)  read  dev      GET /v1/applies 200     allowed   -     -    -
+2026-11-19T15:54:09Z  -           -     -        started                 none      -     -    writ v0.1.5-0.20261119155342-d29b2589f15f
+$ writ audit --remote --limit 2
+AT                    BY          OP    ON       WHAT                 DECISION  PLAN  RUN  REASON
+2026-11-19T15:54:09Z  root (dev)  read  -        GET /v1/audit 200    allowed   -     -    -
+2026-11-19T15:54:09Z  root (dev)  read  app@dev  GET /v1/applies 200  allowed   -     -    -
+More rows match: run the command again with --cursor 6sr58zWuNIVX3X5Gw2cVNdiLek78Ux4205UfZEcxsaffry8riQ9m31WxXzEpRCUA
+$ curl -sS "$SERVER/v1/audit?env=dev&stack=app&limit=1" -H "Authorization: Bearer $TOKEN" | jq -c '{format, ok, rows: [.rows[] | {at, kind, route, status, principal, op, env, stacks, decision, reason, reason_withheld}], next}'
+{"format":"writ.audit/v0","ok":true,"rows":[{"at":"2026-11-19T15:54:09Z","kind":"request","route":"/v1/applies","status":200,"principal":"root (dev)","op":"read","env":"dev","stacks":["app"],"decision":"allowed","reason":"","reason_withheld":false}],"next":""}
+```
+
+Output under `writ serve --dev` run as root of a user namespace with only loopback, 2026-11-19, after `writ runs --remote`, `writ show --remote` of a run that doesn't exist, and `writ runs --remote --stack app`.
+
 ## Rate limits
 
 `writ serve` counts each request twice, each time in a token bucket that refills at its rate and has room for one second's worth:
@@ -337,6 +392,7 @@ error: the apply ran past limits.apply_timeout, 1s: OpenTofu was interrupted, st
 | A provider that asks for the host's identity | A firewall rule drops the provider uids' traffic to `169.254.169.254` and `fd00:ec2::254`, and providers get `AWS_EC2_METADATA_DISABLED=true` |
 | Credentials that outlive their run | Providers get a token for the credential endpoint, which dies with the plan |
 | An identity provider, a proxy, or a token that carries a credential in any field | `internal/oidc` reports a failure only as a typed refusal: a stage, a check, a reason, and numbers Writ computed. No field of it can hold text that came from the identity provider or the token, so no answer, log line, or audit row can either. See [Identity provider refusals](#identity-provider-refusals). |
+| A secret a request sent, read back from the audit log | `GET /v1/audit` shows no client address and no method outside the standard set, and the reason of a row only when `writ serve` allowed the request or decided nothing, so no message that quotes a request reaches another principal. See [Read the audit log](#read-the-audit-log). |
 | A secret in a response | The [mask](secrets.md) sweeps the plan document, its text, and a run's events and diagnostics. The saved plan is sealed under the environment's key, and the API never serves it. `provider_env` reads only the files the config lists. |
 
 **Limits.** A provider that a stack pins can still do what its run's role allows, for as long as the run lasts. A config without `provider_uids` runs providers as the user of `writ serve`: don't give such a host a cloud identity.
