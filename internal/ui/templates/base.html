@@ -31,7 +31,7 @@
 </nav>
 {{- with .Shell}}
 {{- if .Failed}}
-<p class="tree-note" role="status">writ serve could not read the environments.</p>
+<p class="tree-note" role="status">Writ could not read the environments.</p>
 {{- else}}
 <nav class="tree" aria-labelledby="tree-h">
 <p class="side-label" id="tree-h">Stacks</p>
@@ -63,7 +63,7 @@
 {{- with none "no-stack" .Count}}
 <p class="tree-note">{{.}}</p>
 {{- else}}
-<p class="tree-note">writ serve read only some plans here, so a stack a plan names may not be listed.</p>
+<p class="tree-note">Writ read only some plans here, so a stack a plan names may not be listed.</p>
 {{- end}}
 {{- end}}
 </details></li>
@@ -230,7 +230,7 @@
 {{else if .Dev}}
 <p>This is the dev control plane of one user. To sign in, run <code>writ ui</code> in a terminal and open the link it prints. The link works once, for 10 minutes.</p>
 {{else}}
-<p>This writ serve has no issuer of kind <code>people</code>, so no one can sign in. Add one to the config and restart writ serve.</p>
+<p>This Writ has no issuer of kind <code>people</code>, so no one can sign in. Add one to the config and restart writ serve.</p>
 {{end}}
 </div>
 </div>

@@ -111,7 +111,7 @@
 </div>
 {{end}}
 {{else}}
-<div class="card"><p class="empty" id="no-index">{{if .Drift}}{{none "unindexed"}}{{else if .DriftFailed}}writ serve could not read the drift record of this stack, so this page cannot say whether it keeps a state of it.{{else}}{{none "no-state"}}{{end}}</p></div>
+<div class="card"><p class="empty" id="no-index">{{if .Drift}}{{none "unindexed"}}{{else if .DriftFailed}}Writ could not read the drift record of this stack, so this page cannot say whether it keeps a state of it.{{else}}{{none "no-state"}}{{end}}</p></div>
 {{end}}
 {{end}}
 
@@ -123,7 +123,7 @@
 <p class="meta">{{template "counted" (of (exact .Resources) "resource" "resources")}} · {{if eq .Backend "s3"}}serial{{else}}version{{end}} <code>{{.IndexedVersion}}</code> · indexed {{template "when" .IndexedAt}}</p>
 {{- end}}{{end}}
 </div>
-{{with .Drift}}{{with .OutsideWrite}}<div class="note note-warning" role="note">{{template "icon" "warn"}}<div>Serial <code>{{.Serial}}</code> of the state was written outside writ serve, seen {{template "time" .SeenAt}}.</div></div>{{end}}{{end}}
+{{with .Drift}}{{with .OutsideWrite}}<div class="note note-warning" role="note">{{template "icon" "warn"}}<div>Serial <code>{{.Serial}}</code> of the state was written outside Writ, seen {{template "time" .SeenAt}}.</div></div>{{end}}{{end}}
 {{with .Adopt}}{{template "adopt-hint" .}}{{end}}
 {{template "stack-tabs" .}}
 {{if eq .View "resources"}}{{template "resources" .}}

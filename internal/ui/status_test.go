@@ -82,9 +82,9 @@ func TestPlanDecision(t *testing.T) {
 		want, deny []string
 	}{
 		{"planning", server.PlanInfo{Status: "planning"},
-			[]string{"writ serve asks the approval rules of this plan once it is made.", "Approve todo not known yet"}, []string{noRule, "none needed"}},
+			[]string{"Writ asks the approval rules of this plan once it is made.", "Approve todo not known yet"}, []string{noRule, "none needed"}},
 		{"planning under a rule of every plan", server.PlanInfo{Status: "planning", Approvals: one},
-			[]string{"writ serve asks the approval rules of this plan once it is made.", "Approve todo not known yet"}, []string{needsOne, "0 of 1"}},
+			[]string{"Writ asks the approval rules of this plan once it is made.", "Approve todo not known yet"}, []string{needsOne, "0 of 1"}},
 		{"pending", server.PlanInfo{ID: id, Status: "pending", Approvals: one}, []string{needsOne, "Approve next 0 of 1"}, []string{"Run "}},
 		{"approved by no rule", server.PlanInfo{ID: id, Status: "approved"}, []string{noRule, "Approve done none needed"}, nil},
 		{"approved", server.PlanInfo{ID: id, Status: "approved", Approvals: given}, []string{needsOne, "Approve done 1 of 1"}, nil},

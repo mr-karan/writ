@@ -45,7 +45,7 @@ type loginData struct {
 func (u *UI) login(w http.ResponseWriter, r *http.Request) {
 	data := loginData{Issuers: u.srv.PeopleIssuers(), Dev: u.srv.Dev(), Next: safeNext(r.URL.Query().Get("next"))}
 	if r.URL.Query().Get("signed_out") == "1" {
-		data.Message = "You are signed out of writ serve. Your session at the identity provider is unchanged."
+		data.Message = "You are signed out of Writ. Your session at the identity provider is unchanged."
 	}
 	u.render(w, r, http.StatusOK, "login", &page{Title: "Sign in", Data: data})
 }
@@ -127,7 +127,7 @@ func (u *UI) logout(w http.ResponseWriter, r *http.Request, s *server.Session) {
 			// The session lives on, so the cookie stays and the person is
 			// not told they signed out.
 			u.log.Error("end a session", "err", err)
-			u.errorPage(w, r, s, http.StatusServiceUnavailable, "unavailable", []server.Diagnostic{{Severity: "error", Class: "state-io", Message: "writ serve could not end the session: " + err.Error()}}, nil)
+			u.errorPage(w, r, s, http.StatusServiceUnavailable, "unavailable", []server.Diagnostic{{Severity: "error", Class: "state-io", Message: "Writ could not end the session: " + err.Error()}}, nil)
 			return
 		}
 	}

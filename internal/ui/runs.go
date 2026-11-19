@@ -47,9 +47,9 @@ func (u *UI) runs(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	if d.Stack != "" {
 		p.Crumbs = []crumb{{"Runs", link("/ui/runs", "env", d.Env)}, {d.Stack, ""}}
 	}
-	caption := "Runs writ serve started in " + d.Env + ", newest first"
+	caption := "Runs in " + d.Env + ", newest first"
 	if d.Stack != "" {
-		caption = "Runs of " + d.Stack + " in " + d.Env + " that writ serve started, newest first"
+		caption = "Runs of " + d.Stack + " in " + d.Env + ", newest first"
 	}
 	if d.Applies, ok = f.applies(caption, d.Env, d.Stack); !ok {
 		return
@@ -70,7 +70,7 @@ func (u *UI) run(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	if u.tofuRun(f, r.PathValue("run")) {
 		return
 	}
-	u.errorPage(w, r, s, http.StatusNotFound, "not found", []server.Diagnostic{{Severity: "error", Class: "usage", Message: "writ serve started no run " + r.PathValue("run") + " of an OpenTofu plan"}}, f.api)
+	u.errorPage(w, r, s, http.StatusNotFound, "not found", []server.Diagnostic{{Severity: "error", Class: "usage", Message: "Writ started no run " + r.PathValue("run") + " of an OpenTofu plan"}}, f.api)
 }
 
 // tofuRun renders the page of a run writ serve started of an OpenTofu

@@ -5,7 +5,7 @@
 </div>
 {{if not .Stack}}{{template "env-filter" (envs "/ui/runs" .Env .Envs false)}}{{end}}
 <section class="card" aria-labelledby="h-applies">
-<h2 id="h-applies" class="sr-only">Started by writ serve ({{template "n" (figure (len .Applies.Runs) .Applies.More)}})</h2>
+<h2 id="h-applies" class="sr-only">Runs <span class="count">{{template "n" (figure (len .Applies.Runs) .Applies.More)}}</span></h2>
 {{if .Applies.Runs}}{{template "applies-table" .Applies}}{{else}}<p class="empty">{{none "no-run" (exact (len .Applies.Runs))}}</p>{{end}}
 </section>
 {{end}}
@@ -30,7 +30,7 @@
 {{with .Doc}}{{with .StateVersion}}<div><dt>State version</dt><dd><code>{{.}}</code></dd></div>{{end}}{{end}}
 </dl>
 </div>
-{{with .DocError}}<div class="note note-error" role="alert">{{template "icon" "fail"}}<div>writ serve could not read this run's document: <span class="msg">{{.}}</span></div></div>{{end}}
+{{with .DocError}}<div class="note note-error" role="alert">{{template "icon" "fail"}}<div>Writ could not read this run's document: <span class="msg">{{.}}</span></div></div>{{end}}
 {{with .Doc}}
 {{if .Diagnostics}}
 <section class="card" aria-labelledby="h-diagnostics" data-record="format=writ.tofu-apply/v0">

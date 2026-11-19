@@ -4,7 +4,6 @@
 <h1>Access</h1>
 <a class="button" href="/ui/whoami">Your access</a>
 </div>
-<p class="meta">Read from the config file of writ serve</p>
 <section class="card" aria-labelledby="h-grants">
 <div class="card-head"><h2 id="h-grants">Grants <span class="count">{{template "n" (exact (len .Grants))}}</span></h2></div>
 {{template "grant-rows" (grants "Every grant of the config, in order" .Grants true)}}
