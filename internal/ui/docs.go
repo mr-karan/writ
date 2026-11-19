@@ -15,4 +15,7 @@ type docDiag struct {
 	Fix      *struct {
 		Message string `json:"message"`
 	} `json:"fix"`
+	// Adopted is set on the diagnostic that the page's adopt note words,
+	// which the list then shows as one short line.
+	Adopted bool `json:"-"`
 }

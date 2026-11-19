@@ -742,6 +742,15 @@ func TestTofuAdoptHint(t *testing.T) {
 	if got := words(byID(t, doc, "adopt")); !strings.Contains(got, "A person with adopt on the stack can seal a set for it") || !strings.HasSuffix(got, want) {
 		t.Errorf("the plan's page: %s", got)
 	}
+	// The note words the failure, so the diagnostic beside it is one
+	// short line; the plan's document keeps the whole message.
+	const why = "a person with adopt on app@" + server.DevEnv + " can seal a set for it"
+	if !strings.Contains(string(p.Document), why) {
+		t.Errorf("the plan's document lacks %q: %s", why, p.Document)
+	}
+	if got := words(up(byID(t, doc, "h-diags"), isTag("section"))); strings.Contains(got, why) || strings.Contains(got, "keeps no detail") || !strings.Contains(got, "No secret set for the state this plan read") {
+		t.Errorf("the plan's diagnostics repeat the note: %s", got)
+	}
 
 	x.driftCheck(second)
 	_, doc = x.page("/ui/stack?stack=app&env=" + server.DevEnv + "&view=drift")
