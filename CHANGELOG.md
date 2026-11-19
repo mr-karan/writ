@@ -21,6 +21,7 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 
 ### Fixed
 
+- A team's `writ serve` that runs as a user other than root, as the NixOS module and [Run isolation and egress](docs/run-isolation.md) set it up, failed every OpenTofu run with `fork/exec /proc/self/exe: permission denied`. Making the run's scratch directory as the provider uid left writ not dumpable, and the kernel then refused writ the uid map of the run's user namespace. Writ now makes itself dumpable while it starts a run's filesystem view, and not dumpable again right after.
 - `writ serve --dev` took an approval of a kept speculative plan, which the control UI never offers. Every control plane now refuses it with HTTP 409 and class `state`, as it refuses a drift plan; a team's control plane answered 400 and class `usage` before.
 - A plan showed `(sensitive)` for the token settings of an auth method, such as `token_locality`, `max_token_ttl`, and `token_name_format` of `nomad_acl_auth_method`, because the mask hides every attribute whose name contains `token`. A name that ends in one `token` and a token setting, as [rule 3](docs/secrets.md#rule-3-names) lists, is no longer masked for its name. Its value is still masked where it is marked or holds a secret the mask learned.
 - The note of an expired plan set a space before its full stop.

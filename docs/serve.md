@@ -523,7 +523,7 @@ table inet writ {
 }
 ```
 
-For an OpenTofu stack, `tofu` and its providers run as the provider uid inside the [private filesystem view](#what-a-run-can-see), so they can't read a world-readable file of the host either. For the view, Writ needs user, mount, and pid namespaces, which an unprivileged user can create. Writ's `CAP_SETUID` and `CAP_SETGID` let it map the provider uid into the view's user namespace.
+For an OpenTofu stack, `tofu` and its providers run as the provider uid inside the [private filesystem view](#what-a-run-can-see), so they can't read a world-readable file of the host either. For the view, Writ needs user, mount, and pid namespaces, which an unprivileged user can create. Writ's `CAP_SETUID` and `CAP_SETGID` let it map the provider uid into the view's user namespace. The kernel lets a `writ serve` that isn't root write that map only while writ is dumpable, and it marks writ not dumpable each time writ acts as a provider uid on files. So once that has happened, writ is dumpable only while it starts a view, and not dumpable again right after. While it isn't dumpable, no process of writ's own uid can trace it or read its memory.
 
 If an environment in your config sets a role, or the config has a `tofu` block, you must set `provider_uids`. Your OpenTofu stack runs arbitrary code from the commit, such as a `local_file` data source that reads a path on the host, so a team's `writ serve` never runs tofu as its own user.
 
@@ -568,6 +568,8 @@ the provider saw: key "open /tmp/TestProviderIsolation3679868081/001/keys/prod.k
 ```
 
 Outside the provider, the test process reached both addresses, and with the rule moved to other uids the provider reached `169.254.169.254` too.
+
+A third test in `just test-serve` plans as provider uids from the same kind of `writ`, with its capabilities cleared at start as `writ serve` clears them. Each plan makes its scratch directory as the provider uid before tofu starts, and twenty plans run while other goroutines act as other uids on files.
 
 ## Next steps
 

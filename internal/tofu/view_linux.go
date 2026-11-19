@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"unsafe"
+
+	"github.com/mr-karan/writ/internal/runas"
 )
 
 // viewHelper is os.Args[0] of the copy of writ that makes a tofu process's
@@ -148,7 +150,7 @@ func startConfined(cmd *exec.Cmd, c command) error {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, c.view.run, c.view.home)
 	}
 	cmd.SysProcAttr = viewAttr(c.user)
-	err = cmd.Start()
+	err = runas.StartMapped(cmd)
 	w.Close()
 	if err != nil {
 		return fmt.Errorf("tofu: start tofu in new user, mount, and pid namespaces, which its private filesystem view needs: %w", err)

@@ -8,17 +8,18 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
 
-// TestReap runs this package's test binary again inside user and pid
-// namespaces, as uid 1000 with the capabilities writ serve has. There
-// Reap can kill only what the test started.
+// TestReap and TestStartMapped run this package's test binary again
+// inside user and pid namespaces, as uid 1000 with the capabilities writ
+// serve has. There Reap can kill only what the test started.
 const (
-	reapChildEnv = "WRIT_TEST_REAP_CHILD"
-	fsuidEnv     = "WRIT_TEST_FSUID"
-	sleepEnv     = "WRIT_TEST_SLEEP"
+	childEnv = "WRIT_TEST_RUNAS_CHILD"
+	fsuidEnv = "WRIT_TEST_FSUID"
+	sleepEnv = "WRIT_TEST_SLEEP"
 )
 
 const (
@@ -56,10 +57,28 @@ func init() {
 }
 
 func TestReap(t *testing.T) {
-	if os.Getenv(reapChildEnv) != "" {
+	if os.Getenv(childEnv) != "" {
 		reapChild(t)
 		return
 	}
+	inNamespaces(t, "TestReap")
+}
+
+// TestStartMapped starts a process in a user namespace that maps a run's
+// uid, after AsUser, as uid 1000 with the capabilities writ serve has.
+func TestStartMapped(t *testing.T) {
+	if os.Getenv(childEnv) != "" {
+		startMappedChild(t)
+		return
+	}
+	inNamespaces(t, "TestStartMapped")
+}
+
+// inNamespaces runs the test name of this package's test binary again
+// inside user and pid namespaces, as uid 1000 with the capabilities writ
+// serve has.
+func inNamespaces(t *testing.T, name string) {
+	t.Helper()
 	for _, bin := range []string{"unshare", "setpriv"} {
 		if _, err := exec.LookPath(bin); err != nil {
 			t.Skipf("needs %s", bin)
@@ -90,13 +109,53 @@ func TestReap(t *testing.T) {
 	if err := os.WriteFile(bin, b, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("unshare", append(slices.Clone(namespaceArgs), "sh", "-c", dropToWrit, "sh", bin, "-test.run=^TestReap$", "-test.v", "-test.count=1")...)
-	cmd.Env = append(os.Environ(), reapChildEnv+"=1")
+	cmd := exec.Command("unshare", append(slices.Clone(namespaceArgs), "sh", "-c", dropToWrit, "sh", bin, "-test.run=^"+name+"$", "-test.v", "-test.count=1")...)
+	cmd.Env = append(os.Environ(), childEnv+"=1")
 	out, err := cmd.CombinedOutput()
 	t.Logf("in the namespaces:\n%s", out)
-	if err != nil || !strings.Contains(string(out), "--- PASS: TestReap") {
+	if err != nil || !strings.Contains(string(out), "--- PASS: "+name) {
 		t.Fatalf("the test failed in the namespaces: %v", err)
 	}
+}
+
+func startMappedChild(t *testing.T) {
+	if os.Getuid() != writUID {
+		t.Fatalf("the child runs as uid %d, not %d", os.Getuid(), writUID)
+	}
+	if err := AsUser(User{UID: runUID, GID: runUID}, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if d := dumpable(t); d != 0 {
+		t.Fatalf("after AsUser writ is dumpable %d, want 0, which StartMapped must undo to start the process", d)
+	}
+	cmd := exec.Command("/proc/self/exe")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags:                 syscall.CLONE_NEWUSER,
+		UidMappings:                []syscall.SysProcIDMap{{ContainerID: 0, HostID: writUID, Size: 1}, {ContainerID: runUID, HostID: runUID, Size: 1}},
+		GidMappings:                []syscall.SysProcIDMap{{ContainerID: 0, HostID: writUID, Size: 1}, {ContainerID: runUID, HostID: runUID, Size: 1}},
+		GidMappingsEnableSetgroups: true,
+	}
+	cmd.Env = []string{sleepEnv + "=1"}
+	if err := StartMapped(cmd); err != nil {
+		t.Fatalf("start a process in a user namespace that maps uid %d: %v", runUID, err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	})
+	// Dumpable, writ would let any process of its uid read its memory.
+	if d := dumpable(t); d != 0 {
+		t.Errorf("after StartMapped writ is dumpable %d, want 0 as before it", d)
+	}
+}
+
+func dumpable(t *testing.T) uintptr {
+	t.Helper()
+	d, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_GET_DUMPABLE, 0, 0)
+	if e != 0 {
+		t.Fatal(e)
+	}
+	return d
 }
 
 func reapChild(t *testing.T) {
