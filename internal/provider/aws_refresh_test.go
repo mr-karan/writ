@@ -53,7 +53,7 @@ func TestAWSProviderRefreshesCredentials(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	lock, err := Install(ctx, InstallOptions{Dirs: dirs, Offline: true}, nil, []Requirement{{Name: "aws", Source: src, Version: "6.70.0"}})
+	lock, err := Install(ctx, InstallOptions{Dirs: dirs, Offline: true}, []Requirement{{Name: "aws", Source: src, Version: "6.70.0"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,10 +88,10 @@ func TestAWSProviderRefreshesCredentials(t *testing.T) {
 		"endpoints": list(obj(map[string]value.Value{"sts": str(st.URL)})),
 	})
 	pool := NewPool(PoolOptions{
-		Dirs: dirs, Lock: lock,
-		Configs: []Config{{Source: src, Version: "6.70.0", Value: cfg}},
-		Launch:  Launch{OwnEnv: true, Env: append([]string{"AWS_EC2_METADATA_DISABLED=true"}, run.Env()...)},
+		Dirs:   dirs,
+		Launch: Launch{OwnEnv: true, Env: append([]string{"AWS_EC2_METADATA_DISABLED=true"}, run.Env()...)},
 	})
+	pool.Add(lock, []Config{{Source: src, Version: "6.70.0", Value: cfg}})
 	defer closePool(t, pool)
 	// Configuring the provider checks its credentials with
 	// GetCallerIdentity.

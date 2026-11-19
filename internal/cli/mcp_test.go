@@ -123,9 +123,9 @@ func TestMCPSchema(t *testing.T) {
 	// The lock's zh: hashes pin the archives, so a warm cache needs no
 	// registry, as in OpenTofuStack.
 	opts := provider.InstallOptions{Dirs: dirs, Offline: true}
-	if _, cached := provider.Install(ctx, opts, nil, reqs); cached != nil {
+	if _, cached := provider.Install(ctx, opts, reqs); cached != nil {
 		opts.Offline = false
-		if _, err := provider.Install(ctx, opts, nil, reqs); err != nil {
+		if _, err := provider.Install(ctx, opts, reqs); err != nil {
 			t.Fatal(errors.Join(cached, err))
 		}
 	}

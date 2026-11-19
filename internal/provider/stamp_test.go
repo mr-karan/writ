@@ -182,7 +182,8 @@ func TestPoolRejectsUnauthenticatedStamp(t *testing.T) {
 			if err := os.WriteFile(bin+stampSuffix, data, 0o644); err != nil {
 				t.Fatal(err)
 			}
-			pool := NewPool(PoolOptions{Dirs: dirs, Lock: &Lock{entries: []LockEntry{{Source: tlsSrc, Version: "4.4.2", Platform: CurrentPlatform(), Binary: pinned}}}, Configs: []Config{{Source: tlsSrc, Version: "4.4.2"}}})
+			pool := NewPool(PoolOptions{Dirs: dirs})
+			pool.Add(&Lock{entries: []LockEntry{{Source: tlsSrc, Version: "4.4.2", Platform: CurrentPlatform(), Binary: pinned}}}, []Config{{Source: tlsSrc, Version: "4.4.2"}})
 			defer pool.Close(context.Background())
 			_, err = pool.Client(context.Background(), keyOf(tlsSrc))
 			if err == nil || !strings.Contains(err.Error(), "does not match its hash in writ.lock") {

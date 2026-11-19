@@ -109,7 +109,7 @@ func TestInstallFromRegistry(t *testing.T) {
 	f.seedSchema(t, dirs)
 	ctx := context.Background()
 
-	lock, err := Install(ctx, f.options(dirs), &Lock{}, []Requirement{f.req()})
+	lock, err := Install(ctx, f.options(dirs), []Requirement{f.req()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,22 +135,8 @@ func TestInstallFromRegistry(t *testing.T) {
 		t.Errorf("downloaded %d times, want 1", n)
 	}
 
-	t.Run("pinned and cached needs no network", func(t *testing.T) {
-		before := f.metadata.Load() + f.downloads.Load()
-		again, err := Install(ctx, f.options(dirs), lock, []Requirement{f.req()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if after := f.metadata.Load() + f.downloads.Load(); after != before {
-			t.Errorf("made %d registry requests, want none", after-before)
-		}
-		if !slices.Equal(again.Entries(), lock.Entries()) {
-			t.Errorf("lock changed: %+v", again.Entries())
-		}
-	})
-
-	t.Run("cached but unpinned is not downloaded again", func(t *testing.T) {
-		again, err := Install(ctx, f.options(dirs), &Lock{}, []Requirement{f.req()})
+	t.Run("cached is not downloaded again", func(t *testing.T) {
+		again, err := Install(ctx, f.options(dirs), []Requirement{f.req()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -166,7 +152,7 @@ func TestInstallFromRegistry(t *testing.T) {
 		if err := os.WriteFile(bin, []byte("tampered"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Install(ctx, f.options(dirs), lock, []Requirement{f.req()}); err != nil {
+		if _, err := Install(ctx, f.options(dirs), []Requirement{f.req()}); err != nil {
 			t.Fatal(err)
 		}
 		if got, _ := os.ReadFile(bin); !bytes.Equal(got, f.binary) {
@@ -185,7 +171,7 @@ func TestInstallRefusesBadHashes(t *testing.T) {
 		f.shasum = strings.Repeat("ab", 32)
 		dirs := Dirs{Cache: t.TempDir()}
 		f.seedSchema(t, dirs)
-		_, err := Install(ctx, f.options(dirs), &Lock{}, []Requirement{f.req()})
+		_, err := Install(ctx, f.options(dirs), []Requirement{f.req()})
 		if err == nil || !strings.Contains(err.Error(), "does not match the registry's") {
 			t.Fatalf("Install error = %v, want a hash mismatch", err)
 		}
@@ -193,24 +179,11 @@ func TestInstallRefusesBadHashes(t *testing.T) {
 			t.Error("a binary from an unverified archive was installed")
 		}
 	})
-	t.Run("registry differs from the pin", func(t *testing.T) {
-		f := newFakeRegistry(t)
-		dirs := Dirs{Cache: t.TempDir()}
-		f.seedSchema(t, dirs)
-		pinned := (&Lock{}).with(LockEntry{Source: f.src, Version: "1.0.0", Platform: CurrentPlatform(), Archive: hash(1), Binary: hash(2)})
-		_, err := Install(ctx, f.options(dirs), pinned, []Requirement{f.req()})
-		if err == nil || !strings.Contains(err.Error(), "never re-pins") {
-			t.Fatalf("Install error = %v, want a refusal to re-pin", err)
-		}
-		if n := f.downloads.Load(); n != 0 {
-			t.Errorf("downloaded %d times, want none", n)
-		}
-	})
 	t.Run("version not in the registry", func(t *testing.T) {
 		f := newFakeRegistry(t)
 		req := f.req()
 		req.Version = "2.0.0"
-		_, err := Install(ctx, f.options(Dirs{Cache: t.TempDir()}), &Lock{}, []Requirement{req})
+		_, err := Install(ctx, f.options(Dirs{Cache: t.TempDir()}), []Requirement{req})
 		if err == nil || !strings.Contains(err.Error(), "has no version 2.0.0") {
 			t.Fatalf("Install error = %v", err)
 		}
@@ -235,7 +208,7 @@ func TestInstallRefusesAnUnlistedArchive(t *testing.T) {
 
 	t.Run("a download", func(t *testing.T) {
 		dirs := Dirs{Cache: t.TempDir()}
-		_, err := Install(ctx, f.options(dirs), &Lock{}, []Requirement{unlisted})
+		_, err := Install(ctx, f.options(dirs), []Requirement{unlisted})
 		refused(t, err)
 		if n := f.downloads.Load(); n != 0 {
 			t.Errorf("downloaded %d times, want none", n)
@@ -247,17 +220,12 @@ func TestInstallRefusesAnUnlistedArchive(t *testing.T) {
 
 	dirs := Dirs{Cache: t.TempDir()}
 	f.seedSchema(t, dirs)
-	lock, err := Install(ctx, f.options(dirs), &Lock{}, []Requirement{listed})
-	if err != nil {
+	if _, err := Install(ctx, f.options(dirs), []Requirement{listed}); err != nil {
 		t.Fatalf("Install of a listed archive: %v", err)
 	}
-	t.Run("a pinned cached binary", func(t *testing.T) {
-		_, err := Install(ctx, f.options(dirs), lock, []Requirement{unlisted})
-		refused(t, err)
-	})
-	t.Run("an unpinned cached binary offline", func(t *testing.T) {
+	t.Run("a cached binary offline", func(t *testing.T) {
 		opts := InstallOptions{Dirs: dirs, HTTP: &http.Client{Transport: noNetwork{t}}, Offline: true}
-		_, err := Install(ctx, opts, &Lock{}, []Requirement{unlisted})
+		_, err := Install(ctx, opts, []Requirement{unlisted})
 		refused(t, err)
 	})
 }
@@ -275,7 +243,7 @@ func TestInstallOffline(t *testing.T) {
 	f := newFakeRegistry(t)
 	dirs := Dirs{Cache: t.TempDir()}
 	f.seedSchema(t, dirs)
-	online, err := Install(ctx, f.options(dirs), &Lock{}, []Requirement{f.req()})
+	online, err := Install(ctx, f.options(dirs), []Requirement{f.req()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,8 +252,8 @@ func TestInstallOffline(t *testing.T) {
 	}
 	bin := dirs.BinaryPath(f.src, "1.0.0", CurrentPlatform())
 
-	t.Run("unpinned and cached", func(t *testing.T) {
-		lock, err := Install(ctx, offline(t, dirs), &Lock{}, []Requirement{f.req()})
+	t.Run("cached", func(t *testing.T) {
+		lock, err := Install(ctx, offline(t, dirs), []Requirement{f.req()})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -293,33 +261,17 @@ func TestInstallOffline(t *testing.T) {
 			t.Errorf("offline lock %+v, want the online one %+v", lock.Entries(), online.Entries())
 		}
 	})
-	t.Run("pinned and cached", func(t *testing.T) {
-		lock, err := Install(ctx, offline(t, dirs), online, []Requirement{f.req()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !slices.Equal(lock.Entries(), online.Entries()) {
-			t.Errorf("lock changed: %+v", lock.Entries())
-		}
-	})
 	t.Run("not cached", func(t *testing.T) {
-		_, err := Install(ctx, offline(t, Dirs{Cache: t.TempDir()}), &Lock{}, []Requirement{f.req()})
+		_, err := Install(ctx, offline(t, Dirs{Cache: t.TempDir()}), []Requirement{f.req()})
 		if err == nil || !strings.Contains(err.Error(), "acme/fake 1.0.0 "+CurrentPlatform()+" is not in the provider cache") {
 			t.Fatalf("Install error = %v, want one naming the missing version", err)
-		}
-	})
-	t.Run("pinned to another binary", func(t *testing.T) {
-		pinned := (&Lock{}).with(LockEntry{Source: f.src, Version: "1.0.0", Platform: CurrentPlatform(), Archive: hash(1), Binary: hash(2)})
-		_, err := Install(ctx, offline(t, dirs), pinned, []Requirement{f.req()})
-		if err == nil || !strings.Contains(err.Error(), "does not match its hash in writ.lock") {
-			t.Fatalf("Install error = %v, want a pin mismatch", err)
 		}
 	})
 	t.Run("changed since it was extracted", func(t *testing.T) {
 		if err := os.WriteFile(bin, []byte("tampered"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		_, err := Install(ctx, offline(t, dirs), &Lock{}, []Requirement{f.req()})
+		_, err := Install(ctx, offline(t, dirs), []Requirement{f.req()})
 		if err == nil || !strings.Contains(err.Error(), "changed since it was extracted") {
 			t.Fatalf("Install error = %v, want the cached binary refused", err)
 		}

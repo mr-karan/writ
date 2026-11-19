@@ -1,17 +1,10 @@
 package provider
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -58,9 +51,24 @@ func installed(t *testing.T) (Dirs, *Lock) {
 			shared.err = err
 			return
 		}
+		reqs := slices.Clone(testReqs)
+		for i, r := range reqs {
+			if e, ok := pinned.Find(r.Source, r.Version); ok {
+				reqs[i].Archives = [][32]byte{e.Archive}
+			}
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		shared.lock, shared.err = Install(ctx, InstallOptions{Dirs: shared.dirs}, pinned, testReqs)
+		opts := InstallOptions{Dirs: shared.dirs, Offline: true}
+		lock, cached := Install(ctx, opts, reqs)
+		if cached != nil {
+			opts.Offline = false
+			if lock, err = Install(ctx, opts, reqs); err != nil {
+				shared.err = errors.Join(cached, err)
+				return
+			}
+		}
+		shared.lock = lock
 	})
 	if shared.err != nil {
 		t.Fatal(shared.err)
@@ -75,7 +83,9 @@ func newTestPool(t *testing.T) *Pool {
 	for _, r := range testReqs {
 		configs = append(configs, Config{Source: r.Source, Version: r.Version, Value: value.NullVal()})
 	}
-	return NewPool(PoolOptions{Dirs: dirs, Lock: lock, Configs: configs})
+	p := NewPool(PoolOptions{Dirs: dirs})
+	p.Add(lock, configs)
+	return p
 }
 
 // running returns the clients p has started.
@@ -171,81 +181,6 @@ func TestIntegrationInstall(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("a pin the registry contradicts is refused", func(t *testing.T) {
-		e, _ := lock.Find(randomSrc, "3.9.1")
-		e.Archive[0] ^= 0xff
-		opts := InstallOptions{Dirs: Dirs{Cache: t.TempDir()}, HTTP: cacheRegistry(t, dirs, lock)}
-		_, err := Install(context.Background(), opts, (&Lock{}).with(e), testReqs[:1])
-		if err == nil || !strings.Contains(err.Error(), "never re-pins") {
-			t.Errorf("Install error = %v, want a refusal to re-pin", err)
-		}
-	})
-}
-
-// cacheRegistry is a stand-in of the registry on loopback, which answers
-// for every host. For each provider of lock it serves its version on its
-// platform, the plugin protocol of its cached schema, and a release
-// archive: a zip of the binary installed into dirs. The cache keeps no
-// release archive of the running platform, so the stand-in's archive and
-// its hash are its own, not the release's, and an install that trusted it
-// would extract the same binary the lock pins.
-func cacheRegistry(t *testing.T, dirs Dirs, lock *Lock) *http.Client {
-	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /.well-known/terraform.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"providers.v1": "/v1/providers/"}`))
-	})
-	for _, e := range lock.Entries() {
-		bin := dirs.BinaryPath(e.Source, e.Version, e.Platform)
-		data, err := os.ReadFile(bin)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var archive bytes.Buffer
-		zw := zip.NewWriter(&archive)
-		fh := &zip.FileHeader{Name: filepath.Base(bin), Method: zip.Deflate}
-		fh.SetMode(0o755)
-		f, err := zw.CreateHeader(fh)
-		if err == nil {
-			_, err = f.Write(data)
-		}
-		if err == nil {
-			err = zw.Close()
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		cache, err := openSchemaCache(dirs, e.Binary)
-		if err != nil {
-			t.Fatal(err)
-		}
-		protocols := []string{fmt.Sprintf("%d.0", cache.index.Protocol)}
-		goos, arch, _ := strings.Cut(e.Platform, "_")
-		base := "/v1/providers/" + e.Source.Namespace + "/" + e.Source.Type
-		versions := registryVersions{Versions: []registryVersion{{Version: e.Version, Protocols: protocols, Platforms: []registryPlatform{{OS: goos, Arch: arch}}}}}
-		mux.HandleFunc("GET "+base+"/versions", func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(versions)
-		})
-		filename := fmt.Sprintf("terraform-provider-%s_%s_%s.zip", e.Source.Type, e.Version, e.Platform)
-		sum := sha256.Sum256(archive.Bytes())
-		download := registryDownload{Protocols: protocols, Filename: filename, DownloadURL: "/archives/" + filename, Shasum: hex.EncodeToString(sum[:])}
-		mux.HandleFunc("GET "+base+"/"+e.Version+"/download/"+goos+"/"+arch, func(w http.ResponseWriter, r *http.Request) {
-			json.NewEncoder(w).Encode(download)
-		})
-		mux.HandleFunc("GET /archives/"+filename, func(w http.ResponseWriter, r *http.Request) {
-			w.Write(archive.Bytes())
-		})
-	}
-	srv := httptest.NewTLSServer(mux)
-	t.Cleanup(srv.Close)
-	tr := srv.Client().Transport.(*http.Transport).Clone()
-	tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
-	}
-	// httptest's certificate names example.com, not the registry's host.
-	tr.TLSClientConfig.ServerName = "example.com"
-	return &http.Client{Transport: tr}
 }
 
 type attrRef struct {
