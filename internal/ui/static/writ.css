@@ -124,6 +124,14 @@ summary { display: block; padding: 0; font-weight: inherit; user-select: auto; t
 summary:hover { background: none; }
 summary::after { content: none; mask-image: none; background: none; transition: none; }
 
+/* Oat pads and shadows every .card, spaces each li and every
+   [data-field] as a form field (here it names the record field a value
+   shows), and spreads a summary's children apart. Each part here sets
+   its own inset. */
+.card { padding: 0; box-shadow: none; }
+li, [data-field] { margin-block-end: 0; }
+.fold > summary { justify-content: flex-start; }
+
 /* The frame: a sidebar and the page. */
 /* The sidebar's ground is painted on the frame too, so it runs the full
    height of a long page. */
@@ -210,12 +218,7 @@ h2 .count, .card-head .count { margin: 0; font-size: var(--fs-2); }
 .pad { padding: var(--space-3) var(--inset); }
 .scroll { overflow-x: auto; }
 
-/* Package 2, plans and approvals. Oat pads every .card, spreads a
-   summary's children apart, and spaces [data-field] as a form field,
-   which here names the record field a value shows. */
-.card { padding: 0; }
-[data-field] { margin-block-end: 0; }
-.fold > summary { justify-content: flex-start; }
+/* Plans and approvals. */
 .card-foot .pages { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 
 /* Dots, status pills, chips. Each tone is also a shape, beside a word. */
@@ -316,11 +319,7 @@ table a { font-weight: 500; }
 .row > .i { margin-top: 0.1875rem; align-self: flex-start; }
 .tone-wait { color: var(--chg); }
 .tone-bad { color: var(--del); }
-/* Package 3, overview and runs. Oat's shadow on .card and its gap under
-   each li go, so the stat cards sit flush in their card. An alert's icon
-   sits in a span of its tone, on the line of its title. */
-.card { box-shadow: none; }
-li { margin-block-end: 0; }
+/* An alert's icon sits in a span of its tone, on the line of its title. */
 .row > .tone-wait, .row > .tone-bad { display: flex; align-self: flex-start; margin-top: 0.1875rem; }
 
 /* Facts: every label in one column, every value in the next. */
