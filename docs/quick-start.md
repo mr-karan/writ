@@ -14,10 +14,10 @@ Plan and apply a real OpenTofu stack with Writ on your own machine. You don't ne
 
 ### 1. Install writ
 
-The install script puts `writ` v0.1.0 in `~/.local/bin`, after it checks the release's signature and checksum:
+The install script puts `writ` v0.1.5 in `~/.local/bin`, after it checks the release's signature and checksum:
 
 ```
-curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.0/install.sh | sh
+curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.5/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 writ version
 ```
@@ -145,7 +145,7 @@ Here you set up one GitLab project, `acme/infra`, with one stack, `app`, in one 
 
 - A Linux host with Postgres, `writ`, and OpenTofu 1.13.9, behind a proxy that ends TLS for `https://writ.example.com`.
 - The GitLab project `acme/infra` and its numeric id, here `4242`. A renamed project keeps its id.
-- A `writ` image in a registry your runners can pull from, here `registry.example.com/writ:0.1.0`, a copy of [`ghcr.io/mr-karan/writ:0.1.0`](install.md#the-container-image).
+- A `writ` image in a registry your runners can pull from, here `registry.example.com/writ:0.1.5`, a copy of [`ghcr.io/mr-karan/writ:0.1.5`](install.md#the-container-image).
 
 ### 1. Commit the stack to the default branch
 
@@ -331,17 +331,17 @@ include:
       server: https://writ.example.com
       env: prod
       stack: app
-      image: registry.example.com/writ:0.1.0
+      image: registry.example.com/writ:0.1.5
   - component: $CI_SERVER_FQDN/platform/writ-ci/writ-approve@0.1.0
     inputs:
       server: https://writ.example.com
-      image: registry.example.com/writ:0.1.0
+      image: registry.example.com/writ:0.1.5
   - component: $CI_SERVER_FQDN/platform/writ-ci/writ-apply@0.1.0
     inputs:
       server: https://writ.example.com
       env: prod
       stack: app
-      image: registry.example.com/writ:0.1.0
+      image: registry.example.com/writ:0.1.5
 ```
 
 The `include` lines point to the components in [`ci/gitlab`](../ci/gitlab/README.md), as a project `platform/writ-ci` on your GitLab, at version `0.1.0`. Put a copy there, or change the paths. None of the three jobs needs a checkout or holds a cloud credential:
@@ -350,7 +350,7 @@ The `include` lines point to the components in [`ci/gitlab`](../ci/gitlab/README
 - In each merge request pipeline, `writ-approve` is a manual job that blocks the merge until each plan has its approvals.
 - On the default branch, `writ-apply-app-prod` applies the approved plan whose sources equal the merged commit's.
 
-These are the lines `writ ci gitlab --repo infra --image registry.example.com/writ:0.1.0` prints for this config, with the teams, grants, and approval rule you already wrote. [Set up GitLab CI](set-up-gitlab-ci.md#print-the-ci-lines-and-the-config) shows its whole output. It needs a token that can read a stack, so run it in a CI job, with the job's `WRIT_ID_TOKEN`, as `TestTofuApproveApply` does. From a laptop it would need `writ login`.
+These are the lines `writ ci gitlab --repo infra --image registry.example.com/writ:0.1.5` prints for this config, with the teams, grants, and approval rule you already wrote. [Set up GitLab CI](set-up-gitlab-ci.md#print-the-ci-lines-and-the-config) shows its whole output. It needs a token that can read a stack, so run it in a CI job, with the job's `WRIT_ID_TOKEN`, as `TestTofuApproveApply` does. From a laptop it would need `writ login`.
 
 Protect `main`, and turn on "Pipelines must succeed" in the project's settings.
 
