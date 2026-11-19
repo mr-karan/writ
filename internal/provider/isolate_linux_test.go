@@ -249,6 +249,11 @@ func isolationChild(t *testing.T) {
 		requireNoProcesses(t, user.UID)
 	})
 
+	// The start above left writ not dumpable; PrepareIsolation must mark
+	// it so itself, before any start.
+	if _, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0); e != 0 {
+		t.Fatal(e)
+	}
 	if err := PrepareIsolation(); errors.Is(err, syscall.ENOTSUP) {
 		t.Skip("PrepareIsolation needs a binary without cgo; the race detector uses cgo")
 	} else if err != nil {
@@ -256,6 +261,11 @@ func isolationChild(t *testing.T) {
 	}
 	if _, inh, amb, err := selfCaps(); err != nil || inh != 0 || amb != 0 {
 		t.Fatalf("after PrepareIsolation: inheritable %x, ambient %x, %v", inh, amb, err)
+	}
+	// Dumpable, writ would let a process of its own uid read its memory
+	// and would write its keys into a core dump.
+	if d, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_GET_DUMPABLE, 0, 0); e != 0 || d != 0 {
+		t.Fatalf("after PrepareIsolation writ is dumpable %d, want 0: %v", d, e)
 	}
 
 	t.Run("the provider runs apart from writ", func(t *testing.T) {

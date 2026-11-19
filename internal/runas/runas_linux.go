@@ -122,6 +122,19 @@ func Start(cmd *exec.Cmd) error {
 	return cmd.Start()
 }
 
+// NotDumpable marks this process not dumpable: it writes no core dump,
+// and no process of its uid without CAP_SYS_PTRACE may trace it or read
+// its memory. StartMapped makes it dumpable only while it starts a
+// process.
+func NotDumpable() error {
+	dumpMu.Lock()
+	defer dumpMu.Unlock()
+	if _, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 0, 0); e != 0 {
+		return fmt.Errorf("make writ not dumpable: %w", e)
+	}
+	return nil
+}
+
 // fsIDs returns this thread's filesystem uid and gid. An invalid id
 // changes nothing and returns the current one.
 func fsIDs() User {

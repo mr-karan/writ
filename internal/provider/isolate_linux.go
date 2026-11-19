@@ -87,7 +87,9 @@ func selfCaps() (eff, inh, amb uint64, err error) {
 // ambient capabilities, which systemd's AmbientCapabilities sets: a
 // process keeps ambient ones across exec, so a provider would otherwise
 // start with CAP_SETUID. Every thread holds its own sets, so it changes
-// them on all of them.
+// them on all of them. It marks the process not dumpable, as acting as a
+// provider's uid would at some later moment anyway, so writ holds its
+// keys out of core dumps and from processes of its own uid from the start.
 func PrepareIsolation() error {
 	eff, inh, amb, err := selfCaps()
 	if err != nil {
@@ -104,6 +106,9 @@ func PrepareIsolation() error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("running providers as other users needs %s, which this process lacks", strings.Join(missing, ", "))
+	}
+	if err := runas.NotDumpable(); err != nil {
+		return err
 	}
 	if inh == 0 && amb == 0 {
 		return nil
