@@ -851,3 +851,43 @@ func TestRuns(t *testing.T) {
 		}
 	})
 }
+
+// A plan and a run keep the network document of their run as it was
+// given, and a run that had none reads as none.
+func TestNetworkRecord(t *testing.T) {
+	each(t, func(t *testing.T, s *control.Store, _ string) {
+		ctx := context.Background()
+		l := newLifecycle(t, s)
+		const planNet = `{"format":"writ.network/v1","mode":"enforce","destinations":[{"host":"sts.amazonaws.com","port":443,"verdict":"allowed","count":2}]}`
+		const runNet = `{"format":"writ.network/v1","mode":"enforce","destinations":[]}`
+		if err := s.CreatePlan(ctx, newPlan("REFNET", l.cfg, "prod", "network", t0), control.TokenUse{}, l.entry("plan")); err != nil {
+			t.Fatal(err)
+		}
+		id := fmt.Sprintf("%032x", 77)
+		res := control.PlanResult{ID: id, Status: control.Pending, MadeAt: t0, ExpiresAt: t0.Add(24 * time.Hour), Changes: 1, Saved: []byte("saved"),
+			Network: json.RawMessage(planNet)}
+		if err := s.FinishPlan(ctx, "REFNET", res, l.entry("plan")); err != nil {
+			t.Fatal(err)
+		}
+		p, err := s.Plan(ctx, id, t0)
+		if err != nil || string(p.Network) != planNet {
+			t.Fatalf("plan network %s, %v; want %s", p.Network, err, planNet)
+		}
+		if _, err := l.begin(id, "RUNNET", "", t0); err != nil {
+			t.Fatal(err)
+		}
+		if run, err := s.GetRun(ctx, "RUNNET"); err != nil || run.Network != nil {
+			t.Fatalf("a running run's network %s, %v; want none", run.Network, err)
+		}
+		if _, err := s.FinishRun(ctx, "RUNNET", control.RunResult{Status: control.RunApplied, EndedAt: t0.Add(time.Minute), Network: json.RawMessage(runNet)}, l.entry("apply")); err != nil {
+			t.Fatal(err)
+		}
+		if run, err := s.GetRun(ctx, "RUNNET"); err != nil || string(run.Network) != runNet {
+			t.Fatalf("run network %s, %v; want %s", run.Network, err, runNet)
+		}
+		other := l.plan("dns", t0, control.Pending, 0)
+		if p, err := s.Plan(ctx, other, t0); err != nil || p.Network != nil {
+			t.Fatalf("a plan with no network reads %s, %v", p.Network, err)
+		}
+	})
+}

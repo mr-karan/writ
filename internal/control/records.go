@@ -149,6 +149,9 @@ type Plan struct {
 	// Policy is the decision of the plan point, nil when no policy judged
 	// the plan.
 	Policy json.RawMessage
+	// Network is the writ.network/v1 of the plan's run, nil when it had
+	// no egress proxy.
+	Network json.RawMessage
 }
 
 // TofuPlan is what a plan of an OpenTofu stack adds to a plan.
@@ -338,6 +341,9 @@ type PlanResult struct {
 	// Policy is the decision of the plan point, nil when no policy judged
 	// the plan.
 	Policy json.RawMessage
+	// Network is the writ.network/v1 of the plan's run, nil when it had
+	// no egress proxy.
+	Network json.RawMessage
 }
 
 // FinishPlan records how a plan ended, ends its state tokens, and writes
@@ -380,8 +386,8 @@ func (s *Store) FinishPlan(ctx context.Context, ref string, r PlanResult, e Entr
 			// request's own digest.
 			if _, err := tx.ExecContext(ctx, `UPDATE plans SET made_at = ?, superseded_by = ?,
 					source_digest = CASE WHEN ? = '' THEN source_digest ELSE ? END,
-					policy = (SELECT policy FROM plans WHERE ref = ?) WHERE ref = ?`,
-				r.MadeAt.UnixMilli(), r.ID, r.SourceDigest, r.SourceDigest, same, ref); err != nil {
+					policy = (SELECT policy FROM plans WHERE ref = ?), network = ? WHERE ref = ?`,
+				r.MadeAt.UnixMilli(), r.ID, r.SourceDigest, r.SourceDigest, same, rawOrNil(r.Network), ref); err != nil {
 				return err
 			}
 			ev.Reason = "the same plan as " + same
@@ -425,10 +431,10 @@ func finishOwn(ctx context.Context, tx *sqldb.Tx, ref, env, stack string, reques
 	}
 	_, err := tx.ExecContext(ctx, `UPDATE plans SET id = ?, made_at = ?, expires_at = ?, risks = ?, changes = ?,
 				document = ?, text = ?, saved = ?, source_digest = CASE WHEN ? = '' THEN source_digest ELSE ? END,
-				need = ?, need_rules = ?, lock = ?, tofu_state = ?, policy = ?
+				need = ?, need_rules = ?, lock = ?, tofu_state = ?, policy = ?, network = ?
 			WHERE ref = ?`,
 		id, r.MadeAt.UnixMilli(), msOrNil(r.ExpiresAt), list(r.Risks), r.Changes, doc, r.Text, r.Saved, r.SourceDigest, r.SourceDigest,
-		r.Need, list(r.NeedRules), "", tofuState, rawOrNil(r.Policy), ref)
+		r.Need, list(r.NeedRules), "", tofuState, rawOrNil(r.Policy), rawOrNil(r.Network), ref)
 	if err != nil {
 		return err
 	}
@@ -490,7 +496,7 @@ const planColumns = `ref, coalesce(id, ''),
 	env, stack, author_issuer, author_subject, author_person, author_display, author, teams, origin,
 	requested_at, made_at, expires_at, risks, changes, source_digest, config_id, coalesce(document, 'null'), coalesce(text, ''),
 	coalesce(superseded_by, ''), repo, source_ref, source_commit, source_ref_check, need, need_rules, superseded_why, tofu_state,
-	coalesce(policy, 'null')`
+	coalesce(policy, 'null'), coalesce(network, 'null')`
 
 // liveStatus is a plan's status as a reader sees it: a live plan past its
 // expiry reads as expired before Prune marks it. Its parameter is the time.
@@ -503,10 +509,10 @@ func scanPlan(r scanner) (Plan, error) {
 	var p Plan
 	var made, expires, tofuState sqldb.NullInt64
 	var requested int64
-	var author, teams, origin, risks, doc, needRules, policy string
+	var author, teams, origin, risks, doc, needRules, policy, network string
 	err := r.Scan(&p.Ref, &p.ID, &p.Status, &p.Env, &p.Stack, &p.Author.Issuer, &p.Author.Subject, &p.Author.Person, &p.Author.Display,
 		&author, &teams, &origin, &requested, &made, &expires, &risks, &p.Changes, &p.SourceDigest, &p.ConfigID, &doc, &p.Text, &p.SupersededBy,
-		&p.Source.Repo, &p.Source.Ref, &p.Source.Commit, &p.Source.RefCheck, &p.Need, &needRules, &p.SupersededWhy, &tofuState, &policy)
+		&p.Source.Repo, &p.Source.Ref, &p.Source.Commit, &p.Source.RefCheck, &p.Need, &needRules, &p.SupersededWhy, &tofuState, &policy, &network)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -528,6 +534,9 @@ func scanPlan(r scanner) (Plan, error) {
 	}
 	if policy != "null" {
 		p.Policy = json.RawMessage(policy)
+	}
+	if network != "null" {
+		p.Network = json.RawMessage(network)
 	}
 	if made.Valid {
 		p.MadeAt = fromMS(made.Int64)
