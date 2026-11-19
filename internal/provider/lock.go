@@ -9,9 +9,7 @@
 package provider
 
 import (
-	"bytes"
 	"cmp"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -26,15 +24,9 @@ import (
 const LockFile = "writ.lock"
 
 // Lock pins each provider version, per platform, to the SHA-256 of its
-// registry archive and of the extracted binary.
-//
-// Encode renders one entry per line, sorted, in the style of go.sum:
-//
-//	hashicorp/tls 4.1.0 linux_amd64 archive=sha256:<hex> binary=sha256:<hex>
-//
-// The archive hash is what a second machine verifies on install. The binary
-// hash keys the schema cache, so a read finds a schema without hashing a
-// 30 MB binary every time.
+// registry archive and of the extracted binary. The binary hash keys the
+// schema cache, so a read finds a schema without hashing a 30 MB binary
+// every time.
 type Lock struct {
 	entries []LockEntry
 }
@@ -124,24 +116,6 @@ func (l *Lock) sort() {
 		)
 	})
 }
-
-// Encode renders the file. Entries for other platforms are kept.
-func (l *Lock) Encode() []byte {
-	var b bytes.Buffer
-	for _, e := range l.entries {
-		b.WriteString(e.Line())
-	}
-	return b.Bytes()
-}
-
-// Line is e as one line of writ.lock, with its newline.
-func (e LockEntry) Line() string {
-	return fmt.Sprintf("%s %s %s archive=sha256:%x binary=sha256:%x\n", e.Source, e.Version, e.Platform, e.Archive, e.Binary)
-}
-
-// Digest identifies the lock's content, so a saved plan can refuse to apply
-// with different provider binaries than it was made with.
-func (l *Lock) Digest() [32]byte { return sha256.Sum256(l.Encode()) }
 
 // Entries returns every entry, sorted, for writ serve, which checks each
 // against the providers it allows.

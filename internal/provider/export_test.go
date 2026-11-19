@@ -68,10 +68,11 @@ func OfflineAWS(t *testing.T) (*Client, *schema.Provider) {
 		}
 	})
 	proto := proc.client()
-	cs, _, err := proto.getSchema(ctx)
+	reply, err := proto.getSchema(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
+	cs := reply.schema
 	if os.Getenv("WRIT_UPDATE_AWS_FIXTURE") == "1" {
 		fixture := awsFixture(t)
 		fixture.Provider = cs.Provider

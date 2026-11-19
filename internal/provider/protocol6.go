@@ -15,25 +15,30 @@ type v6 struct {
 
 func newV6(conn *grpc.ClientConn) v6 { return v6{c: tfplugin6.NewProviderClient(conn)} }
 
-func (a v6) getSchema(ctx context.Context) (*cachedSchema, []wireDiag, error) {
+func (a v6) getSchema(ctx context.Context) (schemaReply, error) {
 	resp, err := a.c.GetProviderSchema(ctx, &tfplugin6.GetProviderSchema_Request{})
 	if err != nil {
-		return nil, nil, err
+		return schemaReply{}, err
 	}
-	cs := &cachedSchema{
-		Protocol:          6,
-		GetSchemaOptional: resp.GetServerCapabilities().GetGetProviderSchemaOptional(),
-		Provider:          v6Block(resp.GetProvider().GetBlock()),
-		Resources:         make(map[string]rawResource, len(resp.GetResourceSchemas())),
-		DataSources:       make(map[string]rawResource, len(resp.GetDataSourceSchemas())),
+	return schemaReply{
+		schema: &cachedSchema{
+			Protocol:          6,
+			GetSchemaOptional: resp.GetServerCapabilities().GetGetProviderSchemaOptional(),
+			Provider:          v6Block(resp.GetProvider().GetBlock()),
+			Resources:         v6Schemas(resp.GetResourceSchemas()),
+			DataSources:       v6Schemas(resp.GetDataSourceSchemas()),
+		},
+		lists: v6Schemas(resp.GetListResourceSchemas()),
+		diags: v6Diags(resp.GetDiagnostics()),
+	}, nil
+}
+
+func v6Schemas(m map[string]*tfplugin6.Schema) map[string]rawResource {
+	out := make(map[string]rawResource, len(m))
+	for name, s := range m {
+		out[name] = rawResource{Version: s.GetVersion(), Block: v6Block(s.GetBlock())}
 	}
-	for name, s := range resp.GetResourceSchemas() {
-		cs.Resources[name] = rawResource{Version: s.GetVersion(), Block: v6Block(s.GetBlock())}
-	}
-	for name, s := range resp.GetDataSourceSchemas() {
-		cs.DataSources[name] = rawResource{Version: s.GetVersion(), Block: v6Block(s.GetBlock())}
-	}
-	return cs, v6Diags(resp.GetDiagnostics()), nil
+	return out
 }
 
 func v6Block(b *tfplugin6.Schema_Block) rawBlock {
@@ -44,7 +49,7 @@ func v6Block(b *tfplugin6.Schema_Block) rawBlock {
 	for _, nb := range b.GetBlockTypes() {
 		rb.Blocks = append(rb.Blocks, rawNestedBlock{
 			Name:     nb.GetTypeName(),
-			Nesting:  v6Nesting(nb.GetNesting()),
+			Nesting:  nesting(nb.GetNesting().String()),
 			MinItems: nb.GetMinItems(),
 			MaxItems: nb.GetMaxItems(),
 			Block:    v6Block(nb.GetBlock()),
@@ -67,42 +72,12 @@ func v6Attribute(a *tfplugin6.Schema_Attribute) rawAttribute {
 	}
 	if nt := a.GetNestedType(); nt != nil {
 		ra.Type = nil
-		ra.Nested = &rawObject{Nesting: v6ObjectNesting(nt.GetNesting())}
+		ra.Nested = &rawObject{Nesting: nesting(nt.GetNesting().String())}
 		for _, na := range nt.GetAttributes() {
 			ra.Nested.Attributes = append(ra.Nested.Attributes, v6Attribute(na))
 		}
 	}
 	return ra
-}
-
-func v6Nesting(n tfplugin6.Schema_NestedBlock_NestingMode) rawNesting {
-	switch n {
-	case tfplugin6.Schema_NestedBlock_SINGLE:
-		return nestSingle
-	case tfplugin6.Schema_NestedBlock_GROUP:
-		return nestGroup
-	case tfplugin6.Schema_NestedBlock_LIST:
-		return nestList
-	case tfplugin6.Schema_NestedBlock_SET:
-		return nestSet
-	case tfplugin6.Schema_NestedBlock_MAP:
-		return nestMap
-	}
-	return rawNesting(n.String())
-}
-
-func v6ObjectNesting(n tfplugin6.Schema_Object_NestingMode) rawNesting {
-	switch n {
-	case tfplugin6.Schema_Object_SINGLE:
-		return nestSingle
-	case tfplugin6.Schema_Object_LIST:
-		return nestList
-	case tfplugin6.Schema_Object_SET:
-		return nestSet
-	case tfplugin6.Schema_Object_MAP:
-		return nestMap
-	}
-	return rawNesting(n.String())
 }
 
 func (a v6) configure(ctx context.Context, config []byte) ([]wireDiag, error) {
@@ -171,25 +146,16 @@ func (a v6) plan(ctx context.Context, req planCall) (planResult, error) {
 	return out, nil
 }
 
-func (a v6) listInfo(ctx context.Context, typ string) (listInfo, []wireDiag, error) {
-	resp, err := a.c.GetProviderSchema(ctx, &tfplugin6.GetProviderSchema_Request{})
+func (a v6) identitySchema(ctx context.Context, typ string) ([]identityAttribute, []wireDiag, error) {
+	resp, err := a.c.GetResourceIdentitySchemas(ctx, &tfplugin6.GetResourceIdentitySchemas_Request{})
 	if err != nil {
-		return listInfo{}, nil, err
+		return nil, nil, err
 	}
-	var out listInfo
-	if s, ok := resp.GetListResourceSchemas()[typ]; ok {
-		b := v6Block(s.GetBlock())
-		out.config = &b
+	var out []identityAttribute
+	for _, at := range resp.GetIdentitySchemas()[typ].GetIdentityAttributes() {
+		out = append(out, identityAttribute{name: at.GetName(), typ: at.GetType(), required: at.GetRequiredForImport()})
 	}
-	diags := v6Diags(resp.GetDiagnostics())
-	ids, err := a.c.GetResourceIdentitySchemas(ctx, &tfplugin6.GetResourceIdentitySchemas_Request{})
-	if err != nil {
-		return listInfo{}, nil, err
-	}
-	for _, at := range ids.GetIdentitySchemas()[typ].GetIdentityAttributes() {
-		out.identity = append(out.identity, identityAttribute{name: at.GetName(), typ: at.GetType(), required: at.GetRequiredForImport()})
-	}
-	return out, append(diags, v6Diags(ids.GetDiagnostics())...), nil
+	return out, v6Diags(resp.GetDiagnostics()), nil
 }
 
 func (a v6) validateList(ctx context.Context, typ string, config, includeObject, limit []byte) ([]wireDiag, error) {
@@ -225,7 +191,7 @@ func v6Dynamic(d *tfplugin6.DynamicValue) dynamic {
 
 // v6Identity is nil for no identity, so the provider sees none.
 func v6Identity(d dynamic) *tfplugin6.ResourceIdentityData {
-	if len(d.msgpack) == 0 && len(d.json) == 0 {
+	if d.none() {
 		return nil
 	}
 	return &tfplugin6.ResourceIdentityData{IdentityData: &tfplugin6.DynamicValue{Msgpack: d.msgpack, Json: d.json}}

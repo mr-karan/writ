@@ -34,6 +34,10 @@ type dynamic struct {
 	json    []byte
 }
 
+// none reports whether a value is missing, which the protocol sends for no
+// identity.
+func (d dynamic) none() bool { return len(d.msgpack) == 0 && len(d.json) == 0 }
+
 // encode converts a Writ value of this block to msgpack.
 func (b wireBlock) encode(v value.Value) ([]byte, error) {
 	cv, err := encodeBlock(b.block, b.ty, v, nil)
