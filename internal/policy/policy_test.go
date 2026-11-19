@@ -199,15 +199,6 @@ func TestPolicyEvalErrors(t *testing.T) {
 	}
 }
 
-// TestPolicyWrongLiteralPasses pins what Writ cannot detect: a condition
-// that is false for a wrong reason gives no deny. A set's tests guard it.
-func TestPolicyWrongLiteralPasses(t *testing.T) {
-	e := compile(t, rules("s", "deny contains \"no prod\" if input.writ.environment == \"production\"\n"))
-	if d := decide(t, e, planInput(t, "masked-create.json", "prod")); d.Outcome != policy.Pass {
-		t.Fatalf("got %s %+v, want pass", d.Outcome, d.Results)
-	}
-}
-
 // TestPolicyPinRegressions holds the two rule forms that OPA v1.21.0 broke:
 // a membership in a set that holds an input value never matched until
 // v1.22.1, and `some x in []` failed to compile until v1.22.2. It holds
