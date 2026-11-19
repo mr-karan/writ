@@ -3,6 +3,7 @@ package tofu
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -172,4 +173,80 @@ func TestRunNetwork(t *testing.T) {
 			t.Errorf("without Net the probe reported\n%s\nwant %q", p.Log, want)
 		}
 	})
+}
+
+// fdProbe runs as a fake tofu inside a step's view. It reports the
+// step's sockets among its descriptors, whether it reaches the abstract
+// Unix socket that PROBE_ABSTRACT names, and its network namespace.
+func fdProbe() string {
+	var b strings.Builder
+	ents, _ := os.ReadDir("/proc/self/fd")
+	var sockets []string
+	for _, e := range ents {
+		if to, _ := os.Readlink("/proc/self/fd/" + e.Name()); strings.HasPrefix(to, "socket:") {
+			sockets = append(sockets, e.Name())
+		}
+	}
+	fmt.Fprintf(&b, "sockets: %v\n", sockets)
+	if c, err := net.DialTimeout("unix", "@"+os.Getenv("PROBE_ABSTRACT"), time.Second); err != nil {
+		fmt.Fprintln(&b, "abstract: not reached")
+	} else {
+		c.Close()
+		fmt.Fprintln(&b, "abstract: reached")
+	}
+	ns, err := os.Readlink("/proc/self/ns/net")
+	fmt.Fprintf(&b, "netns: %s %v\n", ns, err)
+	return b.String()
+}
+
+// TestRunNetworkHidesTheHost runs a probe in tofu's place. With Net, the
+// step holds no socket of writ's, such as the listeners writ serves the
+// run's ports on, and reaches no abstract Unix socket of the host's,
+// which belong to the network namespace. Without Net, the same probe
+// reaches one, so the probe can tell.
+func TestRunNetworkHidesTheHost(t *testing.T) {
+	name := "writ-test-" + rand.Text()
+	ln, err := net.Listen("unix", "@"+name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	hostNS, err := os.Readlink("/proc/self/ns/net")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	probe := func(n *Net) string {
+		t.Helper()
+		r := fakeRunner(t, fakeTofu(t, "fds"), time.Minute, 1<<20)
+		s := fakeStack()
+		s.Env = []string{"PROBE_ABSTRACT=" + name}
+		s.Net = n
+		p, err := r.Plan(context.Background(), s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(p.Log)
+	}
+	got := probe(&Net{Ports: map[int]http.Handler{3128: h, 3129: h, 3130: h}})
+	for _, want := range []string{"sockets: []\n", "abstract: not reached\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("with Net the plan step reported\n%s\nwithout %q", got, want)
+		}
+	}
+	if strings.Contains(got, "netns: "+hostNS+" ") {
+		t.Errorf("with Net the plan step is in writ's network namespace %s", hostNS)
+	}
+	if got := probe(nil); !strings.Contains(got, "abstract: reached\n") || !strings.Contains(got, "netns: "+hostNS+" ") {
+		t.Errorf("without Net the plan step reported\n%s\nwant it to reach the host's abstract socket from %s", got, hostNS)
+	}
 }

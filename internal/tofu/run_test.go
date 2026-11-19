@@ -135,6 +135,13 @@ func fakeTofuMain(behaviour string, args []string) int {
 		case "show":
 			fmt.Println("{}")
 		}
+	case "fds":
+		// What of the host the step's descriptors and network reach, for
+		// TestRunNetworkHidesTheHost.
+		fmt.Print(fdProbe())
+		if cmd == "plan" {
+			err = os.WriteFile(planFile, []byte("saved"), 0o600)
+		}
 	case "net":
 		// What the step's network lets it reach, for TestRunNetwork.
 		fmt.Print(netProbe())
