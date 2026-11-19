@@ -2,12 +2,14 @@ package tofu
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"maps"
 	"net"
 	"net/http"
 	"slices"
+	"sync"
 	"time"
 )
 
@@ -22,11 +24,22 @@ type Net struct {
 	Ports map[int]http.Handler
 }
 
+const (
+	// maxPortConns bounds the connections writ holds open on each port of
+	// a run: past it, writ closes a new connection at once. The egress
+	// proxy's bound of its requests at once is within it.
+	maxPortConns = 256
+	// portIdle closes a connection that waits this long for a request's
+	// header, or after an answer for its next request.
+	portIdle = 10 * time.Second
+)
+
 // ports are n's ports in order, as the view makes their listeners.
 func (n *Net) ports() []int { return slices.Sorted(maps.Keys(n.Ports)) }
 
 // serve serves each of lns, the listener of ports[i], with its handler,
-// until the stop it returns is called. stop cancels the context of every
+// until the stop it returns is called. Each holds at most maxPortConns
+// connections open, and closes one idle for portIdle. stop cancels the context of every
 // request, which ends a connection a handler holds, such as a proxy's
 // tunnel, and closes the listeners and the other connections. A step's
 // processes are gone when it is called: tofu exited, and its pid
@@ -38,14 +51,15 @@ func (n *Net) serve(lns []net.Listener, ports []int) (stop func()) {
 	for i, ln := range lns {
 		srv := &http.Server{
 			Handler:           n.Ports[ports[i]],
-			ReadHeaderTimeout: 10 * time.Second,
-			IdleTimeout:       2 * time.Minute,
+			ReadHeaderTimeout: portIdle,
+			IdleTimeout:       portIdle,
 			MaxHeaderBytes:    64 << 10,
 			BaseContext:       func(net.Listener) context.Context { return ctx },
 			ErrorLog:          log.New(io.Discard, "", 0),
 		}
 		srvs = append(srvs, srv)
-		go func() { _ = srv.Serve(ln) }()
+		bounded := &boundedListener{Listener: ln, slots: make(chan struct{}, maxPortConns)}
+		go func() { _ = srv.Serve(bounded) }()
 	}
 	return func() {
 		cancel()
@@ -53,4 +67,47 @@ func (n *Net) serve(lns []net.Listener, ports []int) (stop func()) {
 			_ = srv.Close()
 		}
 	}
+}
+
+// boundedListener closes each connection it accepts past cap(slots) open
+// at once. A connection, tunneled by the proxy or not, frees its slot
+// when it closes.
+type boundedListener struct {
+	net.Listener
+	slots chan struct{}
+}
+
+func (l *boundedListener) Accept() (net.Conn, error) {
+	for {
+		c, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		select {
+		case l.slots <- struct{}{}:
+			return &slotConn{Conn: c, free: sync.OnceFunc(func() { <-l.slots })}, nil
+		default:
+			c.Close()
+		}
+	}
+}
+
+// slotConn is a connection that holds a slot of a boundedListener.
+type slotConn struct {
+	net.Conn
+	free func()
+}
+
+func (c *slotConn) Close() error {
+	err := c.Conn.Close()
+	c.free()
+	return err
+}
+
+// CloseWrite passes a tunnel's half close on to the connection.
+func (c *slotConn) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return errors.ErrUnsupported
 }
