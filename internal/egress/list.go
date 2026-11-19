@@ -6,9 +6,11 @@
 // against the environment's list before it connects, resolves the host on
 // writ serve's own resolver, and connects only to an address it checked.
 // It never connects to a loopback, link-local, multicast, or unspecified
-// address, or to the instance metadata service. It records each
+// address, to the instance metadata service, or to a NAT64 address of
+// any of them. It records each
 // destination with its verdict and a count, and nothing of a request but
-// its host and port.
+// its host and port. A provider install's proxy has no list: it allows
+// any public destination and refuses a private one.
 //
 // It imports only the standard library, so its rules can be read here and
 // nowhere else.
@@ -19,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -203,8 +206,23 @@ var metadata6 = netip.MustParseAddr("fd00:ec2::254")
 // which Linux takes for its own.
 var thisNetwork = netip.MustParsePrefix("0.0.0.0/8")
 
-// never says why the proxy never connects to a, or "". a is unmapped.
+// never says why the proxy never connects to a, or "". a is unmapped. An
+// address of a NAT64 prefix is also checked by each IPv4 address it may
+// embed, since a translator on the network connects to that address.
 func never(a netip.Addr) string {
+	if why := reserved(a); why != "" {
+		return why
+	}
+	for _, v4 := range embedded4(a) {
+		if why := reserved(v4); why != "" {
+			return "a NAT64 address of " + why
+		}
+	}
+	return ""
+}
+
+// reserved says why no host connects to a, or "".
+func reserved(a netip.Addr) string {
 	switch {
 	case a.IsLoopback():
 		return "a loopback address"
@@ -220,6 +238,43 @@ func never(a netip.Addr) string {
 	return ""
 }
 
+// The NAT64 prefixes: the well-known prefix of RFC 6052, and the prefix
+// RFC 8215 keeps for local use, which a network divides into prefixes of
+// its own.
+var (
+	nat64Known = netip.MustParsePrefix("64:ff9b::/96")
+	nat64Local = netip.MustParsePrefix("64:ff9b:1::/48")
+)
+
+// nat64Layouts are the bytes of an IPv6 address that hold the embedded
+// IPv4 address, by RFC 6052, for each prefix length a translator under
+// the local-use prefix may have: /48, /56, /64, and /96. Byte 8 is never
+// one of them.
+var nat64Layouts = [][4]int{{6, 7, 9, 10}, {7, 9, 10, 11}, {9, 10, 11, 12}, {12, 13, 14, 15}}
+
+// embedded4 returns the IPv4 addresses that a, an address of a NAT64
+// prefix, may embed: the last 32 bits under the well-known prefix, and
+// under the local-use prefix each layout of nat64Layouts that a fits,
+// whose byte 8 and the bytes past the IPv4 address are zero, as RFC 6052
+// has them.
+func embedded4(a netip.Addr) []netip.Addr {
+	b := a.As16()
+	if nat64Known.Contains(a) {
+		return []netip.Addr{netip.AddrFrom4([4]byte(b[12:]))}
+	}
+	if !nat64Local.Contains(a) {
+		return nil
+	}
+	var out []netip.Addr
+	for _, at := range nat64Layouts {
+		fits := at[3] == 15 || b[8] == 0 && !slices.ContainsFunc(b[at[3]+1:], func(x byte) bool { return x != 0 })
+		if fits {
+			out = append(out, netip.AddrFrom4([4]byte{b[at[0]], b[at[1]], b[at[2]], b[at[3]]}))
+		}
+	}
+	return out
+}
+
 var private = []netip.Prefix{
 	// Shared address space, which some networks use as private.
 	netip.MustParsePrefix("100.64.0.0/10"),
@@ -228,10 +283,18 @@ var private = []netip.Prefix{
 }
 
 // isPrivate reports whether a is an address of a private network: RFC
-// 1918, unique local IPv6, shared address space, or IPv6 site-local. A
-// host name that only a wildcard lists may not resolve to one, so a name
-// under a public domain cannot lead into the network writ serve runs in.
+// 1918, unique local IPv6, shared address space, or IPv6 site-local, or
+// a NAT64 address of one. Every address of the local-use NAT64 prefix is
+// private, since where it leads is the network's own choice. A host name
+// that only a wildcard lists may not resolve to one, so a name under a
+// public domain cannot lead into the network writ serve runs in.
 func isPrivate(a netip.Addr) bool {
+	switch {
+	case nat64Local.Contains(a):
+		return true
+	case nat64Known.Contains(a):
+		a = embedded4(a)[0]
+	}
 	if a.IsPrivate() {
 		return true
 	}
