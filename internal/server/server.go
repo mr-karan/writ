@@ -515,13 +515,26 @@ func unaudited(r *http.Request) bool {
 func (s *Server) audit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req := &request{id: newID(), start: s.now()}
-		req.entry = control.Entry{Request: req.id, Kind: "request", Method: r.Method, Remote: s.remoteOf(r), ConfigID: s.configID, Decision: control.NoDecision}
+		req.entry = control.Entry{Request: req.id, Kind: "request", Method: auditMethod(r.Method), Remote: s.remoteOf(r), ConfigID: s.configID, Decision: control.NoDecision}
 		req.fail, req.rec, req.out = s.failOf(r), &recorder{header: http.Header{}}, w
 		r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, req))
 		w.Header().Set("X-Request-Id", req.id)
 		defer s.finish(w, req.rec, r, req)
 		next.ServeHTTP(req.rec, r)
 	})
+}
+
+// auditMethod is the method an audit row records of a request. A method
+// of no standard set is OTHER: the client chose its text, which can be
+// anything an HTTP token allows, and GET /v1/audit shows the row. LOCK
+// and UNLOCK are the state backend's.
+func auditMethod(m string) string {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete,
+		http.MethodConnect, http.MethodOptions, http.MethodTrace, "LOCK", "UNLOCK":
+		return m
+	}
+	return "OTHER"
 }
 
 // wrap is every API route's middleware: the method check, the token check

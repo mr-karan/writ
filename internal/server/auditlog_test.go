@@ -291,6 +291,7 @@ func TestAuditReadNeverShowsWhatARequestSent(t *testing.T) {
 		{"GET", "/v1/audit?op=" + secret, tok["root"], ""},
 		{"GET", "/v1/audit?cursor=" + secret, tok["root"], ""},
 		{"GET", "/v1/audit?since=" + secret, tok["root"], ""},
+		{secret, "/v1/whoami", tok["alice"], ""},
 	} {
 		r := f.do(req.method, req.path, req.token, strings.NewReader(req.body))
 		if r.status < 400 && !strings.Contains(req.path, "person=") {
@@ -309,8 +310,9 @@ func TestAuditReadNeverShowsWhatARequestSent(t *testing.T) {
 	if strings.Contains(string(bodies), secret) {
 		t.Fatalf("GET /v1/audit shows the secret: %s", bodies)
 	}
-	withheld := 0
+	withheld, other := 0, false
 	for _, r := range rows {
+		other = other || r.Method == "OTHER"
 		if r.Decision != "allowed" && r.Decision != "none" {
 			if r.Reason != "" {
 				t.Fatalf("a %s row shows its reason: %+v", r.Decision, r)
@@ -325,5 +327,8 @@ func TestAuditReadNeverShowsWhatARequestSent(t *testing.T) {
 	}
 	if withheld == 0 {
 		t.Fatalf("no row says its reason is withheld: %+v", rows)
+	}
+	if !other {
+		t.Fatalf("no row shows the method of no standard set as OTHER: %+v", rows)
 	}
 }
