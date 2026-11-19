@@ -17,6 +17,17 @@ export function HowItWorks() {
           <h2 id="h-how">{how.title}</h2>
           <p className="lede">{how.lede}</p>
         </div>
+
+        <ol className="pipeline-rail" aria-label="Change lifecycle">
+          {how.rail.map((item) => (
+            <li key={item.step}>
+              <span className="rail-num">{item.step}</span>
+              <b>{item.name}</b>
+              <span>{item.detail}</span>
+            </li>
+          ))}
+        </ol>
+
         <Flow
           stations={how.steps.map((st) => ({
             name: st.name,

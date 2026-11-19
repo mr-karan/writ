@@ -77,7 +77,16 @@ Writ checks a repository against the others inside the transaction that stores i
   }
   ```
 
+## Troubleshooting
+
+- **`409 usage: the config pins the repositories with repos`**: Your server config defines `repo` blocks, which disables `POST /v1/repos`. Add the repository in your server config file instead and restart `writ serve`.
+- **Stack name collision (`409`)**: Another repository already has a stack with the same name. Pass `--prefix TEAM/` (or set `prefix = "TEAM/"` in the `repo` block) so its stacks are named `TEAM/STACK`.
+- **Prefix overlap refused**: One repository's prefix cannot start with another's (for example `payments/` and `payments/eu/`). Choose disjoint prefixes.
+- **`writ repo add .` fails with a Git ownership error**: Because `writ serve --dev` runs `git` without global config (ignoring `safe.directory`), the local repository must be owned by the user running `writ serve --dev`.
+- **Commit refused because of symlinks or missing lock files**: Remove symbolic links under the repository path and ensure every stack directory contains `.tf` or `.tofu` files and a committed `.terraform.lock.hcl`.
+
 ## Next steps
 
 - [Set up GitLab CI](set-up-gitlab-ci.md): `writ ci gitlab --repo NAME` prints the jobs to include.
+- [Plan and apply](apply.md): plan a commit and apply an approved plan.
 - [Repository routes](api.md#repository-routes): the API behind `writ repo add`.

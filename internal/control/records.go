@@ -603,6 +603,42 @@ type PlanFilter struct {
 	// before the limit, so a plan it drops neither takes a place nor sets
 	// next.
 	Keep func(env, stack string) bool
+	// StartedBy, when set, keeps only the plans StartedByOf gives it:
+	// StartedByPerson or StartedByCI.
+	StartedBy string
+}
+
+// What started a plan or a drift check.
+const (
+	// StartedByPerson is a plan of a person's session or of the dev user.
+	StartedByPerson = "person"
+	// StartedByCI is a plan of a CI job's token.
+	StartedByCI = "ci"
+	// StartedByDrift is a drift check, which writ serve starts on a timer.
+	// No plan of the plans table is one.
+	StartedByDrift = "drift"
+)
+
+// CIJob is the kind of a CI job's principal, as a plan's author document
+// names it. Every other kind, a session's person or the dev user, is a
+// person.
+const CIJob = "ci-job"
+
+// StartedByOf is what started a plan whose author is a principal of kind.
+func StartedByOf(kind string) string {
+	if kind == CIJob {
+		return StartedByCI
+	}
+	return StartedByPerson
+}
+
+// authorKind is the kind of a plan's author, read from its author
+// document, "" for a document with none, as StartedByOf reads it.
+func authorKind(pg bool) string {
+	if pg {
+		return "COALESCE(plans.author::jsonb ->> 'kind', '')"
+	}
+	return "COALESCE(json_extract(plans.author, '$.kind'), '')"
 }
 
 // Plans lists plans newest first, without their saved form. next is the
@@ -620,6 +656,15 @@ func (s *Store) Plans(ctx context.Context, f PlanFilter, now time.Time) (plans [
 	}
 	if f.Stack != "" {
 		add("stack = ?", f.Stack)
+	}
+	switch f.StartedBy {
+	case "":
+	case StartedByCI:
+		add(authorKind(s.db.Postgres())+" = ?", CIJob)
+	case StartedByPerson:
+		add(authorKind(s.db.Postgres())+" <> ?", CIJob)
+	default:
+		return nil, "", fmt.Errorf("a list of plans started by %q: plans are started by %s or %s", f.StartedBy, StartedByPerson, StartedByCI)
 	}
 	tally := PlanStatus(f.Status).Live()
 	switch {

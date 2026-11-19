@@ -973,21 +973,22 @@ a.btn {
   letter-spacing: -0.016em;
 }
 
-.cols3 {
+.cols4 {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: clamp(24px, 4vw, 56px);
+  row-gap: clamp(20px, 2.8vw, 32px);
 }
 
-.cols3 > div {
+.cols4 > div {
   border-top: 1px solid var(--color-rule);
   padding-top: 16px;
 }
 
-.cols3 p {
+.cols4 p {
   margin: 6px 0 0;
   color: var(--color-ink-2);
-  max-width: 30rem;
+  max-width: 34rem;
 }
 
 @media (max-width: 860px) {
@@ -1002,9 +1003,64 @@ a.btn {
     row-gap: 16px;
   }
 
-  .cols3 {
+  .cols4 {
     grid-template-columns: minmax(0, 1fr);
     row-gap: 18px;
+  }
+}
+
+/* Six-stage pipeline rail: MR -> Plan -> Review & approve -> Merge -> Apply -> Audit */
+.pipeline-rail {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 16px;
+  list-style: none;
+  margin: 0 0 clamp(32px, 4vw, 48px);
+  padding: 0;
+}
+
+.pipeline-rail li {
+  border-top: 1px solid var(--color-rule-strong);
+  padding-top: 12px;
+  min-width: 0;
+}
+
+.pipeline-rail .rail-num {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-ink-3);
+  margin-bottom: 4px;
+}
+
+.pipeline-rail b {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: var(--color-ink);
+  line-height: 1.3;
+}
+
+.pipeline-rail li > span:last-child {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--color-ink-2);
+}
+
+@media (max-width: 980px) {
+  .pipeline-rail {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 20px;
+  }
+}
+
+@media (max-width: 560px) {
+  .pipeline-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 14px;
+    row-gap: 16px;
   }
 }
 
@@ -1250,6 +1306,7 @@ a.btn {
 
 .tour:has(#tour-overview:checked) .tour-overview,
 .tour:has(#tour-plan:checked) .tour-plan,
+.tour:has(#tour-resources:checked) .tour-resources,
 .tour:has(#tour-stack:checked) .tour-stack,
 .tour:has(#tour-runs:checked) .tour-runs {
   display: block;
@@ -1408,6 +1465,57 @@ a.btn {
 @media (max-width: 560px) {
   .also {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* When to use Writ, then Compare */
+.when-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(24px, 4vw, 56px);
+  margin-bottom: clamp(48px, 6vw, 80px);
+}
+
+.when-col {
+  border-top: 1px solid var(--color-rule-strong);
+  padding-top: 18px;
+}
+
+.when-writ {
+  border-top: 2px solid var(--color-mark);
+}
+
+.when-col h3 {
+  font-size: 1.25rem;
+  letter-spacing: -0.016em;
+}
+
+.when-col ul {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-ink-2);
+}
+
+.when-col li {
+  padding: 9px 0;
+  border-top: 1px solid var(--color-rule);
+}
+
+.when-col li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.compare-subhead {
+  padding-top: clamp(28px, 3.6vw, 44px);
+  border-top: 1px solid var(--color-rule);
+}
+
+@media (max-width: 860px) {
+  .when-grid {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 28px;
   }
 }
 

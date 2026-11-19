@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/mr-karan/writ/internal/server"
 )
@@ -15,6 +17,9 @@ type stackData struct {
 	Drift       *server.DriftStack
 	DriftFailed bool
 	DriftCount  figure
+	// DriftEvery is how often writ serve checks the stack for drift, as
+	// GET /v1/drift says it; blank when it runs no drift checks.
+	DriftEvery span
 	// Adopt is the command that adopts the stack's state, when its drift
 	// check says the state has no secret set.
 	Adopt string
@@ -25,6 +30,13 @@ type stackData struct {
 	Query, GroupBy string
 	Applies        *appliesTable
 	Plans          *server.RemotePlans
+}
+
+// driftBox is the drift view of a stack: its drift and how often writ
+// serve checks it.
+type driftBox struct {
+	Drift *server.DriftStack
+	Every span
 }
 
 // stack shows one stack@env: its resources, its drift, its runs, or its
@@ -61,6 +73,9 @@ func (u *UI) stack(w http.ResponseWriter, r *http.Request, s *server.Session) {
 		}
 	} else {
 		d.DriftFailed = !f.also(driftAt, &drift)
+	}
+	if every, err := time.ParseDuration(drift.Every); err == nil && every > 0 {
+		d.DriftEvery = span{drift.Every, fmt.Sprintf("PT%dS", int(every.Seconds()))}
 	}
 	if len(drift.Stacks) == 1 {
 		d.Drift = &drift.Stacks[0]

@@ -308,3 +308,58 @@ func testSupersededBy(t *testing.T, s *control.Store, _ string) {
 		}
 	}
 }
+
+// A plan's author document says whether a person or a CI job started
+// it: a CI job's token is ci, and any other principal, a session's, the
+// dev user's, or one whose document names no kind, is a person. The filter matches that on every path of Plans: a plain
+// page, one a Keep thins, and one of a tallied status.
+func TestPlansStartedBy(t *testing.T) { each(t, testPlansStartedBy) }
+
+func testPlansStartedBy(t *testing.T, s *control.Store, _ string) {
+	ctx := context.Background()
+	cfg, _ := s.RecordConfig(ctx, "{}", "u", "test", policy(), t0)
+	for i, detail := range []string{`{"kind":"person"}`, `{"kind":"ci-job"}`, `{"kind":"dev"}`, `{"kind":"ci-job"}`, `{"kind":"person"}`, `{}`} {
+		ref := string(rune('A' + i))
+		p := newPlan(ref, cfg, "prod", "web", t0.Add(time.Duration(i)*time.Minute))
+		p.Author.Detail = json.RawMessage(detail)
+		e := control.Entry{At: t0, Request: ref, Kind: "request", Decision: control.Allowed}
+		if err := s.CreatePlan(ctx, p, control.TokenUse{Issuer: "g", JTI: ref, Op: "plan", Expires: t0.Add(time.Hour)}, e); err != nil {
+			t.Fatal(err)
+		}
+		res := control.PlanResult{ID: strings.Repeat(string(rune('a'+i)), 32), Status: "pending", MadeAt: t0, ExpiresAt: t0.Add(24 * time.Hour)}
+		if err := s.FinishPlan(ctx, ref, res, control.Entry{At: t0, Request: ref, Kind: "plan-finished", Decision: control.NoDecision}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	keep := func(string, string) bool { return true }
+	for _, c := range []struct {
+		name, by string
+		keep     func(string, string) bool
+		status   string
+		want     string
+	}{
+		{"person", control.StartedByPerson, nil, "", "FECA"},
+		{"ci", control.StartedByCI, nil, "", "DB"},
+		{"every", "", nil, "", "FEDCBA"},
+		{"person, kept", control.StartedByPerson, keep, "", "FECA"},
+		{"ci, pending", control.StartedByCI, keep, "pending", "DB"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := control.PlanFilter{Env: "prod", StartedBy: c.by, Status: c.status, Rules: keepRules, Keep: c.keep, Limit: 10}
+			page, _, err := s.Plans(ctx, f, t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var refs string
+			for _, p := range page {
+				refs += p.Ref
+			}
+			if refs != c.want {
+				t.Fatalf("plans %q, want %q", refs, c.want)
+			}
+		})
+	}
+	if _, _, err := s.Plans(ctx, control.PlanFilter{Env: "prod", StartedBy: "drift", Limit: 10}, t0); err == nil {
+		t.Fatal("a filter of drift listed plans")
+	}
+}

@@ -170,18 +170,22 @@ type RemotePlan struct {
 type PlanInfo struct {
 	// Ref names the plan from the request on. ID is the saved plan's
 	// signature, known when the plan ends; "" before.
-	Ref               string          `json:"ref"`
-	ID                string          `json:"id"`
-	Status            string          `json:"status"`
-	Env               string          `json:"env"`
-	Stacks            []PlanStack     `json:"stacks"`
-	Author            Principal       `json:"author"`
-	RequestedAt       string          `json:"requested_at"`
-	MadeAt            string          `json:"made_at,omitempty"`
-	ExpiresAt         string          `json:"expires_at,omitempty"`
-	Risks             []string        `json:"risks"`
-	TeamsThatMayApply []string        `json:"teams_that_may_apply"`
-	Origin            json.RawMessage `json:"origin"`
+	Ref               string      `json:"ref"`
+	ID                string      `json:"id"`
+	Status            string      `json:"status"`
+	Env               string      `json:"env"`
+	Stacks            []PlanStack `json:"stacks"`
+	Author            Principal   `json:"author"`
+	RequestedAt       string      `json:"requested_at"`
+	MadeAt            string      `json:"made_at,omitempty"`
+	ExpiresAt         string      `json:"expires_at,omitempty"`
+	Risks             []string    `json:"risks"`
+	TeamsThatMayApply []string    `json:"teams_that_may_apply"`
+	// StartedBy is what started the plan: StartedByPerson for a person's
+	// session or the dev user, StartedByCI for a CI job's token, which
+	// Origin then names.
+	StartedBy string          `json:"started_by"`
+	Origin    json.RawMessage `json:"origin"`
 	// SupersededBy is the id of a newer pending plan of the same stack@env
 	// from the same merge request, "" when none.
 	SupersededBy string `json:"superseded_by"`

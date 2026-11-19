@@ -23,13 +23,12 @@ const ref = process.argv[2] ?? 'HEAD';
 
 // What each landing image shows: a page of the showcase, shot at each
 // width down to at most a height, or for a crop, the element it is cut to.
-// The hero is the top of the plan page only, so a phone decodes it fast.
 const tall = { 1280: 1600, 390: 1600 };
 const images: { name: string; page: string; heights: Record<number, number>; clip?: string }[] = [
-  { name: 'hero', page: 'plan-others', heights: { 1280: 680, 390: 470 } },
   { name: 'overview', page: 'overview', heights: tall },
   { name: 'plan', page: 'plan-others', heights: tall },
-  { name: 'stack', page: 'stack', heights: tall },
+  { name: 'resources', page: 'stack-many', heights: tall },
+  { name: 'stack', page: 'stack-drift', heights: tall },
   { name: 'runs', page: 'runs', heights: tall },
   { name: 'secret', page: 'plan-others', heights: { 1280: 0 }, clip: 'details.change[data-kind="replace"]' },
   { name: 'drift', page: 'stack-drift', heights: { 1280: 0 }, clip: '#drift-changes' },

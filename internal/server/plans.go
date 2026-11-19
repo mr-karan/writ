@@ -220,8 +220,8 @@ func (s *Server) planInfo(p control.Plan, approvals []control.Approval) *PlanInf
 	t := s.rules().Tally(p, approvals)
 	info := &PlanInfo{
 		Ref: p.Ref, ID: p.ID, Status: string(t.Status), Env: p.Env,
-		Stacks:      []PlanStack{{Stack: p.Stack, Changes: p.Changes, SourceDigest: p.SourceDigest}},
-		Author:      author,
+		Stacks: []PlanStack{{Stack: p.Stack, Changes: p.Changes, SourceDigest: p.SourceDigest}},
+		Author: author, StartedBy: control.StartedByOf(author.Kind),
 		RequestedAt: stamp(p.RequestedAt), MadeAt: stamp(p.MadeAt), ExpiresAt: stamp(p.ExpiresAt),
 		Risks: orEmpty(p.Risks), TeamsThatMayApply: []string{}, Origin: p.Origin, SupersededBy: p.SupersededBy, SupersededWhy: p.SupersededWhy,
 		Approvals: PlanApprovals{Need: t.Need, Rules: orEmptyInts(p.NeedRules), ApprovedBy: approvalInfos(t.Approvals), TeamsThatMayApprove: []string{}},
@@ -345,11 +345,20 @@ func (s *Server) planDoc(ctx context.Context, p control.Plan) (RemotePlan, error
 	return doc, nil
 }
 
-// listPlans is GET /v1/plans?env=&stack=&status=&limit=&cursor=. It lists
-// only the plans the principal may read.
+// listPlans is GET /v1/plans?env=&stack=&status=&started_by=&limit=&cursor=.
+// It lists only the plans the principal may read.
 func (s *Server) listPlans(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := control.PlanFilter{Env: q.Get("env"), Stack: q.Get("stack"), Status: q.Get("status"), Rules: s.rules(), Cursor: q.Get("cursor"), Limit: 50}
+	f := control.PlanFilter{Env: q.Get("env"), Stack: q.Get("stack"), Status: q.Get("status"), StartedBy: q.Get("started_by"), Rules: s.rules(), Cursor: q.Get("cursor"), Limit: 50}
+	switch f.StartedBy {
+	case "", StartedByPerson, StartedByCI:
+	case StartedByDrift:
+		s.refuse(w, r, FormatRemotePlans, diag.Usage, http.StatusBadRequest, "no plan is started by drift: GET /v1/drift lists the drift checks")
+		return
+	default:
+		s.refuse(w, r, FormatRemotePlans, diag.Usage, http.StatusBadRequest, "started_by must be person or ci, not %q", trunc(f.StartedBy))
+		return
+	}
 	if l := q.Get("limit"); l != "" {
 		n, err := strconv.Atoi(l)
 		if err != nil || n < 1 || n > 200 {

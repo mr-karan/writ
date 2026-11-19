@@ -13,13 +13,14 @@ import (
 )
 
 type plansData struct {
-	Env, Stack, Status string
+	Env, Stack, Status, StartedBy string
 	// Cursor is the page's own cursor, "" on the newest page.
-	Cursor     string
-	Envs       []string
-	StatusPick picker
-	Plans      []server.PlanInfo
-	Next       string
+	Cursor        string
+	Envs          []string
+	StatusPick    picker
+	StartedByPick picker
+	Plans         []server.PlanInfo
+	Next          string
 }
 
 // plans lists the plans of one environment, newest first, with filters in
@@ -27,16 +28,19 @@ type plansData struct {
 func (u *UI) plans(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	f := u.fetcher(w, r, s)
 	q := r.URL.Query()
-	d := plansData{Stack: q.Get("stack"), Status: q.Get("status"), Cursor: q.Get("cursor")}
+	d := plansData{Stack: q.Get("stack"), Status: q.Get("status"), StartedBy: q.Get("started_by"), Cursor: q.Get("cursor")}
 	var ok bool
 	if d.Env, d.Envs, ok = f.listEnv(q.Get("env")); !ok {
 		return
 	}
 	d.StatusPick = newPicker("Status", d.Status, server.PlanStatuses, func(s string) string {
-		return link("/ui/plans", "env", d.Env, "stack", d.Stack, "status", s)
+		return link("/ui/plans", "env", d.Env, "stack", d.Stack, "status", s, "started_by", d.StartedBy)
+	})
+	d.StartedByPick = newPicker("Started by", d.StartedBy, server.PlanStartedBy, func(by string) string {
+		return link("/ui/plans", "env", d.Env, "stack", d.Stack, "status", d.Status, "started_by", by)
 	})
 	var doc server.RemotePlans
-	if !f.main(link("/v1/plans", "env", d.Env, "stack", d.Stack, "status", d.Status, "cursor", d.Cursor), &doc) {
+	if !f.main(link("/v1/plans", "env", d.Env, "stack", d.Stack, "status", d.Status, "started_by", d.StartedBy, "cursor", d.Cursor), &doc) {
 		return
 	}
 	d.Plans, d.Next = doc.Plans, doc.Next

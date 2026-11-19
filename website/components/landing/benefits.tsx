@@ -2,7 +2,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Inline } from '@/components/inline';
 import landing from '@/content/landing.json';
-import { Transcript } from '@/lib/code';
+import { CodeBlock, Transcript } from '@/lib/code';
 import { benefits } from '@/lib/landing';
 import { Limit } from './limit';
 import { Shot } from './shot';
@@ -33,7 +33,7 @@ function Row({ title, text, limit, link, children }: { title: string; text: stri
 }
 
 export function Benefits() {
-  const { keys, secrets, drift, policy, agents, also } = benefits;
+  const { keys, config, secrets, drift, audit, policy, also } = benefits;
   return (
     <section id="benefits" aria-labelledby="h-benefits">
       <div className="wrap">
@@ -63,6 +63,15 @@ export function Benefits() {
           </table>
         </Row>
 
+        <Row {...config}>
+          <Term title="/etc/writ/serve (HCL)" small>
+            <CodeBlock code={landing.serverConfig} lang="hcl" label="Writ server config excerpt in HCL" />
+          </Term>
+          <p className="caption">
+            <Inline text={config.caption} />
+          </p>
+        </Row>
+
         <Row {...secrets}>
           <div className="crop" tabIndex={0} role="region" aria-label="A replaced resource in a plan, screenshot">
             <Shot name="secret" alt={secrets.alt} />
@@ -75,6 +84,15 @@ export function Benefits() {
           </div>
         </Row>
 
+        <Row {...audit}>
+          <Term title="writ audit --remote" small>
+            <Transcript text={landing.audit} label="Output of writ audit --remote" />
+          </Term>
+          <p className="caption">
+            <Inline text={audit.caption} />
+          </p>
+        </Row>
+
         <Row {...policy}>
           <Term small>
             <Transcript text={landing.policyDeny} wrap label="Output of writ plan on a commit that a policy denies" />
@@ -82,13 +100,6 @@ export function Benefits() {
           <p className="caption">
             <Inline text={policy.caption} />
           </p>
-        </Row>
-
-        <Row {...agents}>
-          <Term small>
-            <Transcript text={landing.mcpAdd} wrap label="Output of claude mcp add for writ mcp" />
-          </Term>
-          <p className="caption">{agents.caption}</p>
         </Row>
 
         <div className="also">

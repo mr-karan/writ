@@ -6,7 +6,7 @@ Your jobs prove who they are with the OIDC token their platform issues, and the 
 
 Every request you send to `writ serve` leaves a row in an audit log in the control database before you get its answer. That covers the API, the control UI, and the state backend. Only `GET /healthz`, `GET /v1/server`, and requests that the [address rate limit](api.md#rate-limits) refuses leave no row, as [Every answer waits for its audit row](api.md#every-answer-waits-for-its-audit-row) explains. `GET /v1/audit` and `writ audit --remote` read the rows your grants let you see, as [Read the audit log](api.md#read-the-audit-log) explains. For a team the control database is Postgres. Under [`writ serve --dev`](run.md#writ-serve---dev), which runs the same code for you alone, it's SQLite.
 
-Read this page to understand what happens to your plan and what protects it. To set one up, see [Run a control plane](run.md) and the [server config](config.md). [Repositories](repos.md) and [Approvals](approvals.md) cover how a plan refers to a commit and how it's approved and applied. [Not built yet](status.md#not-built-yet) lists what's missing.
+Read this page for the internal mechanics of OpenTofu execution, S3 state tracking, drift checks, teams, and grants. For step-by-step setup guides, see [Run a server](run.md), [AWS roles and credentials](aws-credentials.md), [Run isolation and egress](run-isolation.md), and [Enable drift checks](drift-checks.md). For an end-to-end overview, see [How a plan becomes an apply](plan-to-apply.md) and [Security model](security-model.md). [Status and limits](status.md#not-built-yet) lists what's missing.
 
 ## How a remote plan runs
 
@@ -275,6 +275,8 @@ There's a short window in which Writ can claim someone else's write. That's beca
 
 ## Drift checks
 
+For a step-by-step setup and troubleshooting guide, see [Enable drift checks](drift-checks.md).
+
 You want to know when your real infrastructure no longer matches what you applied. Writ finds that with drift checks: plans that `writ serve` creates on a timer to find what changed since an apply. Drift checks are off until you add a block next to `limits`:
 
 ```hcl
@@ -312,13 +314,14 @@ Expect a `local_file` or `local_sensitive_file` resource to show as deleted outs
 
 ### Where you see the result
 
-Writ keeps the newest 20 checks of each `stack@env`. From `GET /v1/drift` you get the newest one that ended, and you see it on the overview and on each stack's page in the [control UI](sign-in.md#the-control-ui).
+Writ keeps the newest 20 checks of each `stack@env`. From `GET /v1/drift` you get the newest one that ended, with `started_by` `drift`, and `every`, how often Writ checks each stack. You see it on the overview, and on each stack's Drift tab in the [control UI](sign-in.md#the-control-ui), headed `Drift check, every 6h` for a `drift` block of `every = "6h"`. A plan a person or a CI job asked for says `started_by` `person` or `ci` instead, and the plans list of the control UI marks each with an icon.
 
 In this example, `writ serve` restarted, and its check at start planned app after its key changed. Its state keeps the old key in the address of `terraform_data.keyed`, and the mask swept it with the secret set of state version 3. Here's the answer to `GET /v1/drift?env=prod&stack=app`:
 
 ```json
 {
     "diagnostics": [],
+    "every": "1h",
     "format": "writ.drift/v0",
     "more": false,
     "ok": true,
@@ -338,20 +341,21 @@ In this example, `writ serve` restarted, and its check at start planned app afte
                         "kind": "code"
                     }
                 ],
-                "checked_at": "2026-11-15T06:22:51Z",
+                "checked_at": "2026-11-19T18:45:30Z",
                 "code": 2,
                 "commit": "dda65cefe05a83f1433a335c880fdfb4a1d7a51d",
-                "drifted_since": "2026-11-15T06:22:51Z",
+                "drifted_since": "2026-11-19T18:45:30Z",
                 "error": "",
                 "outside": 0,
-                "plan": "703a6a51ed7d286e9bdbe4f62eeaac6d",
+                "plan": "a90814773ab14594f6566fa72b2d1aee",
                 "repo": "infra",
-                "started_at": "2026-11-15T06:22:51Z",
+                "started_at": "2026-11-19T18:45:30Z",
+                "started_by": "drift",
                 "status": "drifted"
             },
             "checking": false,
             "env": "prod",
-            "indexed_at": "2026-11-15T06:22:50Z",
+            "indexed_at": "2026-11-19T18:45:30Z",
             "indexed_version": 3,
             "outside_write": null,
             "resources": 5,
@@ -361,7 +365,7 @@ In this example, `writ serve` restarted, and its check at start planned app afte
 }
 ```
 
-Output of `just e2e-tofu`, whose test `just e2e` now runs, 2026-11-15. That test printed it on one line, and it's indented here with `python3 -m json.tool`.
+Output of `just e2e`, 2026-11-19. That test printed it on one line, and it's indented here with `python3 -m json.tool`.
 
 And here's the check of app after a `tofu apply` with the bucket owner's keys wrote serial 3 outside Writ. Since no secret set was sealed with serial 3, the check keeps only that:
 
@@ -454,6 +458,8 @@ Approvals kept under an identity the config no longer defines count nowhere: not
 
 ## Roles and credentials
 
+For a step-by-step setup guide including IAM trust policies and S3 bucket permissions, see [AWS roles and credentials](aws-credentials.md).
+
 When an environment has `plan_role`, Writ plans with that role's credentials. Before any provider of a plan starts, `writ serve` calls `sts:AssumeRole` as its own AWS identity, which the AWS SDK's default chain finds: environment variables, shared files, or the instance's role. Here's what the request sets:
 
 | Field | Value |
@@ -494,6 +500,8 @@ In that test, the provider checked its credentials with `GetCallerIdentity`, sig
 Another test gives the real provider credentials that last five seconds. One provider process signed its first call with `ASIATEST000000000001` and, after they expired, its second with `ASIATEST000000000002`, which the endpoint had assumed anew. So the AWS provider fetches again from the endpoint, and a long run outlives its first credentials.
 
 ## How providers are kept from the keys
+
+For step-by-step setup, outbound traffic rules, and troubleshooting, see [Run isolation and egress](run-isolation.md).
 
 Your plan runs code that the merge request chose: the providers, with the settings the code gives them. So Writ keeps that code away from the keys.
 

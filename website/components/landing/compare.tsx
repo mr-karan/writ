@@ -1,17 +1,41 @@
 import Link from 'next/link';
 import { Inline } from '@/components/inline';
 import landing from '@/content/landing.json';
-import { compare, trust } from '@/lib/landing';
+import { compare, trust, whenToUse } from '@/lib/landing';
 import { Caret, Limit } from './limit';
 import { SlabRule } from './voxel';
 
-/** Writ against two paid control planes, then what Writ lacks and what a reader can check. */
+/** Honest "when to use Writ", Writ against two paid control planes, then limits and what you can check. */
 export function Compare() {
   return (
     <section id="compare" className="compare" aria-labelledby="h-compare">
       <div className="wrap">
         <SlabRule family="i" seed={5} />
         <div className="sec-head">
+          <h2 id="h-when">{whenToUse.title}</h2>
+          <p className="lede">{whenToUse.lede}</p>
+        </div>
+
+        <div className="when-grid">
+          <div className="when-col">
+            <h3>{whenToUse.plainCi.title}</h3>
+            <ul>
+              {whenToUse.plainCi.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="when-col when-writ">
+            <h3>{whenToUse.writ.title}</h3>
+            <ul>
+              {whenToUse.writ.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <div className="sec-head compare-subhead">
           <h2 id="h-compare">{compare.title}</h2>
           <p className="lede">{compare.lede}</p>
         </div>
@@ -33,7 +57,9 @@ export function Compare() {
                 <th scope="row">{label}</th>
                 {cells.map((cell, i) => (
                   <td key={compare.columns[i]} data-col={compare.columns[i]}>
-                    {cell}
+                    <span>
+                      <Inline text={cell} />
+                    </span>
                   </td>
                 ))}
               </tr>

@@ -191,7 +191,11 @@ func TestDriftChecks(t *testing.T) {
 		t.Fatalf("the state backend answered the check's token with %v after a sweep, want 200", during)
 	}
 	tok := f.token(nil)
-	app := checkOf(t, f.drift(tok, "?env=prod"), "app")
+	listed := f.drift(tok, "?env=prod")
+	app := checkOf(t, listed, "app")
+	if listed.Every != "1h" || app.StartedBy != server.StartedByDrift {
+		t.Fatalf("GET /v1/drift says checks run every %q, and its check of app was started by %q; want 1h and drift", listed.Every, app.StartedBy)
+	}
 	if app.Status != "clean" || app.Plan == "" || app.Commit != main.Head || app.Repo != "infra" || app.Outside+app.Code != 0 || app.DriftedSince != "" || app.Error != "" {
 		t.Fatalf("the check of app: %+v, want clean at %s", app, main.Head)
 	}
@@ -309,6 +313,9 @@ func TestDriftRoutesByGrant(t *testing.T) {
 	doc := f.drift(webReader, "?limit=1")
 	if len(doc.Stacks) != 1 || doc.Stacks[0].Stack != "web" || doc.More {
 		t.Fatalf("GET /v1/drift?limit=1 as a reader of web alone: %+v, want web and no more", doc)
+	}
+	if doc.Every != "" {
+		t.Fatalf("GET /v1/drift of a config with no drift block says checks run every %q", doc.Every)
 	}
 	if w := doc.Stacks[0]; w.Env != "prod" || w.Backend != "http" || w.Resources != len(tofuIndex) || w.IndexedVersion != 1 || w.OutsideWrite != nil || w.Check != nil {
 		t.Fatalf("web in GET /v1/drift: %+v", w)

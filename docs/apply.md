@@ -1,8 +1,30 @@
-# Approve and apply a plan
+# Plan and apply
 
-Once `writ serve` has a commit's plan, people approve it, and then you apply it by its id or after the merge. Below are the commands, what to do when an apply loses its answer, and how to override the approval rules.
+Plan a commit on `writ serve`, get teammates to approve that exact plan, and apply it by ID or after a merge. Below are the commands, how to recover when a network answer is lost, and how to override approval rules in an emergency.
 
-For how approval rules work and who can approve, read [Approvals](approvals.md) first.
+For how approval rules work and why a plan can become stale, read [Configure approvals](approvals.md) and [How a plan becomes an apply](plan-to-apply.md).
+
+## Before you begin
+
+- A running `writ serve` (or `writ serve --dev`) with your [repository added](add-repository.md).
+- A live [`writ login`](sign-in.md#people-writ-login) session, a dev control plane, or a GitLab CI `WRIT_ID_TOKEN`.
+- Grants covering the operation you want (`plan`, `approve`, `apply`, or `override` plus the plan's [risk classes](glossary.md)). Check with `writ whoami`.
+
+## Plan a commit
+
+From inside a clean Git work tree of a registered repository, run:
+
+```sh
+writ plan --remote --env prod
+```
+
+Under `writ serve --dev`, `--env` defaults to `dev`. From CI (with no checkout), pass `--stack` and `--commit` explicitly:
+
+```sh
+writ plan --remote --env prod --stack app --commit "$CI_COMMIT_SHA"
+```
+
+Writ fetches the commit from your Git host, runs `tofu plan -lock=false` on the server, masks secrets, checks your policies, and prints the plan ID.
 
 ## Approve a plan
 
@@ -225,3 +247,17 @@ writ apply --remote ID --override "bob on leave, rotate leaked key, OPS-112"
 - `writ apply --remote` waits 30 seconds for each answer. It sends a request to apply at most 5 times, asks the outcome route at most 5 times, and waits 2, 4, 8, and 16 seconds between tries. It follows a run for 30 minutes, counted from when it starts to follow, not from the start of the run.
 - An approval of a pipeline covers at most 50 plans.
 - An override's reason is 10 to 500 characters, and so is an adoption's.
+
+## Troubleshooting
+
+- **`403 denied: PRINCIPAL made plan ID and cannot approve it`**: Wherever an approval rule applies, the plan's author cannot approve it (even from a different channel like the UI vs CI). Ask a teammate with `approve` on the `stack@env`.
+- **`409 state: plan ID is stale` or `expired`**: A newer plan was created for the same `stack@env`, state changed, or `plan_ttl` elapsed. Create a new plan (`writ plan --remote`) and have it approved.
+- **`409 saved-plan: no approved plan matches`**: The merged commit's stack files differ from any live approved plan (for example after a rebase or edit). Plan the latest commit and approve it.
+- **`403 policy: policy refuses the apply`**: A mandatory Rego policy denied at the apply point. `--override` cannot bypass policy denials. Fix the code, commit, and plan again.
+- **Connection dropped mid-request**: If `writ apply --remote` prints a request key, run `writ show --remote --request KEY` before retrying so you know whether a run already started.
+
+## Next steps
+
+- [Configure approvals](approvals.md): set up approval rules and understand stale-plan checks.
+- [Read the audit log](audit-log.md): follow a plan through approvals, apply, and state writes.
+- [Errors](errors.md): every error class and recovery step.

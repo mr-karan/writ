@@ -1,6 +1,6 @@
 # Install
 
-Writ v0.1.0 is the first release. For Linux and macOS, on amd64 and arm64, it has a static `writ` binary, a container image of `writ serve`, an install script, `SHA256SUMS`, and its minisign signature. You can also use Nix or build from source.
+The latest release is v0.1.5. For Linux and macOS, on amd64 and arm64, it has a static `writ` binary, a container image of `writ serve`, an install script, `SHA256SUMS`, and its minisign signature. You can also use Nix or build from source.
 
 | Way | For |
 | --- | --- |
@@ -33,10 +33,10 @@ You need [`minisign`](https://jedisct1.github.io/minisign/); without it, the scr
 Run:
 
 ```
-curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.0/install.sh | sh
+curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.5/install.sh | sh
 ```
 
-Replace `v0.1.0` with the release you want. To try the script on a local build instead, with no download:
+Replace `v0.1.5` with the release you want. To try the script on a local build instead, with no download:
 
 ```
 just release-dry-run
@@ -92,10 +92,10 @@ Use the image for a team's `writ serve`. Inside you'll find `writ`, OpenTofu 1.1
 
 On a team's `writ serve`, repositories come from a Git host and local ones are refused, so you need `git` only for a module source that `tofu init` clones, such as `git::https://...`, through the `tofu` block's `git`. Since the image has none, such a module source fails in it.
 
-Nix's `dockerTools` builds the image, so no Docker daemon takes part. For each release there's one image archive for amd64 and one for arm64, and each contains the same `writ` bytes as the release binary for that architecture. The release workflow publishes them as one multi-architecture image, `ghcr.io/mr-karan/writ:0.1.0`:
+Nix's `dockerTools` builds the image, so no Docker daemon takes part. For each release there's one image archive for amd64 and one for arm64, and each contains the same `writ` bytes as the release binary for that architecture. The release workflow publishes them as one multi-architecture image, `ghcr.io/mr-karan/writ:0.1.5`:
 
 ```
-podman pull ghcr.io/mr-karan/writ:0.1.0
+podman pull ghcr.io/mr-karan/writ:0.1.5
 ```
 
 To use an image without the registry, load an archive from the release or from `dist/`, or build one with Nix:
@@ -114,7 +114,7 @@ podman run -d --name writ \
   -v ./serve:/etc/writ/serve:ro \
   -v writ-data:/var/lib/writ \
   -p 7340:7340 \
-  ghcr.io/mr-karan/writ:0.1.0
+  ghcr.io/mr-karan/writ:0.1.5
 ```
 
 [Run a control plane](run.md) and the [server config](config.md) explain the config and its Postgres database. To check a config, run the same image with `serve --config /etc/writ/serve --check`.
@@ -122,7 +122,7 @@ podman run -d --name writ \
 You can also run `writ serve --dev` in the image. Because it listens on loopback only, the container shares the host's network:
 
 ```
-podman run --rm --network host ghcr.io/mr-karan/writ:0.1.0 serve --dev
+podman run --rm --network host ghcr.io/mr-karan/writ:0.1.5 serve --dev
 ```
 
 Without `git`, the image can't read a local repository. To try `writ serve --dev` with a local repository, use the release binary or the Nix package on a machine with `git`, as [Git](#git) explains.
@@ -194,3 +194,15 @@ Output of a real run, 2026-11-10.
 | Path | What it contains |
 | --- | --- |
 | `WRIT_CACHE_DIR` | Provider binaries and cached provider schemas. It defaults to `writ` inside your user cache directory. On Linux that's `~/.cache/writ`, unless `XDG_CACHE_HOME` is set. In the container image it's `/var/lib/writ/cache`. |
+
+## Troubleshooting
+
+- **`install.sh: minisign is not installed`**: Install `minisign` using your package manager (listed under [Before you begin](#before-you-begin)) and rerun the install script.
+- **`writ: command not found` after running the install script**: Add `~/.local/bin` to your shell profile (`export PATH="$HOME/.local/bin:$PATH"`).
+- **`writ repo add .` fails inside the container image**: The container image omits `git` on purpose because a team's `writ serve` reads repositories over the GitLab API. Use the binary or Nix package to try `writ serve --dev` with local repositories.
+- **Container exits with permission denied on port 443**: The container runs as non-root user `writ` (uid 65532). Listen on a port above 1024 (such as `"0.0.0.0:7340"`) and terminate TLS at a reverse proxy.
+
+## Next steps
+
+- [Quick start](quick-start.md): start `writ serve --dev` and apply your first stack in four steps.
+- [Run a server](run.md): deploy a team's `writ serve` with Postgres, containers, or NixOS.

@@ -103,7 +103,16 @@ The mask is tested. It is not guaranteed.
 | The differential test, Checks 1 to 3 | `e2e/verify_mask_test.go`, `justfile` (`verify-mask`) |
 | The fuzz test | `internal/mask/fuzz_test.go` |
 
+## Troubleshooting
+
+- **A plan or run stores no document because it hit a mask limit**: Each run fails closed if distinct secrets exceed 4 MiB or decoding/matching one string costs over 32 MiB. Reduce the size of large sensitive blobs (for example, store large certificates or bundles outside inline variables) and plan again.
+- **A non-secret attribute name got masked as `(sensitive)`**: Rule 3 masks attribute names containing words like `password`, `secret`, or `token` (except auth-method token settings such as `token_ttl` or `token_policies`). This is by design to prevent accidental leaks.
+- **Plan fails with `no secret set for state version N`**: The stack's state was written outside Writ, so Writ refuses to display plan details until someone inspects the code and runs [`writ state adopt`](adopt-state.md).
+- **A value derived from a secret appeared in plan output**: Check [What the mask can't do](#what-the-mask-cant-do). Remove `nonsensitive()` around hashed or multi-line base64 secrets and mark the source variable `sensitive = true`.
+
 ## Next steps
 
+- [Adopt existing state](adopt-state.md): how secret sets work when adopting state written outside Writ.
+- [Security model](security-model.md): how masking fits alongside credential isolation and audit logging.
 - [OpenTofu stacks](serve.md#opentofu-stacks): how a plan of an OpenTofu stack runs, and its filesystem view.
 - [How an OpenTofu plan is approved and applied](approvals.md#how-an-opentofu-plan-is-approved-and-applied): what the masked plan document contains, and how it's approved.

@@ -308,6 +308,14 @@ const landing = {
   apply: await fenceWith('docs/quick-start.md', 'OpenTofu apply of app@prod'),
   policyDeny: cut(await fenceWith('docs/policy.md', 'Policy: denied'), 'Policy: denied', '  deny:', /(?!)/),
   mcpAdd: await fenceWith('docs/agents.md', '$ claude mcp add'),
+  audit: cut(await fenceWith('docs/api.md', '$ writ audit --remote'), '$ writ audit --remote', '2026-11-19T15:54:09Z  -           -', /(?!)/),
+  serverConfig: [
+    cut(await fenceWith('docs/quick-start.md', 'team "infra_reviewers"'), 'team "infra_reviewers"', '}', /(?!)/),
+    '',
+    cut(await fenceWith('docs/quick-start.md', 'approval {'), 'approval {', '}', /(?!)/),
+    '',
+    cut(await fenceWith('docs/aws-credentials.md', 'env "prod" {'), 'env "prod" {', '}', /(?!)/),
+  ].join('\n'),
 };
 await write(join(websiteDir, 'content', 'landing.json'), JSON.stringify(landing, null, 2) + '\n');
 

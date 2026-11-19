@@ -286,6 +286,7 @@ These tests prove it:
 
 ## Next steps
 
-- [Approve and apply a plan](apply.md): the commands, applies after a merge, and overrides.
-- [How the control plane works](serve.md): teams, grants, and roles.
-- [Repositories](repos.md): how a plan refers to a commit.
+- [Plan and apply](apply.md): the commands, applies after a merge, and overrides.
+- [How a plan becomes an apply](plan-to-apply.md): end-to-end lifecycle from commit to state index.
+- [Control plane internals](serve.md): teams, grants, and roles.
+- [How repositories work](repos.md): how a plan refers to a commit.

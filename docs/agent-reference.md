@@ -44,6 +44,7 @@ Output of `writ serve --dev`, 2026-11-15.
 `writ.remote-plan/v0` has the plan's fields and, in `document`, the masked plan document:
 
 - `plan.id` identifies the plan once it ends. `plan.ref` identifies it while it plans. `plan.status` is `planning`, `pending`, `approved`, `applying`, `applied`, `refused`, `failed`, `superseded`, or `expired`.
+- `plan.started_by` is `person` for a plan a person started from a session, and `ci` for a plan of a CI job's token, which `plan.origin` names.
 - `plan.approvals` has `need`, `approved_by`, and `teams_that_may_approve`. The author's approval never counts.
 - `document` keeps OpenTofu's own keys: `format_version`, `terraform_version`, `resource_changes`, `resource_drift`, `output_changes`, `checks`. Each entry of `resource_changes` has `address`, `type`, and `change` with `actions`, `before`, `after`, `replace_paths`, and `importing` for an import. `variables` has only the variables' names.
 - Wherever OpenTofu marks a value sensitive, and wherever a sensitive value appears elsewhere, the value is the string `(sensitive)`.
@@ -80,7 +81,7 @@ A message can give the rule without the fix. Call `policy` with the set, and rea
 
 ## Drift, runs, and the state index
 
-- `writ.drift/v0` lists each stack@env: `backend`, `resources` in its index, `indexed_version`, `outside_write` (a serial of a state on S3 that no apply of Writ wrote), and `check`, the newest drift check, with `status` and each `changes` entry found outside code.
+- `writ.drift/v0` lists each stack@env: `backend`, `resources` in its index, `indexed_version`, `outside_write` (a serial of a state on S3 that no apply of Writ wrote), and `check`, the newest drift check, with `started_by` `drift`, `status`, and each `changes` entry found outside code. `every` is how often Writ checks each stack, such as `6h`, or `""` when it runs no drift checks.
 - `writ.remote-runs/v0` lists runs with `id`, `plan`, `status`, `stack`, `actor`, `approved_by`, and times. `writ.remote-run/v0` adds `document`, `writ.tofu-apply/v0`: OpenTofu's `summary` counts and each resource's apply events.
 - `writ.state-index/v0` lists `resources`: `address`, `type`, `provider`, and `id`, `arn`, `identifier`, `region`, `namespace`, `modify_index` where the state has them. It has no other attribute and no secret.
 

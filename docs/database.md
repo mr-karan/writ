@@ -38,3 +38,15 @@ A row with no route is the server's start or the end of a plan. Under `writ serv
 The schema counts its own versions in `schema_migrations`. A control database with another name for migration 1, such as the Postgres-only `0001_init.sql` of builds before 2026-11-10, is refused with that name.
 
 Migration 0016 dropped `stacks`, which recorded where builds from before the first release kept each `stack@env`'s state, and the tables of the CloudTrail change watcher. That state itself stays where it was: a schema named `state_ENV_STACK_HASH` in the database on Postgres, or a file under `state/` beside `control.db` under `writ serve --dev`. No version of `writ` reads it, so drop it when no one needs it.
+
+## Connection timeouts and backups
+
+On Postgres, each database session uses a 5-second connect timeout, a 10-second statement timeout, a 5-second lock timeout, and a 15-second idle-in-transaction timeout. On SQLite (`writ serve --dev`), Writ waits 5 seconds when the database is busy.
+
+Never put a Postgres password directly in the `database` URL in your server config. Use Unix-socket peer authentication (as the [NixOS module](run.md#on-nixos) does), `?passfile=/path/to/pgpass`, or `PGPASSFILE`.
+
+## Next steps
+
+- [Back up and upgrade](upgrades.md): `pg_dump` backups, offline state keys, retention, and single-node upgrades.
+- [Read the audit log](audit-log.md): query audit rows safely via `writ audit --remote` and `GET /v1/audit`.
+- [Run a server](run.md): connect `writ serve` to Postgres.

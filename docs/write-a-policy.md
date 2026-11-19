@@ -4,6 +4,11 @@ Say you want to block weak TLS keys in every stack, whoever approves the plan. Y
 
 Writ reads the same rules `conftest` does. So you can write a policy once, test it with `conftest` on your laptop or in CI, and give it to `writ serve` through its config. To learn when policies run and what a deny does, read [Policy](policy.md).
 
+## Before you begin
+
+- [`conftest`](https://www.conftest.dev/) installed locally if you want to run unit tests (`conftest verify`) and test policies against `tofu show -json` before deploying them.
+- OpenTofu 1.13.9 and a stack you can plan locally or on `writ serve --dev`.
+
 ## Write a rule
 
 Put your rules in `package main`, the package `conftest` reads by default. Writ reads these:
@@ -80,4 +85,18 @@ You don't have to start from nothing. `examples/policy` has one set that works u
 
 1. Put the set's directory on the host.
 2. List it in the `policy` block of the [server config](config.md#policy).
-3. Run `writ serve --check`. It fails on a set that doesn't compile, and `writ serve` compiles every set at start.
+3. Run `writ serve --config /etc/writ/serve --check`. It fails on a set that doesn't compile, and `writ serve` compiles every set at start.
+4. Restart `writ serve` and verify the active sets with `GET /v1/policy`.
+
+## Troubleshooting
+
+- **`rego_type_error: undefined ref: input.planned_values`**: Writ's masked plan input omits `planned_values` and `prior_state`. Read `input.resource_changes`, `input.resource_drift`, and `input.output_changes` instead; see [Policy reference](policy-reference.md#input).
+- **`undefined function ...` during `writ serve --check`**: Your rule calls a Rego built-in outside Writ's allow-list (such as `http.send`, `time.now_ns`, or `print`). Replace `time.now_ns` with `input.writ.now` and check [Built-ins](policy-reference.md#built-ins).
+- **Rule passes under `conftest` but denies in `writ serve`**: Check whether the rule inspects a sensitive value (which becomes `"(sensitive)"` in `writ serve`), triggers a built-in error (strict in Writ), or depends on `input.writ`.
+- **Policy silently never fires**: Double-check string comparisons (for example `input.writ.environment == "prod"`, not `"production"`), and write a `*_test.rego` file run with `conftest verify`.
+
+## Next steps
+
+- [Policy reference](policy-reference.md): exact input schema, allowed built-ins, and memory/timeout bounds.
+- [How policy works](policy.md): plan-point vs apply-point decisions and mandatory vs advisory sets.
+- [Server config](config.md#policy): full `policy` block reference.
