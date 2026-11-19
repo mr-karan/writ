@@ -73,7 +73,7 @@ func (a *App) importBulkTofu(ctx context.Context, o ImportBulkOptions) error {
 	if err != nil {
 		return err
 	}
-	st, err := importer.OpenTofuStack(ctx, a.opts.Dir, importer.TofuOptions{Dirs: dirs, Log: a.opts.Log, Launch: a.opts.ProviderLaunch})
+	st, err := importer.OpenTofuStack(ctx, a.opts.Dir, importer.TofuOptions{Dirs: dirs, Log: a.opts.Log})
 	if err != nil {
 		return err
 	}

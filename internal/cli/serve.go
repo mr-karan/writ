@@ -28,8 +28,6 @@ type ServeOptions struct {
 	Check bool
 	// Version is writ's own version, which GET /v1/server reports.
 	Version string
-	// Ready, when set, is called with the address writ serve listens on.
-	Ready func(addr string)
 }
 
 // IsolationProbeEnv, set in writ's environment, makes writ run the
@@ -110,7 +108,7 @@ func (a *App) Serve(ctx context.Context, o ServeOptions) error {
 		}
 		u.Mount()
 	}
-	return srv.Serve(ctx, o.Ready)
+	return srv.Serve(ctx, nil)
 }
 
 // printServeCheck prints writ serve --check: the config's parts and what

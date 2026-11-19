@@ -84,7 +84,7 @@ func (t *mcpTools) Schema(ctx context.Context, in mcp.SchemaInput) (mcp.Result, 
 	if err != nil {
 		return mcp.Result{}, err
 	}
-	lock, err := provider.Install(ctx, provider.InstallOptions{Dirs: dirs, Log: app.opts.Log, Offline: !t.allowProviders, Launch: app.opts.ProviderLaunch}, nil, reqs)
+	lock, err := provider.Install(ctx, provider.InstallOptions{Dirs: dirs, Log: app.opts.Log, Offline: !t.allowProviders}, nil, reqs)
 	if err != nil {
 		if !t.allowProviders {
 			return mcp.Result{}, usagef("%v; the schema tool reads only Writ's provider cache at %s, checked against %s: ask the person who runs writ mcp to fill it, or to add --allow-providers, which downloads a missing provider", err, dirs.Cache, tofu.LockFile)

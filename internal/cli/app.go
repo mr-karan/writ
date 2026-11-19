@@ -48,9 +48,6 @@ type Options struct {
 	Env string
 	// Version is writ's own version.
 	Version string
-	// ProviderLaunch is how the importer's and the schema tool's providers
-	// start; the zero value is a laptop's.
-	ProviderLaunch provider.Launch
 	// Server is the control plane the remote commands use, from --server:
 	// a URL, or "dev". Empty means WRIT_SERVER, then the dev control plane.
 	Server string
