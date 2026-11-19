@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 )
@@ -93,6 +94,9 @@ type Run struct {
 	token string
 	sess  Session
 	creds *Keeper
+
+	mu      sync.Mutex
+	secrets []string
 }
 
 // Start assumes s's role at once, so a run whose role STS refuses fails
@@ -105,18 +109,20 @@ func (b *Broker) Start(ctx context.Context, s Session) (*Run, error) {
 	if err := b.assumed(ctx, s, creds); err != nil {
 		return nil, err
 	}
+	token := rand.Text() + rand.Text()
+	r := &Run{b: b, key: sha256.Sum256([]byte(token)), token: token, sess: s}
+	r.keep(creds)
 	refresh := func(ctx context.Context) (Credentials, error) {
 		c, err := b.assume(ctx, s, "refresh")
 		if err == nil {
+			r.keep(c)
 			if err := b.assumed(ctx, s, c); err != nil {
 				b.opts.Log.Error("the run's changes after its old credentials expire may alert as made outside writ", "session", s.Name, "err", err)
 			}
 		}
 		return c, err
 	}
-	token := rand.Text() + rand.Text()
-	r := &Run{b: b, key: sha256.Sum256([]byte(token)), token: token, sess: s,
-		creds: &Keeper{assume: refresh, refreshBefore: b.opts.RefreshBefore, now: b.opts.Now, creds: creds}}
+	r.creds = &Keeper{assume: refresh, refreshBefore: b.opts.RefreshBefore, now: b.opts.Now, creds: creds}
 	b.mu.Lock()
 	b.runs[r.key] = r
 	b.mu.Unlock()
@@ -155,6 +161,24 @@ func (r *Run) Env() []string {
 		"AWS_CONTAINER_CREDENTIALS_FULL_URI=" + r.b.url,
 		"AWS_CONTAINER_AUTHORIZATION_TOKEN=" + r.token,
 	}
+}
+
+// keep adds the secrets of c to the run's, before c is served.
+func (r *Run) keep(c Credentials) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.secrets = append(r.secrets, c.SecretAccessKey, c.SessionToken)
+}
+
+// Secrets are the secret access key and session token of every
+// credentials the broker assumed for the run, so far: a provider can echo
+// them in its output, and ending the run's token does not revoke them.
+// The access key id is left out, as it names the session and is no
+// secret.
+func (r *Run) Secrets() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.secrets)
 }
 
 // End stops answering the run's token.

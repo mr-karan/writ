@@ -779,3 +779,30 @@ func TestPlanSweepsMarkedKeys(t *testing.T) {
 func only(attrs []string) func(string) []string {
 	return func(string) []string { return attrs }
 }
+
+// A Mask that follows a run's credentials sweeps those handed to the run
+// after the Mask was made, counts them toward the run's limit, and leaves
+// them out of Secrets, which a state's secret set carries on.
+func TestFollow(t *testing.T) {
+	var live []string
+	m := New([]string{label})
+	m.Follow(func() []string { return slices.Clone(live) })
+	if got := string(m.Event([]byte("first " + owner))); !strings.Contains(got, owner) {
+		t.Fatalf("before it is served: %s", got)
+	}
+	live = append(live, owner)
+	if got := string(m.Event([]byte("first " + owner))); got != "first "+Sensitive {
+		t.Fatalf("after it is served: %s", got)
+	}
+	live = append(live, pwFirst)
+	if got := string(m.Event([]byte(`{"text":"refreshed ` + pwFirst + ` and ` + owner + `"}`))); got != `{"text":"refreshed `+Sensitive+` and `+Sensitive+`"}` {
+		t.Fatalf("after a refresh: %s", got)
+	}
+	if got := m.Secrets(); !slices.Equal(got, []string{label}) {
+		t.Fatalf("Secrets() = %q, want only what the Mask was made with", got)
+	}
+	live = append(live, strings.Repeat("x", maxSecretBytes))
+	if got := string(m.Event([]byte("anything"))); got != Sensitive {
+		t.Fatalf("past the limit: %s", got)
+	}
+}

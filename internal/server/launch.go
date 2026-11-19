@@ -11,6 +11,7 @@ import (
 
 	"github.com/mr-karan/writ/internal/awsrole"
 	"github.com/mr-karan/writ/internal/diag"
+	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/provider"
 	"github.com/mr-karan/writ/internal/runas"
 )
@@ -79,23 +80,44 @@ type classedError struct {
 func (e *classedError) Error() string { return e.err.Error() }
 func (e *classedError) Unwrap() error { return e.err }
 
+// runLaunch is how the providers of one plan or apply start, and the
+// role credentials the broker has served them so far.
+type runLaunch struct {
+	provider.Launch
+	// served returns the secrets of the run's role credentials, nil for a
+	// run with no role. The environment holds only the token that fetches
+	// them, and a refresh adds to them while the run goes on.
+	served func() []string
+}
+
+// mask is a mask of the run that knows secrets and follows the role
+// credentials served to the run, so it covers those served after it is
+// made.
+func (l runLaunch) mask(secrets ...[]string) *mask.Mask {
+	m := mask.New(slices.Concat(secrets...))
+	if l.served != nil {
+		m.Follow(l.served)
+	}
+	return m
+}
+
 // launch prepares how the providers of one plan or apply start: an
 // environment built from the run alone, with the credentials of role, the
 // environment's plan or apply role, behind a token that dies with the run,
 // and a uid no other running plan or apply has. done ends the token and
 // frees the uid once whatever ran as it has ended. run names the run in
 // the role session's name.
-func (s *Server) launch(ctx context.Context, run, env string, role roleKind, p *principal) (launch provider.Launch, done func(), err error) {
+func (s *Server) launch(ctx context.Context, run, env string, role roleKind, p *principal) (launch runLaunch, done func(), err error) {
 	if s.cfg.Dev {
 		// The dev control plane assumes no role and takes no uid. tofuEnv
 		// gives its runs the base environment and the shell's TF_VAR_
 		// variables.
-		return provider.Launch{}, func() {}, nil
+		return runLaunch{}, func() {}, nil
 	}
 	e := s.cfg.Envs[env]
 	pe, err := readProviderEnv(e)
 	if err != nil {
-		return provider.Launch{}, nil, err
+		return runLaunch{}, nil, err
 	}
 	vars := append(slices.Clone(baseProviderEnv), pe...)
 	var undo []func()
@@ -116,16 +138,17 @@ func (s *Server) launch(ctx context.Context, run, env string, role roleKind, p *
 			Duration:       s.cfg.AWS.Session,
 		})
 		if err != nil {
-			return provider.Launch{}, nil, &classedError{diag.Denied, fmt.Errorf("the %s role of env %s: %w", role, env, err)}
+			return runLaunch{}, nil, &classedError{diag.Denied, fmt.Errorf("the %s role of env %s: %w", role, env, err)}
 		}
 		undo = append(undo, sess.End)
 		vars = append(vars, sess.Env()...)
+		launch.served = sess.Secrets
 	}
-	launch = provider.Launch{OwnEnv: true, Env: vars}
+	launch.Launch = provider.Launch{OwnEnv: true, Env: vars}
 	user, free, err := s.takeUID(ctx)
 	if err != nil {
 		done()
-		return provider.Launch{}, nil, err
+		return runLaunch{}, nil, err
 	}
 	undo = append(undo, free)
 	launch.User = user

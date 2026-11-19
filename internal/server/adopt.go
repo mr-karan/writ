@@ -256,15 +256,14 @@ func (s *Server) adoptRun(ctx context.Context, a adoption) (adopted, error) {
 	}
 	out := adopted{repo: rp.Name, commit: rp.Head}
 	var state tofu.State
-	var secrets []string
+	var m *mask.Mask
 	if a.backend == control.BackendS3 {
-		if state, secrets, out.seq, err = s.adoptPull(ctx, a, id, ts, dir, work); err != nil {
+		if state, m, out.seq, err = s.adoptPull(ctx, a, id, ts, dir, work); err != nil {
 			return adopted{}, err
 		}
-	} else if state, secrets, err = s.adoptShow(ctx, a, key, ts, dir, work); err != nil {
+	} else if state, m, err = s.adoptShow(ctx, a, key, ts, dir, work); err != nil {
 		return adopted{}, err
 	}
-	m := mask.New(secrets)
 	if out.rows, err = maskedRows(m, state); err != nil {
 		return adopted{}, fmt.Errorf("the mask refused the state of %s@%s, so writ serve kept nothing: %w", a.stack, a.env, err)
 	}
@@ -278,8 +277,8 @@ func (s *Server) adoptRun(ctx context.Context, a adoption) (adopted, error) {
 
 // adoptShow runs show -json of the newest stored version of a's stack on
 // the http backend, which must still be the version a names, and returns
-// it with the environment's secrets.
-func (s *Server) adoptShow(ctx context.Context, a adoption, key *tfstate.Key, ts repo.TofuStack, dir, work string) (tofu.State, []string, error) {
+// it with a mask that knows the environment's secrets.
+func (s *Server) adoptShow(ctx context.Context, a adoption, key *tfstate.Key, ts repo.TofuStack, dir, work string) (tofu.State, *mask.Mask, error) {
 	v, err := s.store.LatestState(ctx, a.env, a.stack)
 	if err != nil {
 		return tofu.State{}, nil, fmt.Errorf("read the state version of %s@%s: %w", a.stack, a.env, err)
@@ -324,14 +323,14 @@ func (s *Server) adoptShow(ctx context.Context, a adoption, key *tfstate.Key, ts
 	if err != nil {
 		return tofu.State{}, nil, err
 	}
-	return state, secrets, nil
+	return state, m, nil
 }
 
 // adoptPull pulls the state of a's stack on S3 with the plan role, as the
-// timer's refresh does, records the read, and returns the state, the
-// run's secrets, and the read's place. The pulled serial must be the one
-// a names.
-func (s *Server) adoptPull(ctx context.Context, a adoption, id string, ts repo.TofuStack, dir, work string) (tofu.State, []string, int64, error) {
+// timer's refresh does, records the read, and returns the state, a mask
+// of the run, and the read's place. The pulled serial must be the one a
+// names.
+func (s *Server) adoptPull(ctx context.Context, a adoption, id string, ts repo.TofuStack, dir, work string) (tofu.State, *mask.Mask, int64, error) {
 	if err := s.s3Role(a.env, a.stack, planRole); err != nil {
 		return tofu.State{}, nil, 0, err
 	}
@@ -345,7 +344,7 @@ func (s *Server) adoptPull(ctx context.Context, a adoption, id string, ts repo.T
 		return tofu.State{}, nil, 0, tofuRefused("this writ serve has no provider_uids to run OpenTofu as, so it would run as writ's own user: set provider_uids")
 	}
 	runEnv, creds, secrets := s.tofuEnv(launch.Env)
-	m := mask.New(secrets)
+	m := launch.mask(secrets)
 	lock, err := s.tofuRunner.Fill(ctx, ts.Lock)
 	if err != nil {
 		return tofu.State{}, nil, 0, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
@@ -367,7 +366,7 @@ func (s *Server) adoptPull(ctx context.Context, a adoption, id string, ts repo.T
 	if seq == 0 {
 		return tofu.State{}, nil, 0, &classedError{diag.State, fmt.Errorf("an apply of %s@%s ran while the adoption read the state, so writ serve kept nothing: adopt after it ends", a.stack, a.env)}
 	}
-	return state, secrets, seq, nil
+	return state, m, seq, nil
 }
 
 // noSecretSetRE finds the state version, or the S3 serial, that a plan's
