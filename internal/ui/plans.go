@@ -141,12 +141,8 @@ func (u *UI) approve(w http.ResponseWriter, r *http.Request, s *server.Session) 
 		http.Redirect(w, r, "/ui/plans/"+url.PathEscape(id), http.StatusSeeOther)
 		return
 	}
-	var refusal struct {
-		Format      string              `json:"format"`
-		Diagnostics []server.Diagnostic `json:"diagnostics"`
-	}
-	_ = json.Unmarshal(resp, &refusal)
-	u.refusalPage(w, r, s, status, "approval refused", refusal.Format, refusal.Diagnostics, []string{"POST /v1/plans/" + id + "/approvals"})
+	format, diags := refusalOf(resp)
+	u.refusalPage(w, r, s, status, "approval refused", format, diags, []string{"POST /v1/plans/" + id + "/approvals"})
 }
 
 type approvalsData struct {

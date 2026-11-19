@@ -415,20 +415,27 @@ func (f *fetch) also(target string, into any) bool {
 }
 
 func (f *fetch) refused(status int, body []byte) {
-	var doc struct {
-		Format      string              `json:"format"`
-		Diagnostics []server.Diagnostic `json:"diagnostics"`
-	}
-	_ = json.Unmarshal(body, &doc)
-	if len(doc.Diagnostics) == 0 {
-		doc.Format = ""
-		doc.Diagnostics = []server.Diagnostic{{Severity: "error", Class: "internal", Message: http.StatusText(status)}}
+	format, diags := refusalOf(body)
+	if len(diags) == 0 {
+		format = ""
+		diags = []server.Diagnostic{{Severity: "error", Class: "internal", Message: http.StatusText(status)}}
 	}
 	heading := map[int]string{403: "denied", 404: "not found", 400: "bad request", 409: "conflict", 429: "too many requests"}[status]
 	if heading == "" {
 		heading = "failed"
 	}
-	f.u.refusalPage(f.w, f.r, f.sess, status, heading, doc.Format, doc.Diagnostics, f.api)
+	f.u.refusalPage(f.w, f.r, f.sess, status, heading, format, diags, f.api)
+}
+
+// refusalOf is the format and diagnostics of writ serve's answer to a
+// refused request, none when the answer is not a refusal it can read.
+func refusalOf(body []byte) (format string, diags []server.Diagnostic) {
+	var doc struct {
+		Format      string              `json:"format"`
+		Diagnostics []server.Diagnostic `json:"diagnostics"`
+	}
+	_ = json.Unmarshal(body, &doc)
+	return doc.Format, doc.Diagnostics
 }
 
 // render renders the page with the requests it made in its footer.
