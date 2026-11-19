@@ -129,6 +129,9 @@ func check(t *testing.T, file, pkg, imp string) {
 	if pkg == "internal/tofu" && strings.HasPrefix(imp, module+"/") && imp != module+"/internal/runas" {
 		t.Errorf("%s imports %s; internal/tofu imports only internal/runas of writ, so what runs OpenTofu depends on nothing else", file, imp)
 	}
+	if pkg == "internal/egress" && strings.Contains(strings.SplitN(imp, "/", 2)[0], ".") {
+		t.Errorf("%s imports %s; internal/egress imports only the standard library, so the rules of a run's egress read in one place", file, imp)
+	}
 	if pkg == "internal/runas" && strings.Contains(strings.SplitN(imp, "/", 2)[0], ".") {
 		t.Errorf("%s imports %s; internal/runas imports only the standard library, so both packages that start processes may share it", file, imp)
 	}
