@@ -41,6 +41,8 @@ Index keys are different, because a value sets them, so the sweep covers them. T
 
 If an attribute or key has a name that contains a word such as `password`, `secret`, or `token`, its value becomes `(sensitive)`, whatever its marks say.
 
+A name that sets the tokens an auth method issues is the one exception for `token`: one `token` followed by `ttl`, `max_ttl`, `explicit_max_ttl`, `period`, `num_uses`, `locality`, `name_format`, `type`, `policies`, `bound_cidrs`, or `no_default_policy` at the end of the name, such as `max_token_ttl`, `token_locality`, or `token_policies`. Such a value still goes through rules 1 and 2, so a marked or learned secret in it is still masked. `api_token`, `token_value`, and `tokenless` stay masked by name.
+
 ### Rule 4: an allow-list of keys
 
 Your masked plan document keeps only the keys the mask lists. You'll never see a key it doesn't list in the document.
