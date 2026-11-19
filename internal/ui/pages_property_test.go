@@ -405,7 +405,7 @@ func (pc *pageCheck) repos() {
 		if tr == nil {
 			return "", 0, false
 		}
-		name := folded(first(tr, isTag("th")))
+		name := folded(first(first(tr, isTag("th")), isTag("a")))
 		want, ok := found[name]
 		return "stacks found in " + name, want, ok
 	})

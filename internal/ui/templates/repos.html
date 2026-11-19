@@ -2,17 +2,16 @@
 {{with .Data}}
 <div class="page-head">
 <h1>Getting started</h1>
-<p class="subtitle">Each step names the command or the page that does it. Writ reads each repository's code by commit, with a read-only token that the config names.</p>
 </div>
-<ol class="checklist">
-<li class="item-done"><strong>Control plane</strong>: writ <code>{{.Server.Version}}</code> at <code>{{.Server.URL}}</code>{{if .Server.Dev}}, the dev control plane{{end}}.</li>
-<li class="item-done"><strong>Signed in</strong> as <span class="ref">{{$.Session.Display}}</span>.</li>
-<li class="{{if .Repos}}item-done{{else}}item-next{{end}}"><strong>Repository added</strong>:
-{{if .Repos}}{{range $i, $r := .Repos}}{{if $i}}, {{end}}<a href="/ui/repos/{{$r.Name}}">{{$r.Name}}</a>{{end}}.
-{{else}}{{none "no-repo" (exact (len .Repos))}}. <a href="/ui/repos/new">Add a repository</a>, or run <code>{{if .Server.Dev}}writ repo add .{{else}}writ repo add NAME HOST/PROJECT --path PATH{{end}}</code>.{{end}}</li>
-<li class="{{if .Served.N}}item-done{{else}}item-next{{end}}"><strong>Stacks found</strong>: {{template "counted" (of .Stacks "stack" "stacks")}}, {{template "n" .Served}} served in an environment of this control plane.</li>
-<li class="{{if .Plans.N}}item-done{{else}}item-next{{end}}"><strong>First plan</strong>: {{if .Plans.N}}<a href="/ui/plans">{{template "counted" (of .Plans "plan" "plans")}}</a>.{{else}}{{with none "no-plan-yet" .Plans}}{{.}}{{else}}writ serve could not read every environment's plans.{{end}} In a clean work tree of the repository, run <code>writ plan --remote{{if .FirstEnv}} --env {{.FirstEnv}}{{end}}</code>; in CI, see <code>writ ci gitlab --repo NAME</code>.{{end}}</li>
-<li class="{{if .Plans.N}}item-next{{else}}item-later{{end}}"><strong>First approved apply</strong>: a person other than the plan's author approves it, on its page or with <code>writ approve --remote ID</code>, and <code>writ apply --remote ID</code> applies it; in CI, the job on the default branch applies it after the merge.</li>
+<ol class="checklist card">
+<li class="item-done"><strong>Control plane</strong> writ <code>{{.Server.Version}}</code> at <code>{{.Server.URL}}</code>{{if .Server.Dev}}, the dev control plane{{end}}</li>
+<li class="item-done"><strong>Signed in</strong> <span class="ref">{{$.Session.Display}}</span></li>
+<li class="{{if .Repos}}item-done{{else}}item-next{{end}}"><strong>Repository added</strong>
+{{if .Repos}}{{range $i, $r := .Repos}}{{if $i}}, {{end}}<a href="/ui/repos/{{$r.Name}}">{{$r.Name}}</a>{{end}}
+{{else}}{{none "no-repo" (exact (len .Repos))}}. <div class="cmd-line"><a href="/ui/repos/new">Add a repository</a> <span class="muted">or run</span> <code class="cmd">{{if .Server.Dev}}writ repo add .{{else}}writ repo add NAME HOST/PROJECT --path PATH{{end}}</code></div>{{end}}</li>
+<li class="{{if .Served.N}}item-done{{else}}item-next{{end}}"><strong>Stacks found</strong> {{template "counted" (of .Stacks "stack" "stacks")}}, {{template "n" .Served}} served in an environment</li>
+<li class="{{if .Plans.N}}item-done{{else}}item-next{{end}}"><strong>First plan</strong> {{if .Plans.N}}<a href="/ui/plans">{{template "counted" (of .Plans "plan" "plans")}}</a>{{else}}{{with none "no-plan-yet" .Plans}}{{.}}{{else}}writ serve could not read every environment's plans.{{end}} <div class="cmd-line"><code class="cmd">writ plan --remote{{if .FirstEnv}} --env {{.FirstEnv}}{{end}}</code> <span class="muted">in a clean work tree, or in CI:</span> <code class="cmd">writ ci gitlab --repo {{if eq (len .Repos) 1}}{{(index .Repos 0).Name}}{{else}}NAME{{end}}</code></div>{{end}}</li>
+<li class="{{if .Plans.N}}item-next{{else}}item-later{{end}}"><strong>First approved apply</strong> Someone other than the author approves the plan, on its page or with <code>writ approve --remote ID</code>, then <code>writ apply --remote ID</code> or the apply job runs it.</li>
 </ol>
 {{end}}
 {{template "foot" .}}{{end}}
@@ -21,30 +20,32 @@
 {{with .Data}}
 <div class="page-head">
 <h1>Repositories</h1>
+{{if and .Repos (not .Pinned)}}<a class="button primary" href="/ui/repos/new">Add repository</a>{{end}}
 </div>
-{{if .Pinned}}<p class="muted">The config lists the repositories, so they change with the config.</p>{{else}}<p><a class="button" href="/ui/repos/new">Add repository</a></p>{{end}}
+{{if .Pinned}}<p class="meta">Read from the config file of writ serve</p>{{end}}
 {{if .Repos}}
+<div class="card">
 <div class="scroll">
-<table>
+<table class="list">
 <caption class="sr-only">Each repository writ serve reads code from</caption>
-<thead><tr><th scope="col">Name</th><th scope="col">Project</th><th scope="col">Path</th><th scope="col">Branch</th><th scope="col">Last commit read</th><th scope="col" class="num">Stacks</th><th scope="col">Last poll</th></tr></thead>
+<thead><tr><th scope="col">Repository</th><th scope="col">Path</th><th scope="col">Branch</th><th scope="col">Commit read</th><th scope="col" class="num">Stacks</th><th scope="col" class="end">Polled</th></tr></thead>
 <tbody>
 {{- range .Repos}}
 <tr>
-<th scope="row"><a href="/ui/repos/{{.Name}}">{{.Name}}</a></th>
-<td data-record="{{record "name" .Name}}"><span class="ref" data-field="project">{{.Project}}</span> <span class="muted">{{.Kind}}{{if .ProjectID}}{{if ne .Kind "dir"}}, id <code>{{.ProjectID}}</code>{{end}}{{end}}</span></td>
-<td>{{if .Path}}<code>{{.Path}}/</code>{{else}}<span class="muted">root</span>{{end}}</td>
-<td>{{.DefaultBranch}}</td>
-<td>{{if .Head}}<code class="id">{{short .Head}}</code> {{template "time" .HeadReadAt}}{{else}}<span class="muted">none</span>{{end}}</td>
-<td class="num">{{with .Stacks}}{{template "n" (exact (deref .))}}{{else}}<span class="muted">not read</span>{{end}}</td>
-<td>{{if .Error}}{{template "status" "failed"}} <span class="msg" data-record="{{record "name" .Name}}" data-field="error">{{.Error}}</span>{{else}}{{template "time" .PolledAt}}{{end}}</td>
+<th scope="row" class="c-main"><a href="/ui/repos/{{.Name}}">{{.Name}}</a> <span class="under" data-record="{{record "name" .Name}}"><span class="ref" data-field="project">{{.Project}}</span> · {{.Kind}}</span></th>
+<td data-label="Path">{{if .Path}}<code>{{.Path}}/</code>{{else}}<span class="muted">root</span>{{end}}</td>
+<td data-label="Branch">{{.DefaultBranch}}</td>
+<td data-label="Commit">{{if .Head}}<code class="id">{{short .Head}}</code> <span class="muted">{{template "when" .HeadReadAt}}</span>{{end}}</td>
+<td class="num" data-label="Stacks">{{with .Stacks}}{{template "n" (exact (deref .))}}{{else}}<span class="muted">not read</span>{{end}}</td>
+<td class="end" data-label="Polled">{{if .Error}}{{template "status" "failed"}} <span class="under msg" data-record="{{record "name" .Name}}" data-field="error">{{.Error}}</span>{{else}}{{template "when" .PolledAt}}{{end}}</td>
 </tr>
 {{- end}}
 </tbody>
 </table>
 </div>
+</div>
 {{else}}
-{{with none "no-repo" (exact (len .Repos))}}<p class="empty">{{.}}. A team starts by adding the repository that holds its OpenTofu stacks.</p>{{end}}
+{{with none "no-repo" (exact (len .Repos))}}<div class="card"><p class="empty">{{.}}{{if not $.Data.Pinned}}<br><a class="button primary" href="/ui/repos/new">Add repository</a>{{end}}</p></div>{{end}}
 {{end}}
 {{end}}
 {{template "foot" .}}{{end}}
@@ -56,23 +57,21 @@
 </div>
 {{if .Pinned}}<p class="note note-error" role="alert">The config lists the repositories, so writ serve adds none here. Add it to <code>repos</code> in the config.</p>{{end}}
 {{range .Refusal}}<p class="note note-{{.Severity}}" role="alert"><strong>{{.Class}}</strong>: <span class="msg">{{.Message}}</span></p>{{end}}
-<form method="post" action="/ui/repos/new" class="form">
+<form method="post" action="/ui/repos/new" class="card form">
 <label for="f-name">Name</label>
-<input id="f-name" name="name" required pattern="[a-z][a-z0-9_\-]*" value="{{.Form.Name}}" aria-describedby="h-name">
-<p id="h-name" class="muted">How commands and plans name it, such as <code>infra</code>.</p>
+<input id="f-name" name="name" required pattern="[a-z][a-z0-9_\-]*" value="{{.Form.Name}}" placeholder="infra">
 <label for="f-forge">Forge</label>
-<input id="f-forge" name="forge" required value="{{.Form.Forge}}" aria-describedby="h-forge">
-<p id="h-forge" class="muted">A forge's name in the config, or its host, such as <code>gitlab.com</code>.{{if .Dev}} Under <code>writ serve --dev</code>, <code>dir</code> names a Git repository on this machine.{{end}} The forge's read token stays in the file the config names; this form never takes one.</p>
+<input id="f-forge" name="forge" required value="{{.Form.Forge}}" placeholder="{{if .Dev}}dir{{else}}gitlab.example.com{{end}}" aria-describedby="h-forge">
+<p id="h-forge" class="hint">A forge's name in the config, or its host. Its read token stays in the config; this form takes none.{{if .Dev}} Under <code>writ serve --dev</code>, <code>dir</code> names a Git repository on this machine, and Project its absolute path.{{end}}</p>
 <label for="f-project">Project</label>
-<input id="f-project" name="project" required value="{{.Form.Project}}" aria-describedby="h-project">
-<p id="h-project" class="muted">The project's path, such as <code>acme/infra</code>, or its id.{{if .Dev}} For <code>dir</code>, the repository's absolute path.{{end}}</p>
+<input id="f-project" name="project" required value="{{.Form.Project}}" placeholder="acme/infra">
 <label for="f-path">Path</label>
-<input id="f-path" name="path" value="{{.Form.Path}}" aria-describedby="h-path">
-<p id="h-path" class="muted">The directory in the project that holds the stacks; empty for its root.</p>
+<input id="f-path" name="path" value="{{.Form.Path}}" placeholder="stacks" aria-describedby="h-path">
+<p id="h-path" class="hint">The directory that holds the stacks. Empty for the root.</p>
 <label for="f-prefix">Prefix</label>
-<input id="f-prefix" name="prefix" value="{{.Form.Prefix}}" aria-describedby="h-prefix">
-<p id="h-prefix" class="muted">Put before each stack's name when another repository has a stack of the same name, such as <code>payments/</code>.</p>
-<button type="submit"{{if .Pinned}} disabled{{end}}>Add repository</button>
+<input id="f-prefix" name="prefix" value="{{.Form.Prefix}}" placeholder="payments/" aria-describedby="h-prefix">
+<p id="h-prefix" class="hint">Set before each stack's name, when another repository has a stack of the same name.</p>
+<div class="actions"><button type="submit" class="primary"{{if .Pinned}} disabled{{end}}>Add repository</button></div>
 </form>
 {{end}}
 {{template "foot" .}}{{end}}
@@ -81,39 +80,42 @@
 {{with .Data}}
 <div class="page-head">
 <h1>{{.Repo.Name}}</h1>
-<p class="subtitle"><span class="ref" data-record="{{record "name" .Repo.Name}}" data-field="project">{{.Repo.Project}}</span></p>
 </div>
-<dl class="facts">
-<dt>Forge</dt><dd>{{.Repo.Forge}}{{if .Repo.ForgeURL}} <code>{{.Repo.ForgeURL}}</code>{{end}}{{if ne .Repo.Kind "dir"}}, project id <code>{{.Repo.ProjectID}}</code>{{end}}</dd>
-<dt>Path</dt><dd>{{if .Repo.Path}}<code>{{.Repo.Path}}/</code>{{else}}the project's root{{end}}{{if .Repo.Prefix}}, stacks named <code>{{.Repo.Prefix}}DIR</code>{{end}}</dd>
-<dt>Branch</dt><dd>{{.Repo.DefaultBranch}}, polled {{template "time" .Repo.PolledAt}}</dd>
-<dt>Commit read</dt><dd>{{with .Commit}}<code class="id">{{.SHA}}</code> {{template "time" .ReadAt}}, {{template "counted" (of (exact .Files) "file" "files")}}{{else}}<span class="muted">none</span>{{end}}</dd>
-<dt>Added</dt><dd>{{template "time" .Repo.AddedAt}} by {{.Repo.AddedBy}}{{if eq .Repo.Origin "config"}} <span class="chip">config</span>{{end}}</dd>
+<p class="meta"><span class="ref" data-record="{{record "name" .Repo.Name}}" data-field="project">{{.Repo.Project}}</span></p>
+<div class="card">
+<dl class="kv kv-2">
+<div><dt>Forge</dt><dd>{{.Repo.Forge}}{{if .Repo.ForgeURL}} <code class="muted">{{.Repo.ForgeURL}}</code>{{end}}</dd></div>
+{{if ne .Repo.Kind "dir"}}<div><dt>Project id</dt><dd><code>{{.Repo.ProjectID}}</code></dd></div>{{end}}
+<div><dt>Path</dt><dd>{{if .Repo.Path}}<code>{{.Repo.Path}}/</code>{{else}}<span class="muted">root</span>{{end}}</dd></div>
+{{if .Repo.Prefix}}<div><dt>Prefix</dt><dd><code>{{.Repo.Prefix}}</code></dd></div>{{end}}
+<div><dt>Branch</dt><dd>{{.Repo.DefaultBranch}}{{with .Repo.PolledAt}} <span class="muted">polled {{template "when" .}}</span>{{end}}</dd></div>
+<div><dt>Commit read</dt><dd>{{with .Commit}}<code class="id">{{short .SHA}}</code> <span class="muted">{{template "when" .ReadAt}} · {{template "counted" (of (exact .Files) "file" "files")}}</span>{{end}}</dd></div>
+<div><dt>Added</dt><dd>{{template "time" .Repo.AddedAt}} <span class="muted">by {{.Repo.AddedBy}}</span>{{if eq .Repo.Origin "config"}} <span class="chip">config</span>{{end}}</dd></div>
 </dl>
+</div>
 {{if .Repo.Error}}<p class="note note-error" role="alert"><strong>last poll failed</strong>: <span class="msg" data-record="{{record "name" .Repo.Name}}" data-field="error">{{.Repo.Error}}</span></p>{{end}}
 {{range .Diagnostics}}<p class="note note-{{.Severity}}"><span class="msg" data-field="diagnostics[].message">{{.Message}}</span></p>{{end}}
 
-<section aria-labelledby="h-found">
-<h2 id="h-found">Stacks found ({{template "n" (exact (len .Stacks))}})</h2>
+<section class="card" aria-labelledby="h-found">
+<div class="card-head"><h2 id="h-found">Stacks found <span class="count">{{template "n" (exact (len .Stacks))}}</span></h2></div>
 {{if .Stacks}}
 <div class="scroll">
-<table>
-<caption class="sr-only">Each stack in the commit read, its environments, what it reads, and its providers</caption>
-<thead><tr><th scope="col">Stack</th><th scope="col">Served</th><th scope="col">Providers</th></tr></thead>
+<table class="list">
+<caption class="sr-only">Each stack in the commit read, its environments and its providers</caption>
+<thead><tr><th scope="col">Stack</th><th scope="col">Served in</th><th scope="col">Providers</th></tr></thead>
 <tbody>
 {{- range .Stacks}}{{$st := .}}
 <tr>
-<th scope="row">{{.Stack}} <span class="muted"><code>{{.Dir}}</code></span></th>
-<td>{{if .Served}}{{range $i, $e := .Served}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $st.Stack "env" $e}}">{{$e}}</a>{{end}}{{end}}{{if .NotServed}}{{if .Served}}; {{end}}<span class="chip chip-bad">not served</span> {{join .NotServed ", "}}{{end}}</td>
-<td><ul class="plain">{{range .Providers}}<li><code>{{.Source}}</code> <code>{{.Version}}</code>{{if not .Runs}} <span class="chip chip-bad">not run here</span>{{end}}</li>{{end}}</ul></td>
+<th scope="row" class="c-main">{{.Stack}}{{if and .Dir (ne .Dir .Stack)}} <code class="under">{{.Dir}}</code>{{end}}</th>
+<td data-label="Served in">{{range $i, $e := .Served}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $st.Stack "env" $e}}">{{$e}}</a>{{end}}{{if .NotServed}}{{if .Served}} · {{end}}<span class="chip chip-bad">not served</span> <span class="muted">{{join .NotServed ", "}}</span>{{end}}</td>
+<td data-label="Providers">{{range $i, $p := .Providers}}{{if $i}} · {{end}}<code>{{$p.Source}}</code> <code class="muted">{{$p.Version}}</code>{{if not $p.Runs}} <span class="chip chip-bad">not run here</span>{{end}}{{end}}</td>
 </tr>
 {{- end}}
 </tbody>
 </table>
 </div>
-<p class="muted">A stack has state only after its first plan: <code>writ plan --remote --env ENV</code> in a clean work tree, or the CI job that <code>writ ci gitlab --repo {{.Repo.Name}}</code> prints.</p>
 {{else}}
-<p class="muted">{{none "no-found" (exact (len .Stacks))}}</p>
+<p class="empty">{{none "no-found" (exact (len .Stacks))}}</p>
 {{end}}
 </section>
 {{end}}
