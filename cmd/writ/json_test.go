@@ -64,7 +64,7 @@ func TestEveryFailureIsOneJSONDocument(t *testing.T) {
 
 	formats := map[string]string{
 		"plan": "writ.remote-plan/v0", "apply": "writ.remote-run/v0", "state": "writ.state-adopt/v0",
-		"runs": "writ.remote-runs/v0", "import-bulk": "writ.import-bulk/v0", "import-accept": "writ.import-accept/v0", "agent": "writ.agent-init/v0",
+		"runs": "writ.remote-runs/v0", "audit": "writ.audit/v0", "import-bulk": "writ.import-bulk/v0", "import-accept": "writ.import-accept/v0", "agent": "writ.agent-init/v0",
 		"login": "writ.login/v0", "logout": "writ.logout/v0", "": "writ.error/v0",
 	}
 	type failure struct {
@@ -79,10 +79,12 @@ func TestEveryFailureIsOneJSONDocument(t *testing.T) {
 	add := func(name, format string, code int, class string, args ...string) {
 		tests = append(tests, failure{name: name, format: format, args: args, code: code, class: class})
 	}
-	for _, c := range []string{"plan", "apply", "state", "runs"} {
+	for _, c := range []string{"plan", "apply", "state", "runs", "audit"} {
 		add(c+": an unknown flag", c, 2, "usage", "--dir", good, c, "--remote", "--no-such-flag")
 		add(c+": no --remote", c, 2, "usage", "--dir", good, c)
 	}
+	add("audit: --stack without --env", "audit", 2, "usage", "--dir", good, "audit", "--remote", "--stack", "network")
+	add("audit: a time that is not RFC 3339", "audit", 2, "usage", "--dir", good, "audit", "--remote", "--since", "yesterday")
 	add("apply: two plan ids", "apply", 2, "usage", "--dir", good, "apply", "--remote", "a", "b")
 	add("plan: an argument it does not take", "plan", 2, "usage", "--dir", good, "plan", "--remote", "extra")
 	add("import bulk: a stack with no lock file", "import-bulk", 2, "usage", "--dir", good, "import", "bulk", "--type", "random_id", "--id", "x")

@@ -100,6 +100,11 @@ WRIT_ID_TOKEN, else your session from writ login, else the dev token:
                                           a state on S3 written outside Writ; needs adopt
   runs     --remote --env ENV [--stack NAME] [--json] [--limit N]
                                           list the runs writ serve started, newest first
+  audit    --remote [--env ENV [--stack NAME]] [--plan ID] [--run ID] [--person ID] [--op OP]
+           [--since TIME] [--until TIME] [--limit N] [--cursor C] [--json]
+                                          list the rows of writ serve's audit log that the token may
+                                          see, newest first; --plan takes in its approvals, its run,
+                                          and the run's state writes; TIME is RFC 3339
   whoami   [--remote] [--json]            print the control plane, who the token speaks for, its
                                           teams, and its grants
   serve    --config FILE [--check]        run the control plane; --check prints what the config
@@ -284,7 +289,7 @@ func (inv *invocation) run(args []string) int {
 	if g.server != "" && name != "login" && name != "logout" && name != "repo" && name != "ui" && name != "ci" && name != "mcp" {
 		f := fs.Lookup("remote")
 		if f == nil {
-			return inv.stopped(&cli.UsageError{Msg: "--server goes with the commands that run on a control plane: login, logout, plan, apply, approve, show, runs, whoami, repo, ci, ui, and mcp"})
+			return inv.stopped(&cli.UsageError{Msg: "--server goes with the commands that run on a control plane: login, logout, plan, apply, approve, show, runs, audit, whoami, repo, ci, ui, and mcp"})
 		}
 		_ = f.Value.Set("true")
 	}
@@ -524,6 +529,28 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 				return err
 			}
 			return app.RemoteRuns(ctx, cli.RemoteOptions{Stack: *stackName}, *limit, *j)
+		}, nil
+	case "audit":
+		j := asJSON()
+		limit := fs.Int("limit", cli.DefaultAuditLimit, "list at most `N` rows, 1 to 200")
+		rem, stackName := remote()
+		o := cli.AuditOptions{}
+		fs.StringVar(&o.Plan, "plan", "", "the rows of the plan with this `id` or ref, of its run, and of the run's state writes")
+		fs.StringVar(&o.Run, "run", "", "the rows of the run with this `id`")
+		fs.StringVar(&o.Person, "person", "", "the rows of the person with this `id`, as writ whoami prints it")
+		fs.StringVar(&o.Op, "op", "", "the rows of this `operation`, such as plan, approve, apply, or state-write")
+		fs.StringVar(&o.Since, "since", "", "the rows at or after this RFC 3339 `time`")
+		fs.StringVar(&o.Until, "until", "", "the rows before this RFC 3339 `time`")
+		fs.StringVar(&o.Cursor, "cursor", "", "the `cursor` of the next page, as the last page printed it")
+		return func(ctx context.Context, app *cli.App, pos []string) error {
+			if err := noArgs(name, pos); err != nil {
+				return err
+			}
+			if err := remoteOnly(rem); err != nil {
+				return err
+			}
+			o.Stack, o.Limit, o.JSON = *stackName, *limit, *j
+			return app.RemoteAudit(ctx, o)
 		}, nil
 	case "show":
 		j := asJSON()
