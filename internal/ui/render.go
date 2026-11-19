@@ -49,6 +49,7 @@ func parseTemplates(u *UI) (*template.Template, error) {
 			return span{text, iso}
 		},
 		"from": originOf,
+		"driftBox": func(d *server.DriftStack, every span) driftBox { return driftBox{d, every} },
 		"add":  func(a, b int) int { return a + b },
 		"grants": func(caption string, gs []server.GrantInfo, teams bool) grantTable {
 			t := grantTable{Caption: caption, Teams: teams}

@@ -310,6 +310,8 @@ tbody th { font-weight: 500; color: var(--foreground); }
 td.num, th.num { text-align: right; }
 td.end, th.end { text-align: right; white-space: nowrap; color: var(--muted-foreground); }
 table a { font-weight: 500; }
+.by .i { width: 0.875rem; height: 0.875rem; margin-right: 0.3125rem; vertical-align: -0.125rem; color: var(--muted-foreground); }
+.card-head h2.by { align-items: center; gap: 0; }
 .under { display: block; color: var(--muted-foreground); font-size: var(--fs-1); font-weight: 400; }
 
 /* Rows: a live list, one link a row. */
