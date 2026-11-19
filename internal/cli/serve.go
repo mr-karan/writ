@@ -14,6 +14,7 @@ import (
 	"github.com/mr-karan/writ/internal/awsrole"
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
+	"github.com/mr-karan/writ/internal/egress"
 	"github.com/mr-karan/writ/internal/oidc"
 	"github.com/mr-karan/writ/internal/provider"
 	"github.com/mr-karan/writ/internal/server"
@@ -145,6 +146,21 @@ func printServeCheck(w io.Writer, file string, cfg *server.Config) error {
 		fmt.Fprintf(w, "tofu: %s, plugin cache %s, scratch directories in %s\n", t.Binary, t.PluginCache, t.ScratchDir)
 	} else {
 		fmt.Fprintln(w, "tofu: no tofu block, so stacks of .tf files are refused")
+	}
+	switch cfg.EgressMode {
+	case egress.Report:
+		fmt.Fprintln(w, "egress: report; each OpenTofu run reaches the network only through writ's egress proxy, which lets an unlisted destination through and records it")
+	case egress.Enforce:
+		fmt.Fprintln(w, "egress: enforce; each OpenTofu run reaches the network only through writ's egress proxy, which refuses a destination its env's egress does not list")
+	}
+	if cfg.EgressMode != egress.Off {
+		for _, name := range sortedKeys(cfg.Envs) {
+			allows := "nothing"
+			if e := cfg.Envs[name].Egress; len(e) > 0 {
+				allows = strings.Join(e, ", ")
+			}
+			fmt.Fprintf(w, "egress: env %s allows %s\n", name, allows)
+		}
 	}
 	if a := cfg.AWS; a != nil {
 		sts := a.STSEndpoint

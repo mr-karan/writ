@@ -7,6 +7,7 @@ import (
 
 	"github.com/mr-karan/writ/internal/authz"
 	"github.com/mr-karan/writ/internal/control"
+	"github.com/mr-karan/writ/internal/egress"
 	"github.com/mr-karan/writ/internal/oidc"
 )
 
@@ -67,6 +68,11 @@ type Config struct {
 	// DriftEvery is how often writ serve plans each OpenTofu stack@env it
 	// keeps state for, to find drift. 0 makes no drift check.
 	DriftEvery time.Duration
+	// EgressMode is egress_mode: off leaves each OpenTofu run on the
+	// host's network; report and enforce give it a network namespace of
+	// its own whose one way out is the egress proxy, which enforce holds
+	// to its environment's egress list.
+	EgressMode egress.Mode
 }
 
 // minDriftEvery is the shortest drift.every: each check reads every
@@ -223,6 +229,10 @@ type Env struct {
 	// ProviderEnv maps each variable a provider gets to the file that
 	// holds its value.
 	ProviderEnv map[string]string
+	// Egress is the env's egress list as the config writes it, and
+	// egress the same parsed.
+	Egress []string
+	egress egress.List
 }
 
 // Defaults the design sets.
