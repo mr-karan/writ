@@ -319,6 +319,7 @@ In this example, `writ serve` restarted, and its check at start planned app afte
 ```json
 {
     "diagnostics": [],
+    "every": "1h",
     "format": "writ.drift/v0",
     "more": false,
     "ok": true,
@@ -338,20 +339,21 @@ In this example, `writ serve` restarted, and its check at start planned app afte
                         "kind": "code"
                     }
                 ],
-                "checked_at": "2026-11-15T06:22:51Z",
+                "checked_at": "2026-11-19T18:45:30Z",
                 "code": 2,
                 "commit": "dda65cefe05a83f1433a335c880fdfb4a1d7a51d",
-                "drifted_since": "2026-11-15T06:22:51Z",
+                "drifted_since": "2026-11-19T18:45:30Z",
                 "error": "",
                 "outside": 0,
-                "plan": "703a6a51ed7d286e9bdbe4f62eeaac6d",
+                "plan": "a90814773ab14594f6566fa72b2d1aee",
                 "repo": "infra",
-                "started_at": "2026-11-15T06:22:51Z",
+                "started_at": "2026-11-19T18:45:30Z",
+                "started_by": "drift",
                 "status": "drifted"
             },
             "checking": false,
             "env": "prod",
-            "indexed_at": "2026-11-15T06:22:50Z",
+            "indexed_at": "2026-11-19T18:45:30Z",
             "indexed_version": 3,
             "outside_write": null,
             "resources": 5,
@@ -361,7 +363,7 @@ In this example, `writ serve` restarted, and its check at start planned app afte
 }
 ```
 
-Output of `just e2e-tofu`, whose test `just e2e` now runs, 2026-11-15. That test printed it on one line, and it's indented here with `python3 -m json.tool`.
+Output of `just e2e`, 2026-11-19. That test printed it on one line, and it's indented here with `python3 -m json.tool`.
 
 And here's the check of app after a `tofu apply` with the bucket owner's keys wrote serial 3 outside Writ. Since no secret set was sealed with serial 3, the check keeps only that:
 
