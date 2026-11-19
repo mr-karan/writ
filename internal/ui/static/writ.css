@@ -484,9 +484,6 @@ td.notes .chip { margin-bottom: 0.125rem; }
 /* Package 4: a stack's resources. A type label, a module chip, and a
    group's name are code so their digits stay the identifier's own. */
 .res code.ty, .res code.chip { font-family: var(--font-sans); }
-/* Oat's .card pads 24 px, which the .card above does not reset: a card's
-   rows carry their own inset. */
-.card { padding: 0; }
 .group > summary .t code { font-size: inherit; }
 .flat > .res:first-child { border-top: 0; }
 
