@@ -445,6 +445,7 @@ func (x *showcase) seed() map[string]string {
 		}
 	}
 	checker.Close()
+	x.seedMany(ctx)
 
 	// Another control plane that starts on the same database ends what it
 	// finds in flight, so these start after the others closed.
@@ -473,6 +474,9 @@ func (x *showcase) seed() map[string]string {
 		"stack":           "/ui/stack?stack=app&env=" + server.DevEnv,
 		"stack-runs":      "/ui/stack?stack=app&env=" + server.DevEnv + "&view=runs",
 		"stack-plans":     "/ui/stack?stack=app&env=" + server.DevEnv + "&view=plans",
+		"stack-drift":     "/ui/stack?stack=app&env=" + server.DevEnv + "&view=drift",
+		"stack-many":      "/ui/stack?stack=platform&env=" + server.DevEnv,
+		"stack-many-find": "/ui/stack?stack=platform&env=" + server.DevEnv + "&q=module.cluster",
 		"repos":           "/ui/repos",
 		"repo":            "/ui/repos/demo",
 		"repo-new":        "/ui/repos/new",
@@ -480,5 +484,106 @@ func (x *showcase) seed() map[string]string {
 		"whoami":          "/ui/whoami",
 		"settings":        "/ui/settings",
 		"not-found":       "/ui/plans/" + strings.Repeat("0", 32),
+	}
+}
+
+// seedMany gives stack platform an index of 64 resources across eight
+// categories, with made-up ids, and a drift check that names three of
+// them, so the resources view is seen on a full list.
+func (x *showcase) seedMany(ctx context.Context) {
+	const aws, nomad, region = "registry.opentofu.org/hashicorp/aws", "registry.opentofu.org/hashicorp/nomad", "eu-west-1"
+	var rows []control.IndexRow
+	add := func(addr, typ, id string) *control.IndexRow {
+		provider := aws
+		if strings.HasPrefix(typ, "nomad_") {
+			provider = nomad
+		}
+		rows = append(rows, control.IndexRow{Address: addr, Type: typ, Provider: provider, ID: id})
+		return &rows[len(rows)-1]
+	}
+	arn := func(r *control.IndexRow, service, path string) {
+		r.ARN, r.Region = "arn:aws:"+service+":"+region+":000000000000:"+path, region
+	}
+	arn(add("aws_lb.app", "aws_lb", "app-alb"), "elasticloadbalancing", "loadbalancer/app/app-alb/5c1e0a7d93b2f4e1")
+	arn(add("aws_lb_listener.https", "aws_lb_listener", "listener/app/app-alb/5c1e0a7d93b2f4e1/1c0d"), "elasticloadbalancing", "listener/app/app-alb/5c1e0a7d93b2f4e1/1c0d")
+	arn(add("aws_lb_listener.http", "aws_lb_listener", "listener/app/app-alb/5c1e0a7d93b2f4e1/2e7a"), "elasticloadbalancing", "listener/app/app-alb/5c1e0a7d93b2f4e1/2e7a")
+	for _, c := range []string{"blue", "green"} {
+		arn(add(`aws_lb_target_group.web["`+c+`"]`, "aws_lb_target_group", "tg-web-"+c), "elasticloadbalancing", "targetgroup/tg-web-"+c+"/0f3b")
+	}
+	add("module.vpc.aws_vpc.main", "aws_vpc", "vpc-0b1c2d3e4f")
+	for i, z := range []string{"a", "b", "c"} {
+		add(`module.vpc.aws_subnet.private["`+z+`"]`, "aws_subnet", fmt.Sprintf("subnet-0a%d1c7d2e7", i))
+		add(`module.vpc.aws_subnet.public["`+z+`"]`, "aws_subnet", fmt.Sprintf("subnet-0b%d4e9f1a2", i))
+	}
+	add("module.vpc.aws_route_table.private", "aws_route_table", "rtb-07c1d2e3f4")
+	add("module.vpc.aws_nat_gateway.main", "aws_nat_gateway", "nat-0d1e2f3a4b")
+	add("module.vpc.aws_internet_gateway.main", "aws_internet_gateway", "igw-0e1f2a3b4c")
+	add("module.vpc.aws_eip.nat", "aws_eip", "eipalloc-0f1a2b3c4d")
+	add("module.cluster.aws_security_group.nomad_client", "aws_security_group", "sg-0a41c7d2e7")
+	add("module.cluster.aws_security_group.nomad_server", "aws_security_group", "sg-0b52d8e3f8")
+	add("module.cluster.aws_security_group_rule.ingress_https", "aws_security_group_rule", "sgrule-3107714bd2")
+	add("module.cluster.aws_vpc_security_group_ingress_rule.ssh", "aws_vpc_security_group_ingress_rule", "sgr-0a1b2c3d4e")
+	for _, r := range []string{"nomad_client", "nomad_server"} {
+		arn(add("aws_iam_role."+r, "aws_iam_role", r+"-prod"), "iam", "role/"+r+"-prod")
+	}
+	add("aws_iam_instance_profile.nomad_client", "aws_iam_instance_profile", "nomad_client-prod")
+	add("aws_iam_role_policy_attachment.ssm", "aws_iam_role_policy_attachment", "nomad_client-prod-20261101000000000000000001")
+	add("aws_iam_role_policy_attachment.ecr", "aws_iam_role_policy_attachment", "nomad_client-prod-20261101000000000000000002")
+	arn(add("aws_iam_policy.logs", "aws_iam_policy", "arn:aws:iam::000000000000:policy/logs-write"), "iam", "policy/logs-write")
+	add("aws_iam_role_policy.inline", "aws_iam_role_policy", "nomad_server-prod:inline")
+	add("aws_iam_user.ci", "aws_iam_user", "ci-deploy")
+	add("aws_iam_access_key.ci", "aws_iam_access_key", "ci-deploy-key")
+	add("aws_kms_key.state", "aws_kms_key", "1f2e3d4c-0000-4b5a-9c8d-7e6f5a4b3c2d")
+	add("aws_kms_alias.state", "aws_kms_alias", "alias/state")
+	for r, lt := range map[string]string{"nomad_client": "lt-0c7e55a1b9", "nomad_server": "lt-0d8f66b2c0"} {
+		add("module.cluster.aws_autoscaling_group."+r, "aws_autoscaling_group", strings.ReplaceAll(r, "_", "-")+"-prod")
+		add("module.cluster.aws_launch_template."+r, "aws_launch_template", lt)
+	}
+	add("aws_instance.bastion", "aws_instance", "i-0a1b2c3d4e5f60718")
+	add("aws_key_pair.ops", "aws_key_pair", "ops")
+	arn(add("aws_lambda_function.rotate", "aws_lambda_function", "rotate-keys"), "lambda", "function:rotate-keys")
+	add("aws_lambda_permission.rotate", "aws_lambda_permission", "AllowExecutionFromEvents")
+	add("aws_ecr_repository.app", "aws_ecr_repository", "app")
+	add("aws_ecr_lifecycle_policy.app", "aws_ecr_lifecycle_policy", "app")
+	for i, j := range []string{"web", "worker", `cron["reports"]`, `cron["cleanup"]`} {
+		r := add("module.jobs.nomad_job."+j, "nomad_job", strings.NewReplacer(`cron["`, "cron-", `"]`, "").Replace(j))
+		r.Namespace, r.ModifyIndex = "app", fmt.Sprint(18200+i*37)
+	}
+	add("nomad_namespace.app", "nomad_namespace", "app")
+	add("nomad_acl_policy.deploy", "nomad_acl_policy", "deploy")
+	add("nomad_acl_token.deploy", "nomad_acl_token", "6a0f1e2d-0000-4c3b-8a79-5e4d3c2b1a09")
+	add("nomad_variable.app", "nomad_variable", "nomad/jobs/web")
+	add("nomad_csi_volume.data", "nomad_csi_volume", "data")
+	for _, b := range []string{"logs", "assets"} {
+		arn(add("aws_s3_bucket."+b, "aws_s3_bucket", "acme-"+b+"-prod"), "s3", "acme-"+b+"-prod")
+	}
+	add("aws_s3_bucket_versioning.assets", "aws_s3_bucket_versioning", "acme-assets-prod")
+	add("aws_s3_bucket_policy.logs", "aws_s3_bucket_policy", "acme-logs-prod")
+	add("aws_ebs_volume.data", "aws_ebs_volume", "vol-0a1b2c3d4e5f6a7b8")
+	add("aws_efs_file_system.shared", "aws_efs_file_system", "fs-0a1b2c3d")
+	add("aws_route53_zone.main", "aws_route53_zone", "Z0000000EXAMPLE")
+	for _, n := range []string{"app", "api", "www"} {
+		add("aws_route53_record."+n, "aws_route53_record", "Z0000000EXAMPLE_"+n+".example.com_A")
+	}
+	arn(add("aws_acm_certificate.app", "aws_acm_certificate", "arn:aws:acm:eu-west-1:000000000000:certificate/0a1b2c3d"), "acm", "certificate/0a1b2c3d")
+	add("aws_acm_certificate_validation.app", "aws_acm_certificate_validation", "2026-11-01 00:00:00 +0000 UTC")
+	add("kubernetes_namespace.ops", "kubernetes_namespace", "ops")
+	if len(rows) < 60 {
+		x.t.Fatalf("the full stack has %d resources", len(rows))
+	}
+	if _, err := x.store.ReplaceIndex(ctx, control.IndexWrite{Env: server.DevEnv, Stack: "platform", Backend: control.BackendHTTP, Version: 63, At: time.Now().Add(-2 * time.Hour), Rows: rows}); err != nil {
+		x.t.Fatal(err)
+	}
+	const ref = "dc-platform"
+	if err := x.store.BeginDrift(ctx, ref, server.DevEnv, "platform", time.Now().Add(-3*time.Hour)); err != nil {
+		x.t.Fatal(err)
+	}
+	if _, err := x.store.FinishDrift(ctx, control.DriftCheck{Ref: ref, Status: control.DriftDrifted, MadeAt: time.Now().Add(-3 * time.Hour), Repo: "demo", Commit: "e81aa0950c4b2d1f", Outside: 1, Code: 2,
+		Changes: []control.DriftChange{
+			{Address: "aws_lb_listener.https", Kind: control.DriftOutside, Action: "update", Attributes: []string{"ssl_policy"}},
+			{Address: "module.cluster.aws_autoscaling_group.nomad_client", Kind: control.DriftCode, Action: "update", Attributes: []string{"max_size", "desired_capacity"}},
+			{Address: "module.cluster.aws_security_group_rule.ingress_https", Kind: control.DriftCode, Action: "replace", Attributes: []string{"cidr_blocks"}},
+		}}); err != nil {
+		x.t.Fatal(err)
 	}
 }
