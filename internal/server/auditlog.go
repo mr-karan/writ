@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -244,7 +245,7 @@ func auditRow(e control.Entry) AuditRow {
 	return AuditRow{At: stamp(e.At), Request: e.Request, Kind: e.Kind, Method: e.Method, Route: e.Route, Status: e.Status,
 		Principal: e.Principal, PrincipalKind: e.PrincipalKind, Person: e.Person, Issuer: e.Issuer, Subject: e.Subject, Via: e.Via,
 		Teams: orEmpty(e.Teams), Op: e.Op, Env: e.Env, Stacks: orEmpty(e.Stacks), Plan: e.Plan, Run: e.Run, Risks: orEmpty(e.Risks),
-		Decision: string(e.Decision), Check: e.Check, Reason: reason, ReasonWithheld: reason != e.Reason,
+		Decision: string(e.Decision), Check: e.Check, Reason: reason, ReasonWithheld: reason == "" && e.Reason != "",
 		Grants: orEmptyInts(e.Grants), ElapsedMS: e.Elapsed.Milliseconds()}
 }
 
@@ -254,10 +255,19 @@ func auditRow(e control.Entry) AuditRow {
 // put a secret: only that client saw it. So only the reason of a row that
 // was allowed or needed no decision is shown. writ serve composes those
 // from what it holds, except an override's or an adoption's reason, which
-// a person wrote for this log.
+// a person wrote for this log. A state write's reason names the SHA-256
+// of the plaintext state it stored, with which a reader of the stack
+// could test a guess at the whole state, so the API leaves the hash out.
 func auditReason(e control.Entry) string {
-	if e.Decision == control.Allowed || e.Decision == control.NoDecision {
-		return e.Reason
+	switch {
+	case e.Decision != control.Allowed && e.Decision != control.NoDecision:
+		return ""
+	case e.Op == "state-write":
+		return stateHashRE.ReplaceAllString(e.Reason, "")
 	}
-	return ""
+	return e.Reason
 }
+
+// stateHashRE is the hash in the reason of a state write's row, which
+// control.Store.PutState writes.
+var stateHashRE = regexp.MustCompile(`, sha256 [0-9a-f]{64}`)

@@ -3,7 +3,9 @@ package server_test
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -480,5 +482,42 @@ grant {
 	}
 	if len(seen) != 2 {
 		t.Errorf("sam sees %d approval rows, want bob's and carol's of staging: %+v", len(seen), seen)
+	}
+}
+
+// A state write's audit row keeps the SHA-256 of the state it stored,
+// which GET /v1/audit leaves out of the reason: a hash of the plaintext
+// state lets a reader of the stack test a guess at the whole state.
+func TestAuditReadHidesStateHash(t *testing.T) {
+	f, tok := auditFixture(t)
+	state := `{"version":4,"serial":1,"lineage":"lineage-a","outputs":{}}`
+	sum := sha256.Sum256([]byte(state))
+	st := stateToken(t, f, "run-hash")
+	for _, c := range []struct{ method, path, body string }{
+		{"LOCK", "/lock", `{"ID":"lock-1"}`},
+		{"POST", "?ID=lock-1", state},
+		{"POST", "?ID=lock-1", state},
+	} {
+		if r := handle(f, stateRequest(c.method, c.path, c.body, st)); r.status != http.StatusOK {
+			t.Fatalf("%s %s: %d %s", c.method, c.path, r.status, r.body)
+		}
+	}
+	kept := 0
+	for _, e := range f.audit(controltest.AuditFilter{Limit: 1000}) {
+		if e.Op == "state-write" && strings.Contains(e.Reason, hex.EncodeToString(sum[:])) {
+			kept++
+		}
+	}
+	if kept != 2 {
+		t.Fatalf("%d state-write rows keep the hash, want 2", kept)
+	}
+	rows, bodies := f.auditAll(tok["rita"], url.Values{"op": {"state-write"}})
+	if len(rows) != 2 || strings.Contains(string(bodies), "sha256") || strings.Contains(string(bodies), hex.EncodeToString(sum[:])) {
+		t.Fatalf("state writes as GET /v1/audit shows them: %s", bodies)
+	}
+	for _, row := range rows {
+		if !strings.Contains(row.Reason, "state version 1, serial 1, lineage lineage-a") || row.ReasonWithheld {
+			t.Fatalf("a state write's reason: %+v", row)
+		}
 	}
 }
