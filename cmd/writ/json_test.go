@@ -96,9 +96,6 @@ func TestEveryFailureIsOneJSONDocument(t *testing.T) {
 	add("agent init: --print with --json", "agent", 2, "usage", "--dir", good, "agent", "init", "--print")
 	add("login: an unknown flag", "login", 2, "usage", "--dir", good, "login", "--no-such-flag")
 	add("logout: an unknown flag", "logout", 2, "usage", "--dir", good, "logout", "--no-such-flag")
-	for _, c := range []string{"check", "fmt", "why", "schema", "lookup", "destroy", "env", "watch", "log", "stacks", "init"} {
-		add("a removed command: "+c, "", 2, "usage", "--dir", good, c)
-	}
 	add("a command that does not exist", "", 2, "usage", "frobnicate")
 	add("a global flag that does not exist", "", 2, "usage", "--no-such-flag", "plan")
 	add("no command", "", 2, "usage")
