@@ -98,6 +98,10 @@ WRIT_ID_TOKEN, else your session from writ login, else the dev token:
                                           seal a secret set with the newest state of an OpenTofu
                                           stack that no apply of writ serve sealed one with, such as
                                           a state on S3 written outside Writ; needs adopt
+  plans    --remote --env ENV [--stack NAME] [--status STATUS] [--started-by person|ci]
+           [--limit N] [--cursor C] [--json]
+                                          list the plans writ serve keeps, newest first, with what
+                                          started each: a person or a CI job
   runs     --remote --env ENV [--stack NAME] [--json] [--limit N]
                                           list the runs writ serve started, newest first
   audit    --remote [--env ENV [--stack NAME]] [--plan ID] [--run ID] [--person ID] [--op OP]
@@ -516,6 +520,24 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 				return err
 			}
 			return app.MCP(ctx, cli.MCPOptions{AllowProviders: *allow})
+		}, nil
+	case "plans":
+		j := asJSON()
+		limit := fs.Int("limit", cli.DefaultPlansLimit, "list the newest `N` plans, 1 to 200")
+		rem, stackName := remote()
+		o := cli.PlansOptions{}
+		fs.StringVar(&o.Status, "status", "", "the plans of this `status`, such as pending or applied")
+		fs.StringVar(&o.StartedBy, "started-by", "", "the plans that `person` or `ci` started: a person's session or a CI job's token")
+		fs.StringVar(&o.Cursor, "cursor", "", "the `cursor` of the next page, as the last page printed it")
+		return func(ctx context.Context, app *cli.App, pos []string) error {
+			if err := noArgs(name, pos); err != nil {
+				return err
+			}
+			if err := remoteOnly(rem); err != nil {
+				return err
+			}
+			o.Stack, o.Limit, o.JSON = *stackName, *limit, *j
+			return app.RemotePlans(ctx, o)
 		}, nil
 	case "runs":
 		j := asJSON()

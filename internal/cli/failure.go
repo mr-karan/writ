@@ -81,6 +81,8 @@ func failureReport(command string, args []string, diags diag.List) any {
 		return server.RemoteRun{Format: server.FormatRemoteRun, Document: json.RawMessage("null"), Diagnostics: serverDiags(d)}
 	case "state":
 		return errorReport{Format: server.FormatStateAdopt, Diagnostics: d}
+	case "plans":
+		return server.RemotePlans{Format: server.FormatRemotePlans, Plans: []server.PlanInfo{}, Diagnostics: serverDiags(d)}
 	case "runs":
 		return server.RemoteRuns{Format: server.FormatRemoteRuns, Runs: []server.RunInfo{}, Diagnostics: serverDiags(d)}
 	case "audit":
