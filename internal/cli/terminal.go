@@ -75,7 +75,6 @@ type seg struct {
 // txt is a plain piece of a line.
 func txt(s string) seg { return seg{text: s} }
 
-// of styles s.
 func (st style) of(s string) seg { return seg{st: st, text: s} }
 
 // line writes segs and a newline as one write, each segment escaped, and
@@ -111,7 +110,6 @@ func wantColor(w io.Writer, lookupEnv func(string) (string, bool)) bool {
 	return term != "dumb"
 }
 
-// isTerminal reports whether w is a terminal.
 func isTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	return ok && (isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd()))

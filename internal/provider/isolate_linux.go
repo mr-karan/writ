@@ -52,7 +52,6 @@ func mkdirAs(u User, root string) (string, error) {
 	return dir, err
 }
 
-// removeAs removes dir, which u owns, as u.
 func removeAs(u User, dir string) {
 	_ = runas.AsUser(u, func() error { return os.RemoveAll(dir) })
 }

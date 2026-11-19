@@ -328,7 +328,6 @@ func (s *Server) planMask(ctx context.Context, r planRead, saved []byte, refused
 	return m, v.Serial, nil
 }
 
-// writeTofuFiles writes a commit's files under work.
 func writeTofuFiles(work string, files map[string][]byte, commit string) error {
 	for name, text := range files {
 		// The names come from the forge's tree.

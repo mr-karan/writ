@@ -165,7 +165,6 @@ func (s *Server) createSession(ctx context.Context, sess *Session, carrier contr
 	return token, s.store.CreateSession(ctx, srow, hashToken(token), row)
 }
 
-// random32 is 32 random bytes in base64url.
 func random32() string {
 	raw := make([]byte, 32)
 	_, _ = rand.Read(raw)

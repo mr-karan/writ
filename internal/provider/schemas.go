@@ -155,7 +155,6 @@ func openSchemaCache(d Dirs, binary [32]byte) (*schemaCache, error) {
 	return c, nil
 }
 
-// resource reads one resource type's schema.
 func (c *schemaCache) resource(wire string) (rawResource, error) {
 	i, ok := c.pos[wire]
 	if !ok {
@@ -164,7 +163,6 @@ func (c *schemaCache) resource(wire string) (rawResource, error) {
 	return c.read(strconv.Itoa(i)+".json", wire)
 }
 
-// dataSource reads one data source's schema.
 func (c *schemaCache) dataSource(wire string) (rawResource, error) {
 	i, ok := c.dataPos[wire]
 	if !ok {
