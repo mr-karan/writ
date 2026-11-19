@@ -32,7 +32,7 @@ const images: { name: string; page: string; heights: Record<number, number>; cli
   { name: 'stack', page: 'stack', heights: tall },
   { name: 'runs', page: 'runs', heights: tall },
   { name: 'secret', page: 'plan-others', heights: { 1280: 0 }, clip: 'details.change[data-kind="replace"]' },
-  { name: 'drift', page: 'stack', heights: { 1280: 0 }, clip: '#drift-changes' },
+  { name: 'drift', page: 'stack-drift', heights: { 1280: 0 }, clip: '#drift-changes' },
 ];
 
 // Each pair must match the showcase at least once, so a change there
