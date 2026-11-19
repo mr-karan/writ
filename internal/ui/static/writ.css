@@ -308,6 +308,8 @@ table a { font-weight: 500; }
 .row > .i { margin-top: 0.1875rem; align-self: flex-start; }
 .tone-wait { color: var(--chg); }
 .tone-bad { color: var(--del); }
+/* Package 3: an alert's icon sits in a span of its tone, on the line of its title. */
+.row > .tone-wait, .row > .tone-bad { display: flex; align-self: flex-start; margin-top: 0.1875rem; }
 
 /* Facts: every label in one column, every value in the next. */
 .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-2) var(--space-6); padding: var(--space-3) var(--inset); }

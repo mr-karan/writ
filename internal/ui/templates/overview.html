@@ -1,94 +1,85 @@
 {{define "overview"}}{{template "head" .}}
 {{with .Data}}
 <div class="page-head">
-<h1>Overview{{if .Env}} <span class="muted">{{.Env}}</span>{{end}}</h1>
-<p class="subtitle">{{with exact (len .Envs)}}{{template "n" .}} {{noun . "environment" "environments"}}{{end}} · {{template "n" .StackCount}} {{noun .StackCount "stack" "stacks"}} with state{{with $.Shell}}{{with .Repos}} · {{template "n" .Count}} {{noun .Count "repository" "repositories"}}{{end}}{{end}}</p>
+<h1>Overview</h1>
 </div>
 {{template "env-filter" (envs "/ui/" .Env .Envs true)}}
-<ul class="stats" aria-label="At a glance">
-<li><a class="stat" href="#h-waiting"><span class="stat-label">Waiting for approval</span><span class="stat-n"><span class="dot dot-{{if .Waiting.N}}wait{{else}}none{{end}}" aria-hidden="true"></span>{{template "n" .Waiting}}</span><span class="stat-sub">{{template "n" .Others}} by others · {{template "n" .Mine}} yours</span></a></li>
-<li><a class="stat" href="#h-applying"><span class="stat-label">Applying</span><span class="stat-n"><span class="dot dot-{{if .Applying.N}}run{{else}}none{{end}}" aria-hidden="true"></span>{{template "n" .Applying}}</span><span class="stat-sub">{{template "n" .Planning}} planning</span></a></li>
-<li><a class="stat" href="#h-alerts"><span class="stat-label">Failed</span><span class="stat-n"><span class="dot dot-{{if .Failed.N}}bad{{else}}none{{end}}" aria-hidden="true"></span>{{template "n" .Failed}}</span><span class="stat-sub">runs in the last 24 hours</span></a></li>
-<li><a class="stat" href="#h-stacks"><span class="stat-label">Drifted</span><span class="stat-n"><span class="dot dot-{{if .Drifted.N}}wait{{else}}none{{end}}" aria-hidden="true"></span>{{template "n" .Drifted}}</span><span class="stat-sub">of {{template "n" .Checked}} {{noun .Checked "stack" "stacks"}} checked</span></a></li>
+<ul class="stats card" aria-label="At a glance">
+<li><a class="stat" href="#h-waiting"><span class="stat-label"><span class="dot dot-{{if .Waiting.N}}wait{{else}}none{{end}}" aria-hidden="true"></span>Waiting for approval</span><span class="stat-n{{if .Waiting.None}} zero{{end}}">{{template "n" .Waiting}}</span><span class="stat-sub">{{template "n" .Others}} by others · {{template "n" .Mine}} yours</span></a></li>
+<li><a class="stat" href="#h-applying"><span class="stat-label"><span class="dot dot-{{if .Applying.N}}run{{else}}none{{end}}" aria-hidden="true"></span>Applying</span><span class="stat-n{{if .Applying.None}} zero{{end}}">{{template "n" .Applying}}</span><span class="stat-sub">{{template "n" .Planning}} planning</span></a></li>
+<li><a class="stat" href="#h-alerts"><span class="stat-label"><span class="dot dot-{{if .Failed.N}}bad{{else}}none{{end}}" aria-hidden="true"></span>Failed</span><span class="stat-n{{if .Failed.None}} zero{{end}}">{{template "n" .Failed}}</span><span class="stat-sub">runs in the last 24 hours</span></a></li>
+<li><a class="stat" href="#h-stacks"><span class="stat-label"><span class="dot dot-{{if .Drifted.N}}wait{{else}}none{{end}}" aria-hidden="true"></span>Drifted</span><span class="stat-n{{if .Drifted.None}} zero{{end}}">{{template "n" .Drifted}}</span><span class="stat-sub">of {{template "n" .Checked}} {{noun .Checked "stack" "stacks"}} checked</span></a></li>
 </ul>
 {{with none "nothing" .Live .StackCount}}
-<p class="note">{{.}} <a href="/ui/start">Getting started</a> lists the steps to a first plan.</p>
+<div class="card"><p class="empty">{{.}}<br><a class="button primary" href="/ui/start">Getting started</a></p></div>
 {{end}}
 
-<section aria-labelledby="h-alerts">
-<h2 id="h-alerts" class="sec-head">Active alerts <span class="count">{{template "n" .AlertCount}}</span></h2>
+<section class="card" aria-labelledby="h-alerts">
+<div class="card-head"><h2 id="h-alerts">Alerts <span class="count">{{template "n" .AlertCount}}</span></h2></div>
 {{if .Alerts}}
-<ul class="alerts">
+<ul class="rows alerts">
 {{- range .Alerts}}
-<li class="alert alert-{{.Tone}}">{{if eq .Tone "bad"}}<svg class="alert-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M5.5 1.8h5l3.7 3.7v5l-3.7 3.7h-5l-3.7-3.7v-5z"/><path d="m6 6 4 4m0-4-4 4"/></svg>{{else}}<svg class="alert-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 2 14.5 13.5h-13z"/><path d="M8 6.5v3.2M8 11.4v.1"/></svg>{{end}}
-<div class="alert-body">
-<p class="alert-title"><a href="{{.Href}}">{{.Subject}}</a> <span class="alert-kind">{{.Kind}}</span></p>
-{{- if .Detail}}
-<p class="alert-detail msg" data-record="{{.Record}}" data-field="message">{{.Detail}}</p>
-{{- end}}
-{{- if .At}}
-<p class="alert-at">{{.AtWord}} <time datetime="{{.At}}">{{if eq .AtWord "expires"}}{{since .At}}{{else}}{{ago .At}}{{end}}</time></p>
-{{- end}}
-</div>
-</li>
+<li><a class="row" href="{{.Href}}"><span class="tone-{{.Tone}}">{{if eq .Tone "bad"}}{{template "icon" "fail"}}{{else}}{{template "icon" "warn"}}{{end}}</span><span class="row-main"><span class="row-title">{{.Kind}}</span> <span class="muted">{{.Subject}}</span>{{if .Detail}}<span class="row-sub msg" data-record="{{.Record}}" data-field="message">{{.Detail}}</span>{{end}}</span>{{if .At}}<span class="row-time"><span class="sr-only">{{.AtWord}} </span><time datetime="{{.At}}">{{if eq .AtWord "expires"}}{{since .At}}{{else}}{{ago .At}}{{end}}</time></span>{{end}}</a></li>
 {{- end}}
 </ul>
-{{if .AlertsMore}}<p class="muted">writ serve lists the drift alerts of the first 200 stacks and the newest 200 failed runs of each environment, and leaves more out.</p>{{end}}
-{{if .PlansMore}}<p class="muted">An environment holds more than 200 plans of one status and writ serve read the newest 200, so a plan about to expire may not show here.</p>{{end}}
+{{if .AlertsMore}}<p class="card-foot">writ serve lists the drift alerts of the first 200 stacks and the newest 200 failed runs of each environment, and leaves more out.</p>{{end}}
+{{if .PlansMore}}<p class="card-foot">An environment holds more than 200 plans of one status and writ serve read the newest 200, so a plan about to expire may not show here.</p>{{end}}
 {{else if .AlertsMore}}
-<p class="note">writ serve lists the drift alerts of the first 200 stacks and the newest 200 failed runs of each environment, and left every one of them out here.</p>
+<p class="empty">writ serve lists the drift alerts of the first 200 stacks and the newest 200 failed runs of each environment, and left every one of them out here.</p>
 {{else}}
 {{with none "calm" .AlertCount}}
 <p class="calm"><span class="dot dot-ok" aria-hidden="true"></span>{{.}}</p>
 {{else with none "steady" .Steady}}
-<p class="note">{{.}} An environment holds more than 200 plans of one status and writ serve read the newest 200, so a plan about to expire may not show here.</p>
+<p class="empty">{{.}} An environment holds more than 200 plans of one status and writ serve read the newest 200, so a plan about to expire may not show here.</p>
 {{end}}
 {{end}}
 </section>
 
 <div class="cols">
-<section aria-labelledby="h-applying">
-<h2 id="h-applying" class="sec-head">Applying now <span class="count">{{template "n" .Applying}}</span></h2>
-{{if .ApplyingRows}}{{template "rows" .ApplyingRows}}{{else}}<p class="empty">{{with none "applying" .Applying}}{{.}}{{else}}writ serve read the newest 200 plans of each status, so a plan that applies may not show here.{{end}}</p>{{end}}
-</section>
-<section aria-labelledby="h-waiting">
-<h2 id="h-waiting" class="sec-head">Waiting for approval <span class="count">{{template "n" .Waiting}}</span></h2>
+<div>
+<section class="card" aria-labelledby="h-waiting">
+<div class="card-head"><h2 id="h-waiting">Waiting for approval <span class="count">{{template "n" .Waiting}}</span></h2><span class="end"><a class="button small" href="{{link "/ui/approvals" "env" .Env}}">Approvals</a></span></div>
 {{if .WaitingRows}}{{template "rows" .WaitingRows}}{{else}}<p class="empty">{{with none "waiting" .Waiting}}{{.}}{{else}}writ serve read the newest 200 plans of each status, so a plan that waits for approval may not show here.{{end}}</p>{{end}}
 </section>
 </div>
-
-{{if .PlanningRows}}
-<section aria-labelledby="h-planning">
-<h2 id="h-planning" class="sec-head">Planning now <span class="count">{{template "n" .Planning}}</span></h2>
+<div>
+<section class="card" aria-labelledby="h-applying">
+<div class="card-head"><h2 id="h-applying">Applying now <span class="count">{{template "n" .Applying}}</span></h2></div>
+{{if .ApplyingRows}}{{template "rows" .ApplyingRows}}{{else}}<p class="empty">{{with none "applying" .Applying}}{{.}}{{else}}writ serve read the newest 200 plans of each status, so a plan that applies may not show here.{{end}}</p>{{end}}
+</section>
+{{- if .PlanningRows}}
+<section class="card" aria-labelledby="h-planning">
+<div class="card-head"><h2 id="h-planning">Planning now <span class="count">{{template "n" .Planning}}</span></h2></div>
 {{template "rows" .PlanningRows}}
 </section>
-{{end}}
-{{if or .Planning.N .Applying.N}}<p class="muted hint">This page loads again every 30 seconds while a plan plans or applies.</p>{{end}}
+{{- end}}
+</div>
+</div>
 
-<section aria-labelledby="h-stacks">
-<h2 id="h-stacks" class="sec-head">Stacks with state <span class="count">{{template "n" .StackCount}}</span></h2>
+<section class="card" aria-labelledby="h-stacks">
+<div class="card-head"><h2 id="h-stacks">Stacks with state <span class="count">{{template "n" .StackCount}}</span></h2></div>
 {{if .Stacks}}
 <div class="scroll">
-<table id="tofu-stacks">
+<table id="tofu-stacks" class="list">
 <caption class="sr-only">Each OpenTofu stack in each environment whose state writ serve keeps or reads, with its drift</caption>
-<thead><tr><th scope="col">Stack</th><th scope="col">Env</th><th scope="col">Backend</th><th scope="col" class="num">Resources</th><th scope="col">Drift</th><th scope="col">Checked</th></tr></thead>
+<thead><tr><th scope="col">Stack</th><th scope="col">Env</th><th scope="col">Backend</th><th scope="col" class="num">Resources</th><th scope="col">Drift</th><th scope="col" class="end">Checked</th></tr></thead>
 <tbody>
 {{- range .Stacks}}
 <tr>
-<th scope="row"><a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}">{{.Stack}}</a></th>
-<td>{{.Env}}</td>
-<td>{{.Backend}}</td>
-<td class="num">{{template "n" (exact .Resources)}}</td>
+<th scope="row" class="c-main"><a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}">{{.Stack}}</a></th>
+<td data-label="Env">{{.Env}}</td>
+<td data-label="Backend">{{.Backend}}</td>
+<td class="num" data-label="Resources">{{template "n" (exact .Resources)}}</td>
 <td class="drift">{{template "drift-status" .}}</td>
-<td>{{with .Check}}{{template "time" .CheckedAt}}{{else}}<span class="muted">never</span>{{end}}</td>
+<td class="end">{{with .Check}}{{template "when" .CheckedAt}}{{end}}</td>
 </tr>
 {{- end}}
 </tbody>
 </table>
 </div>
-{{if .StacksLeft.N}}<p class="muted">writ serve lists the first 200 stacks with state, by environment and name, so {{template "n" .StacksLeft}} more here are not listed.</p>{{end}}
+{{if .StacksLeft.N}}<p class="card-foot">writ serve lists the first 200 stacks with state, by environment and name, so {{template "n" .StacksLeft}} more here are not listed.</p>{{end}}
 {{else if .StacksLeft.N}}
-<p class="note">{{template "n" .StacksLeft}} {{noun .StacksLeft "stack has" "stacks have"}} state here. writ serve lists the first 200 stacks with state, by environment and name, and these come after them.</p>
+<p class="empty">{{template "n" .StacksLeft}} {{noun .StacksLeft "stack has" "stacks have"}} state here. writ serve lists the first 200 stacks with state, by environment and name, and these come after them.</p>
 {{else}}
 {{with none "stateless" .StackCount}}<p class="empty">{{.}}</p>{{end}}
 {{end}}
