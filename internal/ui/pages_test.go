@@ -52,9 +52,9 @@ func TestNoScriptWalk(t *testing.T) {
 		{"/ui/runs", ui.Nones["no-run"]},
 		{"/ui/plans", short(id)},
 		{"/ui/plans?env=prod&status=pending&stack=network", short(id)},
-		{"/ui/plans/" + id, "Changes (2)"},
+		{"/ui/plans/" + id, "Changes 2"},
 		{"/ui/plans/" + id + "?risk=replace", "1 of 2 changes match"},
-		{"/ui/approvals", "Plans by others (1)"},
+		{"/ui/approvals", "Plans by others 1"},
 		{"/ui/access", "acme/platform"},
 		{"/ui/whoami", bobPerson},
 		{"/ui/settings", "authorization code flow with PKCE"},
@@ -287,7 +287,7 @@ func TestPlanReview(t *testing.T) {
 	p := b.signIn("/ui/plans/" + id)
 	body := text(p.doc)
 	for _, want := range []string{
-		"Changes (2)", "tls_private_key.ca_key", "<script>alert(1)</script>",
+		"Changes 2", "tls_private_key.ca_key", "<script>alert(1)</script>",
 		"gitlab acme/infra #1849213 (alice)", "acme/infra !42",
 	} {
 		if !strings.Contains(body, want) {
@@ -562,9 +562,9 @@ func TestTofuPlanPage(t *testing.T) {
 		want         []string
 	}{
 		{"delete", tofuChange("random_pet.old", `["delete"]`, "delete_because_no_resource_config"),
-			[]string{"Changes (1)", "- random_pet.old delete Actions: delete. Reason: delete_because_no_resource_config", "0 to add ~ 0 to change - 1 to destroy -/+ 0 to replace 0 to forget 0 to import"}},
+			[]string{"Changes 1", "- random_pet.old delete the code no longer declares it delete_because_no_resource_config", "0 to add ~ 0 to change - 1 to destroy -/+ 0 to replace 0 to forget 0 to import 1 unchanged"}},
 		{"forget", tofuChange("random_pet.left", `["forget"]`, "delete_because_no_resource_config"),
-			[]string{"Changes (1)", "~ random_pet.left forget delete Actions: forget. Reason: delete_because_no_resource_config", "0 to destroy -/+ 0 to replace 1 to forget 0 to import"}},
+			[]string{"Changes 1", "~ random_pet.left forget delete the code no longer declares it delete_because_no_resource_config", "0 to destroy -/+ 0 to replace 1 to forget 0 to import 1 unchanged"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f.tofu.mu.Lock()

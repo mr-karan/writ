@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"cmp"
 	"encoding/json"
 
 	"github.com/mr-karan/writ/internal/mask"
@@ -19,7 +20,10 @@ type planView struct {
 	Shown, Page, Pages int
 	Filter             struct{ Action, Risk string }
 	Actions, Risks     []string
-	Origin             map[string]any
+	// ActionPick and RiskPick narrow the changes to one action or one
+	// risk class.
+	ActionPick, RiskPick picker
+	Origin               map[string]any
 	// Tofu is the plan of an OpenTofu stack.
 	Tofu *tofuView
 	// Diagnostics are the refusal of a plan that could not be made.
@@ -59,6 +63,27 @@ type policyView struct {
 	Results []struct {
 		Set, Level, Rule, Outcome, Message string
 	}
+}
+
+// Status words the outcome as the status its stamp shows.
+func (p *policyView) Status() string {
+	switch p.Outcome {
+	case "pass":
+		return "passed"
+	case "warn":
+		return "warned"
+	}
+	return "denied"
+}
+
+// newPicker is a picker of label over values, "all" first. Each item is
+// the link href builds from its value, "" for all.
+func newPicker(label, current string, values []string, href func(string) string) picker {
+	p := picker{Label: label, Value: cmp.Or(current, "all")}
+	for _, v := range append([]string{""}, values...) {
+		p.Items = append(p.Items, pickItem{Name: cmp.Or(v, "all"), Href: href(v), Current: v == current})
+	}
+	return p
 }
 
 // readPlanDoc reads a plan's document: the masked `tofu show -json` of an

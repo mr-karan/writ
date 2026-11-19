@@ -47,7 +47,7 @@ deny contains sprintf("%s is forgotten, with keepers %v", [rc.address, rc.change
 		t.Fatalf("plan %+v\n%s", p.Plan, p.Text)
 	}
 	page, doc := x.page("/ui/plans/" + p.Plan.ID)
-	section := words(byID(t, doc, "h-policy").Parent)
+	section := words(up(byID(t, doc, "h-policy"), isTag("section")))
 	for _, want := range []string{
 		"A policy denies this plan, so it cannot be approved or applied.",
 		"deny forgets deny random_pet.gone is forgotten, with keepers",

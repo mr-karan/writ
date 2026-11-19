@@ -4,6 +4,7 @@
 <h1>Plans</h1>
 </div>
 {{template "env-filter" (envs "/ui/plans" .Env .Envs false)}}
+<div class="card">
 <form method="get" action="/ui/plans" class="bar" role="search">
 <input type="hidden" name="env" value="{{.Env}}">
 {{- with .Status}}
@@ -14,24 +15,15 @@
 </form>
 {{if .Plans}}
 {{template "plan-table" (plans (print "Plans in " .Env ", newest first") .Plans "status" "stack")}}
-{{if .Next}}<p class="muted">{{if .Cursor}}These are{{else}}The newest{{end}} {{template "n" (exact (len .Plans))}} plans that match, and older ones follow. <a href="{{link "/ui/plans" "env" .Env "stack" .Stack "status" .Status "cursor" .Next}}">Older plans</a></p>{{end}}
+{{if .Next}}<p class="card-foot"><span class="muted">{{if not .Cursor}}The newest {{end}}{{template "n" (exact (len .Plans))}} plans that match</span> <a href="{{link "/ui/plans" "env" .Env "stack" .Stack "status" .Status "cursor" .Next}}">Older plans</a></p>{{end}}
 {{else if .Cursor}}
-<p class="empty">Every older plan that matches is listed before this page. <a href="{{link "/ui/plans" "env" .Env "stack" .Stack "status" .Status}}">The newest plans</a></p>
+<p class="empty">Every older plan that matches is listed before this page.<br><a class="button" href="{{link "/ui/plans" "env" .Env "stack" .Stack "status" .Status}}">The newest plans</a></p>
 {{else}}
-<p class="empty">{{none "no-plan" (exact (len .Plans))}}</p>
+<p class="empty">{{none "no-plan" (exact (len .Plans))}}{{if or .Stack .Status}}<br><a class="button" href="{{link "/ui/plans" "env" .Env}}">Clear the filter</a>{{end}}</p>
 {{end}}
+</div>
 {{end}}
 {{template "foot" .}}{{end}}
-
-{{define "change-filter"}}
-<form method="get" action="/ui/plans/{{planName .Plan}}" class="filters filters-inline">
-<div class="field"><label for="action">Action</label>
-<select id="action" name="action"><option value="">all</option>{{range .Actions}}<option value="{{.}}"{{if eq . $.Filter.Action}} selected{{end}}>{{.}}</option>{{end}}</select></div>
-<div class="field"><label for="risk">Risk</label>
-<select id="risk" name="risk"><option value="">all</option>{{range .Risks}}<option value="{{.}}"{{if eq . $.Filter.Risk}} selected{{end}}>{{.}}</option>{{end}}</select></div>
-<button type="submit" class="outline">Filter</button>
-</form>
-{{end}}
 
 {{define "change-pages"}}
 {{- if gt .Pages 1}}
@@ -44,16 +36,14 @@
 {{end}}
 
 {{define "plan"}}{{template "head" .}}
-{{with .Data}}{{$p := .Plan}}{{$name := planName $p}}
+{{with .Data}}{{$p := .Plan}}{{$name := planName $p}}{{$live := or (eq $p.Status "pending") (eq $p.Status "approved")}}
 <div class="page-head">
 <h1>Plan <code class="id">{{short $name}}</code> {{template "status" $p.Status}}</h1>
-<p class="subtitle">{{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}} in {{$p.Env}}, by <span class="ref" data-record="{{planDoc $p}}" data-field="plan.author.display">{{$p.Author.Display}}</span>{{with from $p.Origin}}, from <span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{end}}</p>
 </div>
-{{if $p.SupersededBy}}<p class="note note-warning" role="note"><strong>A newer plan exists.</strong> The same merge request made <a class="id" href="/ui/plans/{{$p.SupersededBy}}">{{$p.SupersededBy}}</a> after this one. Review that plan.</p>{{end}}
-{{if eq $p.Status "planning"}}<p class="note note-run" role="status">writ serve is making this plan. This page loads again every 3 seconds until it ends.</p>{{end}}
-{{if eq $p.Status "expired"}}<p class="note">This plan expired at {{template "time" $p.ExpiresAt}}. It can no longer be applied. Make a new plan.</p>{{end}}
-{{if eq $p.Status "superseded"}}<p class="note">This plan is superseded: {{$p.SupersededWhy}}. It can no longer be applied. Make a new plan.</p>{{end}}
-{{if and (or (eq $p.Status "refused") (eq $p.Status "failed")) (not $p.Run)}}<p class="note note-error" role="alert">writ serve could not make a plan that can be applied: it {{$p.Status}}. The diagnostics below say why.</p>{{end}}
+<p class="meta">{{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}} in {{$p.Env}} · by <span class="ref" data-record="{{planDoc $p}}" data-field="plan.author.display">{{$p.Author.Display}}</span>{{with from $p.Origin}} · <span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{end}}</p>
+{{if $p.SupersededBy}}<div class="note note-warning" role="note">{{template "icon" "warn"}}<div><strong>A newer plan exists.</strong> <a class="id" href="/ui/plans/{{$p.SupersededBy}}">{{short $p.SupersededBy}}</a></div></div>{{end}}
+{{if eq $p.Status "expired"}}<p class="note">Expired {{template "time" $p.ExpiresAt}}. It can no longer be applied.</p>{{end}}
+{{if eq $p.Status "superseded"}}<p class="note">Superseded: {{$p.SupersededWhy}}. It can no longer be applied.</p>{{end}}
 {{with .Adopt}}{{template "adopt-hint" .}}{{end}}
 
 <div class="card">
@@ -63,62 +53,65 @@
 <p>{{if eq $p.Status "planning"}}writ serve asks the approval rules of this plan once it is made.{{else if not .RulesAsked}}This plan takes no approval.{{else if eq $p.Approvals.Need 0}}No approval rule matches this plan.{{else}}It needs {{template "counted" (of (exact $p.Approvals.Need) "approval" "approvals")}} from someone other than its author{{with $p.Approvals.Rules}} (rule {{range $i, $r := .}}{{if $i}}, {{end}}<code>{{$r}}</code>{{end}}){{end}}.{{end}}</p>
 {{if $p.Approvals.ApprovedBy}}<ul class="approvers">
 {{- range $p.Approvals.ApprovedBy}}
-<li>Approved by <span class="ref" data-record="{{planDoc $p}}" data-field="plan.approvals.approved_by[].display">{{.Display}}</span> at {{template "time" .At}} <span class="muted">{{.Via}}</span></li>
+<li>{{template "icon" "check"}}<span class="sr-only">Approved by </span><span class="ref" data-record="{{planDoc $p}}" data-field="plan.approvals.approved_by[].display">{{.Display}}</span> {{template "when" .At}} <span class="muted">{{.Via}}</span></li>
 {{- end}}
 </ul>{{end}}
 {{if $p.Run}}<p>Run <a class="id" href="/ui/runs/{{$p.Run}}?env={{$p.Env}}&amp;stack={{range $i, $s := $p.Stacks}}{{if not $i}}{{$s.Stack}}{{end}}{{end}}">{{$p.Run}}</a> {{.RunLine}}.</p>{{end}}
-<div class="next">
-{{if $.Data.DocError}}<p class="note note-error" role="alert">writ serve could not read this plan's document, so this page offers no approval: <span class="msg">{{$.Data.DocError}}</span>. Review it with <code>writ show --remote {{$p.ID}}</code>.</p>
-{{else if $.Data.Older}}<p>An older Writ made this plan, so this page offers no approval.</p>
-{{else if and (or (eq $p.Status "pending") (eq $p.Status "approved")) (eq $p.Source.Kind "commit") (ne $p.Author.Person $.Session.Person)}}
-<form method="post" action="/ui/plans/{{$p.ID}}/approve" class="approve"><button type="submit">Approve this plan</button> <span class="muted">as <span class="ref">{{$.Session.Display}}</span></span></form>
-{{else if and (or (eq $p.Status "pending") (eq $p.Status "approved")) (eq $p.Source.Kind "commit")}}<p>You made this plan, so you cannot approve it.</p>
-{{else if eq $p.Source.Kind "speculative"}}<p>A speculative plan, of files a client sent, never applies on a team's control plane, so it takes no approval.</p>{{end}}
-{{if or (eq $p.Status "pending") (eq $p.Status "approved")}}<p>Apply it with <code class="cmd">writ apply --remote {{$p.ID}}</code>, or after the merge with the apply job.</p>{{end}}
-</div>
 </section>
-<dl class="props">
+{{if or .DocError .Older $live (eq $p.Source.Kind "speculative")}}
+<div class="next">
+{{if .DocError}}<p class="note note-error" role="alert">writ serve could not read this plan's document, so this page offers no approval: <span class="msg">{{.DocError}}</span>. Review it with <code>writ show --remote {{$p.ID}}</code>.</p>
+{{else if .Older}}<p>An older Writ made this plan, so this page offers no approval.</p>
+{{else if and $live (eq $p.Source.Kind "commit") (ne $p.Author.Person $.Session.Person)}}
+<form method="post" action="/ui/plans/{{$p.ID}}/approve" class="cmd-line"><button type="submit" class="primary">Approve this plan</button> <span class="muted">as <span class="ref">{{$.Session.Display}}</span></span></form>
+{{else if and $live (eq $p.Source.Kind "commit")}}<p>You made this plan, so you cannot approve it.</p>
+{{else if eq $p.Source.Kind "speculative"}}<p>A speculative plan, of files a client sent, never applies on a team's control plane, so it takes no approval.</p>{{end}}
+{{if $live}}<p class="cmd-line"><span class="muted">Apply</span> <code class="cmd">writ apply --remote {{$p.ID}}</code> <span class="muted">or the apply job, after the merge</span></p>{{end}}
+</div>
+{{end}}
+<dl class="kv kv-2">
 <div class="wide"><dt>Id</dt><dd>{{if $p.ID}}<code class="id-full">{{$p.ID}}</code>{{else}}<span class="muted">none yet; ref</span> <code>{{$p.Ref}}</code>{{end}}</dd></div>
 <div><dt>By</dt><dd><span class="ref" data-record="{{planDoc $p}}" data-field="plan.author.display">{{$p.Author.Display}}</span> <code class="muted">{{$p.Author.Person}}</code></dd></div>
 {{with from $p.Origin}}<div><dt>From</dt><dd><span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{with $.Data.Origin}}{{with index . "sha"}} <span class="muted">commit <code>{{short (print .)}}</code></span>{{end}}{{end}}</dd></div>{{end}}
 <div><dt>Requested</dt><dd>{{template "time" $p.RequestedAt}}</dd></div>
 {{if $p.MadeAt}}<div><dt>Made</dt><dd>{{template "time" $p.MadeAt}}</dd></div>{{end}}
-{{if $p.ExpiresAt}}<div><dt>Expires</dt><dd>{{template "time" $p.ExpiresAt}} <time class="muted" datetime="{{$p.ExpiresAt}}">{{since $p.ExpiresAt}}</time></dd></div>{{end}}
-{{if or (eq $p.Status "pending") (eq $p.Status "approved")}}<div class="wide"><dt>May apply</dt><dd>{{if $p.TeamsThatMayApply}}{{join $p.TeamsThatMayApply ", "}}{{else}}<strong>no team.</strong> No grant gives every risk class of this plan on {{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}{{$s.Stack}}{{end}}@{{$p.Env}}.{{end}}</dd></div>{{end}}
+{{if $p.ExpiresAt}}<div><dt>Expires</dt><dd>{{template "time" $p.ExpiresAt}}{{if $live}} <time class="muted" datetime="{{$p.ExpiresAt}}">{{since $p.ExpiresAt}}</time>{{end}}</dd></div>{{end}}
+{{if $live}}<div{{if not $p.TeamsThatMayApply}} class="wide"{{end}}><dt>May apply</dt><dd>{{if $p.TeamsThatMayApply}}{{join $p.TeamsThatMayApply ", "}}{{else}}<strong>no team.</strong> No grant gives every risk class of this plan on {{range $i, $s := $p.Stacks}}{{if $i}}, {{end}}{{$s.Stack}}{{end}}@{{$p.Env}}.{{end}}</dd></div>{{end}}
+{{if $p.Risks}}<div><dt>Risks</dt><dd>{{template "risks" $p.Risks}}</dd></div>{{end}}
+{{with .Policy}}<div><dt>Policy</dt><dd>{{template "status" .Status}}</dd></div>{{end}}
+{{with .Tofu}}<div><dt>OpenTofu</dt><dd><code>{{.Version}}</code></dd></div>{{end}}
 </dl>
 </div>
 
-{{with .Tofu}}
-<section class="summary" aria-labelledby="h-summary">
-<h2 id="h-summary" class="sr-only">Summary</h2>
-{{template "tally" .}}
-<p class="summary-line"><span class="label">Risks</span> {{template "risks" $p.Risks}} <span class="muted">OpenTofu <code>{{.Version}}</code>. {{template "counted" (of (exact .Unchanged) "resource stays" "resources stay")}} as {{if eq .Unchanged 1}}it is{{else}}they are{{end}}. A value under a sensitive mark shows as <code class="val masked">(sensitive)</code>.</span></p>
+{{if .Diagnostics}}
+<section class="card" aria-labelledby="h-diags" data-record="{{planDoc $p}}">
+<div class="card-head"><h2 id="h-diags">Diagnostics <span class="count">{{template "n" (exact (len .Diagnostics))}}</span></h2></div>
+{{template "plan-diags" .Diagnostics}}
 </section>
 {{end}}
 
-{{with .Policy}}
-<section aria-labelledby="h-policy" data-record="{{planDoc $p}}">
-<h2 id="h-policy">Policy</h2>
-{{if eq .Outcome "deny"}}<p class="note note-error" role="alert">A policy denies this plan, so it cannot be approved or applied. Change the code, or the policy in writ serve's config, and plan again.</p>
-{{else if eq .Outcome "warn"}}<p>The policies pass this plan with warnings. writ serve judges it again when an apply is asked for.</p>
-{{else}}<p>The policies pass this plan. writ serve judges it again when an apply is asked for.</p>{{end}}
-{{if .Results}}<ul class="policy-results">
+{{with .Policy}}{{if or .Results (eq .Outcome "deny")}}
+<section class="card" aria-labelledby="h-policy" data-record="{{planDoc $p}}">
+<div class="card-head"><h2 id="h-policy">Policy</h2> {{template "status" .Status}}</div>
+{{if eq .Outcome "deny"}}<div class="pad"><div class="note note-error" role="alert">{{template "icon" "fail"}}<div>A policy denies this plan, so it cannot be approved or applied.</div></div></div>{{end}}
+{{if .Results}}<ul class="diags">
 {{- range .Results}}
-<li><span class="chip{{if eq .Outcome "deny"}} risk-delete{{else}} chip-warn{{end}}">{{.Outcome}}</span> <code>{{.Set}}</code> <span class="muted">{{.Rule}}</span> <span class="msg" data-field="policy.results[].message">{{.Message}}</span></li>
+<li><span class="chip{{if eq .Outcome "deny"}} chip-bad{{else}} chip-warn{{end}}">{{.Outcome}}</span> <code>{{.Set}}</code> <span class="muted">{{.Rule}}</span> <span class="msg" data-field="policy.results[].message">{{.Message}}</span></li>
 {{- end}}
 </ul>{{end}}
 </section>
-{{end}}
+{{end}}{{end}}
 
 {{if .Tofu}}{{template "tofu-plan" .}}{{end}}
 
 {{if .Older}}<p class="note" role="note">An older Writ made this plan, of a stack of the Writ language, which this version no longer reads. It cannot be approved or applied.</p>{{end}}
-{{if .Diagnostics}}<div data-record="{{planDoc $p}}">{{template "plan-diags" .Diagnostics}}</div>{{end}}
 
 {{if .Text}}
-<details class="text"><summary><span>The plan as text</span></summary>
+<section class="card">
+<details class="fold"><summary><span>Plan as text</span></summary>
 <pre>{{.Text}}</pre>
 </details>
+</section>
 {{end}}
 {{end}}
 {{template "foot" .}}{{end}}
@@ -127,17 +120,16 @@
 {{with .Data}}
 <div class="page-head">
 <h1>Approvals</h1>
-<p class="subtitle">Plans that wait in each environment, split by who made them. Open a plan to review and approve it.</p>
 </div>
 {{template "env-filter" (envs "/ui/approvals" .Env .Envs false)}}
-{{if .Next}}<p class="note">writ serve read the newest {{template "n" (exact .Read)}} plans that wait in {{.Env}}, and older ones wait too, so each count below is a floor. <a href="{{link "/ui/plans" "env" .Env "status" "pending" "cursor" .Next}}">Older plans that wait</a></p>{{end}}
-<section aria-labelledby="h-others">
-<h2 id="h-others">Plans by others ({{template "n" .OthersN}})</h2>
-{{if .Others}}{{template "plan-table" (plans "Plans by others that wait" .Others "status" "stack")}}{{else}}<p class="empty">{{with none "no-others" .OthersN}}{{.}}{{else}}The newest plans that wait are all yours; a plan by someone else may wait among the older ones.{{end}}</p>{{end}}
+{{if .Next}}<div class="note" role="note"><p>The newest {{template "n" (exact .Read)}} plans that wait are listed. <a href="{{link "/ui/plans" "env" .Env "status" "pending" "cursor" .Next}}">Older plans that wait</a></p></div>{{end}}
+<section class="card" aria-labelledby="h-others">
+<div class="card-head"><h2 id="h-others">Plans by others <span class="count">{{template "n" .OthersN}}</span></h2></div>
+{{if .Others}}{{template "plan-table" (plans "Plans by others that wait" .Others "stack" "approvals")}}{{else}}<p class="empty">{{with none "no-others" .OthersN}}{{.}}{{else}}The newest plans that wait are all yours; a plan by someone else may wait among the older ones.{{end}}</p>{{end}}
 </section>
-<section aria-labelledby="h-mine">
-<h2 id="h-mine">Yours ({{template "n" .MineN}})</h2>
-{{if .Mine}}{{template "plan-table" (plans "Your plans that wait" .Mine "status" "stack")}}{{else}}<p class="empty">{{with none "no-mine" .MineN}}{{.}}{{else}}The newest plans that wait are all by others; a plan of yours may wait among the older ones.{{end}}</p>{{end}}
+<section class="card" aria-labelledby="h-mine">
+<div class="card-head"><h2 id="h-mine">Yours <span class="count">{{template "n" .MineN}}</span></h2></div>
+{{if .Mine}}{{template "plan-table" (plans "Your plans that wait" .Mine "stack" "approvals")}}{{else}}<p class="empty">{{with none "no-mine" .MineN}}{{.}}{{else}}The newest plans that wait are all by others; a plan of yours may wait among the older ones.{{end}}</p>{{end}}
 </section>
 {{end}}
 {{template "foot" .}}{{end}}

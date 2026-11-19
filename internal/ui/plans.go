@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -33,16 +32,15 @@ func (u *UI) plans(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	if d.Env, d.Envs, ok = f.listEnv(q.Get("env")); !ok {
 		return
 	}
-	d.StatusPick = picker{Label: "Status", Value: cmp.Or(d.Status, "all")}
-	for _, s := range []string{"", "planning", "pending", "approved", "applying", "applied", "refused", "failed", "expired", "superseded"} {
-		d.StatusPick.Items = append(d.StatusPick.Items, pickItem{Name: cmp.Or(s, "all"), Href: link("/ui/plans", "env", d.Env, "stack", d.Stack, "status", s), Current: s == d.Status})
-	}
+	d.StatusPick = newPicker("Status", d.Status, []string{"planning", "pending", "approved", "applying", "applied", "refused", "failed", "expired", "superseded"}, func(s string) string {
+		return link("/ui/plans", "env", d.Env, "stack", d.Stack, "status", s)
+	})
 	var doc server.RemotePlans
 	if !f.main(link("/v1/plans", "env", d.Env, "stack", d.Stack, "status", d.Status, "cursor", d.Cursor), &doc) {
 		return
 	}
 	d.Plans, d.Next = doc.Plans, doc.Next
-	p := &page{Title: "Plans", Section: "plans", Data: d, Crumbs: []crumb{{"Plans", "/ui/plans"}, {d.Env, ""}}}
+	p := &page{Title: "Plans", Section: "plans", Data: d, Crumbs: []crumb{{Name: "Plans"}}}
 	if slices.ContainsFunc(d.Plans, func(p server.PlanInfo) bool { return p.Status == "planning" }) {
 		p.Refresh = 30
 	}
@@ -68,6 +66,13 @@ func (u *UI) plan(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	}
 	if tofu != nil {
 		v.Tofu, docErr = newTofuView(tofu, v)
+		changes := "/ui/plans/" + planName(doc.Plan)
+		v.ActionPick = newPicker("Action", v.Filter.Action, v.Actions, func(a string) string {
+			return link(changes, "action", a, "risk", v.Filter.Risk)
+		})
+		v.RiskPick = newPicker("Risk", v.Filter.Risk, v.Risks, func(r string) string {
+			return link(changes, "action", v.Filter.Action, "risk", r)
+		})
 	}
 	if docErr != nil {
 		v.DocError = docErr.Error()
@@ -180,5 +185,5 @@ func (u *UI) approvals(w http.ResponseWriter, r *http.Request, s *server.Session
 	}
 	d.Read, d.Next = len(doc.Plans), doc.Next
 	d.MineN, d.OthersN = figure{len(d.Mine), d.Next != ""}, figure{len(d.Others), d.Next != ""}
-	f.render("approvals", &page{Title: "Approvals", Section: "approvals", Data: d, Crumbs: []crumb{{"Approvals", "/ui/approvals"}, {d.Env, ""}}})
+	f.render("approvals", &page{Title: "Approvals", Section: "approvals", Data: d, Crumbs: []crumb{{Name: "Approvals"}}})
 }
