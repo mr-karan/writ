@@ -270,7 +270,7 @@ func isolationChild(t *testing.T) {
 		// A gRPC call over the socket that belongs to the provider's user.
 		sctx, scancel := context.WithTimeout(ctx, 30*time.Second)
 		defer scancel()
-		if _, _, err := p.client().getSchema(sctx); err != nil {
+		if _, err := p.client().getSchema(sctx); err != nil {
 			t.Fatalf("GetProviderSchema across users: %v", err)
 		}
 		if err := p.shutdown(ctx); err != nil {

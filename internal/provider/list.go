@@ -63,7 +63,7 @@ func (e *NoListError) Error() string {
 func (c *Client) List(ctx context.Context, typ string, query value.Value, limit int) ([]string, []Diag, error) {
 	const op = "ListResource"
 	sctx, cancel := context.WithTimeout(ctx, quickTimeout)
-	info, wd, err := c.proto.listInfo(sctx, typ)
+	info, wd, err := readListInfo(sctx, c.proto, typ)
 	cancel()
 	if err != nil {
 		return nil, nil, c.callError("GetProviderSchema", "", err)

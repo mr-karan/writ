@@ -99,7 +99,7 @@ func identityOf(d dynamic) Identity {
 }
 
 // none reports whether the provider gave no identity.
-func (i Identity) none() bool { return len(i.data.msgpack) == 0 && len(i.data.json) == 0 }
+func (i Identity) none() bool { return i.data.none() }
 
 // equal compares encodings. A provider encodes one identity alike each
 // time, so a difference in bytes counts as a change; at worst that makes
@@ -383,12 +383,12 @@ func (c *Client) Validate(ctx context.Context, typ string, config value.Value) (
 func (c *Client) ready(ctx context.Context, getSchemaOptional bool) error {
 	if !getSchemaOptional {
 		sctx, cancel := context.WithTimeout(ctx, quickTimeout)
-		_, wd, err := c.proto.getSchema(sctx)
+		s, err := c.proto.getSchema(sctx)
 		cancel()
 		if err != nil {
 			return c.callError("GetProviderSchema", "", err)
 		}
-		if diags := c.diags(wireBlock{}, wd); hasError(diags) {
+		if diags := c.diags(wireBlock{}, s.diags); hasError(diags) {
 			return &Error{Op: "GetProviderSchema", Diags: diags}
 		}
 	}

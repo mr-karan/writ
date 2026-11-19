@@ -370,18 +370,18 @@ func fetchSchema(ctx context.Context, bin string, launch Launch) (cs *cachedSche
 	defer func() { err = errors.Join(err, proc.shutdown(context.WithoutCancel(ctx))) }()
 	sctx, cancel := context.WithTimeout(ctx, quickTimeout)
 	defer cancel()
-	cs, wd, err := proc.client().getSchema(sctx)
+	s, err := proc.client().getSchema(sctx)
 	if err != nil {
 		return nil, proc.failed(fmt.Errorf("GetProviderSchema: %w", err))
 	}
-	diags := make([]Diag, len(wd))
-	for i, d := range wd {
+	diags := make([]Diag, len(s.diags))
+	for i, d := range s.diags {
 		diags[i] = Diag{Error: d.error, Summary: d.summary, Detail: d.detail, Path: wireBlock{}.path(d.path)}
 	}
 	if hasError(diags) {
 		return nil, &Error{Op: "GetProviderSchema", Diags: diags}
 	}
-	return cs, nil
+	return s.schema, nil
 }
 
 // checkPathPart rejects a version or platform that could step outside its

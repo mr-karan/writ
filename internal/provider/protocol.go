@@ -8,15 +8,54 @@ import "context"
 // provider speaks. Values cross as msgpack bytes; wire.go turns them into
 // Writ values.
 type protocol interface {
-	getSchema(ctx context.Context) (*cachedSchema, []wireDiag, error)
+	getSchema(ctx context.Context) (schemaReply, error)
+	identitySchema(ctx context.Context, typ string) ([]identityAttribute, []wireDiag, error)
 	configure(ctx context.Context, config []byte) ([]wireDiag, error)
 	validate(ctx context.Context, typ string, config []byte) ([]wireDiag, error)
 	read(ctx context.Context, req readCall) (stateResult, error)
 	importState(ctx context.Context, typ, id string) (importResult, error)
 	plan(ctx context.Context, req planCall) (planResult, error)
-	listInfo(ctx context.Context, typ string) (listInfo, []wireDiag, error)
 	validateList(ctx context.Context, typ string, config, includeObject, limit []byte) ([]wireDiag, error)
 	list(ctx context.Context, typ string, config []byte, limit int64) (func() (listEvent, error), error)
+}
+
+// schemaReply is the answer to GetProviderSchema: the schema Writ caches,
+// and the list resource schemas, which it does not.
+type schemaReply struct {
+	schema *cachedSchema
+	lists  map[string]rawResource
+	diags  []wireDiag
+}
+
+// nestings maps a nesting mode by its enum name, which both protocols, and
+// protocol 6's nested blocks and nested attribute types, give it alike.
+var nestings = map[string]rawNesting{"SINGLE": nestSingle, "GROUP": nestGroup, "LIST": nestList, "SET": nestSet, "MAP": nestMap}
+
+// nesting keeps an unknown mode by its enum name, so the conversion of the
+// schema reports it.
+func nesting(name string) rawNesting {
+	if n, ok := nestings[name]; ok {
+		return n
+	}
+	return rawNesting(name)
+}
+
+// readListInfo asks a provider what it says about listing objects of typ.
+func readListInfo(ctx context.Context, p protocol, typ string) (listInfo, []wireDiag, error) {
+	s, err := p.getSchema(ctx)
+	if err != nil {
+		return listInfo{}, nil, err
+	}
+	var out listInfo
+	if r, ok := s.lists[typ]; ok {
+		out.config = &r.Block
+	}
+	identity, diags, err := p.identitySchema(ctx, typ)
+	if err != nil {
+		return listInfo{}, nil, err
+	}
+	out.identity = identity
+	return out, append(s.diags, diags...), nil
 }
 
 // listInfo is what a provider says about listing objects of one type: the

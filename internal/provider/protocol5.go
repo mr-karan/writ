@@ -17,25 +17,30 @@ type v5 struct {
 
 func newV5(conn *grpc.ClientConn) v5 { return v5{c: tfplugin5.NewProviderClient(conn)} }
 
-func (a v5) getSchema(ctx context.Context) (*cachedSchema, []wireDiag, error) {
+func (a v5) getSchema(ctx context.Context) (schemaReply, error) {
 	resp, err := a.c.GetSchema(ctx, &tfplugin5.GetProviderSchema_Request{})
 	if err != nil {
-		return nil, nil, err
+		return schemaReply{}, err
 	}
-	cs := &cachedSchema{
-		Protocol:          5,
-		GetSchemaOptional: resp.GetServerCapabilities().GetGetProviderSchemaOptional(),
-		Provider:          v5Block(resp.GetProvider().GetBlock()),
-		Resources:         make(map[string]rawResource, len(resp.GetResourceSchemas())),
-		DataSources:       make(map[string]rawResource, len(resp.GetDataSourceSchemas())),
+	return schemaReply{
+		schema: &cachedSchema{
+			Protocol:          5,
+			GetSchemaOptional: resp.GetServerCapabilities().GetGetProviderSchemaOptional(),
+			Provider:          v5Block(resp.GetProvider().GetBlock()),
+			Resources:         v5Schemas(resp.GetResourceSchemas()),
+			DataSources:       v5Schemas(resp.GetDataSourceSchemas()),
+		},
+		lists: v5Schemas(resp.GetListResourceSchemas()),
+		diags: v5Diags(resp.GetDiagnostics()),
+	}, nil
+}
+
+func v5Schemas(m map[string]*tfplugin5.Schema) map[string]rawResource {
+	out := make(map[string]rawResource, len(m))
+	for name, s := range m {
+		out[name] = rawResource{Version: s.GetVersion(), Block: v5Block(s.GetBlock())}
 	}
-	for name, s := range resp.GetResourceSchemas() {
-		cs.Resources[name] = rawResource{Version: s.GetVersion(), Block: v5Block(s.GetBlock())}
-	}
-	for name, s := range resp.GetDataSourceSchemas() {
-		cs.DataSources[name] = rawResource{Version: s.GetVersion(), Block: v5Block(s.GetBlock())}
-	}
-	return cs, v5Diags(resp.GetDiagnostics()), nil
+	return out
 }
 
 func v5Block(b *tfplugin5.Schema_Block) rawBlock {
@@ -56,29 +61,13 @@ func v5Block(b *tfplugin5.Schema_Block) rawBlock {
 	for _, nb := range b.GetBlockTypes() {
 		rb.Blocks = append(rb.Blocks, rawNestedBlock{
 			Name:     nb.GetTypeName(),
-			Nesting:  v5Nesting(nb.GetNesting()),
+			Nesting:  nesting(nb.GetNesting().String()),
 			MinItems: nb.GetMinItems(),
 			MaxItems: nb.GetMaxItems(),
 			Block:    v5Block(nb.GetBlock()),
 		})
 	}
 	return rb
-}
-
-func v5Nesting(n tfplugin5.Schema_NestedBlock_NestingMode) rawNesting {
-	switch n {
-	case tfplugin5.Schema_NestedBlock_SINGLE:
-		return nestSingle
-	case tfplugin5.Schema_NestedBlock_GROUP:
-		return nestGroup
-	case tfplugin5.Schema_NestedBlock_LIST:
-		return nestList
-	case tfplugin5.Schema_NestedBlock_SET:
-		return nestSet
-	case tfplugin5.Schema_NestedBlock_MAP:
-		return nestMap
-	}
-	return rawNesting(n.String())
 }
 
 func (a v5) configure(ctx context.Context, config []byte) ([]wireDiag, error) {
@@ -147,25 +136,16 @@ func (a v5) plan(ctx context.Context, req planCall) (planResult, error) {
 	return out, nil
 }
 
-func (a v5) listInfo(ctx context.Context, typ string) (listInfo, []wireDiag, error) {
-	resp, err := a.c.GetSchema(ctx, &tfplugin5.GetProviderSchema_Request{})
+func (a v5) identitySchema(ctx context.Context, typ string) ([]identityAttribute, []wireDiag, error) {
+	resp, err := a.c.GetResourceIdentitySchemas(ctx, &tfplugin5.GetResourceIdentitySchemas_Request{})
 	if err != nil {
-		return listInfo{}, nil, err
+		return nil, nil, err
 	}
-	var out listInfo
-	if s, ok := resp.GetListResourceSchemas()[typ]; ok {
-		b := v5Block(s.GetBlock())
-		out.config = &b
+	var out []identityAttribute
+	for _, at := range resp.GetIdentitySchemas()[typ].GetIdentityAttributes() {
+		out = append(out, identityAttribute{name: at.GetName(), typ: at.GetType(), required: at.GetRequiredForImport()})
 	}
-	diags := v5Diags(resp.GetDiagnostics())
-	ids, err := a.c.GetResourceIdentitySchemas(ctx, &tfplugin5.GetResourceIdentitySchemas_Request{})
-	if err != nil {
-		return listInfo{}, nil, err
-	}
-	for _, at := range ids.GetIdentitySchemas()[typ].GetIdentityAttributes() {
-		out.identity = append(out.identity, identityAttribute{name: at.GetName(), typ: at.GetType(), required: at.GetRequiredForImport()})
-	}
-	return out, append(diags, v5Diags(ids.GetDiagnostics())...), nil
+	return out, v5Diags(resp.GetDiagnostics()), nil
 }
 
 func (a v5) validateList(ctx context.Context, typ string, config, includeObject, limit []byte) ([]wireDiag, error) {
@@ -201,7 +181,7 @@ func v5Dynamic(d *tfplugin5.DynamicValue) dynamic {
 
 // v5Identity is nil for no identity, so the provider sees none.
 func v5Identity(d dynamic) *tfplugin5.ResourceIdentityData {
-	if len(d.msgpack) == 0 && len(d.json) == 0 {
+	if d.none() {
 		return nil
 	}
 	return &tfplugin5.ResourceIdentityData{IdentityData: &tfplugin5.DynamicValue{Msgpack: d.msgpack, Json: d.json}}

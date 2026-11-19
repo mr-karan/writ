@@ -64,11 +64,11 @@ func serveSchema(t *testing.T, resp any) protocol {
 
 func readSchema(t *testing.T, p protocol) (*cachedSchema, []wireDiag) {
 	t.Helper()
-	cs, diags, err := p.getSchema(context.Background())
+	reply, err := p.getSchema(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cs, diags
+	return reply.schema, reply.diags
 }
 
 // cacheFiles writes cs as the schema cache does and returns each file's
