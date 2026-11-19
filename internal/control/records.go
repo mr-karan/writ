@@ -697,7 +697,7 @@ func (s *Store) keptPlans(ctx context.Context, where string, args []any, f PlanF
 			dest = append(dest, &row.Status, &row.Need, &row.Source.Commit, &risks, &row.Changes, &person)
 		}
 		if err := rows.Scan(dest...); err != nil {
-			return nil, "", s.db.Error(err)
+			return nil, "", err
 		}
 		if p.Ref == row.Ref {
 			if readable {
@@ -722,7 +722,7 @@ func (s *Store) keptPlans(ctx context.Context, where string, args []any, f PlanF
 		p = row
 	}
 	if err := rows.Err(); err != nil {
-		return nil, "", s.db.Error(err)
+		return nil, "", err
 	}
 	if !full && p.Ref != "" {
 		take()
@@ -751,7 +751,7 @@ func (s *Store) scanPlans(ctx context.Context, q string, args ...any) ([]Plan, e
 		plans = append(plans, p)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, s.db.Error(err)
+		return nil, err
 	}
 	return plans, nil
 }

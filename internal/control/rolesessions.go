@@ -38,7 +38,7 @@ func (s *Store) RoleSessions(ctx context.Context, role, name string) ([]RoleSess
 	rows, err := s.db.QueryContext(ctx, `SELECT source_identity, first_at, expires_at FROM role_sessions
 		WHERE role = ? AND session = ? ORDER BY first_at`, role, name)
 	if err != nil {
-		return nil, s.db.Error(err)
+		return nil, err
 	}
 	defer rows.Close()
 	var out []RoleSession
@@ -46,10 +46,10 @@ func (s *Store) RoleSessions(ctx context.Context, role, name string) ([]RoleSess
 		r := RoleSession{Role: role, Name: name}
 		var from, until int64
 		if err := rows.Scan(&r.SourceIdentity, &from, &until); err != nil {
-			return nil, s.db.Error(err)
+			return nil, err
 		}
 		r.From, r.Until = fromMS(from), fromMS(until)
 		out = append(out, r)
 	}
-	return out, s.db.Error(rows.Err())
+	return out, rows.Err()
 }

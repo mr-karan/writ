@@ -192,11 +192,11 @@ func (s *Store) Index(ctx context.Context, env, stack string) (Indexed, error) {
 	for rows.Next() {
 		var r IndexRow
 		if err := rows.Scan(&r.Address, &r.Type, &r.Provider, &r.ID, &r.ARN, &r.Identifier, &r.Region, &r.Namespace, &r.ModifyIndex); err != nil {
-			return Indexed{}, s.db.Error(err)
+			return Indexed{}, err
 		}
 		ix.Rows = append(ix.Rows, r)
 	}
-	return ix, s.db.Error(rows.Err())
+	return ix, rows.Err()
 }
 
 // StaleIndexes returns up to limit stack@envs on the http backend whose
@@ -218,11 +218,11 @@ func (s *Store) StaleIndexes(ctx context.Context, limit int) ([]StaleIndex, erro
 	for rows.Next() {
 		var st StaleIndex
 		if err := rows.Scan(&st.Env, &st.Stack, &st.Version); err != nil {
-			return nil, s.db.Error(err)
+			return nil, err
 		}
 		out = append(out, st)
 	}
-	return out, s.db.Error(rows.Err())
+	return out, rows.Err()
 }
 
 // PutIndexSecrets stores, with each kept state version of stack@env that

@@ -246,13 +246,13 @@ func (s *Store) SecretSets(ctx context.Context, env, stack string, each func(Sea
 	for rows.Next() {
 		var set SealedSet
 		if err := rows.Scan(&set.Version, &set.Sealed); err != nil {
-			return s.db.Error(err)
+			return err
 		}
 		if err := each(set); err != nil {
 			return err
 		}
 	}
-	return s.db.Error(rows.Err())
+	return rows.Err()
 }
 
 // S3Stack is a stack@env on S3 that an apply of writ serve wrote, with
@@ -281,11 +281,11 @@ func (s *Store) S3Stacks(ctx context.Context, limit int) ([]S3Stack, error) {
 	for rows.Next() {
 		var st S3Stack
 		if err := rows.Scan(&st.Env, &st.Stack, &st.RunID); err != nil {
-			return nil, s.db.Error(err)
+			return nil, err
 		}
 		out = append(out, st)
 	}
-	return out, s.db.Error(rows.Err())
+	return out, rows.Err()
 }
 
 // CheckedS3 records that the timer read the state of a stack@env on S3

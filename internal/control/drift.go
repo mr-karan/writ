@@ -124,11 +124,11 @@ func (s *Store) DriftDue(ctx context.Context, before time.Time, envs []string, l
 		var st StackEnv
 		var last int64
 		if err := rows.Scan(&st.Env, &st.Stack, &last); err != nil {
-			return nil, s.db.Error(err)
+			return nil, err
 		}
 		out = append(out, st)
 	}
-	return out, s.db.Error(rows.Err())
+	return out, rows.Err()
 }
 
 // BeginDrift stores a drift check of stack@env in status planning. While
@@ -332,13 +332,13 @@ func (s *Store) DriftTargets(ctx context.Context, keep func(env, stack string) b
 	for rows.Next() {
 		var t DriftTarget
 		if err := rows.Scan(&t.Env, &t.Stack, &t.Last); err != nil {
-			return nil, s.db.Error(err)
+			return nil, err
 		}
 		if keep(t.Env, t.Stack) {
 			out = append(out, t)
 		}
 	}
-	return out, s.db.Error(rows.Err())
+	return out, rows.Err()
 }
 
 func (s *Store) driftStacks(ctx context.Context, cond, env, stack string, limit int, keep func(env, stack string) bool) ([]DriftStack, bool, error) {
@@ -373,7 +373,7 @@ func (s *Store) driftStacks(ctx context.Context, cond, env, stack string, limit 
 		var last nullDrift
 		dest := []any{&st.Env, &st.Stack, &st.Backend, &st.Version, &indexed, &st.OutsideSerial, &outsideAt, &st.Resources, &st.Checking, &checked}
 		if err := rows.Scan(append(dest, last.dest()...)...); err != nil {
-			return nil, false, s.db.Error(err)
+			return nil, false, err
 		}
 		if !keep(st.Env, st.Stack) {
 			continue
@@ -394,7 +394,7 @@ func (s *Store) driftStacks(ctx context.Context, cond, env, stack string, limit 
 		out = append(out, st)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, false, s.db.Error(err)
+		return nil, false, err
 	}
 	if len(out) > limit {
 		return out[:limit], true, nil
