@@ -198,8 +198,16 @@ As the showcase's client got them, 2026-11-16.
 
 Pages read without JavaScript. Its one script, `writ.js`, adds each time in the reader's zone as the time's title, keeps the top bar's "Loaded" time relative, opens the sidebar's menu on a wide screen, and adds a copy button beside a command. Your theme is a cookie that the settings form sets, and the server renders it, so no script runs before the page paints. For styles, Writ uses [Oat](https://oat.ink) 1.0.0, with Writ's own stylesheet over it, vendored with its SHA-256 in `internal/ui/static/VENDOR`. Text is set in the system's own faces, so the UI loads no font and its policy has no `font-src`. The stylesheets, script, and licenses are embedded in the binary: 16,409 bytes gzipped, measured by `TestAssetSize` on 2026-11-16. `internal/ui/DESIGN.md` says why the pages look as they do. In both themes, the pages meet the contrast ratios of WCAG 2.2, which `TestContrast` computes from the two stylesheets.
 
+## Troubleshooting
+
+- **Redirect URI mismatch in GitLab during `writ login` or control UI sign-in**: Register both `https://writ.example.com/ui/callback` and `http://127.0.0.1/callback` on separate lines in your OAuth application settings.
+- **`writ login` fails over SSH**: The browser flow redirects to `127.0.0.1` on the machine running `writ login`. Either run `writ login` on the machine with your browser, forward the loopback port over SSH, or use `--device` with an IdP that publishes a `device_authorization_endpoint`.
+- **`429` when starting sign-in behind a reverse proxy**: Add your proxy's CIDR to `trusted_proxies` in `/etc/writ/serve`. Without it, all users share one IP address and hit the 10-waiting-sign-ins-per-address limit.
+- **`writ` refuses to read `~/.config/writ/sessions.json`**: The file must be a regular file (not a symlink) owned by you with mode `0600` in a `0700` directory. Delete it and run `writ login` again.
+- **Removed user still has access**: Teams are cached for the session's lifetime (`session_ttl`, 12h default). An `admin` can revoke an active session immediately with `GET /v1/sessions?person=PERSON_ID` and `DELETE /v1/sessions/{id}`.
+
 ## Next steps
 
 - [Set up GitLab CI](set-up-gitlab-ci.md): sign-in for CI jobs.
 - [API](api.md#token-checks): how `writ serve` checks every token.
-- [Approve and apply a plan](apply.md).
+- [Plan and apply](apply.md).

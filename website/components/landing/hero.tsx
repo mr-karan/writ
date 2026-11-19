@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { hero } from '@/lib/landing';
+import { site } from '@/lib/site';
 import { Voxel } from './voxel';
 
 export function Hero() {
@@ -11,11 +12,14 @@ export function Hero() {
         </h1>
         <p className="lede">{hero.lede}</p>
         <div className="cta">
-          <a className="btn btn-primary" href="#try">
-            Get started
+          <Link className="btn btn-primary" href="/docs/quick-start">
+            Quick start
+          </Link>
+          <a className="btn btn-ghost" href={site.repo}>
+            GitHub
           </a>
           <Link className="btn btn-ghost" href="/docs">
-            Read the docs
+            Docs
           </Link>
         </div>
       </div>

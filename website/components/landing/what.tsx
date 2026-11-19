@@ -2,7 +2,7 @@ import { Inline } from '@/components/inline';
 import { what } from '@/lib/landing';
 import { SlabRule, Voxel } from './voxel';
 
-/** What Writ is: who talks to it, what it does, and what it alone can reach. */
+/** What Writ is: who talks to it, what it does, and the four problems it solves. */
 export function What() {
   const { diagram } = what;
   return (
@@ -37,14 +37,16 @@ export function What() {
             </div>
             <div className="node">
               <b>{diagram.right.name}</b>
-              <span>{diagram.right.text}</span>
+              <span>
+                <Inline text={diagram.right.text} />
+              </span>
             </div>
           </div>
         </div>
 
         <h3 className="sub">{what.without}</h3>
-        <div className="cols3">
-          {what.cards.map((card) => (
+        <div className="cols4">
+          {what.problems.map((card) => (
             <div key={card.title}>
               <h4>{card.title}</h4>
               <p>

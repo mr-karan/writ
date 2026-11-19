@@ -4,7 +4,7 @@ import { Limit } from './limit';
 import { Frame, Shot, shotDate, shotPaths } from './shot';
 import { SlabRule } from './voxel';
 
-/** Four screenshots of the control UI behind tabs: radio inputs and CSS, so it works without script. */
+/** Five screenshots of the redesigned control UI behind pure-CSS radio tabs. */
 export function ProductTour() {
   return (
     <section id="product" className="tour" aria-labelledby="h-product">
@@ -24,12 +24,12 @@ export function ProductTour() {
             </span>
           ))}
         </div>
-        {tour.tabs.map((tab) => (
+        {tour.tabs.map((tab, i) => (
           <div key={tab.id} className={`tour-panel tour-${tab.id}`}>
             <p className="tour-cap">{tab.caption}</p>
             <Frame path={shotPaths[tab.id]}>
               <div className="view" tabIndex={0} role="region" aria-label={`${tab.label}, screenshot`}>
-                <Shot name={tab.id} alt={tab.alt} />
+                <Shot name={tab.id} alt={tab.alt} eager={i === 0} />
               </div>
             </Frame>
           </div>
@@ -37,7 +37,7 @@ export function ProductTour() {
         <Limit>
           <Inline text={tour.limit} />
         </Limit>
-        <p className="caption">Screenshots of the control UI against a dev control plane with demo stacks, {shotDate}.</p>
+        <p className="caption">Captures of the current control UI against a dev control plane with demo stacks, {shotDate}.</p>
       </div>
     </section>
   );

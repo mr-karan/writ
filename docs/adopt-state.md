@@ -72,3 +72,16 @@ After an adoption, the stack's drift check is due. Your whole request must end w
 Adoption doesn't learn a secret that the state contains where nothing marks it. For example, a resource keyed by `nonsensitive()` of a sensitive variable before `writ serve` planned the stack keeps that key in its address, and no mark covers it. Later plans and drift checks of the stack may show such a value.
 
 So adopt only a state whose code you've read for `nonsensitive()`, `external` data sources, and provisioners. `writ state adopt` prints this limit as a warning.
+
+## Troubleshooting
+
+- **`403 denied` when running `writ state adopt` from CI**: Only a signed-in person (`writ login`) with an `adopt` grant on the `stack@env` can adopt a state. CI tokens are refused.
+- **`409 state: state version N is not its newest`**: A newer state version or S3 serial exists. Plan the stack once to read the latest S3 serial (or check the stack page in the control UI) and adopt that newest version or serial.
+- **`409 state: an apply of STACK@ENV runs`**: Wait for the active apply to finish, then re-run `writ state adopt`.
+- **Adoption times out after 120 seconds**: `POST /v1/state/adopt` must finish within 120 seconds. Check that the S3 bucket and OpenTofu plugin cache are reachable from `writ serve`, then retry.
+
+## Next steps
+
+- [Handle secrets and masking](secrets.md): how secret sets protect future plans and drift checks.
+- [Migrate from Terraform](migrate-from-terraform.md): bring existing Terraform stacks and state into Writ.
+- [Enable drift checks](drift-checks.md): detect future writes outside Writ on S3.

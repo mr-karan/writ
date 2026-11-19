@@ -269,4 +269,5 @@ With `--json`, you get one `writ.import-bulk/v0` document, and from `writ import
 ## Next steps
 
 - [Commands](commands.md): every command and flag.
-- [How the control plane works](serve.md): plan and apply the stack on the control plane.
+- [Plan and apply](apply.md): plan and apply the generated import blocks on the control plane.
+- [How a plan becomes an apply](plan-to-apply.md): how Writ seals and approves the resulting plan.

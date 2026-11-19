@@ -14,9 +14,10 @@ export function Footer() {
         <nav aria-label="Footer">
           <Link href="/docs">Docs</Link>
           <Link href="/docs/quick-start">Quick start</Link>
+          <Link href="/docs/security-model">Security model</Link>
           <Link href="/docs/status">Status and limits</Link>
           <Link href="/docs/compare">Comparison</Link>
-          <a href={repoUrl('SECURITY.md')}>Security</a>
+          <a href={repoUrl('SECURITY.md')}>Security policy</a>
           <a href={site.repo}>GitHub</a>
           <a href="/llms.txt">llms.txt</a>
         </nav>

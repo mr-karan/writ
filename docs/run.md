@@ -140,8 +140,18 @@ To check the module, run `just check-nixos`. This evaluates the flake's module o
 - **Know what's deleted.** Once an hour `writ serve` marks live plans past `plan_ttl` as `expired`, and deletes token ids past their token's expiry. It also deletes the `none` rows of apply request keys 25 hours after each key's time, when the key is refused. Writ keeps the greatest time of a key it deleted, so the key stays refused when the clock moves back. If you set `retention.plans`, it deletes refused, failed, expired, and superseded plans older than that, with their events, unless an approval or a run refers to them. If you set `retention.audit`, it deletes older audit rows. Without them, nothing else is deleted.
 - **Upgrade** by starting the new `writ`. At start, it migrates the schema in one transaction. A database migrated by a newer `writ` is refused.
 
+For step-by-step backup commands, retention setup, and single-node upgrade steps, see [Back up and upgrade](upgrades.md).
+
+## Troubleshooting
+
+- **Second `writ serve --dev` refuses to start**: Only one dev server can use a data directory at a time. Pass `--data DIR` and `--listen 127.0.0.1:0` to run a second isolated dev instance.
+- **`writ serve` fails at start because an issuer is unreachable**: On start, `writ serve` fetches every configured OIDC issuer's discovery document and JWKS. Verify network connectivity, DNS, and `ca_file` (if using a private CA).
+- **`writ serve --check` refuses `tofu` without `provider_uids`**: A team's server never runs OpenTofu as its own OS user. Follow [Run isolation and egress](run-isolation.md) to configure `provider_uids`.
+- **Two `writ serve` processes pointed at the same Postgres database**: Stop one immediately. Each process fails in-flight runs owned by other process IDs on start and every minute after.
+
 ## Next steps
 
-- [Sign in](sign-in.md) from the CLI and the control UI.
-- [Add a repository](add-repository.md).
+- [Configure sign-in](sign-in.md) from the CLI and the control UI.
+- [AWS roles and credentials](aws-credentials.md) and [Run isolation and egress](run-isolation.md).
+- [Add a repository](add-repository.md) and [Back up and upgrade](upgrades.md).
 - [Server config](config.md): every setting.
