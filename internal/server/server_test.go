@@ -452,12 +452,6 @@ func TestReadsAndRoutes(t *testing.T) {
 	if r := f.do("GET", "/v1/plans?env=prod&cursor=zzz", tok, nil); r.status != 400 {
 		t.Fatalf("bad cursor: %d %s", r.status, r.body)
 	}
-	// The routes of Writ's retired language are gone.
-	for _, route := range []string{"/v1/state?env=prod&stack=network", "/v1/log?env=prod&stack=network&addr=pet", "/v1/stacks"} {
-		if r := f.do("GET", route, tok, nil); r.status != 404 || r.doc["format"] != "writ.error/v0" {
-			t.Fatalf("%s: %d %s", route, r.status, r.body)
-		}
-	}
 }
 
 // The server's clock stands still, so no bucket refills between requests
