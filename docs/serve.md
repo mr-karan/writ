@@ -575,7 +575,7 @@ Outside the provider, the test process reached both addresses, and with the rule
 
 A run executes code the commit chose: providers, modules, a `local-exec` provisioner, an external data source. That code holds the role credentials Writ serves the run and the env's `provider_env` values. Under `egress_mode = "off"`, the default, the run shares the host's network, so the code can send those anywhere the host reaches: the internet, the network `writ serve` runs in, and services on the host's loopback, such as `writ serve`'s own Postgres.
 
-Set `egress_mode` to `"enforce"`, and give each env an `egress` list in the [config](config.md#env), and each run reaches the network only through Writ's egress proxy. The proxy checks every connection's host and port against the env's list before it connects.
+Set `egress_mode` to `"enforce"`, and give each env an `egress` list in the [config](config.md#env), and each run reaches the network only through Writ's egress proxy. The proxy checks every connection's host and port against the env's list before it connects. [Run isolation and egress](run-isolation.md#egress) is the setup guide: the config, the modes side by side, what to list, and the rollout.
 
 ```hcl
 egress_mode = "enforce"

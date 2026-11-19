@@ -42,7 +42,7 @@ Guides for platform engineers running a team's `writ serve` in production or sta
 - [Configure sign-in](sign-in.md): set up OIDC for `writ login` (device or browser flow) and the built-in control UI.
 - [Operate the database](database.md): understand the Postgres and SQLite schema, tables, audit rows, and migrations.
 - [AWS roles and credentials](aws-credentials.md): configure separate `plan_role` and `apply_role` IAM roles, S3 state permissions, and `provider_env`.
-- [Run isolation and egress](run-isolation.md): isolate runs with `provider_uids`, Linux namespaces, and the `nftables` metadata firewall rule.
+- [Run isolation and egress](run-isolation.md): isolate runs with `provider_uids`, Linux namespaces, and the `nftables` metadata firewall rule, and limit the hosts they reach with the opt-in egress proxy.
 - [Back up and upgrade](upgrades.md): back up Postgres and offline state keys, set retention, and upgrade single-node servers safely.
 
 ## Reference

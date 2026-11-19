@@ -149,7 +149,7 @@ env "prod" {
 | `tls` | A block: `cert` and `key`, the certificate chain and key files. |
 | `database` | The Postgres URL of the control database. It can't contain a password: point to a passfile with `?passfile=` or set `PGPASSFILE`. |
 | `data` | A directory for work files. Default `/var/lib/writ`. |
-| `provider_uids` | A range of uids, such as `"61000-61063"`, that no user on the host has, with at least `limits.plans` uids. Each running plan's providers run as one of them. Required when an environment sets a role or the config has a `tofu` block. |
+| `provider_uids` | A range of uids, such as `"61000-61063"`, that no user on the host has, with at least `limits.plans` uids. Each running plan's providers run as one of them. Required when an environment sets a role or the config has a `tofu` block. See [Run isolation and egress](run-isolation.md). |
 | `aws` | A block: how `writ serve` reaches STS. `region`, an optional `sts_endpoint` for an interface VPC endpoint, and `session`, how long credentials last, from `15m` to `12h`, `1h` by default. Required when an environment sets a role. |
 | `plan_ttl` | How long a plan stays live, pending or approved, before it expires. Default `24h`. |
 | `session_ttl` | How long a person's session lasts. There's no refresh. Default `12h`. |
@@ -167,7 +167,7 @@ env "prod" {
 | `poll_every` | How often each repository's default branch is polled. Default `60s`. |
 | `tofu` | Optional. A block: how `writ serve` runs OpenTofu for [stacks of `.tf` files](serve.md#opentofu-stacks). See below. |
 | `drift` | Optional. A block: `every`, how often `writ serve` runs a [drift check](serve.md#drift-checks) of each OpenTofu `stack@env` it keeps state for, at least `1m`. It needs the `tofu` block and `limits.plans` of at least 2. Without it, `writ serve` runs no drift checks. |
-| `egress_mode` | Optional. `"off"`, `"report"`, or `"enforce"`. Under `report` and `enforce`, each OpenTofu run gets a network namespace of its own, whose one way out is Writ's egress proxy: `enforce` refuses a destination its env's `egress` doesn't list, and `report` lets it through and records it. Default `"off"`: runs share the host's network, as they always have. `report` and `enforce` need the `tofu` block. See [Egress](serve.md#egress). |
+| `egress_mode` | Optional. `"off"`, `"report"`, or `"enforce"`. Under `report` and `enforce`, each OpenTofu run gets a network namespace of its own, whose one way out is Writ's egress proxy: `enforce` refuses a destination its env's `egress` doesn't list, and `report` lets it through and records it. Default `"off"`: runs share the host's network, as they always have. `report` and `enforce` need the `tofu` block. See [Run isolation and egress](run-isolation.md#egress) to set it up and roll it out, and [Egress](serve.md#egress) for how it works. |
 
 ### issuer
 

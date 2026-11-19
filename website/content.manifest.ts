@@ -175,7 +175,7 @@ export const pages: Page[] = [
   {
     slug: 'run-isolation',
     title: 'Run isolation and egress',
-    description: 'Isolate OpenTofu runs with provider_uids, Linux namespaces, the EC2 metadata firewall rule, and module source rules.',
+    description: 'Isolate OpenTofu runs with provider_uids, Linux namespaces, the EC2 metadata firewall rule, and module source rules, and limit the hosts they reach with the opt-in egress proxy.',
     parts: whole('docs/run-isolation.md'),
   },
   {
