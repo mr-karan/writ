@@ -310,13 +310,13 @@ func (s *Server) driftRefusal(w http.ResponseWriter, r *http.Request, format, id
 // DriftDoc is GET /v1/drift: each OpenTofu stack@env writ serve keeps
 // state for that the principal may read, with its drift.
 type DriftDoc struct {
-	Format string `json:"format"`
-	OK     bool   `json:"ok"`
+	Format string       `json:"format"`
+	OK     bool         `json:"ok"`
+	Stacks []DriftStack `json:"stacks"`
+	More   bool         `json:"more"`
 	// Every is drift.every, how often writ serve checks each stack@env,
 	// such as 6h; "" when the config runs no drift checks.
 	Every       string       `json:"every"`
-	Stacks      []DriftStack `json:"stacks"`
-	More        bool         `json:"more"`
 	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
