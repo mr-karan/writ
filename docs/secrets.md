@@ -17,6 +17,8 @@ One package, `internal/mask`, produces every document that leaves a run:
 
 Your runs each get their own mask. At first, it knows the values of the environment that `writ serve` gave the run, such as your `provider_env` and the `TF_VAR_` variables, and learns more from each document it reads. Then it applies four rules.
 
+When the run has an AWS role, the mask also knows the secret access key and session token of every set of credentials `writ serve` assumed for it, including each refresh during a long run. Your providers fetch those from the [credential endpoint](serve.md#roles-and-credentials), so they're not in the run's environment, but a provider error can quote them. The mask checks for new credentials before each document it sweeps. The access key id stays visible, because it's no secret and it's how you find the session in CloudTrail. These credentials are never sealed into a state's secret set.
+
 ### Rule 1: OpenTofu's marks
 
 When a value is under a sensitive mark, before or after, it becomes `(sensitive)`. The mask also learns the value, and the values of every variable you declared `sensitive = true`.
@@ -45,7 +47,7 @@ Your masked plan document keeps only the keys the mask lists. You'll never see a
 
 ### When the mask keeps less
 
-Two limits fail closed, so you lose the document rather than risk a secret. If your run's secrets pass 4 MiB, or one string's decoding and matching costs more than 32 MiB, Writ stores no document at all for that run.
+Two limits fail closed, so you lose the document rather than risk a secret. If your run's secrets pass 4 MiB, or one string's decoding and matching costs more than 32 MiB, Writ stores no document at all for that run. The 4 MiB counts each distinct secret once, the role credentials included.
 
 If your plan fails before the mask has read it, Writ keeps only each diagnostic's severity, summary, file, line, and column, swept. Writ never keeps a diagnostic's detail or snippet, because a validation's `error_message` can quote a variable through `nonsensitive()`. On a stack whose state is on S3, each instance key a summary quotes once or twice also becomes `["(sensitive)"]`, as [What a run can see](serve.md#what-a-run-can-see) explains.
 
