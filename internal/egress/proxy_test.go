@@ -76,6 +76,10 @@ func TestDecide(t *testing.T) {
 		"internal.example.org":   {{"192.168.1.10"}},
 		"many.amazonaws.com":     {{"52.0.0.1", "52.0.0.2", "52.0.0.3", "52.0.0.4", "52.0.0.5", "52.0.0.6"}},
 		"nomad.example.internal": {{"10.0.0.20"}},
+		"nat64.amazonaws.com":    {{"64:ff9b::a9fe:a9fe"}},
+		"nat64p.amazonaws.com":   {{"64:ff9b::a00:5"}},
+		"nat64pub.amazonaws.com": {{"64:ff9b::3401:101"}},
+		"nat64l.amazonaws.com":   {{"64:ff9b:1::3401:101"}},
 	}}
 	list := mustList(t, "*.amazonaws.com", "nomad.example.internal:80", "db.example.internal:5432", "203.0.113.7:9000", "localhost", "gone.example.net")
 	type want struct {
@@ -128,9 +132,15 @@ func TestDecide(t *testing.T) {
 		{Report, "evil.example.org", 443, want{"evil.example.org", Unlisted, reasonNotListed, []string{"198.51.100.66"}, false, true}},
 		{Report, "vpc.amazonaws.com", 443, want{"vpc.amazonaws.com", Unlisted, reasonPrivate, []string{"10.1.2.3"}, false, true}},
 		{Report, "internal.example.org", 443, want{"internal.example.org", Unlisted, reasonNotListed, []string{"192.168.1.10"}, false, true}},
-		// A failed lookup keeps the verdict and connects nowhere.
-		{Enforce, "gone.example.net", 443, want{"gone.example.net", Allowed, "", nil, true, true}},
-		{Report, "nowhere.example.net", 443, want{"nowhere.example.net", Unlisted, reasonNotListed, nil, true, true}},
+		// A failed lookup is no allowed destination, and connects nowhere.
+		{Enforce, "gone.example.net", 443, want{"gone.example.net", Unresolved, reasonUnresolved, nil, true, true}},
+		{Report, "nowhere.example.net", 443, want{"nowhere.example.net", Unresolved, reasonUnlistedUnresolved, nil, true, true}},
+		// A NAT64 address is checked by the IPv4 address it embeds.
+		{Enforce, "nat64.amazonaws.com", 443, want{"nat64.amazonaws.com", Refused, "resolves to a NAT64 address of a link-local address, where the instance metadata service is", nil, false, true}},
+		{Enforce, "nat64p.amazonaws.com", 443, want{"nat64p.amazonaws.com", Refused, reasonPrivate, nil, false, true}},
+		{Enforce, "nat64pub.amazonaws.com", 443, want{"nat64pub.amazonaws.com", Allowed, "", []string{"64:ff9b::3401:101"}, false, true}},
+		{Enforce, "nat64l.amazonaws.com", 443, want{"nat64l.amazonaws.com", Refused, reasonPrivate, nil, false, true}},
+		{Report, "64:ff9b::7f00:1", 443, want{"64:ff9b::7f00:1", Refused, "a NAT64 address of a loopback address", nil, false, false}},
 		// Only the first few addresses are tried.
 		{Enforce, "many.amazonaws.com", 443, want{"many.amazonaws.com", Allowed, "", []string{"52.0.0.1", "52.0.0.2", "52.0.0.3", "52.0.0.4"}, false, true}},
 	}

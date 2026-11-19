@@ -29,6 +29,9 @@ const (
 	Unlisted Verdict = "unlisted"
 	// Refused is a destination the proxy did not connect to.
 	Refused Verdict = "refused"
+	// Unresolved is a name the proxy did not refuse, whose lookup gave no
+	// address, so it connected nowhere.
+	Unresolved Verdict = "unresolved"
 )
 
 // Destination is one host and port that a run asked the proxy for, the
@@ -37,7 +40,7 @@ type Destination struct {
 	Host    string  `json:"host"`
 	Port    int     `json:"port"`
 	Verdict Verdict `json:"verdict"`
-	// Reason says why a destination is unlisted or refused.
+	// Reason says why a destination is unlisted, refused, or unresolved.
 	Reason string `json:"reason,omitempty"`
 	Count  int    `json:"count"`
 }
@@ -129,16 +132,18 @@ type decision struct {
 
 // Reasons of a Destination.
 const (
-	reasonNotHost    = "not a host name or IP address"
-	reasonNotListed  = "not in the list"
-	reasonPrivate    = "resolves to a private address, which only an item of the exact name allows"
-	reasonIPUnlisted = "an IP address the list does not have"
+	reasonNotHost            = "not a host name or IP address"
+	reasonNotListed          = "not in the list"
+	reasonPrivate            = "resolves to a private address, which only an item of the exact name allows"
+	reasonIPUnlisted         = "an IP address the list does not have"
+	reasonUnresolved         = "the name did not resolve"
+	reasonUnlistedUnresolved = "not in the list, and the name did not resolve"
 )
 
 // decide decides the destination host:port as the request wrote it. It
 // returns the host as the record names it. A refusal comes before any
 // lookup, except one that needs the addresses. err is a failed lookup,
-// which leaves the verdict but connects nowhere.
+// whose verdict is unresolved, and which connects nowhere.
 func (p *Proxy) decide(ctx context.Context, host string, port uint16) (string, decision, error) {
 	refuse := func(why string) decision { return decision{verdict: Refused, reason: why} }
 	// unlisted is the verdict of a destination the list lacks.
@@ -175,9 +180,9 @@ func (p *Proxy) decide(ctx context.Context, host string, port uint16) (string, d
 	addrs, err := p.resolve.LookupNetIP(lctx, "ip", name)
 	cancel()
 	if err != nil || len(addrs) == 0 {
-		d := decision{verdict: Allowed}
+		d := decision{verdict: Unresolved, reason: reasonUnresolved}
 		if !listed {
-			d = unlisted(reasonNotListed, nil)
+			d.reason = reasonUnlistedUnresolved
 		}
 		return name, d, fmt.Errorf("look up %s: %w", name, cmp.Or(err, errors.New("no address")))
 	}
