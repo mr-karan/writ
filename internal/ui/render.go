@@ -79,6 +79,8 @@ func parseTemplates(u *UI) (*template.Template, error) {
 		"planRecord": planRecord,
 		"planDoc":    planDoc,
 		"sections":   func() []section { return sections },
+		"breaks":     breaks,
+		"provider":   shortProvider,
 		"sub":        func(a, b int) int { return a - b },
 		"none":       none,
 		"noun":       noun,

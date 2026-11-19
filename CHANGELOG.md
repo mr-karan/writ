@@ -7,6 +7,7 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 ### Changed
 
 - The control UI is redesigned: a sidebar with stack counts, every page set in cards with labels in one column, and no lines that say what a button does. A stack's resources group by service, module, or none, with a strip of categories and counts, a filter on address, type, and ID that works with scripts off, and rows that open to show the full ID, ARN, and region. A plan keeps its approval, apply, and facts in one head card, with Action and Risk pickers over its changes. Access no longer shows your own grants; Who you are does.
+- A stack's resources read better on a real stack. A type's label writes its acronyms in capitals, such as `IAM role`, `LB listener`, and `ACL token`. Under a category or module heading a row shows the resource's name and key without its module and type, and the flat view and the opened row show the whole address. A long address breaks after `/`, `:`, `.`, or `[`. A row whose ID is its ARN shows the name the ARN ends with, and the opened row shows the ARN once. An opened row shows the provider without its registry host and the region from the index or the ARN. The module chip shows only off the root module.
 
 ### Fixed
 

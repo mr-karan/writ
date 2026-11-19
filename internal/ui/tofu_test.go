@@ -658,7 +658,7 @@ func TestTofuDriftPages(t *testing.T) {
 		t.Errorf("the drift tab does not count the changes: %s", got)
 	}
 	_, doc = x.page("/ui/stack?stack=app&env=dev")
-	if got := words(byID(t, doc, "index-rows")); !strings.Contains(got, "random_pet.kept pet kept-pet root Type random_pet Provider registry.opentofu.org/hashicorp/random ID kept-pet") {
+	if got := words(byID(t, doc, "index-rows")); !strings.Contains(got, "random_pet.kept Pet kept-pet Address random_pet.kept Provider hashicorp/random ID kept-pet") {
 		t.Errorf("the stack's resources: %s", got)
 	}
 	if first(doc, func(n *html.Node) bool { id, _ := attr(n, "id"); return id == "drift-facts" }) != nil {

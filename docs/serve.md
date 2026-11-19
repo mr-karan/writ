@@ -186,6 +186,8 @@ If a version doesn't have them, such as one written before `writ serve` kept the
 
 On an OpenTofu stack's page, the Resources view shows you the rows of its state index from `GET /v1/index`. You see each resource's address, type, provider, and the attributes in the index's allow-list, and the state version or S3 serial the rows came from. You never see any other attribute of the state there.
 
+Grouped by service or by module, a row shows the resource's name and key, such as `app["arn:aws:iam::aws:policy/ReadOnlyAccess"]`, with its type in words under it. The flat view, and the row when you open it, show the whole address. When a resource's ID is its ARN, as for a load balancer, the row shows the name the ARN ends with, and the opened row shows the ARN once. The opened row also shows the provider without its registry host, such as `hashicorp/aws`, and the region from the index or the ARN. A row shows its module as a chip when the resource isn't in the root module.
+
 ## Stacks on S3
 
 If your stacks keep their state in S3, they can stay there. Your stack keeps its state in its own bucket with a block such as:
