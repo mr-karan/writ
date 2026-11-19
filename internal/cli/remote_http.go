@@ -54,7 +54,7 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 		return nil, err
 	}
 	clientPath := filepath.Join(dir, DevClientFile)
-	ciToken, _ := a.opts.LookupEnv("WRIT_ID_TOKEN")
+	ciToken, _ := a.opts.LookupEnv(tokenCI)
 	ciToken = strings.TrimSpace(ciToken)
 	if base == "" || base == "dev" {
 		c, err := readDevClient(clientPath)

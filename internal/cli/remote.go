@@ -18,6 +18,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/mr-karan/writ/internal/forge"
 	"github.com/mr-karan/writ/internal/server"
 )
 
@@ -101,7 +102,7 @@ func (a *App) RemotePlan(ctx context.Context, o RemotePlanOptions) (err error) {
 // sendRemotePlan sends a plan to writ serve and waits for it to end. A
 // refused request prints its document and returns ErrFailed.
 func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote, []byte, error) {
-	if o.Commit != "" && !commitRE.MatchString(o.Commit) {
+	if o.Commit != "" && !forge.IsSHA(o.Commit) {
 		return nil, nil, usagef("--commit %q is not a commit's full id", o.Commit)
 	}
 	r, err := a.remote(ctx)
@@ -120,7 +121,7 @@ func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote,
 			return nil, nil, usagef("--commit and --repo name a commit to plan, and no file is read, so name the stack with --stack")
 		}
 		req.Stacks, req.Source = []string{o.Stack}, &server.SourceRequest{Repo: o.Repo, Commit: o.Commit}
-		line = fmt.Sprintf("commit plan of %s@%s: %s, sent to %s\n", o.Stack, env, cmp.Or(short(o.Commit), "the job's commit"), r.base)
+		line = fmt.Sprintf("commit plan of %s@%s: %s, sent to %s\n", o.Stack, env, cmp.Or(forge.Short(o.Commit), "the job's commit"), r.base)
 	default:
 		if !a.tofuStack() {
 			return nil, nil, usagef("%s holds no .tf or .tofu file: writ serve plans OpenTofu stacks only", a.path("."))
@@ -137,7 +138,7 @@ func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote,
 			return nil, nil, usagef("%s is an OpenTofu stack, which writ serve plans only by commit, and this plan cannot be of a commit: %s", a.path("."), wt.why)
 		}
 		req.Stacks, req.Source = []string{wt.name}, wt.source
-		line = fmt.Sprintf("commit plan of %s@%s: repository %s at %s%s, sent to %s\n", wt.name, env, wt.repo.Name, short(wt.source.Commit), refWords(wt.source.Ref), r.base)
+		line = fmt.Sprintf("commit plan of %s@%s: repository %s at %s%s, sent to %s\n", wt.name, env, wt.repo.Name, forge.Short(wt.source.Commit), refWords(wt.source.Ref), r.base)
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -164,10 +165,7 @@ func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote,
 	return r, doc, nil
 }
 
-var (
-	commitRE = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	runIDRE  = regexp.MustCompile(`^[A-Z2-7]{26}$`)
-)
+var runIDRE = regexp.MustCompile(`^[A-Z2-7]{26}$`)
 
 func refWords(ref string) string {
 	if ref == "" {
@@ -236,7 +234,7 @@ func printPlanLine(w io.Writer, p *server.PlanInfo) {
 	who := escapeHuman(p.Author.Display, false)
 	from := "of files sent, never applied by a team's control plane"
 	if p.Source.Kind == "commit" {
-		from = "of " + p.Source.Repo + " at " + short(p.Source.Commit)
+		from = "of " + p.Source.Repo + " at " + forge.Short(p.Source.Commit)
 	}
 	switch p.Status {
 	case "pending", "approved":
