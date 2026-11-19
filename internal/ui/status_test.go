@@ -160,10 +160,10 @@ func decisionText(t *testing.T, page *bytes.Buffer) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 
-// Every status a plan, a run, or a drift check can have has a tone, so
-// none renders as a plain grey stamp.
+// Every status a plan, a run, a drift check, or a policy decision can
+// have has a tone, so none renders as a plain grey stamp.
 func TestEveryStatusHasATone(t *testing.T) {
-	for _, s := range []string{"planning", "pending", "approved", "applying", "applied", "refused", "failed", "expired", "superseded", "clean", "drifted"} {
+	for _, s := range []string{"planning", "pending", "approved", "applying", "applied", "refused", "failed", "expired", "superseded", "clean", "drifted", "passed", "warned", "denied"} {
 		if tone(s) == "" {
 			t.Errorf("status %s has no tone", s)
 		}

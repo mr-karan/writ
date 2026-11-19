@@ -1,0 +1,77 @@
+{{define "runs"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1>Runs{{if .Stack}} <span class="muted">of {{.Stack}} in {{.Env}}</span>{{end}}</h1>
+</div>
+{{if not .Stack}}{{template "env-filter" (envs "/ui/runs" .Env .Envs false)}}{{end}}
+<section class="card" aria-labelledby="h-applies">
+<h2 id="h-applies" class="sr-only">Started by writ serve ({{template "n" (figure (len .Applies.Runs) .Applies.More)}})</h2>
+{{if .Applies.Runs}}{{template "applies-table" .Applies}}{{else}}<p class="empty">{{none "no-run" (exact (len .Applies.Runs))}}</p>{{end}}
+</section>
+{{end}}
+{{template "foot" .}}{{end}}
+
+{{define "tofu-run"}}{{template "head" .}}
+{{with .Data}}{{$r := .Run}}
+<div class="page-head">
+<h1>Run <code class="id">{{short $r.ID}}</code> {{template "status" $r.Status}}</h1>
+</div>
+<p class="meta"><a href="{{link "/ui/stack" "stack" $r.Stack "env" $r.Env}}">{{$r.Stack}}</a> in {{$r.Env}} · plan <a class="id" href="/ui/plans/{{$r.Plan}}">{{short $r.Plan}}</a> · applied by <span class="ref" data-record="{{record "id" $r.ID}}" data-field="actor.display">{{$r.Actor.Display}}</span></p>
+{{if $r.Override}}<div class="note note-warning" role="note">{{template "icon" "warn"}}<div><strong>Override.</strong> This run skipped the approval rules: {{$r.Override}}</div></div>{{end}}
+<div class="card">
+<div class="decision">{{template "steps" .Steps}}</div>
+<dl class="kv kv-2">
+<div class="wide"><dt>Run</dt><dd><code class="id-full">{{$r.ID}}</code></dd></div>
+<div class="wide"><dt>Plan</dt><dd><a class="id-full" href="/ui/plans/{{$r.Plan}}">{{$r.Plan}}</a>{{with .Plan}} <span class="muted" data-record="{{planDoc .}}">by <span class="ref" data-field="plan.author.display">{{.Author.Display}}</span>{{with from .Origin}}, <span class="ref" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{end}}</span>{{end}}</dd></div>
+<div><dt>Applied by</dt><dd><span class="ref" data-record="{{record "id" $r.ID}}" data-field="actor.display">{{$r.Actor.Display}}</span>{{with $r.Actor.Person}} <code class="muted">{{.}}</code>{{end}}</dd></div>
+<div><dt>Approved by</dt><dd>{{range $i, $a := $r.ApprovedBy}}{{if $i}}, {{end}}<span class="ref" data-record="{{record "id" $r.ID}}" data-field="approved_by[].display">{{$a.Display}}</span>{{with $a.At}} <span class="muted">{{template "when" .}}</span>{{end}}{{end}}</dd></div>
+<div><dt>Started</dt><dd>{{template "time" $r.StartedAt}}</dd></div>
+<div><dt>Ended</dt><dd>{{if $r.EndedAt}}{{template "time" $r.EndedAt}}{{if .Took}} <span class="muted">after <time datetime="{{.TookFor}}">{{.Took}}</time></span>{{end}}{{end}}</dd></div>
+{{with .Doc}}{{with .StateVersion}}<div><dt>State version</dt><dd><code>{{.}}</code></dd></div>{{end}}{{end}}
+</dl>
+</div>
+{{with .DocError}}<div class="note note-error" role="alert">{{template "icon" "fail"}}<div>writ serve could not read this run's document: <span class="msg">{{.}}</span></div></div>{{end}}
+{{with .Doc}}
+{{if .Diagnostics}}
+<section class="card" aria-labelledby="h-diagnostics" data-record="format=writ.tofu-apply/v0">
+<div class="card-head"><h2 id="h-diagnostics">Diagnostics <span class="count">{{template "n" (exact (len .Diagnostics))}}</span></h2></div>
+{{template "diags" .Diagnostics}}
+</section>
+{{end}}
+<section class="card" aria-labelledby="h-resources">
+<div class="card-head"><h2 id="h-resources">Resources <span class="count">{{template "n" (exact (len $.Data.Resources))}}</span></h2>
+{{- with .Summary}}
+<ul class="tally">
+<li{{if not .Add}} class="zero"{{end}}><span class="sign sign-create">+</span> {{template "n" (exact .Add)}} <span class="tally-word">added</span></li>
+<li{{if not .Change}} class="zero"{{end}}><span class="sign sign-update">~</span> {{template "n" (exact .Change)}} <span class="tally-word">changed</span></li>
+<li{{if not .Remove}} class="zero"{{end}}><span class="sign sign-delete">-</span> {{template "n" (exact .Remove)}} <span class="tally-word">destroyed</span></li>
+<li{{if not .Import}} class="zero"{{end}}>{{template "n" (exact .Import)}} <span class="tally-word">imported</span></li>
+</ul>
+{{- end}}
+</div>
+{{if $.Data.Resources}}
+<div class="scroll">
+<table class="list">
+<caption class="sr-only">What the apply did to each resource, in the order it started them</caption>
+<thead><tr><th scope="col">Address</th><th scope="col">Action</th><th scope="col">Outcome</th><th scope="col" class="end">Took</th></tr></thead>
+<tbody>
+{{- range $.Data.Resources}}
+<tr><th scope="row" class="c-main"><code>{{.Addr}}</code></th><td data-label="Action">{{.Action}}</td><td>{{if eq .Outcome "complete"}}complete{{else}}<span class="stamp stamp-bad"><span class="dot" aria-hidden="true"></span>{{.Outcome}}</span>{{end}}</td><td class="end" data-label="Took"><time datetime="{{iso .Elapsed}}">{{.Elapsed}} s</time></td></tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p class="empty">OpenTofu reported no change to a resource.</p>
+{{end}}
+</section>
+{{end}}
+{{if .Text}}
+<section class="card">
+<details class="fold"><summary><span>Run as text</span></summary>
+<pre>{{.Text}}</pre>
+</details>
+</section>
+{{end}}
+{{end}}
+{{template "foot" .}}{{end}}

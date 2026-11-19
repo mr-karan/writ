@@ -1,0 +1,136 @@
+{{define "adopt-hint"}}<div class="note note-warning" id="adopt" role="note">{{template "icon" "warn"}}<div><p><strong>{{none "no-secret"}}</strong> A person with <code>adopt</code> on the stack can seal a set for it from the values the state marks sensitive. A secret the state holds without a sensitive mark is not in that set and may show in later plans.</p><p class="cmd-line"><code class="cmd">{{.}}</code></p></div></div>{{end}}
+
+{{define "drift-box"}}
+{{with .Check}}
+<div class="card">
+<dl class="kv kv-2" id="drift-facts">
+<div><dt>Status</dt><dd>{{template "status" .Status}}</dd></div>
+<div><dt>Checked</dt><dd>{{template "time" .CheckedAt}}</dd></div>
+{{if .DriftedSince}}<div><dt>Drifted since</dt><dd>{{template "time" .DriftedSince}}</dd></div>{{end}}
+{{if .Commit}}<div><dt>Commit</dt><dd><code>{{short .Commit}}</code> of {{.Repo}}</dd></div>{{end}}
+{{if .Plan}}<div class="wide"><dt>Plan</dt><dd><code class="id-full">{{.Plan}}</code>, never applied</dd></div>{{end}}
+</dl>
+</div>
+{{if eq .Status "failed"}}<div class="note note-error" role="alert">{{template "icon" "fail"}}<div><span class="msg" data-record="{{record "env" $.Env "stack" $.Stack "check.status" .Status}}" data-field="check.error">{{.Error}}</span></div></div>{{end}}
+{{if .Changes}}
+<section class="card" aria-labelledby="h-drift">
+<div class="card-head"><h2 id="h-drift">Changes <span class="count">{{template "n" (exact (add .Outside .Code))}}</span></h2><span class="meta">{{template "n" (exact .Outside)}} changed outside OpenTofu, {{template "n" (exact .Code)}} that the code would change{{if lt (len .Changes) (add .Outside .Code)}}, the first {{template "n" (exact (len .Changes))}} shown{{end}}</span></div>
+<div class="scroll">
+<table id="drift-changes" class="list">
+<caption class="sr-only">What the last drift check found</caption>
+<thead><tr><th scope="col">Address</th><th scope="col">Found</th><th scope="col">Action</th><th scope="col">Attributes</th></tr></thead>
+<tbody>
+{{- range .Changes}}
+<tr>
+<th scope="row" class="c-main"><code>{{.Address}}</code></th>
+<td data-label="Found">{{if eq .Kind "outside"}}changed outside OpenTofu{{else}}in the code{{end}}</td>
+<td data-label="Action"><span class="sign sign-{{.Action}}">{{sign .Action}}</span> {{.Action}}</td>
+<td data-label="Attributes">{{range $i, $a := .Attributes}}{{if $i}}, {{end}}<code>{{$a}}</code>{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+</section>
+{{end}}
+{{else}}{{if not .Checking}}<div class="card"><p class="empty">{{none "unchecked"}}</p></div>{{end}}{{end}}
+{{end}}
+
+{{define "stack-tabs"}}
+<nav class="tabs" aria-label="Views of {{.Stack}} in {{.Env}}">
+<a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}"{{if eq .View "resources"}} aria-current="page"{{end}}>Resources</a>
+<a href="{{link "/ui/stack" "stack" .Stack "env" .Env "view" "drift"}}"{{if eq .View "drift"}} aria-current="page"{{end}}>Drift{{if not .DriftCount.None}} <span class="count">{{template "n" .DriftCount}}</span>{{end}}</a>
+<a href="{{link "/ui/stack" "stack" .Stack "env" .Env "view" "runs"}}"{{if eq .View "runs"}} aria-current="page"{{end}}>Runs</a>
+<a href="{{link "/ui/stack" "stack" .Stack "env" .Env "view" "plans"}}"{{if eq .View "plans"}} aria-current="page"{{end}}>Plans</a>
+</nav>
+{{end}}
+
+{{define "res-row"}}<details class="res"><summary><span class="name">{{if .Drift}}<span class="a-line"><code class="a">{{.Address}}</code><span class="mark" aria-hidden="true"></span><span class="sr-only"> changed in the last drift check</span></span>{{else}}<code class="a">{{.Address}}</code>{{end}} <code class="ty">{{.Label}}</code></span> <code class="rid">{{.ID}}</code> <code class="chip">{{.Module}}</code></summary>
+<dl class="kv">
+<div><dt>Type</dt><dd><code>{{.Type}}</code></dd></div>
+{{- with .Provider}}<div><dt>Provider</dt><dd><code>{{.}}</code></dd></div>{{end}}
+{{- with .ID}}<div><dt>ID</dt><dd><code>{{.}}</code></dd></div>{{end}}
+{{- with .ARN}}<div><dt>ARN</dt><dd><code>{{.}}</code></dd></div>{{end}}
+{{- with .Identifier}}<div><dt>Identifier</dt><dd><code>{{.}}</code></dd></div>{{end}}
+{{- with .Region}}<div><dt>Region</dt><dd><code>{{.}}</code></dd></div>{{end}}
+{{- with .Namespace}}<div><dt>Namespace</dt><dd><code>{{.}}</code></dd></div>{{end}}
+{{- with .ModifyIndex}}<div><dt>Modify index</dt><dd><code>{{.}}</code></dd></div>{{end}}
+{{- if .Drift}}<div><dt>Drift</dt><dd><a href="{{.DriftHref}}">{{if eq .Drift "outside"}}changed outside OpenTofu{{else}}the code would change it{{end}}</a></dd></div>{{end}}
+</dl>
+</details>
+{{end}}
+
+{{define "res-group"}}
+{{- if .Name}}
+<details class="group card" id="{{.ID}}"{{if .Open}} open{{end}}>
+<summary><span class="ic sm cat-{{.Key}}">{{template "icon" .Key}}</span><h2 class="t">{{if .Module}}<code>{{.Name}}</code>{{else}}{{.Name}}{{end}}</h2><span class="count">{{template "n" .Count}}</span></summary>
+{{- range .Subs}}
+{{- if .Name}}
+<h3 class="sub">{{.Name}} <span class="count">{{template "n" (exact (len .Rows))}}</span></h3>
+{{- end}}
+{{- range .Rows}}
+{{template "res-row" .}}
+{{- end}}
+{{- end}}
+</details>
+{{- else}}
+<div class="card flat">
+{{- range .Subs}}{{range .Rows}}
+{{template "res-row" .}}
+{{- end}}{{end}}
+</div>
+{{- end}}
+{{end}}
+
+{{define "resources"}}
+{{with .Resources}}{{$v := .}}
+{{if .Total.None}}<div class="card"><p class="empty">{{none "no-resource" .Total}}</p></div>
+{{else}}
+<nav class="svc-strip" aria-label="Categories">
+{{- range .Strip}}
+<a class="svc" href="{{if ne $v.GroupBy "service"}}{{link "/ui/stack" "stack" $.Stack "env" $.Env "q" $v.Query}}{{end}}#{{.ID}}"><span class="ic cat-{{.Key}}">{{template "icon" .Key}}</span><span><b>{{template "n" .Count}}</b><small>{{.Name}}</small></span></a>
+{{- end}}
+</nav>
+<form class="bar" method="get" action="/ui/stack" role="search">
+<input type="hidden" name="stack" value="{{$.Stack}}"><input type="hidden" name="env" value="{{$.Env}}">{{if ne .GroupBy "service"}}<input type="hidden" name="group" value="{{.GroupBy}}">{{end}}
+<div class="find"><label for="q" class="sr-only">Filter by address, type or ID</label>{{template "icon" "search"}}<input id="q" name="q" type="search" value="{{.Query}}" placeholder="Filter by address, type or ID" autocomplete="off"></div>
+<span class="seg" role="group" aria-label="Group by"><a href="{{link "/ui/stack" "stack" $.Stack "env" $.Env "q" .Query}}"{{if eq .GroupBy "service"}} aria-current="true"{{end}}>Service</a><a href="{{link "/ui/stack" "stack" $.Stack "env" $.Env "q" .Query "group" "module"}}"{{if eq .GroupBy "module"}} aria-current="true"{{end}}>Module</a><a href="{{link "/ui/stack" "stack" $.Stack "env" $.Env "q" .Query "group" "flat"}}"{{if eq .GroupBy "flat"}} aria-current="true"{{end}}>Flat</a></span>
+{{- if not .Marked.None}}
+<span class="end"><a class="meta" href="{{link "/ui/stack" "stack" $.Stack "env" $.Env "view" "drift"}}"><span class="mark" aria-hidden="true"></span> {{template "n" .Marked}} in the last drift check</a></span>
+{{- end}}
+</form>
+{{if .Query}}<p class="meta" id="matches">{{template "n" .Shown}} of {{template "n" .Total}} resources match</p>{{end}}
+<div id="index-rows">
+{{- range .Groups}}
+{{template "res-group" .}}
+{{- end}}
+</div>
+{{end}}
+{{else}}
+<div class="card"><p class="empty" id="no-index">{{if .Drift}}{{none "unindexed"}}{{else if .DriftFailed}}writ serve could not read the drift record of this stack, so this page cannot say whether it keeps a state of it.{{else}}{{none "no-state"}}{{end}}</p></div>
+{{end}}
+{{end}}
+
+{{define "stack"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1>{{.Stack}} <span class="muted">in {{.Env}}</span>{{with .Drift}}{{with .Check}}{{if ne .Status "clean"}} {{template "status" .Status}}{{end}}{{end}}{{if .Checking}} <span class="chip">checking</span>{{end}}{{end}}</h1>
+{{- with .Drift}}{{if .IndexedAt}}
+<p class="meta">{{template "counted" (of (exact .Resources) "resource" "resources")}} · {{if eq .Backend "s3"}}serial{{else}}version{{end}} <code>{{.IndexedVersion}}</code> · indexed {{template "when" .IndexedAt}}</p>
+{{- end}}{{end}}
+</div>
+{{with .Drift}}{{with .OutsideWrite}}<div class="note note-warning" role="note">{{template "icon" "warn"}}<div>Serial <code>{{.Serial}}</code> of the state was written outside writ serve, seen {{template "time" .SeenAt}}.</div></div>{{end}}{{end}}
+{{with .Adopt}}{{template "adopt-hint" .}}{{end}}
+{{template "stack-tabs" .}}
+{{if eq .View "resources"}}{{template "resources" .}}
+{{else if eq .View "drift"}}
+{{with .Drift}}{{template "drift-box" .}}{{else}}<div class="card"><p class="empty">{{none "no-state"}}</p></div>{{end}}
+{{else if eq .View "runs"}}
+<div class="card">{{if .Applies.Runs}}{{template "applies-table" .Applies}}{{else}}<p class="empty">{{none "no-run" (exact (len .Applies.Runs))}}</p>{{end}}</div>
+{{else}}
+<div class="card">{{if .Plans.Plans}}{{template "plan-table" (plans (print "Plans of " .Stack " in " .Env) .Plans.Plans "status")}}
+{{if .Plans.Next}}<p class="card-foot"><span class="muted">The newest {{template "n" (exact (len .Plans.Plans))}} plans of this stack</span> <a href="{{link "/ui/plans" "env" .Env "stack" .Stack "cursor" .Plans.Next}}">Older plans</a></p>{{end}}
+{{else}}<p class="empty">{{none "no-stack-plan" (exact (len .Plans.Plans))}}</p>{{end}}</div>
+{{end}}
+{{end}}
+{{template "foot" .}}{{end}}

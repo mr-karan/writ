@@ -338,30 +338,61 @@ func (pc *pageCheck) stackFacts(env, stack string) map[string]int {
 	return map[string]int{"state": b2i(s.state), "indexed": b2i(pc.rows.indexed[stackKey{env, stack}]), "resources": s.resources, "checked": b2i(s.check != "")}
 }
 
+// stack checks a stack's four views. Plans goes through pc.plans.
 func (pc *pageCheck) stack(env, stack string) {
 	facts := pc.stackFacts(env, stack)
 	base := url.Values{"env": {env}, "stack": {stack}}
 	drift := pc.driftRule(env, stack)
+	main := pc.page("/ui/stack?"+base.Encode(), facts, drift)
+	if s := pc.w.stacks[stackKey{env, stack}]; s != nil && s.resources > 0 {
+		sum := 0
+		for _, n := range everyOf(first(main, classed("svc-strip")), classed("n")) {
+			f, _ := readFig(n)
+			sum += f.n
+		}
+		if sum != s.resources {
+			pc.t.Errorf("(p) %s@%s resources: the strip counts %d of %d", stack, env, sum, s.resources)
+		}
+	}
+	base.Set("view", "drift")
 	pc.page("/ui/stack?"+base.Encode(), facts, drift)
 	runs := pc.rows.countRuns(env, stack)
 	facts["runs"] = runs
 	base.Set("view", "runs")
-	main := pc.page("/ui/stack?"+base.Encode(), facts, drift)
+	main = pc.page("/ui/stack?"+base.Encode(), facts, drift)
 	if got := rowsOf(main); got != min(runs, runsPage) {
 		pc.t.Errorf("(p) %s@%s runs: lists %d of %d", stack, env, got, runs)
 	}
 }
 
-// driftRule names the numbers of a stack's drift panel: the changes its
-// newest check found outside OpenTofu and in the code, and those shown.
+// driftRule names the numbers every view of a stack shows, and those of
+// its drift and resources views: the resources its index holds, the
+// changes its newest check found outside OpenTofu and in the code, and
+// those shown. A count of the resources view is of the index, the one
+// document of the view, so it is a field; stack checks the strip's sum.
 func (pc *pageCheck) driftRule(env, stack string) figureRule {
 	return func(n *html.Node) (string, int, bool) {
 		s := pc.w.stacks[stackKey{env, stack}]
-		c := up(n, isTag("caption"))
-		if s == nil || c == nil {
+		if s == nil {
 			return "", 0, false
 		}
-		switch slices.Index(everyOf(c, classed("n")), n) {
+		switch {
+		case up(n, classed("page-head")) != nil:
+			return "resources of the index", s.resources, true
+		case up(n, classed("tabs")) != nil:
+			return "changes the drift check found", s.driftOut + s.driftCode, true
+		case up(n, isTag("h2")) != nil && up(n, labelledBy("h-drift")) != nil:
+			return "changes the drift check found", s.driftOut + s.driftCode, true
+		case up(n, classed("svc-strip")) != nil, up(n, classed("bar")) != nil, up(n, func(n *html.Node) bool { id, _ := attr(n, "id"); return id == "index-rows" }) != nil:
+			return "resources of a category, a group, or the drift check", field, true
+		case up(n, func(n *html.Node) bool { id, _ := attr(n, "id"); return id == "matches" }) != nil:
+			return "resources that match", field, true
+		}
+		m := up(n, classed("meta"))
+		if m == nil || up(m, labelledBy("h-drift")) == nil {
+			return "", 0, false
+		}
+		switch slices.Index(everyOf(m, classed("n")), n) {
 		case 0:
 			return "changes outside OpenTofu", s.driftOut, true
 		case 1:
@@ -405,7 +436,7 @@ func (pc *pageCheck) repos() {
 		if tr == nil {
 			return "", 0, false
 		}
-		name := folded(first(tr, isTag("th")))
+		name := folded(first(first(tr, isTag("th")), isTag("a")))
 		want, ok := found[name]
 		return "stacks found in " + name, want, ok
 	})
@@ -472,21 +503,15 @@ func (pc *pageCheck) start() {
 	})
 }
 
-// config holds access and who you are to the config and the session they
-// read, and settings to the words it may say.
+// config holds access to the config it reads, who you are to the session
+// it reads, and settings to the words it may say.
 func (pc *pageCheck) config() {
 	var cfg struct {
 		Grants []json.RawMessage `json:"grants"`
 		Teams  []json.RawMessage `json:"teams"`
 	}
 	pc.getJSON("/ui/access?as=json", &cfg)
-	var me struct {
-		Teams  []string          `json:"teams"`
-		Grants []json.RawMessage `json:"grants"`
-	}
-	pc.getJSON("/ui/whoami?as=json", &me)
-	facts := map[string]int{"teams": len(me.Teams), "grants": len(me.Grants)}
-	pc.page("/ui/access", facts, func(n *html.Node) (string, int, bool) {
+	pc.page("/ui/access", map[string]int{}, func(n *html.Node) (string, int, bool) {
 		h := up(n, isTag("h2"))
 		if h == nil {
 			return "", 0, false
@@ -499,6 +524,12 @@ func (pc *pageCheck) config() {
 		}
 		return "", 0, false
 	})
+	var me struct {
+		Teams  []string          `json:"teams"`
+		Grants []json.RawMessage `json:"grants"`
+	}
+	pc.getJSON("/ui/whoami?as=json", &me)
+	facts := map[string]int{"teams": len(me.Teams), "grants": len(me.Grants)}
 	pc.page("/ui/whoami", facts, func(n *html.Node) (string, int, bool) {
 		if h := up(n, isTag("h2")); h != nil && strings.HasPrefix(folded(h), "What you may do") {
 			return "the reader's grants", len(me.Grants), true

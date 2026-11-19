@@ -1,0 +1,84 @@
+{{define "env-filter"}}
+{{- if .Envs}}
+<nav class="tabs" aria-label="Environment">
+{{- if .All}}
+<a href="{{.Base}}"{{if not .Env}} aria-current="page"{{end}}>All</a>
+{{- end}}
+{{- range .Envs}}
+<a href="{{link $.Base "env" .}}"{{if eq $.Env .}} aria-current="page"{{end}}>{{.}}</a>
+{{- end}}
+</nav>
+{{- end}}
+{{end}}
+
+{{define "plan-table"}}
+<div class="scroll">
+<table class="list">
+<caption class="sr-only">{{.Caption}}</caption>
+<thead><tr>{{if .Status}}<th scope="col">Status</th>{{end}}<th scope="col">Plan</th>{{if .Stack}}<th scope="col">Stack</th>{{end}}<th scope="col">Changes</th><th scope="col">By</th>{{if .Approvals}}<th scope="col">Approvals</th>{{end}}<th scope="col" class="end">Made</th><th scope="col" class="end">Expires</th></tr></thead>
+<tbody>
+{{- range .Plans}}{{$p := .}}
+<tr>
+{{- if $.Status}}<td>{{template "status" .Status}}</td>{{end -}}
+<td><a class="id" href="/ui/plans/{{planName .}}">{{short (planName .)}}</a>{{if .SupersededBy}} <span class="chip">superseded</span>{{end}}</td>
+{{- if $.Stack}}<td>{{range $i, $s := .Stacks}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}}</td>{{end -}}
+<td class="c-wide">{{range $i, $s := .Stacks}}{{if $i}}, {{end}}{{template "n" (exact $s.Changes)}}{{end}} {{template "risks" .Risks}}</td>
+<td data-record="{{planRecord .}}"><span class="ref" data-field="author.display">{{.Author.Display}}</span>{{with from .Origin}} <span class="under"><span class="ref" data-field="origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span></span>{{end}}</td>
+{{- if $.Approvals}}<td data-label="Approvals">{{template "n" (exact (len .Approvals.ApprovedBy))}} of {{template "n" (exact .Approvals.Need)}}</td>{{end -}}
+<td class="end" data-label="Made">{{template "when" .MadeAt}}</td>
+<td class="end" data-label="Expires">{{if and .ExpiresAt (or (eq .Status "pending") (eq .Status "approved"))}}<time datetime="{{.ExpiresAt}}">{{since .ExpiresAt}}</time>{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{end}}
+
+{{define "applies-table"}}
+<div class="scroll">
+<table class="list">
+<caption class="sr-only">{{.Caption}}</caption>
+<thead><tr><th scope="col">Status</th><th scope="col">Run</th>{{if .Stack}}<th scope="col">Stack</th>{{end}}<th scope="col">Plan</th><th scope="col">Applied by</th><th scope="col" class="end">Started</th><th scope="col" class="end">Took</th></tr></thead>
+<tbody>
+{{- range .Runs}}{{$took := took .StartedAt .EndedAt}}
+<tr>
+<td>{{template "status" .Status}}</td>
+<th scope="row"><a class="id" href="{{link (print "/ui/runs/" .ID) "stack" .Stack "env" .Env}}">{{short .ID}}</a></th>
+{{- if $.Stack}}<td><a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}">{{.Stack}}</a></td>{{end}}
+<td><a class="id" href="/ui/plans/{{.Plan}}">{{short .Plan}}</a></td>
+<td><span class="ref" data-record="{{record "id" .ID}}" data-field="actor.display">{{.Actor.Display}}</span>{{if .Override}} <span class="chip chip-warn">override</span>{{end}}</td>
+<td class="end" data-label="Started">{{template "when" .StartedAt}}</td>
+<td class="end" data-label="Took">{{with $took.Text}}<time datetime="{{$took.ISO}}">{{.}}</time>{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{- if .More}}
+<p class="card-foot">Older runs are left out.</p>
+{{- end}}
+{{end}}
+
+{{define "rows"}}
+<ul class="rows">
+{{- range .}}
+<li><a class="row" href="{{.Href}}"><span class="dot dot-{{.Tone}}" aria-hidden="true"></span><span class="row-main"><span class="row-title">{{.Title}}{{if .Mine}} <span class="chip">yours</span>{{end}}</span><span class="row-sub">{{with .Commit}}<code>{{.}}</code> · {{end}}<span class="ref" data-record="{{.Record}}" data-field="{{.Field}}">{{.Author}}</span></span></span>{{if .At}}<span class="row-time"><span class="sr-only">{{.AtWord}} </span><time datetime="{{.At}}">{{ago .At}}</time></span>{{end}}</a></li>
+{{- end}}
+</ul>
+{{end}}
+
+{{define "drift-status"}}{{with .Check}}{{template "status" .Status}}{{if eq .Status "drifted"}} <span class="muted">{{template "n" (exact .Outside)}} outside, {{template "n" (exact .Code)}} in code</span>{{end}}{{else}}<span class="muted">not checked</span>{{end}}{{if .Checking}} <span class="chip">checking</span>{{end}}{{if .OutsideWrite}} <span class="chip chip-warn">written outside writ</span>{{end}}{{end}}
+
+{{define "grant-rows"}}
+<div class="scroll">
+<table class="list">
+<caption class="sr-only">{{.Caption}}</caption>
+<thead><tr><th scope="col">Grant</th>{{if .Teams}}<th scope="col">Teams</th>{{end}}<th scope="col">Envs</th><th scope="col">Stacks</th><th scope="col">Can</th><th scope="col">Risks</th></tr></thead>
+<tbody>
+{{- range .Rows}}
+<tr><td><code>{{.Grant}}</code></td>{{if $.Teams}}<td data-label="Teams">{{join .Teams ", "}}</td>{{end}}<td data-label="Envs">{{join .Envs ", "}}</td><td data-label="Stacks"><code>{{join .Stacks " "}}</code></td><td data-label="Can">{{join .Can " "}}</td><td class="c-wide">{{template "risks" .Risks}}</td></tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{end}}

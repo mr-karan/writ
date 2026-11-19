@@ -216,16 +216,6 @@ func (r *reading) figures() {
 func (r *reading) figureTruth(n *html.Node) (string, int, bool) {
 	v, w := r.view, r.w
 	all := w.sum(r.rd.envs...)
-	if p := up(n, classed("subtitle")); p != nil {
-		switch slices.Index(everyOf(p, classed("n")), n) {
-		case 0:
-			return "environments", len(r.rd.envs), true
-		case 1:
-			return "stacks with state", v.stacks, true
-		case 2:
-			return "repositories", w.repos, true
-		}
-	}
 	if s := up(n, classed("stat")); s != nil {
 		label := folded(first(s, classed("stat-label")))
 		i := -1
@@ -299,11 +289,11 @@ func (r *reading) figureTruth(n *html.Node) (string, int, bool) {
 		}
 		return "", 0, false
 	}
-	if up(n, classed("tree-head")) != nil {
-		if r.find != "" {
-			return "environments the filtered tree shows", len(r.envNodes()), true
+	if c := up(n, classed("count")); c != nil && up(c, isTag("summary")) != nil {
+		if env := envOf(c); env != "" {
+			return "stacks of " + env + " in the tree", r.w.sum(env).tree, true
 		}
-		return "environments of the tree", len(r.rd.envs), true
+		return "", 0, false
 	}
 	if p := up(n, classed("tree-note")); p != nil {
 		if env := envOf(p); env != "" {
@@ -361,10 +351,11 @@ type notePart struct {
 
 var partRE = regexp.MustCompile(`^(\d+)(\+?) (.+)$`)
 
-// note reads a tree note, and fails a number in it outside template n.
+// note reads a tree note, and fails a number in it outside template n. A
+// note set for a screen reader alone is read as one hears it.
 func (r *reading) note(n *html.Node) []notePart {
 	var out []notePart
-	for _, s := range strings.Split(visible(n), " · ") {
+	for _, s := range strings.Split(shown(n), " · ") {
 		if m := partRE.FindStringSubmatch(s); m != nil {
 			v, _ := strconv.Atoi(m[1])
 			out = append(out, notePart{fig{v, m[2] != ""}, true, m[3]})
@@ -453,8 +444,9 @@ func (r *reading) counts(what string, parts []notePart, plans map[string]int) (p
 
 var matchRE = regexp.MustCompile(`^(\d+)(\+?) (listed )?stacks? match`)
 
-// tree judges the filter's count and each environment and stack of the
-// sidebar's tree: its note, its dot, and the stacks it leaves out.
+// tree judges the filter's count and the sidebar's tree: each
+// environment's count of stacks and dot, and each stack's note and dot,
+// and the stacks it leaves out.
 func (r *reading) tree() {
 	if r.find != "" {
 		line := visible(first(r.side, func(n *html.Node) bool { return hasClass(n, "tree-note") && strings.Contains(folded(n), "match") }))
@@ -471,19 +463,19 @@ func (r *reading) tree() {
 		shownEnvs = append(shownEnvs, env)
 		e := r.w.sum(env)
 		summary := first(li, isTag("summary"))
-		parts := r.note(first(summary, classed("t-note")))
-		partial := r.counts(env, parts, e.plans)
-		for _, p := range parts {
-			switch {
-			case p.counted && (p.word == "stack" || p.word == "stacks"):
-				r.holds(env+" stacks", p.fig, e.tree)
-			case !slices.Contains(liveStatuses, p.word) || !p.counted:
-				r.errorf("the note of %s says %q", env, p.word)
-			}
+		// figures holds the count of stacks to the rows. It is a floor
+		// when writ serve read only some plans of env, and so are the
+		// counts the dot rests on.
+		count, ok := readFig(first(first(summary, classed("count")), classed("n")))
+		if !ok {
+			r.errorf("the tree shows no count of the stacks of %s", env)
+		}
+		if t := visible(summary); t != env+" "+count.String() {
+			r.errorf("the tree's %s says %q, not its name and its count of stacks", env, t)
 		}
 		d := first(summary, classed("dot"))
 		r.handled[d] = true
-		r.dot(env, toneOf(d), partial, envFacts(e))
+		r.dot(env, toneOf(d), count.floor, envFacts(e))
 
 		shown := map[string]bool{}
 		for _, a := range everyOf(li, func(n *html.Node) bool { return n.Data == "a" && up(n, classed("stacks")) != nil }) {
@@ -495,7 +487,11 @@ func (r *reading) tree() {
 				continue
 			}
 			shown[name] = true
-			parts := r.note(first(a, classed("t-note")))
+			note := first(a, classed("t-note"))
+			if hasClass(note, "sr-only") && toneOf(first(a, classed("dot"))) != "ok" {
+				r.errorf("the tree hides the note of %s, whose dot is not all clear", what)
+			}
+			parts := r.note(note)
 			partial := r.counts(what, parts, s.plans)
 			for _, p := range parts {
 				ok := map[string]bool{
@@ -526,7 +522,7 @@ func (r *reading) tree() {
 			switch {
 			case k.env != env || !s.inTree() || !r.match(k.stack) || shown[k.stack]:
 			case s.state && !r.listed[k]:
-			case !s.state && partial:
+			case !s.state && count.floor:
 			default:
 				r.errorf("the tree leaves %s@%s out without a word", k.stack, k.env)
 			}
@@ -681,17 +677,25 @@ func folded(n *html.Node) string {
 
 // visible is the text of n a sighted reader sees.
 func visible(n *html.Node) string {
+	if n == nil || hasClass(n, "sr-only") {
+		return ""
+	}
+	return shown(n)
+}
+
+// shown is the text of n a sighted reader would see were n itself shown:
+// it leaves out what lies under n for a screen reader only.
+func shown(n *html.Node) string {
 	var b strings.Builder
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
-		if hasClass(n, "sr-only") {
-			return
-		}
 		if n.Type == html.TextNode {
 			b.WriteString(n.Data)
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+			if !hasClass(c, "sr-only") {
+				walk(c)
+			}
 		}
 	}
 	if n != nil {

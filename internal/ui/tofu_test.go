@@ -400,11 +400,11 @@ func TestTofuPlanReview(t *testing.T) {
 	_, doc := x.page("/ui/plans/" + p.Plan.ID)
 	body := words(doc)
 	for _, want := range []string{
-		"+ 2 to add ~ 0 to change - 0 to destroy -/+ 1 to replace 1 to forget 1 to import",
-		"Changes (5)",
-		"Changed outside OpenTofu (1)",
-		"Outputs that change (2)",
+		"Changes 5 + 2 to add ~ 0 to change - 0 to destroy -/+ 1 to replace 1 to forget 1 to import 1 unchanged",
+		"Changed outside OpenTofu 1",
+		"Outputs 2",
 		"May apply dev",
+		"OpenTofu 1.13.9",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page lacks %q:\n%s", want, body)
@@ -413,7 +413,7 @@ func TestTofuPlanReview(t *testing.T) {
 
 	// The changes run by module, the root module first, then by address.
 	root, inner := words(byID(t, doc, "h-module-0")), words(byID(t, doc, "h-module-1"))
-	if root != "Root module (4)" || inner != "Module module.inner (1)" {
+	if root != "Root module 4" || inner != "Module module.inner 1" {
 		t.Errorf("the module headings: %q, %q", root, inner)
 	}
 	var order []string
@@ -433,24 +433,23 @@ func TestTofuPlanReview(t *testing.T) {
 	}{
 		{"a replace with replace_paths", "change-4", []string{
 			"-/+ random_pet.rotated replace sensitive value changes",
-			"Actions: delete, create. Reason: replace_because_cannot_update, the provider cannot update it in place.",
-			"Replaced because keepers cannot change in place.",
+			"delete, then create · the provider cannot update it in place replace_because_cannot_update",
 			`keepers {"secret":"(sensitive)"} {"secret":"(sensitive)"} forces replace sensitive value changes`,
 			`id "`, "(known after apply)",
 		}},
 		{"a forget", "change-3", []string{
 			"~ random_pet.gone forget delete",
-			"Actions: forget. Reason: delete_because_no_resource_config, the code no longer declares it.",
+			"the code no longer declares it delete_because_no_resource_config",
 			"OpenTofu removes this object from the state and leaves the object itself in place.",
 			"What OpenTofu stops managing",
 		}},
 		{"an import", "change-2", []string{
 			"<- random_id.imported import create",
-			"Imports an object that exists, id p-9hUg, into the state.",
+			"Imports p-9hUg.",
 			"6 attributes stay the same",
 			`b64_url "p-9hUg"`, "byte_length 4",
 		}},
-		{"a create in a module", "change-5", []string{"+ module.inner.random_pet.p create", `length 3`, "id (known after apply)"}},
+		{"a create in a module", "change-5", []string{"+ module.inner.random_pet.p create", `length 3`, "1 attribute known after apply", "id (known after apply)"}},
 		{"drift", "drift-1", []string{
 			"- local_file.note delete",
 			"What changed",
@@ -480,7 +479,18 @@ func TestTofuPlanReview(t *testing.T) {
 	if masked != 1 {
 		t.Errorf("local_file.note marks %d values as masked, want its content", masked)
 	}
-	outputs := words(byID(t, doc, "h-outputs").Parent)
+	// A create lists the values it sets, and folds apart those known only
+	// after apply.
+	note := byID(t, doc, "change-1")
+	for _, table := range everyOf(note, isTag("table")) {
+		if words(first(table, isTag("caption"))) == "What changes" && strings.Contains(words(table), "known after apply") {
+			t.Errorf("the values local_file.note sets list one known after apply:\n%s", words(table))
+		}
+	}
+	if got := words(note); !strings.Contains(got, "7 attributes known after apply") {
+		t.Errorf("local_file.note does not fold its values known after apply:\n%s", got)
+	}
+	outputs := words(up(byID(t, doc, "h-outputs"), isTag("section")))
 	for _, want := range []string{`rotated ~ update "`, "(known after apply)", "secret ~ update (sensitive) (sensitive) sensitive value changes"} {
 		if !strings.Contains(outputs, want) {
 			t.Errorf("the outputs lack %q:\n%s", want, outputs)
@@ -493,7 +503,7 @@ func TestTofuPlanReview(t *testing.T) {
 func TestDevAccess(t *testing.T) {
 	x := newTofuUI(t)
 	_, doc := x.page("/ui/access")
-	if got := words(byID(t, doc, "h-teams").Parent); !strings.Contains(got, "Teams (1)") || !strings.Contains(got, "dev dev no claim: only the one user of writ serve --dev is in it") {
+	if got := words(up(byID(t, doc, "h-teams"), isTag("section"))); !strings.Contains(got, "Teams 1") || !strings.Contains(got, "dev dev no claim: only the one user of writ serve --dev is in it") {
 		t.Errorf("the teams of the dev control plane:\n%s", got)
 	}
 }
@@ -536,20 +546,19 @@ func TestTofuRunPages(t *testing.T) {
 	body := words(doc)
 	for _, want := range []string{
 		"Run " + ok.Run.ID[:8] + " applied",
-		"Stack app@dev, an OpenTofu stack",
+		"app in dev · plan " + p.Plan.ID[:8] + " · applied by tester",
 		"Plan " + p.Plan.ID,
 		"Applied by tester",
-		"+ 3 added ~ 0 changed - 1 destroyed 1 imported",
-		"Resources (4)",
-		"random_pet.rotated delete complete 0",
-		"local_file.note create complete 0",
+		"Resources 4 + 3 added ~ 0 changed - 1 destroyed 1 imported",
+		"random_pet.rotated delete complete 0 s",
+		"local_file.note create complete 0 s",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the applied run's page lacks %q:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "The apply failed") || strings.Contains(body, "Diagnostics") {
-		t.Errorf("the applied run's page shows a failure:\n%s", body)
+	if strings.Contains(body, "Diagnostics") || strings.Contains(body, "an OpenTofu stack") {
+		t.Errorf("the applied run's page shows a failure or a stack row:\n%s", body)
 	}
 
 	p3 := x.plan(third)
@@ -561,12 +570,11 @@ func TestTofuRunPages(t *testing.T) {
 	body = words(doc)
 	for _, want := range []string{
 		"Run " + failed.Run.ID[:8] + " failed",
-		"The apply failed. The diagnostics below say why.",
-		"Diagnostics (2)",
-		"error usage: tofu apply exited with code 1",
-		"error usage: main.tf:23:32: Create local file error",
-		"Resources (1)",
-		"local_file.broken create errored 0",
+		"Diagnostics 2",
+		"error usage tofu apply exited with code 1",
+		"error usage main.tf:23:32: Create local file error",
+		"Resources 1",
+		"local_file.broken create errored 0 s",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the failed run's page lacks %q:\n%s", want, body)
@@ -575,19 +583,37 @@ func TestTofuRunPages(t *testing.T) {
 	if strings.Contains(body, "is a directory") {
 		t.Errorf("the failed run's page shows a diagnostic's detail:\n%s", body)
 	}
+	// The failed pill and the diagnostics card say the run failed; no
+	// banner repeats it.
+	if got := words(first(doc, isTag("h1"))); !strings.Contains(got, "failed") || first(first(doc, isTag("h1")), classed("status-failed")) == nil {
+		t.Errorf("the failed run's title has no failed pill: %s", got)
+	}
+	if sec := first(doc, labelledBy("h-diagnostics")); sec == nil || !hasClass(sec, "card") || first(sec, classed("diags")) == nil {
+		t.Errorf("the failed run's page has no diagnostics card")
+	}
+	if first(doc, classed("note-error")) != nil || strings.Contains(body, "The apply failed") {
+		t.Errorf("the failed run's page repeats the failure in a banner:\n%s", body)
+	}
 
-	for _, path := range []string{"/ui/runs", "/ui/runs?env=dev&stack=app", "/ui/stack?stack=app&env=dev&view=runs"} {
-		_, doc := x.page(path)
+	// Each list is of one environment, dev, so a row names the stack alone,
+	// and a list of one stack's runs leaves the stack out.
+	for _, c := range []struct {
+		path, stack string
+	}{
+		{"/ui/runs", " app"},
+		{"/ui/runs?env=dev&stack=app", ""},
+	} {
+		_, doc := x.page(c.path)
 		body := words(doc)
-		for _, want := range []string{"failed " + failed.Run.ID[:8] + " app@dev " + p3.Plan.ID[:8] + " tester", "applied " + ok.Run.ID[:8] + " app@dev " + p.Plan.ID[:8] + " tester"} {
+		for _, want := range []string{"failed " + failed.Run.ID[:8] + c.stack + " " + p3.Plan.ID[:8] + " tester", "applied " + ok.Run.ID[:8] + c.stack + " " + p.Plan.ID[:8] + " tester"} {
 			if !strings.Contains(body, want) {
-				t.Errorf("%s lacks %q:\n%s", path, want, body)
+				t.Errorf("%s lacks %q:\n%s", c.path, want, body)
 			}
 		}
 	}
 	_, doc = x.page("/ui/plans?env=dev")
-	if body := words(doc); !strings.Contains(body, p3.Plan.ID[:8]+" dev app") {
-		t.Errorf("the plans list lacks the OpenTofu plan with its stack and env:\n%s", body)
+	if body := words(doc); !strings.Contains(body, p3.Plan.ID[:8]+" app") {
+		t.Errorf("the plans list of dev lacks the OpenTofu plan with its stack:\n%s", body)
 	}
 }
 
@@ -602,29 +628,41 @@ func TestTofuDriftPages(t *testing.T) {
 	if got := words(byID(t, doc, "tofu-stacks")); !strings.Contains(got, "app dev http 1 drifted 1 outside, 5 in code") {
 		t.Errorf("the overview's OpenTofu stacks: %s", got)
 	}
-	body, doc := x.page("/ui/stack?stack=app&env=dev")
+	body, doc := x.page("/ui/stack?stack=app&env=dev&view=drift")
 	facts := words(byID(t, doc, "drift-facts"))
 	for _, want := range []string{"Status drifted", "Commit " + x.commit[:8] + " of demo", ", never applied", "Drifted since"} {
 		if !strings.Contains(facts, want) {
 			t.Errorf("the stack's drift lacks %q: %s", want, facts)
 		}
 	}
+	if got := words(first(doc, labelledBy("h-drift"))); !strings.Contains(got, "Changes 6 1 changed outside OpenTofu, 5 that the code would change") {
+		t.Errorf("the stack's drift head: %s", got)
+	}
 	changes := words(byID(t, doc, "drift-changes"))
 	for _, want := range []string{
-		"1 changed outside OpenTofu, 5 that the code would change",
-		"local_file.note changed outside OpenTofu delete none",
-		"local_file.note in the code create none",
-		"random_id.imported in the code import none",
-		"random_pet.gone in the code forget none",
-		"random_pet.rotated in the code replace id, keepers",
-		"module.inner.random_pet.p in the code create none",
+		"local_file.note changed outside OpenTofu - delete",
+		"local_file.note in the code + create",
+		"random_id.imported in the code <- import",
+		"random_pet.gone in the code ~ forget",
+		"random_pet.rotated in the code -/+ replace id, keepers",
+		"module.inner.random_pet.p in the code + create",
 	} {
 		if !strings.Contains(changes, want) {
 			t.Errorf("the stack's drift changes lack %q: %s", want, changes)
 		}
 	}
-	if got := words(byID(t, doc, "index-rows")); !strings.Contains(got, "random_pet.kept random_pet registry.opentofu.org/hashicorp/random kept-pet") {
+	if strings.Contains(changes, "none") {
+		t.Errorf("a change with no attributes says none: %s", changes)
+	}
+	if got := words(byID(t, doc, "main")); !strings.Contains(got, "Drift 6") {
+		t.Errorf("the drift tab does not count the changes: %s", got)
+	}
+	_, doc = x.page("/ui/stack?stack=app&env=dev")
+	if got := words(byID(t, doc, "index-rows")); !strings.Contains(got, "random_pet.kept pet kept-pet root Type random_pet Provider registry.opentofu.org/hashicorp/random ID kept-pet") {
 		t.Errorf("the stack's resources: %s", got)
+	}
+	if first(doc, func(n *html.Node) bool { id, _ := attr(n, "id"); return id == "drift-facts" }) != nil {
+		t.Error("the resources view repeats the drift facts")
 	}
 	if strings.Contains(body, "writ serve has no state for") {
 		t.Errorf("the OpenTofu stack's page reads Writ state:\n%s", body)
@@ -632,6 +670,24 @@ func TestTofuDriftPages(t *testing.T) {
 	_, _, js := visit(t, x.c, "GET", x.base+"/ui/stack?stack=app&env=dev&as=json", nil)
 	if !strings.Contains(js, `"format":"writ.state-index/v0"`) {
 		t.Errorf("the stack page's main document is not its state index: %s", js)
+	}
+}
+
+// A stack's Runs view lists its runs without a Stack column: each row is
+// of the stack of the page.
+func TestTofuStackRuns(t *testing.T) {
+	x := newTofuUI(t)
+	p := x.plan(second)
+	ok := x.apply(p.Plan.ID)
+	if ok.Run.Status != "applied" {
+		t.Fatalf("run %+v: %s", ok.Run, ok.Text)
+	}
+	_, doc := x.page("/ui/stack?stack=app&env=dev&view=runs")
+	if got := words(first(doc, isTag("tbody"))); !strings.HasPrefix(got, "applied "+ok.Run.ID[:8]+" "+p.Plan.ID[:8]+" tester") {
+		t.Errorf("the stack's runs: %s", got)
+	}
+	if got := words(first(doc, isTag("thead"))); got != "Status Run Plan Applied by Started Took" {
+		t.Errorf("the stack's runs table has the columns %s", got)
 	}
 }
 
@@ -665,8 +721,8 @@ func TestTofuStackWithoutIndex(t *testing.T) {
 	if got := words(byID(t, doc, "no-index")); got != ui.Nones["unindexed"] {
 		t.Errorf("the stack's resources: %s", got)
 	}
-	if got := words(byID(t, doc, "h-drift")); got != "Drift" {
-		t.Errorf("the stack's drift: %s", got)
+	if _, drift := x.page(path + "&view=drift"); !strings.Contains(words(byID(t, drift, "main")), ui.Nones["unchecked"]) {
+		t.Errorf("the stack's drift: %s", words(byID(t, drift, "main")))
 	}
 }
 
@@ -688,7 +744,7 @@ func TestTofuAdoptHint(t *testing.T) {
 	}
 
 	x.driftCheck(second)
-	_, doc = x.page("/ui/stack?stack=app&env=" + server.DevEnv)
+	_, doc = x.page("/ui/stack?stack=app&env=" + server.DevEnv + "&view=drift")
 	if got := words(byID(t, doc, "drift-facts")); !strings.Contains(got, "Status failed") {
 		t.Errorf("the stack's drift: %s", got)
 	}

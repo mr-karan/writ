@@ -43,9 +43,13 @@ func parseTemplates(u *UI) (*template.Template, error) {
 			}
 			return *p
 		},
-		"plans": func(caption string, plans []server.PlanInfo) planTable { return planTable{caption, plans} },
-		"from":  originOf,
-		"add":   func(a, b int) int { return a + b },
+		"plans": newPlanTable,
+		"took": func(start, end string) span {
+			text, iso := took(start, end)
+			return span{text, iso}
+		},
+		"from": originOf,
+		"add":  func(a, b int) int { return a + b },
 		"grants": func(caption string, gs []server.GrantInfo, teams bool) grantTable {
 			t := grantTable{Caption: caption, Teams: teams}
 			for _, g := range gs {
@@ -109,10 +113,73 @@ type grantRow struct {
 	Teams, Envs, Stacks, Can, Risks []string
 }
 
-// planTable is the data of the plan-table template.
+// planTable is the data of the plan-table template. Status, Stack, and
+// Approvals show those columns: a list of pending plans needs no status
+// and counts their approvals, and a stack's own list needs no stack.
 type planTable struct {
-	Caption string
-	Plans   []server.PlanInfo
+	Caption                  string
+	Plans                    []server.PlanInfo
+	Status, Stack, Approvals bool
+}
+
+// newPlanTable is template func plans: the table of plans under caption,
+// with the columns cols names, of "status", "stack", and "approvals".
+func newPlanTable(caption string, plans []server.PlanInfo, cols ...string) (planTable, error) {
+	t := planTable{Caption: caption, Plans: plans}
+	for _, c := range cols {
+		switch c {
+		case "status":
+			t.Status = true
+		case "stack":
+			t.Stack = true
+		case "approvals":
+			t.Approvals = true
+		default:
+			return t, fmt.Errorf("the plan table has no column %q", c)
+		}
+	}
+	return t, nil
+}
+
+// picker is the data of the pick template: a control that shows Label and
+// the current Value, and opens to a list of links, one for each value.
+type picker struct {
+	Label, Value string
+	Items        []pickItem
+}
+
+type pickItem struct {
+	Name, Href string
+	Current    bool
+}
+
+// span is how long something took, as text and as an ISO 8601 duration
+// for its time element.
+type span struct{ Text, ISO string }
+
+// took is how long it was from start to end, two RFC 3339 times, as text
+// such as 4 s, 1 min 12 s, or 2 h 3 min, and as an ISO 8601 duration. It
+// is "" while end is unknown.
+func took(start, end string) (text, iso string) {
+	s, err := time.Parse(time.RFC3339, start)
+	if err != nil {
+		return "", ""
+	}
+	e, err := time.Parse(time.RFC3339, end)
+	if err != nil {
+		return "", ""
+	}
+	d := max(e.Sub(s).Round(time.Second), 0)
+	h, m, sec := int(d/time.Hour), int(d%time.Hour/time.Minute), int(d%time.Minute/time.Second)
+	switch {
+	case h > 0:
+		text = fmt.Sprintf("%d h %d min", h, m)
+	case m > 0:
+		text = fmt.Sprintf("%d min %d s", m, sec)
+	default:
+		text = fmt.Sprintf("%d s", sec)
+	}
+	return text, fmt.Sprintf("PT%dS", int(d.Seconds()))
 }
 
 // origin is where a plan came from: a project or a repository, and the

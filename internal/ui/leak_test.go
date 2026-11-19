@@ -811,7 +811,7 @@ func TestTofuSensitiveValuesNeverRender(t *testing.T) {
 	for _, path := range []string{
 		"/ui/plans/" + p.Plan.ID + "?risk=replace", "/ui/plans/" + p3.Plan.ID,
 		"/ui/runs/" + run.Run.ID, "/ui/runs/" + failed.Run.ID, "/ui/runs", "/ui/runs?env=dev&stack=app", "/ui/plans?env=dev",
-		"/ui/stack?stack=app&env=dev", "/ui/approvals", "/ui/access", "/ui/whoami", "/ui/start", "/ui/repos", "/ui/repos/demo",
+		"/ui/stack?stack=app&env=dev", "/ui/stack?stack=app&env=dev&view=drift", "/ui/approvals", "/ui/access", "/ui/whoami", "/ui/start", "/ui/repos", "/ui/repos/demo",
 		"/ui/repos/new", "/ui/settings",
 	} {
 		x.page(path)

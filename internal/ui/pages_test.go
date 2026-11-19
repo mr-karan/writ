@@ -47,14 +47,15 @@ func TestNoScriptWalk(t *testing.T) {
 		{"/ui/", "1 by others · 0 yours"},
 		{"/ui/?env=prod", "network"},
 		{"/ui/stack?stack=network&env=prod", ui.Nones["no-state"]},
+		{"/ui/stack?stack=network&env=prod&view=drift", ui.Nones["no-state"]},
 		{"/ui/stack?stack=network&env=prod&view=runs", ui.Nones["no-run"]},
 		{"/ui/stack?stack=network&env=prod&view=plans", short(id)},
 		{"/ui/runs", ui.Nones["no-run"]},
 		{"/ui/plans", short(id)},
 		{"/ui/plans?env=prod&status=pending&stack=network", short(id)},
-		{"/ui/plans/" + id, "Changes (2)"},
+		{"/ui/plans/" + id, "Changes 2"},
 		{"/ui/plans/" + id + "?risk=replace", "1 of 2 changes match"},
-		{"/ui/approvals", "Plans by others (1)"},
+		{"/ui/approvals", "Plans by others 1"},
 		{"/ui/access", "acme/platform"},
 		{"/ui/whoami", bobPerson},
 		{"/ui/settings", "authorization code flow with PKCE"},
@@ -109,7 +110,11 @@ func TestNoScriptWalk(t *testing.T) {
 		{"/ui/runs", 200, short(run)},
 		{"/ui/stack?stack=network&env=prod&view=runs", 200, short(run)},
 		{"/ui/?env=prod", 200, "drifted 1 outside, 2 in code"},
-		{"/ui/stack?stack=network&env=prod", 200, "1 changed outside OpenTofu, 2 that the code would change"},
+		{"/ui/stack?stack=network&env=prod&view=drift", 200, "1 changed outside OpenTofu, 2 that the code would change"},
+		{"/ui/stack?stack=network&env=prod", 200, "1 in the last drift check"},
+		{"/ui/stack?stack=network&env=prod&group=module", 200, "tls_private_key.ca_key"},
+		{"/ui/stack?stack=network&env=prod&group=flat&q=CA-KEY", 200, "1 of 1 resources match"},
+		{"/ui/stack?stack=network&env=prod&q=nothing-matches", 200, "0 of 1 resources match"},
 		{"/ui/stack?stack=network&env=staging", 200, "writ state adopt network --env staging --version 1 --reason REASON"},
 		{"/ui/plans/" + unsealed.Ref, 200, "writ state adopt network --env prod --version 1 --reason REASON"},
 		{"/ui/login/dev", http.StatusUnauthorized, "this sign-in link was used already"},
@@ -287,7 +292,7 @@ func TestPlanReview(t *testing.T) {
 	p := b.signIn("/ui/plans/" + id)
 	body := text(p.doc)
 	for _, want := range []string{
-		"Changes (2)", "tls_private_key.ca_key", "<script>alert(1)</script>",
+		"Changes 2", "tls_private_key.ca_key", "<script>alert(1)</script>",
 		"gitlab acme/infra #1849213 (alice)", "acme/infra !42",
 	} {
 		if !strings.Contains(body, want) {
@@ -562,9 +567,9 @@ func TestTofuPlanPage(t *testing.T) {
 		want         []string
 	}{
 		{"delete", tofuChange("random_pet.old", `["delete"]`, "delete_because_no_resource_config"),
-			[]string{"Changes (1)", "- random_pet.old delete Actions: delete. Reason: delete_because_no_resource_config", "0 to add ~ 0 to change - 1 to destroy -/+ 0 to replace 0 to forget 0 to import"}},
+			[]string{"Changes 1", "- random_pet.old delete the code no longer declares it delete_because_no_resource_config", "0 to add ~ 0 to change - 1 to destroy -/+ 0 to replace 0 to forget 0 to import 1 unchanged"}},
 		{"forget", tofuChange("random_pet.left", `["forget"]`, "delete_because_no_resource_config"),
-			[]string{"Changes (1)", "~ random_pet.left forget delete Actions: forget. Reason: delete_because_no_resource_config", "0 to destroy -/+ 0 to replace 1 to forget 0 to import"}},
+			[]string{"Changes 1", "~ random_pet.left forget delete the code no longer declares it delete_because_no_resource_config", "0 to destroy -/+ 0 to replace 1 to forget 0 to import 1 unchanged"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f.tofu.mu.Lock()

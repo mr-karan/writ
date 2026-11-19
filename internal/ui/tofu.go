@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/server"
@@ -41,7 +40,11 @@ type tofuModule struct {
 }
 
 type tofuChangeView struct {
-	Anchor, Module, Addr, Kind, Sign, Actions string
+	Anchor, Module, Addr, Kind, Sign string
+	// ActionLine words the order of a replace's two actions, "delete,
+	// then create" or "create, then delete", and is "" for any other
+	// change.
+	ActionLine string
 	// Drift is set for a change found outside OpenTofu.
 	Drift              bool
 	Reason, ReasonText string
@@ -49,9 +52,8 @@ type tofuChangeView struct {
 	Previous, Deposed  string
 	// Importing is set for a change that imports an object, ImportID to
 	// the id it imports.
-	Importing    bool
-	ImportID     string
-	ReplacePaths []string
+	Importing bool
+	ImportID  string
 	// HasBefore and HasAfter say whether the change has an object before
 	// and after it: a create has none before, a delete none after.
 	HasBefore, HasAfter bool
@@ -64,8 +66,10 @@ type tofuChangeView struct {
 	// Open is set for a change the page shows unfolded.
 	Open bool
 	// Attrs are the attributes the change sets to a new value, Same the
-	// ones it leaves as they are.
-	Attrs, Same []tofuAttrView
+	// ones it leaves as they are. Unknown are the attributes of a create
+	// whose value is known only after apply, apart so the values it sets
+	// come first.
+	Attrs, Same, Unknown []tofuAttrView
 }
 
 type tofuAttrView struct {
@@ -256,10 +260,13 @@ func outputKind(actions []string) string {
 
 // tofuChange words one resource change, of the plan or of its drift.
 func tofuChange(c mask.ResourceChange, kind string, risk []string, anchor string) tofuChangeView {
-	cv := tofuChangeView{Anchor: anchor, Module: c.ModuleAddress, Addr: c.Address, Kind: kind, Sign: sign(kind), Actions: strings.Join(c.Change.Actions, ", "),
+	cv := tofuChangeView{Anchor: anchor, Module: c.ModuleAddress, Addr: c.Address, Kind: kind, Sign: sign(kind),
 		Reason: c.ActionReason, ReasonText: reasonText[c.ActionReason], Risk: risk, Previous: c.PreviousAddress, Deposed: c.Deposed}
 	if kind == "" {
-		cv.Kind = cv.Actions
+		cv.Kind = strings.Join(c.Change.Actions, ", ")
+	}
+	if kind == "replace" && len(c.Change.Actions) == 2 {
+		cv.ActionLine = c.Change.Actions[0] + ", then " + c.Change.Actions[1]
 	}
 	cv.HasBefore, cv.HasAfter = c.Change.Before != nil, c.Change.After != nil
 	if c.Change.Importing != nil {
@@ -267,7 +274,6 @@ func tofuChange(c mask.ResourceChange, kind string, risk []string, anchor string
 	}
 	forces := map[string]bool{}
 	for _, p := range c.Change.ReplacePaths {
-		cv.ReplacePaths = append(cv.ReplacePaths, pathText(p))
 		if len(p) > 0 {
 			forces[fmt.Sprint(p[0])] = true
 		}
@@ -318,10 +324,13 @@ func tofuChange(c mask.ResourceChange, kind string, risk []string, anchor string
 		}
 		changed := holdsTrue(unknown[name]) || av.SecretChanges || c.Change.Before == nil || c.Change.After == nil ||
 			inBefore != inAfter || !reflect.DeepEqual(b, a)
-		if changed {
+		switch {
+		case changed && c.Change.Before == nil && av.After == "(known after apply)":
+			cv.Unknown = append(cv.Unknown, av)
+		case changed:
 			cv.Notes = cv.Notes || av.Forces || av.SecretChanges
 			cv.Attrs = append(cv.Attrs, av)
-		} else {
+		default:
 			cv.Same = append(cv.Same, av)
 		}
 	}
@@ -389,24 +398,6 @@ func prettyValue(v any) string {
 	return ""
 }
 
-// pathText writes an attribute path of a plan, such as keepers or
-// rule[0].port.
-func pathText(path []any) string {
-	var b strings.Builder
-	for i, step := range path {
-		switch v := step.(type) {
-		case string:
-			if i > 0 {
-				b.WriteByte('.')
-			}
-			b.WriteString(v)
-		default:
-			fmt.Fprintf(&b, "[%v]", v)
-		}
-	}
-	return b.String()
-}
-
 // isTofuPlan reports whether a plan's document is the masked document of
 // an OpenTofu plan, which has a format_version.
 func isTofuPlan(raw json.RawMessage) bool {
@@ -442,12 +433,7 @@ type tofuRunResource struct {
 // creates one address.
 func newTofuRun(rr server.RemoteRun, plan *server.PlanInfo) tofuRunData {
 	d := tofuRunData{Run: rr.Run, Plan: plan, Text: rr.Text, Steps: runSteps(rr.Run)}
-	if start, err := time.Parse(time.RFC3339, rr.Run.StartedAt); err == nil {
-		if end, err := time.Parse(time.RFC3339, rr.Run.EndedAt); err == nil {
-			took := end.Sub(start).Round(time.Second)
-			d.Took, d.TookFor = took.String(), fmt.Sprintf("PT%dS", int(took.Seconds()))
-		}
-	}
+	d.Took, d.TookFor = took(rr.Run.StartedAt, rr.Run.EndedAt)
 	if len(rr.Document) == 0 || string(rr.Document) == "null" {
 		return d
 	}

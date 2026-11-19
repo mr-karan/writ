@@ -112,7 +112,7 @@ func TestDevAddRepository(t *testing.T) {
 		t.Fatalf("sign-in: %d %s %s", status, at, body)
 	}
 	// Getting started is no section of the navigation, so none is current.
-	nav, _, _ := strings.Cut(body[strings.Index(body, `<nav class="sections"`):], "</nav>")
+	nav, _, _ := strings.Cut(body[strings.Index(body, `<nav class="sections nav"`):], "</nav>")
 	if strings.Contains(nav, `aria-current="page"`) {
 		t.Errorf("getting started marks a section of the navigation as current:\n%s", body)
 	}
@@ -130,7 +130,7 @@ func TestDevAddRepository(t *testing.T) {
 	}
 	form.Set("project", dir)
 	status, at, body = visit(t, c, "POST", base+"/ui/repos/new", form)
-	if status != 200 || at != "/ui/repos/demo" || !strings.Contains(tagless(body), "Stacks found (1)") || !strings.Contains(body, "app") {
+	if status != 200 || at != "/ui/repos/demo" || !strings.Contains(tagless(body), "Stacks found 1") || !strings.Contains(body, "app") {
 		t.Fatalf("add: %d %s %s", status, at, body)
 	}
 	if _, _, body := visit(t, c, "GET", base+"/ui/repos", nil); !strings.Contains(body, `<a href="/ui/repos/demo">demo</a>`) {

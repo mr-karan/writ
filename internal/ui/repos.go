@@ -83,6 +83,11 @@ func (u *UI) repo(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	if !f.main("/v1/repos/"+name, &doc) {
 		return
 	}
+	for _, st := range doc.Stacks {
+		for i := range st.Providers {
+			st.Providers[i].Source = strings.TrimPrefix(st.Providers[i].Source, "registry.opentofu.org/")
+		}
+	}
 	f.render("repo", &page{Title: name, Section: "repos", CLI: "writ repo show " + name, Data: doc, Crumbs: []crumb{{"Repositories", "/ui/repos"}, {name, ""}}})
 }
 
