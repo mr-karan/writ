@@ -3,7 +3,9 @@ package server_test
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"slices"
 	"strings"
@@ -373,5 +375,39 @@ func TestAuditUnreadableFilterGivesNoCursor(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A cursor is sealed: it does not show the time and the row id it holds,
+// and a cursor writ serve did not make, such as one of that time and id in
+// the clear or a real one with a byte changed, is a usage error.
+func TestAuditCursorIsSealed(t *testing.T) {
+	f, tok := auditFixture(t)
+	at := time.Now().Add(-time.Hour).Truncate(time.Second)
+	f.seed(at,
+		control.Entry{Request: "a", Env: "prod", Stacks: []string{"network"}, Op: "plan"},
+		control.Entry{Request: "b", Env: "prod", Stacks: []string{"network"}, Op: "plan"},
+	)
+	q := url.Values{"env": {"prod"}, "limit": {"1"}, "since": {at.Format(time.RFC3339)}, "until": {at.Add(time.Minute).Format(time.RFC3339)}}
+	doc, r := f.auditPage(tok["rita"], q)
+	if r.status != 200 || seeded(doc.Rows) != "b" || doc.Next == "" {
+		t.Fatalf("the first page: %d %s", r.status, r.body)
+	}
+	if b, err := base64.RawURLEncoding.DecodeString(doc.Next); err == nil && strings.Contains(string(b), "|") {
+		t.Fatalf("the cursor %q decodes to %q", doc.Next, b)
+	}
+	clear := base64.RawURLEncoding.EncodeToString(fmt.Appendf(nil, "%d|%d", at.Add(time.Second).UnixMilli(), 1<<40))
+	changed := []byte(doc.Next)
+	changed[len(changed)/2] ^= 1
+	for name, c := range map[string]string{"in the clear": clear, "changed": string(changed)} {
+		q.Set("cursor", c)
+		bad, r := f.auditPage(tok["rita"], q)
+		if r.status != 400 || r.class() != "usage" || bad.OK || !strings.Contains(string(r.body), "cursor") {
+			t.Fatalf("a cursor %s: %d %s", name, r.status, r.body)
+		}
+	}
+	q.Set("cursor", doc.Next)
+	if doc, r := f.auditPage(tok["rita"], q); r.status != 200 || seeded(doc.Rows) != "a" || doc.Next != "" {
+		t.Fatalf("the next page: %d %s", r.status, r.body)
 	}
 }

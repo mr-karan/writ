@@ -1,6 +1,10 @@
 package server
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"slices"
@@ -116,6 +120,14 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		bad("until must be after since")
 		return
 	}
+	if f.Cursor != "" {
+		c, ok := s.openCursor(f.Cursor)
+		if !ok {
+			bad("the cursor is not one this server made since it started: read the first page again, with no cursor")
+			return
+		}
+		f.Cursor = c
+	}
 	req := reqOf(r)
 	teams := req.principal.teams
 	every := s.cfg.Policy.DecideEvery(teams, authz.Admin, maxStackParts).Allowed
@@ -147,11 +159,53 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	if f.Stack != "" && readable {
 		e.Stacks = []string{f.Stack}
 	}
-	doc := AuditDoc{Format: FormatAudit, OK: true, Rows: []AuditRow{}, Next: next, Diagnostics: []Diagnostic{}}
+	doc := AuditDoc{Format: FormatAudit, OK: true, Rows: []AuditRow{}, Next: s.sealCursor(next), Diagnostics: []Diagnostic{}}
 	for _, row := range rows {
 		doc.Rows = append(doc.Rows, auditRow(row))
 	}
 	s.reply(w, http.StatusOK, doc)
+}
+
+// cursorSealed is the associated data of a sealed cursor.
+var cursorSealed = []byte("writ audit cursor v1")
+
+// newCursorKey makes the key that seals the cursors of GET /v1/audit:
+// AES-256-GCM under 32 random bytes this process holds and never stores.
+// A cursor holds the time and the id of the row its page read last, which
+// can be a row its principal may not see, so it is sealed rather than
+// signed: a client can neither read that time nor make a cursor of
+// another. A cursor ends with the process that made it, and the server
+// runs as one process on its control database.
+func newCursorKey() (cipher.AEAD, error) {
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
+
+// sealCursor seals a cursor of control.AuditRows; "" stays "".
+func (s *Server) sealCursor(c string) string {
+	if c == "" {
+		return ""
+	}
+	nonce := make([]byte, s.cursorKey.NonceSize())
+	_, _ = rand.Read(nonce)
+	return base64.RawURLEncoding.EncodeToString(s.cursorKey.Seal(nonce, nonce, []byte(c), cursorSealed))
+}
+
+// openCursor opens a cursor that sealCursor sealed, and reports whether
+// it did.
+func (s *Server) openCursor(sealed string) (string, bool) {
+	b, err := base64.RawURLEncoding.DecodeString(sealed)
+	n := s.cursorKey.NonceSize()
+	if err != nil || len(b) < n {
+		return "", false
+	}
+	c, err := s.cursorKey.Open(nil, b[:n], b[n:], cursorSealed)
+	return string(c), err == nil
 }
 
 // auditVisible reports whether a principal in teams may see e. A row of a

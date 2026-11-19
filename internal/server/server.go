@@ -13,6 +13,7 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"crypto/cipher"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -152,6 +153,8 @@ type Server struct {
 	browserLogins map[[32]byte]*browserLogin
 	// policy judges the plans of OpenTofu stacks, nil for no policy.
 	policy *policy.Engine
+	// cursorKey seals the cursors of GET /v1/audit.
+	cursorKey cipher.AEAD
 }
 
 // New prepares a server: it marks plans a crash left planning and runs it
@@ -180,6 +183,9 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 	}
 	s.closeKey = s.store.CloseKey
 	var err error
+	if s.cursorKey, err = newCursorKey(); err != nil {
+		return nil, err
+	}
 	if s.policy, err = CompilePolicies(cfg); err != nil {
 		return nil, err
 	}
