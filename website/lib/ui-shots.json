@@ -1,47 +1,31 @@
 {
-  "date": "2026-11-16",
-  "commit": "7d193965",
+  "date": "2026-11-19",
+  "commit": "3a041bc8",
   "paths": {
-    "hero": "/ui/plans/d76f644db169d07f240be36ef1722635",
     "overview": "/ui/",
-    "plan": "/ui/plans/d76f644db169d07f240be36ef1722635",
-    "stack": "/ui/stack?stack=app&env=dev",
+    "plan": "/ui/plans/1eb94828bb4a01b67298cd4be01f13b4",
+    "resources": "/ui/stack?stack=platform&env=dev",
+    "stack": "/ui/stack?stack=app&env=dev&view=drift",
     "runs": "/ui/runs",
-    "secret": "/ui/plans/d76f644db169d07f240be36ef1722635",
-    "drift": "/ui/stack?stack=app&env=dev"
+    "secret": "/ui/plans/1eb94828bb4a01b67298cd4be01f13b4",
+    "drift": "/ui/stack?stack=app&env=dev&view=drift"
   },
   "sizes": {
-    "hero-390-light": {
-      "width": 390,
-      "height": 470
-    },
-    "hero-390-dark": {
-      "width": 390,
-      "height": 470
-    },
-    "hero-1280-light": {
-      "width": 1280,
-      "height": 680
-    },
-    "hero-1280-dark": {
-      "width": 1280,
-      "height": 680
-    },
     "overview-390-light": {
       "width": 390,
-      "height": 1600
+      "height": 1521
     },
     "overview-390-dark": {
       "width": 390,
-      "height": 1600
+      "height": 1521
     },
     "overview-1280-light": {
       "width": 1280,
-      "height": 1226
+      "height": 1016
     },
     "overview-1280-dark": {
       "width": 1280,
-      "height": 1226
+      "height": 1016
     },
     "plan-390-light": {
       "width": 390,
@@ -59,29 +43,45 @@
       "width": 1280,
       "height": 1600
     },
+    "resources-390-light": {
+      "width": 390,
+      "height": 1133
+    },
+    "resources-390-dark": {
+      "width": 390,
+      "height": 1133
+    },
+    "resources-1280-light": {
+      "width": 1280,
+      "height": 875
+    },
+    "resources-1280-dark": {
+      "width": 1280,
+      "height": 875
+    },
     "stack-390-light": {
       "width": 390,
-      "height": 1413
+      "height": 1055
     },
     "stack-390-dark": {
       "width": 390,
-      "height": 1413
+      "height": 1055
     },
     "stack-1280-light": {
       "width": 1280,
-      "height": 1013
+      "height": 800
     },
     "stack-1280-dark": {
       "width": 1280,
-      "height": 1013
+      "height": 800
     },
     "runs-390-light": {
       "width": 390,
-      "height": 942
+      "height": 844
     },
     "runs-390-dark": {
       "width": 390,
-      "height": 942
+      "height": 844
     },
     "runs-1280-light": {
       "width": 1280,
@@ -92,20 +92,20 @@
       "height": 800
     },
     "secret-light": {
-      "width": 936,
-      "height": 295
+      "width": 958,
+      "height": 229
     },
     "secret-dark": {
-      "width": 936,
-      "height": 295
+      "width": 958,
+      "height": 229
     },
     "drift-light": {
-      "width": 892,
-      "height": 304
+      "width": 958,
+      "height": 280
     },
     "drift-dark": {
-      "width": 892,
-      "height": 304
+      "width": 958,
+      "height": 280
     }
   }
 }
