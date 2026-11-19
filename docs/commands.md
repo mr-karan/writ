@@ -32,12 +32,13 @@ writ [--dir DIR] [--env ENV] [--verbose] <command> [flags] [args]
 | `writ apply --remote --merged --env ENV --stack NAME` | After a merge, apply the stack's approved plan with the same sources as the merged commit: the CI job's own commit on the default branch, or `--repo` and `--commit`. |
 | `writ apply --remote --yes` | Plan as `writ plan --remote` does, and apply the plan when no approval rule needs one. |
 | `writ runs --remote` | Print the runs `writ serve` started in `--env`, newest first, of `--stack` or of every stack. |
+| `writ audit --remote` | Print the rows of `writ serve`'s audit log that your token may see, newest first. `--plan ID` takes in the plan's approvals, its run, and the run's state writes; `--run`, `--env` with `--stack`, `--person`, `--op`, `--since`, and `--until` narrow the rows. While more rows match, the last line names the `--cursor` of the next page. See [Read the audit log](api.md#read-the-audit-log). |
 | `writ state adopt STACK --env ENV --version N --reason TEXT`, or `--serial N` for a stack on S3 | Seal a secret set with the newest state of an OpenTofu stack that has none, such as a state on S3 that an apply outside Writ wrote, so its plans can be approved again. It needs `adopt`, and a person's session. A secret the state contains where nothing marks it isn't learned. See [Adopt a state](adopt-state.md). |
 | `writ login [URL]` | Sign in to a control plane through the team's identity provider, and keep a session, which lasts the control plane's `session_ttl`, 12 hours by default, in `~/.config/writ/sessions.json`, readable by you alone. When the identity provider offers the device flow, it prints a code to type at its page. When it doesn't, as on GitLab.com, it prints a URL to open in a browser on this computer, opens it when it can, and takes the identity provider's answer on a loopback port. `--device` and `--browser` force a flow. With no URL it signs in to the control plane that `--server` or `WRIT_SERVER` sets. `--issuer NAME` picks the identity provider when the control plane has several. See [writ login](sign-in.md#people-writ-login). |
 | `writ logout [URL]` | End your session on the control plane and delete it from the session file. |
 | `writ whoami` | Print the control plane and how it was found, who the token speaks for and where it came from, its teams, and its grants. It always asks the control plane, and accepts `--remote`. |
 
-`plan`, `apply`, and `runs` without `--remote` are usage errors that name the remote form.
+`plan`, `apply`, `runs`, and `audit` without `--remote` are usage errors that name the remote form.
 
 ## Flags
 
@@ -50,10 +51,13 @@ writ [--dir DIR] [--env ENV] [--verbose] <command> [flags] [args]
 | `--provider ADDR` | `import bulk` | Read the objects through the provider configuration at `ADDR`. |
 | `--max-objects N`, `--max-bytes N` | `import bulk` | Refuse to read more than `N` objects, 500 by default, or to write a file larger than `N` bytes, 1 MiB by default. |
 | `--yes` | `apply --remote` | Plan as `writ plan --remote` does, and apply the plan when no approval rule needs one. |
-| `--remote` | `plan`, `apply`, `approve`, `show`, `runs`, `state`, `whoami` | Run against `writ serve`. `state` and `whoami` always do. See [How the control plane works](serve.md). |
-| `--limit N` | `runs --remote` | Print the newest `N` runs, from 1 to 200, 50 by default. |
-| `--server URL` | `login`, `logout`, `plan`, `apply`, `approve`, `show`, `state`, `runs`, `whoami`, `repo`, `ci`, `ui`, `mcp` | Run on the control plane at `URL`, or on the dev control plane with `--server dev`. It implies `--remote` and comes before `WRIT_SERVER` and your session. |
-| `--stack NAME` | `plan`, `apply`, `runs` with `--remote` | The stack's name on `writ serve`. For `plan` and `apply`, the default is its path from the Git work tree, or its directory's name outside one. `runs` lists only that stack's runs when it's given, and every stack's runs in the environment when it isn't. |
+| `--remote` | `plan`, `apply`, `approve`, `show`, `runs`, `audit`, `state`, `whoami` | Run against `writ serve`. `state` and `whoami` always do. See [How the control plane works](serve.md). |
+| `--limit N` | `runs --remote`, `audit --remote` | Print the newest `N` runs or rows, from 1 to 200, 50 by default. |
+| `--plan ID`, `--run ID`, `--person ID`, `--op OP` | `audit --remote` | Print only the rows of the plan, by its id or ref, with its run's; of the run; of the person, as `writ whoami` prints the id; or of the operation. |
+| `--since TIME`, `--until TIME` | `audit --remote` | Print only the rows at or after `--since`, and before `--until`, both RFC 3339 times such as `2026-11-19T09:30:00Z`. |
+| `--cursor C` | `audit --remote` | Print the page after the one that named `C`. |
+| `--server URL` | `login`, `logout`, `plan`, `apply`, `approve`, `show`, `state`, `runs`, `audit`, `whoami`, `repo`, `ci`, `ui`, `mcp` | Run on the control plane at `URL`, or on the dev control plane with `--server dev`. It implies `--remote` and comes before `WRIT_SERVER` and your session. |
+| `--stack NAME` | `plan`, `apply`, `runs`, `audit` with `--remote` | The stack's name on `writ serve`. For `plan` and `apply`, the default is its path from the Git work tree, or its directory's name outside one. `runs` lists only that stack's runs when it's given, and every stack's runs in the environment when it isn't. `audit` needs `--env` with it. |
 | `--hint-merge-request N` | `plan` with `--remote` | The merge request the plan belongs to, which `writ serve` keeps only for a merge request pipeline. |
 | `--commit SHA`, `--repo NAME` | `plan` and `apply` with `--remote` | Plan this commit of the repository, and read no file. A CI job's token sets its repository and its commit, and `writ serve` refuses another. |
 
