@@ -312,7 +312,7 @@ Expect a `local_file` or `local_sensitive_file` resource to show as deleted outs
 
 ### Where you see the result
 
-Writ keeps the newest 20 checks of each `stack@env`. From `GET /v1/drift` you get the newest one that ended, and you see it on the overview and on each stack's page in the [control UI](sign-in.md#the-control-ui).
+Writ keeps the newest 20 checks of each `stack@env`. From `GET /v1/drift` you get the newest one that ended, with `started_by` `drift`, and `every`, how often Writ checks each stack. You see it on the overview, and on each stack's Drift tab in the [control UI](sign-in.md#the-control-ui), headed `Drift check, every 6h` for a `drift` block of `every = "6h"`. A plan a person or a CI job asked for says `started_by` `person` or `ci` instead, and the plans list of the control UI marks each with an icon.
 
 In this example, `writ serve` restarted, and its check at start planned app after its key changed. Its state keeps the old key in the address of `terraform_data.keyed`, and the mask swept it with the secret set of state version 3. Here's the answer to `GET /v1/drift?env=prod&stack=app`:
 
