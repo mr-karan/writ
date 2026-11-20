@@ -89,6 +89,7 @@ On Linux, `writ serve` runs every `tofu` process (`init`, `plan`, `show`, `apply
 | `tofu` binary, dynamic loader, shared libraries (and `tofu.git` + `git-remote-http`/`https` if set) | read-only |
 | `/etc/resolv.conf`, `/etc/hosts`, `/etc/ld.so.cache`, `/etc/ssl/certs/ca-certificates.crt`, minimal `/etc/nsswitch.conf` | read-only |
 | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/fd` links, PID-scoped `/proc` | standard / read-only |
+| Saved plan, for `show` and `apply`, at `/dev/fd/7` (a sealed in-memory file) | read-only |
 
 Nothing else from the host is visible: no `/home`, no `data`, no `/tmp`, no shell (`/bin/sh`), no `ssh`, and no `hg`. When a run finishes, `writ serve` kills every process belonging to that run's UID before returning the UID to the pool.
 
