@@ -13,6 +13,7 @@ import (
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/repo"
+	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/tfstate"
 	"github.com/mr-karan/writ/internal/tofu"
 )
@@ -240,15 +241,15 @@ func (s *Server) refreshS3(ctx context.Context, st control.S3Stack) error {
 	}
 	defer tr.done()
 	m := tr.mask()
-	stk, err := tr.stack(ctx, m)
-	if err != nil {
+	out, err := tr.run(ctx, ctx, tr.job(runner.Pull), m)
+	if notStarted(err) {
 		return err
 	}
 	defer tr.network(m)
-	state, err := s.tofuRunner.Pull(ctx, stk)
 	if err != nil {
 		return fmt.Errorf("%w%s", err, stepLines(m, err))
 	}
+	state := out.State
 	read := state.Serial
 	j, seq, err := s.observeSerial(ctx, st.Env, st.Stack, ts.Backend, read, started)
 	if err != nil || seq == 0 {

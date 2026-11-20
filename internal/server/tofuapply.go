@@ -11,6 +11,7 @@ import (
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
 	"github.com/mr-karan/writ/internal/mask"
+	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/tfstate"
 	"github.com/mr-karan/writ/internal/tofu"
 )
@@ -63,7 +64,7 @@ type TofuApplyEvent struct {
 // Only the masked events and diagnostics leave the run, and the rows of
 // the state index that the mask reads from the state the apply left.
 func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan control.Plan, p *principal) (ApplyOutput, error) {
-	if s.tofuRunner == nil {
+	if s.exec == nil {
 		return ApplyOutput{}, tofuRefused("plan %s is of an OpenTofu stack, and this writ serve runs no OpenTofu", plan.ID)
 	}
 	sealed, err := s.store.SavedPlan(startCtx, plan.ID)
@@ -118,11 +119,13 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 		return ApplyOutput{}, err
 	}
 	m := tr.mask(learned)
-	stk, err := tr.stack(startCtx, m)
-	if err != nil {
+	job := tr.job(runner.Apply)
+	job.SavedPlan = saved
+	out, err := tr.run(startCtx, ctx, job, m)
+	if notStarted(err) {
 		return ApplyOutput{}, err
 	}
-	res, err := s.tofuRunner.Apply(ctx, stk, saved)
+	res := out.Applied
 	doc := TofuApply{Format: FormatTofuApply, Status: "apply-failed", Events: []TofuApplyEvent{}, Diagnostics: []Diagnostic{}}
 	// The mask learns the plan's secrets, as it did when it masked the
 	// plan, before it reads the events: an address can hold a value that

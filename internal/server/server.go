@@ -7,7 +7,7 @@
 // plans run with state opened read-only, stay on the server, and are named
 // by the saved plan's signature.
 //
-// Each plan and apply runs OpenTofu through a TofuRunner.
+// Each plan and apply runs OpenTofu through a runner.Tofu.
 package server
 
 import (
@@ -36,6 +36,7 @@ import (
 	"github.com/mr-karan/writ/internal/notify"
 	"github.com/mr-karan/writ/internal/oidc"
 	"github.com/mr-karan/writ/internal/policy"
+	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/tfstate"
 )
 
@@ -52,14 +53,18 @@ type Options struct {
 	Verifier Verifier
 	// People are the issuers people sign in to the control UI with.
 	People []*oidc.Provider
-	// Tofu runs OpenTofu for the stacks of .tf files. Nil refuses them.
-	Tofu TofuRunner
+	// Tofu runs OpenTofu for the stacks of .tf files, in writ serve's
+	// own process. Nil refuses them.
+	Tofu runner.Tofu
 	// Assumer assumes the environments' roles. A config with a role needs
 	// one.
 	Assumer awsrole.Assumer
 	// Reap kills what a provider left running as a uid before the uid
 	// serves another plan. Nil means runas.Reap.
 	Reap func(uid uint32) error
+	// WrapExecutor, when set, wraps the executor of the OpenTofu runs, so
+	// a test sees each job that crosses to it.
+	WrapExecutor func(runner.Executor) runner.Executor
 	// DevToken is the one token a Config.Dev server accepts, and DevUser
 	// the name of the user it stands for.
 	DevToken, DevUser string
@@ -81,7 +86,6 @@ type Server struct {
 	store       *control.Store
 	verifier    Verifier
 	people      []*oidc.Provider
-	tofuRunner  TofuRunner
 	version     string
 	log         *slog.Logger
 	now         func() time.Time
@@ -102,6 +106,9 @@ type Server struct {
 	// mounts is where each handler mounted beside the API's routes
 	// serves, with the answer it fails with.
 	mounts []mounted
+	// exec runs each OpenTofu run as a job. It is nil when writ serve runs
+	// no OpenTofu.
+	exec runner.Executor
 	// broker serves each plan's role credentials to its providers. It is
 	// nil when no environment names a role.
 	broker *awsrole.Broker
@@ -110,9 +117,6 @@ type Server struct {
 	// each run's requests to it. Both are nil under egress_mode off.
 	stateOnly  http.Handler
 	runClients *limiter
-	// uids holds the free provider_uids. It is nil without them.
-	uids chan uint32
-	reap func(uid uint32) error
 	// forges are the config's forges with their clients, by name.
 	forges map[string]forgeClient
 	// hooks is what the webhook route keeps between deliveries.
@@ -152,9 +156,6 @@ type Server struct {
 	applyCommit func(commit func() error) error
 	settleEvery time.Duration
 	settleFor   time.Duration
-	// withheld counts the provider uids kept out of the pool because their
-	// processes did not end.
-	withheld int
 	// devCodes are the dev sign-in codes not spent yet, with when each
 	// expires.
 	devCodes map[string]time.Time
@@ -189,7 +190,7 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 	}
 	s := &Server{
 		dev: devIdentity{token: opts.DevToken, user: opts.DevUser},
-		cfg: cfg, store: opts.Store, verifier: opts.Verifier, people: opts.People, tofuRunner: opts.Tofu,
+		cfg: cfg, store: opts.Store, verifier: opts.Verifier, people: opts.People,
 		version: opts.Version, log: opts.Log, now: opts.Now, withTimeout: opts.WithTimeout,
 		limiter: newLimiter(cfg.Limits.RequestsPerSecond, maxBuckets, opts.Now),
 		clients: newLimiter(cfg.Limits.RequestsPerAddress, maxBuckets, opts.Now),
@@ -262,10 +263,10 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 	s.initEgress()
 	s.wg.Go(func() { s.poll(s.ctx) })
 	s.wg.Go(func() { s.sweepRuns(s.ctx) })
-	if s.tofuRunner != nil {
+	if s.exec != nil {
 		s.wg.Go(func() { s.refreshIndexes(s.ctx) })
 	}
-	if s.tofuRunner != nil && s.cfg.DriftEvery > 0 {
+	if s.exec != nil && s.cfg.DriftEvery > 0 {
 		s.wg.Go(func() { s.checkDrift(s.ctx) })
 	}
 	return s, nil
