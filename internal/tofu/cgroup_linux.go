@@ -196,10 +196,12 @@ func runsLimit(own, file string, keep int64, what, unit string) (int64, error) {
 
 // checkCgroups reports, for writ serve --check, what cgroupBase would set
 // up, or why it can't: cgroupBase's checks, and then, in a cgroup of the
-// probe's own beside where runsCgroup would be, which it removes, what
-// cgroupBase does only with apply: it checks cgroup.kill, writes
-// cgroup.subtree_control, and starts a process as each step's first
-// process starts. The checks alone can pass where those then fail.
+// probe's own beside where runsCgroup would be, which it removes, some of
+// what cgroupBase does only with apply: it checks cgroup.kill and starts a
+// process as each step's first process starts. The checks alone can pass
+// where those then fail. It enables for the probe's children only what
+// own already enables for its own, which is nothing before writ serve
+// first starts, so it can't check that own may enable the controllers.
 func checkCgroups() (cgroupSetup, error) {
 	set, err := cgroupBase(false)
 	if err != nil {

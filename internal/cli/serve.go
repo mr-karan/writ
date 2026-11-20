@@ -306,13 +306,19 @@ func cgroupLimitsLine(l tofu.Limits, e tofu.Enforcement) string {
 // can need more processes or memory than e leaves every step together:
 // the limits of writ serve's cgroup less what writ serve keeps. Steps then
 // fail to start processes, or the kernel kills one, before any reaches
-// its own limit.
+// its own limit. It also says where nothing but the host bounds the
+// steps' memory together, as under the NixOS module, which sets no
+// MemoryMax.
 func sharedLimitWarnings(l tofu.Limits, slots int, e tofu.Enforcement) []string {
 	var out []string
 	if need := int64(l.Pids) * int64(slots); e.StepsPids > 0 && need > e.StepsPids {
 		out = append(out, fmt.Sprintf("limits.run_pids, %d, times %d plans and applies at once is %d, more than the %d processes and threads that writ's cgroup leaves every step together, its pids.max less what writ serve keeps; raise the unit's TasksMax, or lower limits.run_pids, plans, or applies", l.Pids, slots, need, e.StepsPids))
 	}
-	if need := l.Memory * int64(slots); e.StepsMemory > 0 && need > e.StepsMemory {
+	need := l.Memory * int64(slots)
+	if e.StepsMemory == 0 {
+		out = append(out, fmt.Sprintf("limits.run_memory, %s, times %d plans and applies at once is %s, and writ's cgroup sets no memory.max, so only the host's memory bounds every step together; set the unit's MemoryMax", sizeWords(l.Memory), slots, sizeWords(need)))
+	}
+	if e.StepsMemory > 0 && need > e.StepsMemory {
 		out = append(out, fmt.Sprintf("limits.run_memory, %s, times %d plans and applies at once is %s, more than the %s that writ's cgroup leaves every step together, its memory.max less what writ serve keeps; raise the unit's MemoryMax, or lower limits.run_memory, plans, or applies", sizeWords(l.Memory), slots, sizeWords(need), sizeWords(e.StepsMemory)))
 	}
 	return out

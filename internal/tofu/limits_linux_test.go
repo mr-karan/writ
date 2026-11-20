@@ -492,6 +492,69 @@ func TestRunLimitsNameTheSharedMemory(t *testing.T) {
 	requireLimit(t, r, "MemoryMax")
 }
 
+// TestRunLimitsLeaveNoStaleSharedLimits starts writ serve's cgroups where
+// an earlier start left runs with pids.max and memory.max that the unit no
+// longer sets, in a delegated scope whose unit sets neither. The steps
+// must not stay bound by limits of a unit that is gone. writ serve writes
+// none of them as max: a writ serve that starts again in its cgroup finds
+// the controllers off for its children, as a cgroup whose children have
+// them may hold no process, and the kernel gives runs fresh limits when
+// writ serve enables them again.
+func TestRunLimitsLeaveNoStaleSharedLimits(t *testing.T) {
+	if os.Getenv(limitsStageEnv) != "stale" {
+		inDelegatedScope(t, "TestRunLimitsLeaveNoStaleSharedLimits", []string{"TasksMax=infinity", "MemoryMax=infinity"}, limitsStageEnv+"=stale")
+		return
+	}
+	own, err := ownCgroup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// As a start before did: writ serve in its leaf, and runs with limits.
+	for _, d := range []string{serveCgroup, runsCgroup} {
+		if err := os.Mkdir(filepath.Join(own, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeCgroup(filepath.Join(own, serveCgroup), "cgroup.procs", "0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCgroup(own, "cgroup.subtree_control", "+memory +pids"); err != nil {
+		t.Fatal(err)
+	}
+	runs := filepath.Join(own, runsCgroup)
+	for file, n := range map[string]string{"pids.max": "50", "memory.max": "104857600"} {
+		if err := writeCgroup(runs, file, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeCgroup(own, "cgroup.subtree_control", "-memory -pids"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCgroup(own, "cgroup.procs", "0"); err != nil {
+		t.Fatal(err)
+	}
+	set, err := cgroupBase(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.memory != 0 {
+		t.Skipf("a cgroup above the scope sets memory.max, so the steps share %d bytes", set.memory)
+	}
+	for file, n := range map[string]int64{"pids.max": set.pids, "memory.max": set.memory} {
+		text, err := os.ReadFile(filepath.Join(runs, file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "max"
+		if n > 0 {
+			want = strconv.FormatInt(n, 10)
+		}
+		if got := strings.TrimSpace(string(text)); got != want {
+			t.Errorf("runs has %s %s, not %s", file, got, want)
+		}
+	}
+}
+
 // writ serve --check runs the checks that writ serve's start does: that
 // a cgroup has cgroup.kill, and whether the kernel holds a step to no
 // swap. A directory stands in for a kernel's cgroup that lacks the file.

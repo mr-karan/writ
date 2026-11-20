@@ -8,7 +8,9 @@ import (
 )
 
 // writ serve --check warns when the steps that may run at once, each at
-// its limits, can need more than writ serve's cgroup leaves them together.
+// its limits, can need more than writ serve's cgroup leaves them together,
+// or when nothing but the host bounds their memory together, as under the
+// NixOS module, which sets no MemoryMax.
 func TestSharedLimitWarnings(t *testing.T) {
 	l := tofu.Limits{Memory: 1 << 30, Pids: 64}
 	for _, c := range []struct {
@@ -17,9 +19,11 @@ func TestSharedLimitWarnings(t *testing.T) {
 		e     tofu.Enforcement
 		want  []string
 	}{
-		{"no bound on the steps together", 12, tofu.Enforcement{Cgroup: "/runs"}, nil},
+		{"no bound on the steps together", 12, tofu.Enforcement{Cgroup: "/runs"}, []string{
+			"limits.run_memory, 1GiB, times 12 plans and applies at once is 12GiB, and writ's cgroup sets no memory.max, so only the host's memory bounds every step together; set the unit's MemoryMax",
+		}},
 		{"room for every slot", 4, tofu.Enforcement{Cgroup: "/runs", StepsPids: 256, StepsMemory: 4 << 30}, nil},
-		{"too few processes", 4, tofu.Enforcement{Cgroup: "/runs", StepsPids: 72}, []string{
+		{"too few processes", 4, tofu.Enforcement{Cgroup: "/runs", StepsPids: 72, StepsMemory: 4 << 30}, []string{
 			"limits.run_pids, 64, times 4 plans and applies at once is 256, more than the 72 processes and threads that writ's cgroup leaves every step together, its pids.max less what writ serve keeps; raise the unit's TasksMax, or lower limits.run_pids, plans, or applies",
 		}},
 		{"too little memory", 4, tofu.Enforcement{Cgroup: "/runs", StepsPids: 256, StepsMemory: 3 << 30}, []string{
