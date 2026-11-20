@@ -780,9 +780,13 @@ func TestStepNamesThePidsLimitThatRefusedIt(t *testing.T) {
 func TestStepNamesTheMemoryLimitThatKilledIt(t *testing.T) {
 	for _, c := range []struct {
 		name, events, runsEvents, want string
+		shared                         bool
 	}{
-		{"its own limit", "oom 1\noom_kill 1\noom_group_kill 1\n", "oom 0\n", "limits.run_memory"},
-		{"runs' limit", "oom 0\noom_kill 1\noom_group_kill 1\n", "oom 1\n", "MemoryMax"},
+		{"its own limit", "oom 1\noom_kill 1\noom_group_kill 1\n", "oom 0\n", "limits.run_memory", false},
+		{"runs' limit", "oom 0\noom_kill 1\noom_group_kill 1\n", "oom 1\n", "MemoryMax", false},
+		// The host's OOM killer counts in the step's oom_kill, though
+		// neither the step's limit nor runs' was reached.
+		{"the host's memory", "oom 0\noom_kill 1\n", "oom 0\n", "the host ran out of memory", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			dir, runs := t.TempDir(), t.TempDir()
@@ -794,12 +798,15 @@ func TestStepNamesTheMemoryLimitThatKilledIt(t *testing.T) {
 			}
 			cg := &stepCgroup{dir: dir, limits: Limits{Memory: 1 << 30}, runs: cgroupSetup{base: runs, memory: 128 << 20}}
 			got, shared := cg.hit()
-			if !strings.Contains(got, c.want) || shared {
-				t.Fatalf("the step names %q, shared %v, not its own stop at %s", got, shared, c.want)
+			if !strings.Contains(got, c.want) || shared != c.shared {
+				t.Fatalf("the step names %q, shared %v, not %s, shared %v", got, shared, c.want, c.shared)
 			}
 			se := &StepError{Step: "plan", Code: -1, Limit: got, Shared: shared}
-			if !strings.HasPrefix(se.Error(), "tofu plan stopped at a limit: ") {
+			if !c.shared && !strings.HasPrefix(se.Error(), "tofu plan stopped at a limit: ") {
 				t.Fatalf("the step's error %q does not say the step stopped at the limit", se.Error())
+			}
+			if c.shared && !strings.Contains(se.Error(), "-1") {
+				t.Fatalf("the step's error %q drops its exit code", se.Error())
 			}
 		})
 	}

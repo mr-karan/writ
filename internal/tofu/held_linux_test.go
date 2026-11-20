@@ -311,7 +311,47 @@ func TestScratchStopsPastTheHeldFilesCap(t *testing.T) {
 		t.Cleanup(func() { unix.Close(fd) })
 	}
 	msg := scratchStandIn(t).overScratch(8<<30, cgroupStandIn(t, 1))
-	if want := strconv.Itoa(heldFilesMax) + " removed files"; !strings.Contains(msg, want) {
+	if want := "65,536 removed files"; !strings.Contains(msg, want) {
 		t.Fatalf("a step that holds %d removed files: %q, not one that names %s", heldFilesMax+1, msg, want)
+	}
+}
+
+// A shared anonymous mapping, which maps names /dev/zero, is memory, as a
+// memfd is, so it doesn't count against run_scratch however large: a
+// step that starts Postgres or a JVM tool maps one. A file whose path
+// only starts with /dev/zero still counts.
+func TestHeldFilesSkipSharedAnonymousMemory(t *testing.T) {
+	for _, c := range []struct {
+		line string
+		want int64
+	}{
+		{"7ffd30000000-7fff70000000 rw-s 00000000 00:01 677513                     /dev/zero (deleted)", 0},
+		{"7f0000000000-7f0000001000 rw-s 00000000 00:01 9                          /memfd:plan (deleted)", 0},
+		{"7f0000000000-7f0000100000 rw-s 00000000 08:01 12                         /dev/zero2 (deleted)", 1 << 20},
+	} {
+		h := newHeldFiles(1<<40, time.Now().Add(time.Minute))
+		if err := h.mapping([]byte(c.line)); err != nil {
+			t.Fatal(err)
+		}
+		if got := h.total(); got != c.want {
+			t.Fatalf("%q counted %d bytes, not %d", c.line, got, c.want)
+		}
+	}
+}
+
+// heldFilesMax counts removed files, not entries: a file a step holds both
+// open and mapped is one file, so heldFilesMax such files don't stop it.
+func TestHeldFilesCapCountsFilesOnce(t *testing.T) {
+	h := newHeldFiles(1<<40, time.Now().Add(time.Minute))
+	for ino := range uint64(heldFilesMax) {
+		if err := h.addOpen(1, ino, 0, []byte("/run/f")); err != nil {
+			t.Fatalf("open file %d: %v", ino, err)
+		}
+		if err := h.addMapped(1, ino, 0, []byte("/run/f")); err != nil {
+			t.Fatalf("mapped file %d: %v", ino, err)
+		}
+	}
+	if err := h.addOpen(1, heldFilesMax, 0, []byte("/run/f")); !errors.Is(err, errScratchFiles) {
+		t.Fatalf("file %d returned %v, not errScratchFiles", heldFilesMax+1, err)
 	}
 }

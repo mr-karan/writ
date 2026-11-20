@@ -453,14 +453,19 @@ func (c *stepCgroup) kill() error {
 // or runsCgroup's memory, when the kernel killed the step for it, or
 // runsCgroup's processes, when it refused a process. It reports whether
 // the limit may have refused another step, not this one: runsCgroup's
-// processes, which every step shares. A kill for runsCgroup's memory
-// that the step's memory.events counts is the step's own stop.
+// processes, which every step shares, or the host's memory, when the
+// kernel killed the step though neither the step's limit nor
+// runsCgroup's was reached. A kill for runsCgroup's memory that the
+// step's memory.events counts is the step's own stop.
 func (c *stepCgroup) hit() (string, bool) {
 	if ev, err := cgroupKeys(c.dir, "memory.events"); err == nil && (ev["oom_kill"] > 0 || ev["oom_group_kill"] > 0) {
-		if ev["oom"] == 0 && readRunsEvents(c.runs.base).oom > c.before.oom {
+		switch {
+		case ev["oom"] > 0:
+			return fmt.Sprintf("the run used all of limits.run_memory, %s, and the kernel killed it", formatSize(c.limits.Memory)), false
+		case readRunsEvents(c.runs.base).oom > c.before.oom:
 			return fmt.Sprintf("the steps running at once used all of the %s of memory that writ's cgroup leaves them together, and the kernel killed the run; raise the unit's MemoryMax, or lower limits.run_memory, plans, or applies", formatSize(c.runs.memory)), false
 		}
-		return fmt.Sprintf("the run used all of limits.run_memory, %s, and the kernel killed it", formatSize(c.limits.Memory)), false
+		return "the host ran out of memory, and the kernel killed the run; give the host more memory, set the unit's MemoryMax, or lower limits.run_memory, plans, or applies", true
 	}
 	if ev, err := cgroupKeys(c.dir, "pids.events"); err == nil && ev["max"] > 0 {
 		if c.ownPidsHit() {
@@ -628,10 +633,13 @@ func newHeldFiles(max int64, deadline time.Time) *heldFiles {
 }
 
 // inMemory reports whether path, as /proc names a removed file, is a
-// memfd or System V shared memory: memory, which run_memory bounds, as
-// is the sealed saved plan that writ gives a step.
+// memfd, System V shared memory, or a shared anonymous mapping, which
+// maps names /dev/zero: memory, which run_memory bounds, as is the sealed
+// saved plan that writ gives a step. /dev/zero is matched whole: the run
+// can't make a file of that path, since the view's root is read-only and
+// its /dev/zero is the host's device.
 func inMemory(path []byte) bool {
-	return bytes.HasPrefix(path, []byte("/memfd:")) || bytes.HasPrefix(path, []byte("/SYSV"))
+	return bytes.HasPrefix(path, []byte("/memfd:")) || bytes.HasPrefix(path, []byte("/SYSV")) || bytes.Equal(path, []byte("/dev/zero"))
 }
 
 // least is no more than what total returns: each file counts at least
@@ -669,7 +677,7 @@ func (h *heldFiles) check() error {
 	if h.least() > h.max {
 		return errScratchOver
 	}
-	if len(h.open)+len(h.mapped) > heldFilesMax {
+	if len(h.open) > heldFilesMax || len(h.mapped) > heldFilesMax {
 		return errScratchFiles
 	}
 	return nil

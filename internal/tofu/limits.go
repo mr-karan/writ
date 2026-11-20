@@ -201,8 +201,8 @@ var errScratchMaps = errors.New("the step's processes map too much to read")
 // run_scratch of 8GiB alone let a run hold some two million empty ones,
 // at some 116 bytes each to writ: a measure of them took more memory than
 // writ serve keeps for itself. No normal run holds this many removed
-// files, and writ keeps them in some 8MiB: a measure past it stops the
-// step, as one past the limit does.
+// files, and writ keeps them in some 16MiB, open and mapped each up to
+// it: a measure past it stops the step, as one past the limit does.
 const heldFilesMax = 65536
 
 // errScratchFiles is a measure that found more than heldFilesMax removed
@@ -223,7 +223,7 @@ func (sc *scratch) overScratch(max int64, cg *stepCgroup) string {
 	case errors.Is(err, errScratchMaps):
 		return fmt.Sprintf("the step's processes map more than writ reads of them, %s of /proc/PID/maps, to measure the removed files they hold for limits.run_scratch, so it stopped the step", formatSize(heldMapsMax))
 	case errors.Is(err, errScratchFiles):
-		return fmt.Sprintf("the step's processes hold more than %d removed files, past which writ does not count them for limits.run_scratch, so it stopped the step", heldFilesMax)
+		return fmt.Sprintf("the step's processes hold more than 65,536 removed files, past which writ does not count them for limits.run_scratch, so it stopped the step")
 	case errors.Is(err, errScratchDeep):
 		return fmt.Sprintf("the run's directory nests more than %d directories deep, past which writ does not measure it for limits.run_scratch, so it stopped the step", scratchDepth)
 	case err != nil:
