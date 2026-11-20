@@ -2,7 +2,7 @@
 
 You already run OpenTofu from GitLab CI, and you want to know what Writ would change. In plain CI, your jobs run `tofu` themselves. With Writ, they ask `writ serve` to plan and apply. Here's what Writ adds, what it costs you, and when plain CI is the better choice.
 
-Here, "plain GitLab CI" means a merge request job that runs `tofu plan` and a job on the default branch that runs `tofu apply`, often through [GitLab's OpenTofu component][component], with state in [GitLab-managed state][state] and AWS credentials from [the job's OIDC token][aws]. Every fact about GitLab on this page comes from those pages and from [deployment approvals][approvals], read on 2026-11-16. No GitLab pipeline has run Writ's jobs yet, as [Status](status.md) says.
+Here, "plain GitLab CI" means a merge request job that runs `tofu plan` and a job on the default branch that runs `tofu apply`, often through [GitLab's OpenTofu component][component], with state in [GitLab-managed state][state] and AWS credentials from [the job's OIDC token][aws]. Every fact about GitLab on this page comes from those pages and from [deployment approvals][approvals], read on 2026-11-16. See [Supported platforms and limits](status.md) for how Writ's GitLab CI component is tested.
 
 ## What's different
 
@@ -29,13 +29,17 @@ In plain CI, your job runs OpenTofu and holds what OpenTofu needs: the cloud cre
 - **Nothing more to run.** Plain CI needs runners and GitLab. Writ also needs a host for `writ serve`, Postgres, a range of `provider_uids`, and a backup of each state key.
 - **Use on a real GitLab.** The OpenTofu component runs in real pipelines. Writ's GitLab CI component has run only against a stand-in of GitLab.
 - **Notes on the merge request.** The component can post the plan as a comment with `post_mr_plan_comment` [component]. Writ doesn't post anything to GitLab yet.
-- **Maturity.** Writ is at version 0, on one node.
+- **Single-node deployment.** A team's `writ serve` runs as one node on Linux.
 - **Any cloud's credentials, the same way.** Writ's roles are AWS roles only. A provider for another cloud gets its credentials from files on the server.
 
 ## Which should you choose?
 
-- Choose plain CI when the people who can merge are the people who can change the infrastructure, and you accept the risk of the job holding credentials.
-- Choose Writ when a merge request mustn't hold cloud credentials, when an approval must be for the exact plan that applies, or when a change's author must never be its only reviewer. Read [What Writ is not, yet](../README.md#status) first.
+- **Choose Writ when:**
+  - Merge requests and CI runners must never hold cloud credentials or state encryption keys.
+  - Every apply must execute the exact sealed plan that was reviewed and approved, and authors must never approve their own plans.
+  - You want mandatory OPA/Rego policies, secret masking, scheduled drift checks, and synchronous audit logging enforced on the server. See [Supported platforms and limits](status.md).
+- **Choose plain CI when:**
+  - The people who can merge are the people who can change the infrastructure directly, and you accept the CI job holding credentials and state access.
 
 ## Next steps
 

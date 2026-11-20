@@ -294,7 +294,7 @@ function cut(text: string, from: string, to: string, drop: RegExp): string {
 // The landing page links where the README does.
 const landingPage: Page = { slug: 'landing', title: '', description: '', parts: [] };
 const landing = {
-  limits: (await listAt('README.md', '- **Version 0.**')).map((item) => leadAndFirst(rewriteLinks(landingPage, item, 'README.md'))),
+  limits: (await listAt('README.md', '- **OpenTofu only.**')).map((item) => leadAndFirst(rewriteLinks(landingPage, item, 'README.md'))),
   build: await fenceWith('docs/quick-start.md', 'curl -fsSL '),
   run: cut(
     await fenceWith('docs/quick-start.md', '$ writ plan --remote'),
@@ -307,6 +307,8 @@ const landing = {
   approved: await fenceWith('docs/quick-start.md', 'Approved plan '),
   apply: await fenceWith('docs/quick-start.md', 'OpenTofu apply of app@prod'),
   policyDeny: cut(await fenceWith('docs/policy.md', 'Policy: denied'), 'Policy: denied', '  deny:', /(?!)/),
+  policyFullPlan: await fenceWith('docs/policy.md', 'Policy: denied'),
+  policyRego: await fenceWith('docs/write-a-policy.md', 'deny_rsa contains msg if {'),
   mcpAdd: await fenceWith('docs/agents.md', '$ claude mcp add'),
   audit: cut(await fenceWith('docs/api.md', '$ writ audit --remote'), '$ writ audit --remote', '2026-11-19T15:54:09Z  -           -', /(?!)/),
   serverConfig: [

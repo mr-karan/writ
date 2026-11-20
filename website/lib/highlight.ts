@@ -31,6 +31,25 @@ export const sessionLanguage: LanguageRegistration = {
   ],
 };
 
+// Rego policy rules: keywords, comments, strings, numbers, and built-in calls.
+export const regoLanguage: LanguageRegistration = {
+  name: 'rego',
+  scopeName: 'source.rego',
+  repository: {},
+  patterns: [
+    { name: 'comment.line.number-sign.rego', match: '#.*$' },
+    { name: 'string.quoted.double.rego', match: '"(?:\\\\.|[^"\\\\])*"' },
+    { name: 'string.quoted.raw.rego', match: '`[^`]*`' },
+    {
+      name: 'keyword.control.rego',
+      match: '\\b(package|import|if|contains|some|in|not|with|as|else|every|default)\\b',
+    },
+    { name: 'constant.language.rego', match: '\\b(true|false|null)\\b' },
+    { name: 'constant.numeric.rego', match: '\\b\\d+(\\.\\d+)?\\b' },
+    { name: 'support.function.rego', match: '\\b[a-z_][a-z0-9_.]*(?=\\()' },
+  ],
+};
+
 const tokenColors: ThemeRegistration['tokenColors'] = [
   { scope: ['comment', 'punctuation.prompt'], settings: { foreground: 'var(--syn-comment)' } },
   { scope: ['keyword', 'storage'], settings: { foreground: 'var(--syn-keyword)' } },

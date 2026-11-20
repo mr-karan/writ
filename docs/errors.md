@@ -46,7 +46,7 @@ Output of real runs, 2026-11-16.
 | [`state`](#state) | The plan no longer fits the state, or the key is closed. | 1 | 409, 404 |
 | [`saved-plan`](#saved-plan) | The plan's sources don't allow this apply. | 1 | 409 |
 | [`state-io`](#state-io) | The control database failed, or an answer was lost. The same command may pass later. | 1 | 503, 502 |
-| [`provider`](#provider) | A provider, a lock file, or the Git host failed. | 1 | 502 |
+| [`provider`](#provider) | A provider, a lock file, or the Git host failed. | 1 | 502, 409 |
 | [`internal`](#internal) | The command couldn't run for another reason, such as a file it couldn't read or a bug. | 1 | 500 |
 | [`syntax`](#syntax) | The config of `writ serve` doesn't parse. | 1 | none |
 
@@ -188,7 +188,7 @@ What to do: run the command again later. After a lost apply, first ask whether a
 A provider, a stack's lock file, or the Git host failed.
 
 - Exit code: 1.
-- HTTP status: 502 when the Git host failed.
+- HTTP status: 502 when the Git host failed; 409 when `POST /v1/state/adopt` could not read the stack's state on S3.
 
 Common causes:
 

@@ -1,6 +1,6 @@
 # Policy input and built-ins
 
-A policy reads one input, the masked plan document, and can call a fixed list of Rego built-ins. Everything it does runs in a bounded child process. [Policy](policy.md) explains when policies run, and [Write and test a policy](write-a-policy.md) shows how to write one.
+A policy reads one input, the masked plan document, and can call a fixed list of Rego built-ins. Everything it does runs in a bounded child process. [Policy](policy.md) explains when policies run, [Write and test a policy](write-a-policy.md) shows how to write one, and the [Policy cookbook](policy-cookbook.md) collects ready-to-use rules and tests.
 
 ## Input
 

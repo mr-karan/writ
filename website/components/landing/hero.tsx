@@ -36,7 +36,7 @@ export function Hero() {
                 {i === hero.facts.length - 1 && (
                   <>
                     {' '}
-                    <a href={hero.notYet.href}>{hero.notYet.text}</a>
+                    <Link href={hero.more.href}>{hero.more.text}</Link>
                   </>
                 )}
               </dd>

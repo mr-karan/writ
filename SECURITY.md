@@ -18,7 +18,7 @@ We reply in the advisory and work out the fix with you there. The published advi
 
 ## Supported versions
 
-Writ is at version 0. Fixes go to `main` and into the next release. Older releases get no fixes.
+Security fixes land on `main` and ship in the next release. Older releases do not receive backported fixes.
 
 ## In scope
 

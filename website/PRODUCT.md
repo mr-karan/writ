@@ -41,9 +41,9 @@ Limits the site must keep stating:
 - The apply role is used only for an approved plan, or for one overridden by someone with the override grant, with a recorded reason.
 - The plan role is whatever the operator configures. They make it read-only.
 - The audit log records every request except `GET /healthz`, `GET /v1/server`, and rate-limited requests.
-- Version 0. OpenTofu 1.13.9 only, and no Terraform.
-- GitLab is the only Git host. The roles are AWS roles. One node, on Linux. No notifications.
-- No test has reached a real cloud account. The macOS binaries haven't run on a Mac.
+- OpenTofu 1.13.9 only, and no Terraform.
+- GitLab is the only remote Git host. The built-in STS roles are AWS IAM roles. One node, on Linux. No notifications.
+- End-to-end suites run against local stand-ins in isolated namespaces rather than live cloud accounts. The macOS binaries are cross-built on Linux.
 
 `docs/status.md` is the full list. A claim on the site is true at the commit it ships from, and the site adds no claim the code can't back.
 

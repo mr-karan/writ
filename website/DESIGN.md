@@ -207,7 +207,7 @@ Four families of six levels each, `--vx-i1` to `--vx-o6` in `app/global.css`: in
 
 **The One Ground Rule.** Every section sits on `bg`. Sections are separated by a rule and space, never by a band of another color.
 
-**The Caret Rule.** The ochre caret means "here is a limit". It marks every limit sentence and every item of "What Writ isn't, yet", and nothing else.
+**The Caret Rule.** The ochre caret means "here is a limit". It marks every limit sentence and every item of "Current scope and limits", and nothing else.
 
 **The Ochre Rule.** In a picture, ochre is only on or from the keep. A hut, a plan on the road, and the planned land have none.
 
@@ -267,12 +267,14 @@ The landing page's sections:
 
 | Section | What it shows |
 | --- | --- |
-| Hero | The headline, the lede, and clear CTAs (Quick start, GitHub, Docs) at the top left. The picture of the keep runs full width under them, and on a wide page the keep rises to the right of the text. Four facts close the hero under it (license, deployment, price, status with a link to the limits). Under 980 px the picture moves under the text and shows the keep. |
+| Hero | The headline, the lede, and clear CTAs (Quick start, GitHub, Docs) at the top left. The picture of the keep runs full width under them, and on a wide page the keep rises to the right of the text. Four facts close the hero under it (license, deployment, price, engine with a link to supported platforms). Under 980 px the picture moves under the text and shows the keep. |
 | What Writ is | A strip of sea: two huts on the left, the keep in the middle, the cloud on the right, with ochre cubes going from the tower to the cloud. Under it the three parties in three columns, in the same order. Then a 2x2 grid covering the four problems when CI runs OpenTofu directly (CI holding credentials, applies differing from reviewed plans, no audit log, unnoticed drift). |
 | How a change gets applied | A six-stage pipeline rail (MR, Plan in Writ, Review & approve, Merge, Apply, Audit) above the three-station Plan/Approve/Apply flow with real output from `TestTofuApproveApply` beside it, and the refusal of a stale plan as a limit. |
+| Eleven layers of defense | Eleven code-verified security layers in a two-column rule grid, followed by the host-network egress limit and a link to `/docs/security-model`. |
+| Your rules, as code | A 5/7 split explaining `deny` vs `warn` at plan and apply time alongside real Rego from `examples/policy/tls.rego` and the real `writ plan --remote` refusal output from `docs/policy.md`. |
 | The control UI | Five screenshots of the redesigned control UI behind pure-CSS text tabs: Overview, Plan review, Resources (categorized state index), Drift, and Runs. |
 | Built to keep keys, secrets, and policy under control | Six rows, each a claim, its limit, and a docs link beside its evidence: who holds which credential, a build-time highlighted HCL server config snippet, a secret shown as `(sensitive)`, a drift table, real `writ audit --remote` output, and a Rego policy refusal. Four columns under them cover sandboxed runs and egress controls, exact sealed plans, `writ mcp`, and S3 state / `writ import bulk`. |
-| When to use Writ & Compare | First, an honest two-column guide contrasting when plain CI + OIDC is enough with when to reach for Writ. Then six rows against Spacelift and HCP Terraform, cut from `docs/compare.md`, followed by "What Writ isn't, yet" and "What you can check yourself". On a phone each comparison row stacks as a block. |
+| When Writ fits & Compare | First, a two-column guide leading with when Writ fits your team and contrasting when plain CI + OIDC fits. Then six rows against Spacelift and HCP Terraform, cut from `docs/compare.md`, followed by "Current scope and limits" and "What you can check yourself". On a phone each comparison row stacks as a block. |
 | Questions | Six questions. |
 | Try it locally | What you need, Quick start and GitHub buttons, the install commands with a copy button, and a real dev run transcript. |
 | Footer | The name, set large, with the keep's island seen from farther off, then the license line and the links. |

@@ -2,7 +2,22 @@
 
 Writ is designed around one rule: **cloud credentials and state encryption keys stay on the control plane server, never in CI pipelines or on developer laptops.**
 
-This page summarizes Writ's trust boundaries, defensive controls, and explicit limits so platform and security teams can review what Writ protects and what it does not.
+Because an OpenTofu plan on an unmerged branch executes provider and module code, Writ enforces twelve independent layers of defense across identity, secret handling, sandboxing, policy, and state integrity.
+
+## Twelve layers Writ enforces
+
+1. **No cloud credentials in CI.** CI jobs authenticate to Writ with single-use platform OIDC tokens (`WRIT_ID_TOKEN`); AWS role credentials and state encryption keys never leave `writ serve`.
+2. **Short-lived, narrowly scoped STS sessions per run.** Each run receives a dedicated STS session for the environment's `plan_role` or `apply_role` over loopback, tagged with the caller's `SourceIdentity` for CloudTrail attribution.
+3. **Dedicated provider UIDs and metadata firewall.** Every concurrent OpenTofu run executes under its own Linux UID from `provider_uids`, blocked by `nftables` from the instance metadata endpoints (`169.254.169.254` and `fd00:ec2::254`).
+4. **Linux user, mount, and PID namespaces.** Runs execute inside a `pivot_root` read-only `tmpfs` filesystem view with all capabilities cleared (`no_new_privs`) and server keys, database credentials, and shells unmounted.
+5. **Secrets masked from every output and stored record.** `internal/mask` strips sensitive values, secret-named attributes, and the STS credentials served to a run before any plan, diagnostic, log, or state index row is stored or shown.
+6. **Sealed, immutable saved plans.** Saved plans and `http`-backend states are encrypted per environment with AES-256-GCM; `writ apply --remote` applies the exact approved plan binary and refuses if state moved or the plan expired (`plan_ttl`, default `24h`).
+7. **Server-enforced grants, approvals, and OPA/Rego policy.** Teams, grants, approval rules, and mandatory Rego policy sets live in `writ serve`'s host config, where no merge request or CI YAML change can weaken them.
+8. **Authors cannot approve their own plans.** Self-approval is refused whenever an approval rule applies, matched by a person's stable `IDENTITY/user/ID` across CI OIDC jobs, CLI tokens, and browser sessions.
+9. **Synchronous audit log of every request.** Every API, UI, and state request commits an audit row with the caller's verified identity before `writ serve` sends a response, readable via `GET /v1/audit` and `writ audit --remote`.
+10. **Scheduled drift checks and out-of-band state detection.** `writ serve` runs scheduled drift checks and detects S3 state versions written outside Writ, blocking approvals until an administrator reviews and runs `writ state adopt`.
+11. **Per-address and per-principal rate limits and execution timeouts.** Token-bucket rate limits per client IP and per authenticated principal, bounded concurrent runs (`limits.plans` and `limits.applies`), and hard plan (`30m`) and apply (`4h`) deadlines protect the server.
+12. **Per-run network egress control.** With `egress_mode = "enforce"`, each run gets a network namespace with only loopback and reaches the network only through Writ's egress proxy, which allows the hosts the environment's `egress` list names, never connects to metadata, loopback, or link-local addresses, and refuses private addresses a wildcard would reach. Provider installs are confined the same way, to the registries `provider_registries` lists. See [Run isolation and egress](run-isolation.md#egress).
 
 ## Who holds what
 
@@ -44,7 +59,7 @@ See [Run isolation and egress](run-isolation.md) for setup and verification.
 ## Secret masking and encryption at rest
 
 - **One masking boundary**: `internal/mask` produces every document leaving a run (masked plan, run text, events, diagnostics, state index rows). `internal/archtest` forbids any package outside `internal/tofu` from reading raw state JSON except through `mask.Index`.
-- **Four masking rules**: OpenTofu sensitive marks, value sweep (including URL, JSON, hex, and base64 encodings), secret-like attribute names, and a strict output key allow-list.
+- **Four masking rules**: OpenTofu sensitive marks, value sweep (including URL, JSON, hex, and base64 encodings), secret-like attribute names, and a strict output key allow-list. The value sweep also includes the STS access key, secret key, and session token served to the run.
 - **Secret sets**: Each apply seals the secrets its mask knew alongside the state version or S3 serial so later plans and drift checks still mask old secrets (such as keys exposed via `nonsensitive()`). States without a secret set cannot be approved until explicitly [adopted](adopt-state.md).
 - **Per-environment sealing**: States on the `http` backend, saved plans, and secret sets are sealed with AES-256-GCM using HKDF-derived keys from each environment's 32-byte `key` file.
 
@@ -61,16 +76,24 @@ See [Secrets and the mask](secrets.md) for the differential verification suite (
 - Every API, control UI, and state backend request (except `GET /healthz`, `GET /v1/server`, and per-address rate-limited `429`s) commits an audit row before `writ serve` sends a response. If the database cannot commit the row within 5 seconds, the request fails with `503`.
 - `GET /v1/audit` filters rows by the caller's grants, omits client IP addresses and state SHA-256 hashes, and withholds refusal reasons (`reason_withheld: true`) so secrets accidentally pasted into a request cannot be read back through the audit API.
 
+## Rate limits and execution bounds
+
+- **Per-address rate limit**: `limits.requests_per_address` (default 20 requests/second per client IP, or `/64` for IPv6) counted before the route, token, or body is read.
+- **Per-principal rate limit**: `limits.requests_per_second` (default 10 requests/second) per authenticated person or CI job.
+- **Sign-in queue bounds**: At most 10 pending `writ login` sign-ins per client IP and 1,000 across the server, expiring after 10 minutes.
+- **Run concurrency and deadlines**: Bounded by `limits.plans_per_principal` (default 4), `limits.plans` (default 8), `limits.applies` (default 4), `limits.plan_timeout` (default `30m`), `limits.apply_start_timeout` (default `10m`), and `limits.apply_timeout` (default `4h`).
+
 ## Known limits and assumptions
 
-Review these boundaries before deploying Writ:
+Review these boundaries when deploying Writ:
 
 - **Host root and server operator are trusted**: Anyone with root on the `writ serve` host or read access to `env.*.key` and Postgres can decrypt states and assume configured AWS roles.
 - **Plan role permissions are your responsibility**: Writ assumes whatever `plan_role` you configure. Make sure its IAM policy is strictly read-only.
 - **S3 state isolation**: On `backend "s3"`, IAM role permissions (not Writ grants) prevent stacks in the same environment from referencing each other's S3 state keys.
 - **Network egress is off by default**: Under the default `egress_mode = "off"`, runs share the host's network, apart from the metadata firewall rule, so code a commit chose can reach anything the host reaches. Under `enforce`, an allowed host can still carry data out: `*.amazonaws.com` allows any S3 bucket, and the proxy decides by host and port, not by URL or content. `report` records but doesn't restrict. See [What egress doesn't cover](run-isolation.md#what-egress-doesnt-cover).
 - **Mask limits**: The mask is an output filter, not information-flow tracking. Unmarked secrets in unmarked attributes, hashed secrets passed to `nonsensitive()`, and multi-line base64 without sensitive marks are not caught. See [What the mask can't do](secrets.md#what-the-mask-cant-do).
-- **Version 0 maturity**: Writ has been tested extensively against real OpenTofu 1.13.9 and real providers using local stand-ins, but has not been proven against a live cloud account or real GitLab instance. See [Status and limits](status.md).
+
+See [Supported platforms and limits](status.md) for current platform requirements and scope.
 
 ## Next steps
 

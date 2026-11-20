@@ -2,7 +2,7 @@
 
 Back up your Writ control plane's database and state keys, configure retention, and upgrade `writ serve` safely across releases.
 
-Writ is at version 0, and a team's control plane runs as a single node. Plan a brief maintenance window when upgrading.
+Because a team's control plane runs as a single node, plan a brief maintenance window when upgrading.
 
 ## Prerequisites
 
@@ -115,4 +115,4 @@ Output of a real run, 2026-11-16 (a team server lists each configured issuer in 
 
 - [Operate the database](database.md): inspect the control database tables and migrations.
 - [Run a server](run.md): systemd, container, and NixOS service setup.
-- [Status and limits](status.md): version 0 compatibility expectations.
+- [Supported platforms and limits](status.md): supported platforms and current limits.

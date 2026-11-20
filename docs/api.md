@@ -1,11 +1,12 @@
 # API
 
-`writ serve` serves a REST API. The CLI, the control UI, and CI jobs all use it, so anything you can do there you can also do with `curl` and a token. Every response is a Writ document with `format`, `ok`, and `diagnostics`. A refusal is the route's own document with `ok: false` and one diagnostic. [JSON output](json-output.md#documents-of-writ-serve) lists the fields of each document.
+`writ serve` serves a REST API. The CLI, the control UI, and CI jobs all use it, so anything you can do there you can also do with `curl` and a token. Request bodies may be sent uncompressed or with `Content-Encoding: gzip` (bounded by `limits.body` after decompression). Every `/v1/` response is a Writ document with `format`, `ok`, and `diagnostics`. A refusal is the route's own document with `ok: false` and one diagnostic (except pre-handler refusals on `/v1/policy`, which use `writ.error/v0`). [JSON output](json-output.md#documents-of-writ-serve) lists the fields of each document.
 
 ## Routes
 
 | Method and path | Grant | Response |
 | --- | --- | --- |
+| `GET /` | none | `303` redirect to `/ui/` when the control UI is on, or `writ.server/v0` when it is off |
 | `GET /v1/server` | none | `writ.server/v0`: the version, the URL, whether it is `writ serve --dev`, the issuers, and which people issuers offer the device flow |
 | `GET /healthz` | none | `writ.health/v0`: the database, each issuer's last key set and clock offset, 503 when the database or an issuer fails. |
 | `POST /v1/auth/device` | none | `writ.device/v0`: starts a [`writ login`](sign-in.md#sign-in-with-the-device-flow) sign-in with the device flow. The body can set an `issuer`. 429 past [the sign-ins that can wait](sign-in.md#sign-ins-that-wait). |
@@ -34,6 +35,8 @@
 | `GET /v1/applies?env=&stack=&limit=` | `read` | `writ.remote-runs/v0`: the runs `writ serve` started, newest first, with each one's stack, plan, status, and times, only those of stacks the token can read. `more` says older runs were left out. Each run carries its plan's source digest in `sources`. |
 | `POST /v1/apply-requests/{key}/outcome` | a token, and for a `started` key, the run's principal or `admin` | `writ.apply-outcome/v0`: `started` with the run, or `none`. A key with no row gets a `none` row. See [When an answer is lost](apply.md#when-an-answer-is-lost). |
 | `GET /v1/audit?plan=&run=&env=&stack=&person=&op=&since=&until=&limit=&cursor=` | any token | `writ.audit/v0`: a page of the audit log, newest first, only the rows the token may see. See [Read the audit log](#read-the-audit-log). |
+| `GET`, `POST`, `LOCK`, `UNLOCK /v1/tfstate/{stack}` (and `/v1/tfstate/{stack}/lock`) | a run's state token | OpenTofu `http` state backend protocol, reachable only by a running plan or apply's single-run token (`plan` tokens may only `GET`; `apply` tokens may `GET`, `POST`, `LOCK`, and `UNLOCK`). |
+| `GET`, `POST /ui/...` | browser session cookie | HTML pages and actions of the [control UI](sign-in.md#the-control-ui) (`/ui/`, `/ui/plans`, `/ui/plans/{id}`, `/ui/runs/{id}`, `/ui/stacks/{env}/{stack...}`, `/ui/login`, `/ui/callback`, `/ui/logout`, `/ui/dev-login`). |
 
 ### Error classes
 
@@ -45,7 +48,7 @@
 | `saved-plan` | 409 | No approved plan matches the sources, or the plan's branch moved to other sources |
 | `usage` | 400, 404, 405, 409, 413, 429 | A malformed request, an unknown id, a body over the limit, too many requests, or a request the config doesn't allow, such as adding a repository to a config that pins them |
 | `policy` | 403 | A [policy](policy.md) refused the apply |
-| `provider` | 502 | The Git host couldn't be read |
+| `provider` | 409, 502 | The Git host couldn't be read (502), or `POST /v1/state/adopt` couldn't read the stack's state on S3 (409) |
 | `state-io` | 502, 503 | The control database failed, or it didn't write the request's audit row within 5 seconds, or an identity provider didn't start a sign-in (502). A 503 of `POST /v1/runs` and of the outcome route has `outcome`: `none` when the request started no run, `unknown` when `writ serve` can't tell. |
 | `internal` | 500 | A bug |
 

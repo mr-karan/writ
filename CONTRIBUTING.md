@@ -5,7 +5,7 @@ Thank you for looking at Writ. This page says how to build it, how to test a cha
 ## Before you start
 
 - For a bug, open an issue with the steps that show it. A small fix can come straight as a pull request.
-- For a new feature or a change of behavior, open an issue first, so we can agree on the shape before you write code. [Status and limits](docs/status.md) and its [Not built yet](docs/status.md#not-built-yet) section list what is known to be missing.
+- For a new feature or a change of behavior, open an issue first, so we can agree on the shape before you write code. [Supported platforms and limits](docs/status.md) and its [Not built yet](docs/status.md#not-built-yet) section list what is known to be missing.
 - For a security problem, do not open an issue. Follow [SECURITY.md](SECURITY.md).
 
 ## Set up
