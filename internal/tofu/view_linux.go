@@ -420,19 +420,22 @@ func receiveListeners(f *os.File, ports []int) ([]net.Listener, error) {
 }
 
 // viewAttr starts the helper in its own process group and namespaces, and
-// with netns in a network namespace of its own too. Its
-// user namespace maps uid and gid 0 to writ's own, so the helper keeps the
-// namespace's capabilities through its exec and may make the view, and the
-// run's ids to themselves, so it may become the run's user. Mapping ids
-// not one's own needs CAP_SETUID and CAP_SETGID, which writ serve holds
-// when it has provider uids. Without a run's user, setgroups stays denied,
-// as a user namespace an unprivileged writ makes requires. The helper sets
-// the parent-death signal itself: Go's check of it after a fork reads the
-// parent's pid, which a new pid namespace hides.
+// with netns in a network namespace of its own too. Its user namespace
+// maps uid and gid 0 to writ's own, so the helper keeps the namespace's
+// capabilities through its exec and may make the view, and the run's ids
+// to themselves, so it may become the run's user. Mapping ids not one's
+// own needs CAP_SETUID and CAP_SETGID, which writ serve holds when it has
+// provider uids. Without a run's user, setgroups stays denied, as a user
+// namespace an unprivileged writ makes requires. Its IPC namespace ends
+// with the step and takes the run's System V shared memory with it: in
+// writ's, a segment outlived its step, charged to a removed cgroup that
+// still counted against runs, and a later run could attach to it by its
+// key. The helper sets the parent-death signal itself: Go's check of it
+// after a fork reads the parent's pid, which a new pid namespace hides.
 func viewAttr(u *User, netns bool) *syscall.SysProcAttr {
 	a := &syscall.SysProcAttr{
 		Setpgid:     true,
-		Cloneflags:  syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS | syscall.CLONE_NEWPID,
+		Cloneflags:  syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS | syscall.CLONE_NEWPID | syscall.CLONE_NEWIPC,
 		UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Geteuid(), Size: 1}},
 		GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getegid(), Size: 1}},
 	}

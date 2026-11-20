@@ -177,9 +177,9 @@ in
         Delegate = isolated;
         ProtectControlGroups = !isolated;
         RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
-        # The user, mount, and pid namespaces of each tofu process's
+        # The user, mount, pid, and IPC namespaces of each tofu process's
         # private filesystem view.
-        RestrictNamespaces = "user mnt pid";
+        RestrictNamespaces = "user mnt pid ipc";
         LockPersonality = true;
         ReadWritePaths = [ "/var/lib/writ" ] ++ lib.optionals isolated [ "/var/lib/writ-tofu" ];
         UMask = "0077";

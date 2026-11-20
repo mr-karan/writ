@@ -280,6 +280,29 @@ func fakeTofuMain(behaviour string, args []string) int {
 				err = f.Close()
 			}
 		}
+	case "sysv-shm":
+		// A System V shared memory segment of sysvShmKey: write makes it
+		// and leaves sysvShmMark in it, and read prints what a segment of
+		// that key holds, if there is one.
+		flags := 0
+		if cmd == "write" {
+			flags = unix.IPC_CREAT | 0o600
+		}
+		var id int
+		if id, err = unix.SysvShmGet(sysvShmKey, 1<<20, flags); err == nil {
+			var mem []byte
+			if mem, err = unix.SysvShmAttach(id, 0, 0); err == nil {
+				if cmd == "write" {
+					copy(mem, sysvShmMark)
+				}
+				fmt.Printf("segment holds %q\n", bytes.TrimRight(mem[:64], "\x00"))
+				err = unix.SysvShmDetach(mem)
+			}
+		}
+		if cmd == "read" && errors.Is(err, unix.ENOENT) {
+			fmt.Println("no segment")
+			err = nil
+		}
 	case "fifo-plan":
 		switch cmd {
 		case "plan":
@@ -793,4 +816,61 @@ func TestProcIsReadOnly(t *testing.T) {
 	if len(mounts) != 1 || !slices.Contains(strings.Split(mounts[0][1], ","), "ro") {
 		t.Errorf("the run's /proc mounts are %q, want one, read-only", mounts)
 	}
+}
+
+// The System V segment that the fake sysv-shm makes, and what it writes
+// in it.
+const (
+	sysvShmKey  = 0x77726974
+	sysvShmMark = "left by an earlier run"
+)
+
+// A step's System V shared memory dies with the step. Each step has an IPC
+// namespace of its own, so a later run can't attach to a segment an
+// earlier one made by its key, and no segment outlives the step on the
+// host, charged to a step's cgroup that is gone but still counts against
+// runs.
+func TestSysVMemoryDiesWithTheStep(t *testing.T) {
+	t.Cleanup(func() {
+		for _, id := range hostShm(t, sysvShmKey) {
+			_, _ = unix.SysvShmCtl(id, unix.IPC_RMID, nil)
+		}
+	})
+	bin := fakeTofu(t, "sysv-shm")
+	out, stderr, err := command{binary: bin, args: []string{"write"}, max: 1 << 20}.run(context.Background())
+	if err != nil || !strings.Contains(string(out), sysvShmMark) {
+		t.Fatalf("the first run made no segment: %v %s%s", err, out, stderr)
+	}
+	out, stderr, err = command{binary: bin, args: []string{"read"}, max: 1 << 20}.run(context.Background())
+	if err != nil {
+		t.Fatalf("the second run: %v %s%s", err, out, stderr)
+	}
+	if string(out) != "no segment\n" {
+		t.Errorf("a later run found the segment an earlier run made: %s", out)
+	}
+	if ids := hostShm(t, sysvShmKey); len(ids) > 0 {
+		t.Errorf("the host holds the segments %v of key %#x after the runs ended", ids, sysvShmKey)
+	}
+}
+
+// hostShm returns the ids of the System V shared memory segments of key in
+// this process's IPC namespace.
+func hostShm(t *testing.T, key int) []int {
+	t.Helper()
+	text, err := os.ReadFile("/proc/sysvipc/shm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []int
+	for line := range strings.Lines(string(text)) {
+		// key shmid perms size ...
+		if f := strings.Fields(line); len(f) > 1 && f[0] == strconv.Itoa(key) {
+			id, err := strconv.Atoi(f[1])
+			if err != nil {
+				t.Fatalf("/proc/sysvipc/shm lists %q", line)
+			}
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
