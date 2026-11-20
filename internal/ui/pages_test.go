@@ -57,6 +57,7 @@ func TestNoScriptWalk(t *testing.T) {
 		{"/ui/plans/" + id + "?risk=replace", "1 of 2 changes match"},
 		{"/ui/approvals", "Plans by others 1"},
 		{"/ui/access", "acme/platform"},
+		{"/ui/audit", "Audit log"},
 		{"/ui/whoami", bobPerson},
 		{"/ui/settings", "authorization code flow with PKCE"},
 		{"/ui/start", "Getting started"},

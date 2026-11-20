@@ -95,8 +95,8 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	case len(f.Person) > 256:
 		bad("person is over 256 bytes")
 		return
-	case f.Op != "" && !slices.Contains(auditOps(), f.Op):
-		bad("op must be one of " + strings.Join(auditOps(), ", "))
+	case f.Op != "" && !slices.Contains(AuditOps, f.Op):
+		bad("op must be one of " + strings.Join(AuditOps, ", "))
 		return
 	}
 	if f.Env != "" {
@@ -228,10 +228,12 @@ func (s *Server) auditVisible(teams []string, every bool, e control.Entry) bool 
 	return s.cfg.Policy.Decide(teams, authz.Read, e.Stacks, e.Env, nil).Allowed
 }
 
-// auditOps are the operations an audit row can record: those of the
+// AuditOps are the operations an audit row can record: those of the
 // grants, and those of the state backend's rows, which internal/tfstate
 // writes. GET /v1/audit takes only these, so no op filter reads the whole
 // log for a value no row holds.
+var AuditOps = auditOps()
+
 func auditOps() []string {
 	var ops []string
 	for _, op := range authz.Ops {

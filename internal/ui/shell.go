@@ -88,6 +88,7 @@ var nones = map[string]string{
 	"no-team":       "None. No team's rule matches your claims, so you may read nothing.",
 	"no-grant":      "No grant names one of your teams.",
 	"no-plan-yet":   "No plan yet.",
+	"no-audit":      "No audit entry matches.",
 }
 
 // none is the sentence of nones under key when each figure of on is known

@@ -176,8 +176,8 @@ func TestStatusStamps(t *testing.T) {
 	tones := map[string]string{
 		"planning": "run", "applying": "run",
 		"pending": "wait", "drifted": "wait", "warned": "wait",
-		"approved": "ok", "applied": "ok", "clean": "ok", "ok": "ok", "passed": "ok",
-		"refused": "bad", "failed": "bad", "failing": "bad", "denied": "bad",
+		"approved": "ok", "applied": "ok", "clean": "ok", "ok": "ok", "passed": "ok", "allowed": "ok",
+		"refused": "bad", "failed": "bad", "failing": "bad", "denied": "bad", "auth-failed": "bad", "error": "bad",
 		"expired": "void", "superseded": "void",
 		"unheard-of": "",
 	}

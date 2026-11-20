@@ -11,8 +11,8 @@ import (
 var tones = map[string]string{
 	server.PlanPlanning: "run", server.PlanApplying: "run",
 	server.PlanPending: "wait", server.DriftDrifted: "wait", "warned": "wait",
-	server.PlanApproved: "ok", server.PlanApplied: "ok", server.DriftClean: "ok", "ok": "ok", "passed": "ok",
-	server.PlanRefused: "bad", server.PlanFailed: "bad", "failing": "bad", "denied": "bad",
+	server.PlanApproved: "ok", server.PlanApplied: "ok", server.DriftClean: "ok", "ok": "ok", "passed": "ok", "allowed": "ok",
+	server.PlanRefused: "bad", server.PlanFailed: "bad", "failing": "bad", "denied": "bad", "auth-failed": "bad", "error": "bad",
 	server.PlanSuperseded: "void", server.PlanExpired: "void",
 }
 

@@ -816,7 +816,7 @@ func TestTofuSensitiveValuesNeverRender(t *testing.T) {
 	for _, path := range []string{
 		"/ui/plans/" + p.Plan.ID + "?risk=replace", "/ui/plans/" + p3.Plan.ID,
 		"/ui/runs/" + run.Run.ID, "/ui/runs/" + failed.Run.ID, "/ui/runs", "/ui/runs?env=dev&stack=app", "/ui/plans?env=dev",
-		"/ui/stack?stack=app&env=dev", "/ui/stack?stack=app&env=dev&view=drift", "/ui/drift/" + driftRef, "/ui/approvals", "/ui/access", "/ui/whoami", "/ui/start", "/ui/repos", "/ui/repos/demo",
+		"/ui/stack?stack=app&env=dev", "/ui/stack?stack=app&env=dev&view=drift", "/ui/drift/" + driftRef, "/ui/approvals", "/ui/access", "/ui/audit", "/ui/whoami", "/ui/start", "/ui/repos", "/ui/repos/demo",
 		"/ui/repos/new", "/ui/settings",
 	} {
 		x.page(path)
@@ -838,7 +838,7 @@ func TestTofuSensitiveValuesNeverRender(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/ui/plans/" + p.Plan.ID + "?as=json", "/ui/runs/" + run.Run.ID + "?as=json", "/ui/runs/" + failed.Run.ID + "?as=json",
-		"/ui/plans/" + p3.Plan.ID + "?as=json", "/ui/plans/" + unsealed.Plan.Ref + "?as=json", "/ui/drift/" + driftRef + "?as=json", "/ui/stack?stack=app&env=dev&as=json", "/ui/?as=json", "/ui/no-such-page", "/",
+		"/ui/plans/" + p3.Plan.ID + "?as=json", "/ui/plans/" + unsealed.Plan.Ref + "?as=json", "/ui/drift/" + driftRef + "?as=json", "/ui/audit?as=json", "/ui/stack?stack=app&env=dev&as=json", "/ui/?as=json", "/ui/no-such-page", "/",
 		"/ui/login/start?issuer=sso", "/ui/callback?state=s&code=c",
 	} {
 		visit(t, x.c, "GET", x.base+path, nil)

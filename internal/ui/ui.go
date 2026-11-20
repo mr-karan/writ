@@ -132,6 +132,7 @@ func (u *UI) routes() []route {
 		{"GET /ui/drift/{id}", u.authed(u.driftCheck)},
 		{"GET /ui/approvals", u.authed(u.approvals)},
 		{"GET /ui/access", u.authed(u.access)},
+		{"GET /ui/audit", u.authed(u.audit)},
 		{"GET /ui/whoami", u.authed(u.whoami)},
 		{"GET /ui/start", u.authed(u.start)},
 		{"GET /ui/repos", u.authed(u.repos)},

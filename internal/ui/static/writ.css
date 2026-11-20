@@ -512,6 +512,15 @@ td.notes .chip { margin-bottom: 0.125rem; }
 .form { display: grid; grid-template-columns: 9rem minmax(0, 24rem); gap: var(--space-3) var(--space-4); align-items: center; padding: var(--inset); }
 .form .hint { grid-column: 2; margin-top: calc(-1 * var(--space-2)); color: var(--muted-foreground); font-size: var(--fs-1); }
 .form .actions { grid-column: 2; }
+.audit-active { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); padding: var(--space-2) var(--inset); border-bottom: 1px solid var(--border); background: var(--faint); font-size: var(--fs-1); color: var(--muted-foreground); }
+.audit-active code { color: var(--foreground); }
+.audit-filters { border-bottom: 1px solid var(--border); }
+.audit-filters > summary { min-height: 2.25rem; font-size: var(--fs-2); font-weight: 500; color: var(--muted-foreground); }
+.audit-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--inset); background: var(--faint); }
+.audit-form > div { display: grid; gap: var(--space-1); min-width: 0; }
+.audit-form label { font-size: var(--fs-1); color: var(--muted-foreground); }
+.audit-actions { align-self: end; }
+.audit-actions button { width: 100%; }
 .theme { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--inset); }
 .theme legend { float: left; padding: 0; font-size: var(--fs-2); color: var(--muted-foreground); width: 9rem; line-height: var(--ctl); }
 fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: contents; }
