@@ -235,9 +235,9 @@ type StepError struct {
 	// Limit, when set, is the limit of Options.Limits the step reached,
 	// which ended it.
 	Limit string
-	// Shared reports that Limit is one that every step shares, which may
-	// have refused another step, not this one: the error then keeps the
-	// exit code and Reason, which may say why this step failed.
+	// Shared reports that Limit is one that every step shares and that
+	// may have refused another step, not this one: the error then keeps
+	// the exit code and Reason, which may say why this step failed.
 	Shared bool
 }
 

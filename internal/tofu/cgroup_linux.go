@@ -449,14 +449,16 @@ func (c *stepCgroup) kill() error {
 	}
 }
 
-// hit is which limit the step reached, in writ's words, or "", and
-// whether it is a limit of runsCgroup, which every step shares: its own,
+// hit is which limit the step reached, in writ's words, or "": its own,
 // or runsCgroup's memory, when the kernel killed the step for it, or
-// runsCgroup's processes, when it refused the step one.
+// runsCgroup's processes, when it refused a process. It reports whether
+// the limit may have refused another step, not this one: runsCgroup's
+// processes, which every step shares. A kill for runsCgroup's memory
+// that the step's memory.events counts is the step's own stop.
 func (c *stepCgroup) hit() (string, bool) {
 	if ev, err := cgroupKeys(c.dir, "memory.events"); err == nil && (ev["oom_kill"] > 0 || ev["oom_group_kill"] > 0) {
 		if ev["oom"] == 0 && readRunsEvents(c.runs.base).oom > c.before.oom {
-			return fmt.Sprintf("the steps running at once used all of the %s of memory that writ's cgroup leaves them together, and the kernel killed the run; raise the unit's MemoryMax, or lower limits.run_memory, plans, or applies", formatSize(c.runs.memory)), true
+			return fmt.Sprintf("the steps running at once used all of the %s of memory that writ's cgroup leaves them together, and the kernel killed the run; raise the unit's MemoryMax, or lower limits.run_memory, plans, or applies", formatSize(c.runs.memory)), false
 		}
 		return fmt.Sprintf("the run used all of limits.run_memory, %s, and the kernel killed it", formatSize(c.limits.Memory)), false
 	}

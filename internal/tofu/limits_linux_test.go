@@ -772,3 +772,35 @@ func TestStepNamesThePidsLimitThatRefusedIt(t *testing.T) {
 		})
 	}
 }
+
+// A step the kernel killed for memory names the limit it killed it for,
+// as its own stop: the step's memory.events counts the kill, so no other
+// step is the one killed, even when the limit is runs', which every step
+// shares. Directories stand in for the step's cgroup and runs.
+func TestStepNamesTheMemoryLimitThatKilledIt(t *testing.T) {
+	for _, c := range []struct {
+		name, events, runsEvents, want string
+	}{
+		{"its own limit", "oom 1\noom_kill 1\noom_group_kill 1\n", "oom 0\n", "limits.run_memory"},
+		{"runs' limit", "oom 0\noom_kill 1\noom_group_kill 1\n", "oom 1\n", "MemoryMax"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir, runs := t.TempDir(), t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "memory.events"), []byte(c.events), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(runs, "memory.events"), []byte(c.runsEvents), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cg := &stepCgroup{dir: dir, limits: Limits{Memory: 1 << 30}, runs: cgroupSetup{base: runs, memory: 128 << 20}}
+			got, shared := cg.hit()
+			if !strings.Contains(got, c.want) || shared {
+				t.Fatalf("the step names %q, shared %v, not its own stop at %s", got, shared, c.want)
+			}
+			se := &StepError{Step: "plan", Code: -1, Limit: got, Shared: shared}
+			if !strings.HasPrefix(se.Error(), "tofu plan stopped at a limit: ") {
+				t.Fatalf("the step's error %q does not say the step stopped at the limit", se.Error())
+			}
+		})
+	}
+}
