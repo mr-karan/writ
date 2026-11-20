@@ -192,15 +192,16 @@ fuzz-oidc time="2m":
 # database, the API, and the control UI, with a plan role against an STS
 # stand-in, and the showcase behind the uishowcase tag, which must serve
 # every page it lists. Then prove provider isolation in user and network namespaces:
-# providers as other uids behind the metadata firewall rule, and the AWS
-# provider refreshing its credentials. Needs unshare with subordinate
-# uids. Postgres and nftables come from nixpkgs. The isolation test runs
-# without cgo, as writ ships, so no -race there. just e2e runs writ serve
-# end to end.
+# providers as other uids behind the metadata firewall rule, the AWS
+# provider refreshing its credentials, and plans as a run's uid from a
+# writ that is not root and holds only the capabilities its unit gives
+# it. Needs unshare with subordinate uids. Postgres and nftables come
+# from nixpkgs. The isolation tests run without cgo, as writ ships, so no
+# -race there. just e2e runs writ serve end to end.
 test-serve:
 	nix shell nixpkgs#postgresql_18 -c go test -race -count=1 -timeout 20m ./internal/control/... ./internal/tfstate/... ./internal/server/... ./internal/ui/... ./internal/awsrole/...
 	go test -race -count=1 -tags uishowcase -run '^TestShowcaseServes$' ./internal/ui
-	CGO_ENABLED=0 nix shell nixpkgs#nftables -c go test -count=1 -run 'TestProviderIsolation|TestAWSProviderRefreshesCredentials' ./internal/provider
+	CGO_ENABLED=0 nix shell nixpkgs#nftables -c go test -count=1 -run 'TestProviderIsolation|TestAWSProviderRefreshesCredentials|TestPlanAsRunUserWithoutRoot' ./internal/provider ./internal/tofu
 
 # Run the flake's OpenTofu, which must be 1.13.9, against the http state
 # backend of internal/tfstate: plan, apply, and plan again, a plan's token

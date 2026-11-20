@@ -36,6 +36,7 @@ Because OpenTofu plans execute code from unmerged branches, a team's `writ serve
 - **Metadata firewall**: An `nftables` rule drops traffic from `provider_uids` to `169.254.169.254` and `fd00:ec2::254`, preventing providers from stealing the control plane host's AWS identity. `writ serve --check` actively tests both file permissions and metadata blocking as a provider UID.
 - **Source hygiene**: Stack commits are verified against Git SHA-1 blob IDs. Symlinks, `.terraform` directories, `.tf.json`/`.tofu.json`, `file://` module sources, and dangerous `go-getter` query parameters are rejected before OpenTofu runs.
 - **Per-run credentials**: AWS credentials are served over loopback behind a per-run random token rather than copied from the host environment.
+- **Not dumpable**: With `provider_uids`, `writ serve` marks itself not dumpable at start, so no process of its own uid can trace it or read its memory, and it writes no core dump of its keys and secrets.
 
 See [Run isolation and egress](run-isolation.md) for setup and verification.
 

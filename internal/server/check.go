@@ -145,7 +145,11 @@ func CheckIsolation(ctx context.Context, cfg *Config, exe string) ([]Check, erro
 	cmd.Dir = "/"
 	var out, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &stderr
-	if err := cmd.Run(); err != nil {
+	err := runas.Start(cmd)
+	if err == nil {
+		err = cmd.Wait()
+	}
+	if err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
 			err = fmt.Errorf("%w: %s", err, msg)
 		}

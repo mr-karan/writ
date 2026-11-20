@@ -35,6 +35,8 @@ Set tight permissions on everything `writ serve` owns so no UID in `provider_uid
 - State key files (`keys/*.key`), TLS private key, OIDC client secret, GitLab read token, and `provider_env` secret files: mode `0600`, owned by `writ`.
 - Postgres: use Unix-socket peer authentication (as the NixOS module does) or a `0600` passfile so provider UIDs have no database access.
 
+With `provider_uids` set, `writ serve` marks itself not dumpable at start, so no process of the `writ` user can trace it or read its memory, and it writes no core dump that would hold its keys and secrets. See [How providers are kept from the keys](serve.md#how-providers-are-kept-from-the-keys).
+
 ### 2. Block the instance metadata service for `provider_uids`
 
 On cloud VMs (such as AWS EC2), `writ serve`'s host identity can assume roles for every environment. Add an `nftables` rule so processes running under `provider_uids` cannot reach the IPv4 or IPv6 metadata endpoints:

@@ -26,6 +26,10 @@ func (u User) Command(ctx context.Context, name string, args ...string) *exec.Cm
 	return cmd
 }
 
+// Start starts cmd. Only Linux shares writ's memory with a child that
+// switches users before it runs.
+func Start(cmd *exec.Cmd) error { return cmd.Start() }
+
 func AsUser(User, func() error) error { return ErrUnsupported }
 
 func CheckIsolated(int, User) error { return ErrUnsupported }

@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -64,10 +65,74 @@ func AsUser(u User, fn func() error) error {
 }
 
 // setFS sets this thread's filesystem uid and gid. setfsuid reports no
-// error, so fsIDs reads them back.
+// error, so fsIDs reads them back. A change of either makes the kernel
+// mark the whole process not dumpable, so it waits for StartMapped.
 func setFS(u User) {
+	dumpMu.Lock()
+	defer dumpMu.Unlock()
 	syscall.RawSyscall(syscall.SYS_SETFSGID, uintptr(u.GID), 0, 0)
 	syscall.RawSyscall(syscall.SYS_SETFSUID, uintptr(u.UID), 0, 0)
+}
+
+// dumpMu keeps setFS and Start from marking the process not dumpable
+// while StartMapped starts a process.
+var dumpMu sync.Mutex
+
+// StartMapped starts cmd, which makes a user namespace whose uid_map and
+// gid_map this process writes. The kernel lets a process other than root
+// open those files only while it is dumpable, and AsUser leaves it not
+// dumpable. So the process is dumpable while cmd starts and is put back
+// after, with no AsUser or Start in between. Not dumpable, a process lets
+// nothing of its uid without CAP_SYS_PTRACE trace it or read its memory.
+func StartMapped(cmd *exec.Cmd) (err error) {
+	dumpMu.Lock()
+	defer dumpMu.Unlock()
+	was, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_GET_DUMPABLE, 0, 0)
+	if e != 0 {
+		return fmt.Errorf("read whether writ is dumpable: %w", e)
+	}
+	if was == 1 {
+		return cmd.Start()
+	}
+	if _, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0); e != 0 {
+		return fmt.Errorf("make writ dumpable to write the new user namespace's id maps: %w", e)
+	}
+	// Deferred, so a panic in Start leaves writ not dumpable too. The
+	// kernel's 2, which fs.suid_dumpable may set, is not one prctl takes;
+	// 0 keeps everything 2 keeps from other users.
+	defer func() {
+		if _, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 0, 0); e != 0 {
+			if err == nil && cmd.Process != nil {
+				_ = cmd.Process.Kill()
+				_ = cmd.Wait()
+			}
+			err = errors.Join(err, fmt.Errorf("make writ not dumpable again: %w", e))
+		}
+	}()
+	return cmd.Start()
+}
+
+// Start starts cmd, whose SysProcAttr may switch the user it runs as.
+// Go starts a child outside a new user namespace with CLONE_VM, so the
+// child's change of ids marks writ itself not dumpable, as setFS does,
+// and it waits for StartMapped the same way.
+func Start(cmd *exec.Cmd) error {
+	dumpMu.Lock()
+	defer dumpMu.Unlock()
+	return cmd.Start()
+}
+
+// NotDumpable marks this process not dumpable: it writes no core dump,
+// and no process of its uid without CAP_SYS_PTRACE may trace it or read
+// its memory. StartMapped makes it dumpable only while it starts a
+// process.
+func NotDumpable() error {
+	dumpMu.Lock()
+	defer dumpMu.Unlock()
+	if _, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 0, 0); e != 0 {
+		return fmt.Errorf("make writ not dumpable: %w", e)
+	}
+	return nil
 }
 
 // fsIDs returns this thread's filesystem uid and gid. An invalid id

@@ -523,7 +523,7 @@ table inet writ {
 }
 ```
 
-For an OpenTofu stack, `tofu` and its providers run as the provider uid inside the [private filesystem view](#what-a-run-can-see), so they can't read a world-readable file of the host either. For the view, Writ needs user, mount, and pid namespaces, which an unprivileged user can create. Writ's `CAP_SETUID` and `CAP_SETGID` let it map the provider uid into the view's user namespace.
+For an OpenTofu stack, `tofu` and its providers run as the provider uid inside the [private filesystem view](#what-a-run-can-see), so they can't read a world-readable file of the host either. For the view, Writ needs user, mount, and pid namespaces, which an unprivileged user can create. Writ's `CAP_SETUID` and `CAP_SETGID` let it map the provider uid into the view's user namespace. A `writ serve` with `provider_uids` marks itself not dumpable at start, because it holds the state keys, the `provider_env` secrets, and each run's credentials: no process of writ's own uid can trace it or read its memory, and a crash writes no core dump, only the Go traceback on stderr. The kernel lets a `writ serve` that isn't root write the view's uid map only while writ is dumpable, so writ is dumpable only for the moment it starts a view, and not dumpable again right after. A provider or the `--check` probe that starts as a provider uid waits until that moment ends, since starting a process as another uid marks writ not dumpable too.
 
 If an environment in your config sets a role, or the config has a `tofu` block, you must set `provider_uids`. Your OpenTofu stack runs arbitrary code from the commit, such as a `local_file` data source that reads a path on the host, so a team's `writ serve` never runs tofu as its own user.
 
@@ -568,6 +568,8 @@ the provider saw: key "open /tmp/TestProviderIsolation3679868081/001/keys/prod.k
 ```
 
 Outside the provider, the test process reached both addresses, and with the rule moved to other uids the provider reached `169.254.169.254` too.
+
+A third test in `just test-serve` plans as provider uids from the same kind of `writ`, with its capabilities cleared at start as `writ serve` clears them. Each plan makes its scratch directory as the provider uid before tofu starts, and twenty plans run while other goroutines act as other uids on files.
 
 ## Next steps
 
