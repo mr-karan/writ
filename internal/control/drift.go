@@ -146,16 +146,24 @@ func (s *Store) BeginDrift(ctx context.Context, ref, env, stack string, at time.
 // apply was changing, so it is deleted instead, and FinishDrift reports
 // false: DriftDue finds the stack@env due again.
 func (s *Store) FinishDrift(ctx context.Context, c DriftCheck) (bool, error) {
+	stored, _, err := s.FinishDriftStatus(ctx, c)
+	return stored, err
+}
+
+// FinishDriftStatus is FinishDrift and also returns the status of the
+// stack@env's previous ended drift check, "" when none existed.
+func (s *Store) FinishDriftStatus(ctx context.Context, c DriftCheck) (bool, DriftStatus, error) {
 	switch c.Status {
 	case DriftClean, DriftDrifted, DriftFailed:
 	default:
-		return false, fmt.Errorf("a drift check cannot end %s", c.Status)
+		return false, "", fmt.Errorf("a drift check cannot end %s", c.Status)
 	}
 	changes, err := json.Marshal(orNone(c.Changes))
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	stored := false
+	var prevStatus DriftStatus
 	err = s.db.Write(ctx, func(tx *sqldb.Tx) error {
 		var env, stack string
 		var started int64
@@ -179,18 +187,17 @@ func (s *Store) FinishDrift(ctx context.Context, c DriftCheck) (bool, error) {
 			_, err := tx.ExecContext(ctx, "DELETE FROM drift_checks WHERE ref = ?", c.Ref)
 			return err
 		}
+		var prevSince int64
+		err = tx.QueryRowContext(ctx, `SELECT status, drifted_since FROM drift_checks WHERE env = ? AND stack = ? AND status <> 'planning' AND ref <> ?
+			ORDER BY started_at DESC, ref DESC LIMIT 1`, env, stack, c.Ref).Scan(&prevStatus, &prevSince)
+		if err != nil && !errors.Is(err, sqldb.ErrNoRows) {
+			return err
+		}
 		var since int64
 		if c.Status == DriftDrifted {
 			since = c.MadeAt.UnixMilli()
-			var prevStatus DriftStatus
-			var prevSince int64
-			err := tx.QueryRowContext(ctx, `SELECT status, drifted_since FROM drift_checks WHERE env = ? AND stack = ? AND status <> 'planning' AND ref <> ?
-				ORDER BY started_at DESC, ref DESC LIMIT 1`, env, stack, c.Ref).Scan(&prevStatus, &prevSince)
-			switch {
-			case err == nil && prevStatus == DriftDrifted && prevSince > 0:
+			if prevStatus == DriftDrifted && prevSince > 0 {
 				since = prevSince
-			case err != nil && !errors.Is(err, sqldb.ErrNoRows):
-				return err
 			}
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE drift_checks SET status = ?, made_at = ?, plan_id = ?, repo = ?, source_commit = ?, outside = ?, code = ?,
@@ -205,7 +212,7 @@ func (s *Store) FinishDrift(ctx context.Context, c DriftCheck) (bool, error) {
 		stored = err == nil
 		return err
 	})
-	return stored, err
+	return stored, prevStatus, err
 }
 
 func orNone(cs []DriftChange) []DriftChange {
