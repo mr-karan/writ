@@ -174,16 +174,16 @@ limits: writ measures each run's directory, and stops a step past 4GiB
 seccomp: each OpenTofu process runs under writ's seccomp filter
 ```
 
-From a shell, whose cgroup has other processes:
+Where other processes share the cgroup, here the shell that started `writ` and the `tail` it piped the output to:
 
 ```
 limits: writ measures each run's directory, and stops a step past 4GiB
 seccomp: each OpenTofu process runs under writ's seccomp filter
 warning[usage]
-  limits not enforced: writ's cgroup /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-t3code.slice/app-t3code-agents.slice/app-t3code-agents-55547f02020e.slice/t3code-claude-70d45369.scope holds processes other than writ serve, [3526457 3712258 3713600], and a cgroup whose children have limits may hold none; run writ serve alone in its cgroup, as a systemd unit with Delegate=yes or a Nomad task does; writ serve runs each OpenTofu step without limits.run_memory, run_pids, and run_cpus
+  limits not enforced: writ's cgroup /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p125069-i4334344.scope holds processes other than writ serve, [125069 125106], and a cgroup whose children have limits may hold none; run writ serve alone in its cgroup, as a systemd unit with Delegate=yes or a Nomad task does; writ serve runs each OpenTofu step without limits.run_memory, run_pids, and run_cpus
 ```
 
-Output of `writ serve --check`, 2026-11-20, of a config with `run_memory = "2GiB"`, `run_pids = 512`, `run_cpus = 2`, and `run_scratch = "4GiB"`, as a user under `systemd-run --user --scope -p Delegate=yes` and then from a shell.
+Output of `writ serve --check`, 2026-11-20, of a config with `run_memory = "2GiB"`, `run_pids = 512`, `run_cpus = 2`, and `run_scratch = "4GiB"`, run by `systemd-run --user --scope -p Delegate=yes`, first directly and then from a `bash -c` that stayed in the scope.
 
 ### What run limits don't cover
 
