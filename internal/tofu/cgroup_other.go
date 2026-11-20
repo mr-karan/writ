@@ -18,7 +18,7 @@ type stepCgroup struct{}
 
 func newStepCgroup(cgroupSetup, Limits) (*stepCgroup, error)           { return nil, errNoCgroups }
 func (*stepCgroup) kill() error                                        { return nil }
-func (*stepCgroup) hit() string                                        { return "" }
+func (*stepCgroup) hit() (string, bool)                                { return "", false }
 func (*stepCgroup) sharedHit() string                                  { return "" }
 func (*stepCgroup) remove() error                                      { return nil }
 func (*stepCgroup) heldRemoved(*User, int64, time.Time) (int64, error) { return 0, nil }

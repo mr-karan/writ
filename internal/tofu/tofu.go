@@ -235,15 +235,22 @@ type StepError struct {
 	// Limit, when set, is the limit of Options.Limits the step reached,
 	// which ended it.
 	Limit string
+	// Shared reports that Limit is one that every step shares, which may
+	// have refused another step, not this one: the error then keeps the
+	// exit code and Reason, which may say why this step failed.
+	Shared bool
 }
 
 func (e *StepError) Error() string {
-	if e.Limit != "" {
+	if e.Limit != "" && !e.Shared {
 		return fmt.Sprintf("tofu %s stopped at a limit: %s", e.Step, e.Limit)
 	}
 	msg := fmt.Sprintf("tofu %s exited with code %d", e.Step, e.Code)
 	if e.Reason != "" {
 		msg += ": " + e.Reason
+	}
+	if e.Limit != "" {
+		msg += "; " + e.Limit
 	}
 	return msg
 }

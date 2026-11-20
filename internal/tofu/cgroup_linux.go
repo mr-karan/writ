@@ -449,20 +449,43 @@ func (c *stepCgroup) kill() error {
 	}
 }
 
-// hit is which limit the step reached, in writ's words, or "": its own,
-// or the memory of runsCgroup, which every step shares, when the kernel
-// killed the step for it.
-func (c *stepCgroup) hit() string {
+// hit is which limit the step reached, in writ's words, or "", and
+// whether it is a limit of runsCgroup, which every step shares: its own,
+// or runsCgroup's memory, when the kernel killed the step for it, or
+// runsCgroup's processes, when it refused the step one.
+func (c *stepCgroup) hit() (string, bool) {
 	if ev, err := cgroupKeys(c.dir, "memory.events"); err == nil && (ev["oom_kill"] > 0 || ev["oom_group_kill"] > 0) {
 		if ev["oom"] == 0 && readRunsEvents(c.runs.base).oom > c.before.oom {
-			return fmt.Sprintf("the steps running at once used all of the %s of memory that writ's cgroup leaves them together, and the kernel killed the run; raise the unit's MemoryMax, or lower limits.run_memory, plans, or applies", formatSize(c.runs.memory))
+			return fmt.Sprintf("the steps running at once used all of the %s of memory that writ's cgroup leaves them together, and the kernel killed the run; raise the unit's MemoryMax, or lower limits.run_memory, plans, or applies", formatSize(c.runs.memory)), true
 		}
-		return fmt.Sprintf("the run used all of limits.run_memory, %s, and the kernel killed it", formatSize(c.limits.Memory))
+		return fmt.Sprintf("the run used all of limits.run_memory, %s, and the kernel killed it", formatSize(c.limits.Memory)), false
 	}
 	if ev, err := cgroupKeys(c.dir, "pids.events"); err == nil && ev["max"] > 0 {
-		return fmt.Sprintf("the run reached limits.run_pids, %d processes and threads, and could start no more", c.limits.Pids)
+		if c.ownPidsHit() {
+			return fmt.Sprintf("the run reached limits.run_pids, %d processes and threads, and could start no more", c.limits.Pids), false
+		}
+		return c.sharedPids(), true
 	}
-	return ""
+	return "", false
+}
+
+// ownPidsHit reports whether the step's own pids.max refused a process
+// that its pids.events counts. From Linux 6.15, which added
+// pids.events.local, pids.events counts only the refusals of the step's
+// own limit. Before, it counted every refusal of a process the step
+// started, runsCgroup's too, and a step whose pids.peak never reached its
+// own limit was refused by runsCgroup's.
+func (c *stepCgroup) ownPidsHit() bool {
+	if _, err := os.Stat(filepath.Join(c.dir, "pids.events.local")); err == nil || c.runs.pids == 0 {
+		return true
+	}
+	text, err := os.ReadFile(filepath.Join(c.dir, "pids.peak"))
+	if err != nil {
+		// Linux 6.1 added pids.peak.
+		return true
+	}
+	peak, err := strconv.Atoi(strings.TrimSpace(string(text)))
+	return err != nil || c.limits.Pids > 0 && peak >= c.limits.Pids
 }
 
 // sharedHit is, for a step that failed and reached no limit of its own,
@@ -470,9 +493,13 @@ func (c *stepCgroup) hit() string {
 // Another step may have been the one refused.
 func (c *stepCgroup) sharedHit() string {
 	if readRunsEvents(c.runs.base).pidsMax > c.before.pidsMax {
-		return fmt.Sprintf("while the run ran, the steps running at once reached the %d processes and threads that writ's cgroup leaves them together, and the kernel refused them more; raise the unit's TasksMax, or lower limits.run_pids, plans, or applies", c.runs.pids)
+		return c.sharedPids()
 	}
 	return ""
+}
+
+func (c *stepCgroup) sharedPids() string {
+	return fmt.Sprintf("while the run ran, the steps running at once reached the %d processes and threads that writ's cgroup leaves them together, and the kernel refused them more; raise the unit's TasksMax, or lower limits.run_pids, plans, or applies", c.runs.pids)
 }
 
 // remove removes the cgroup, which kill emptied.

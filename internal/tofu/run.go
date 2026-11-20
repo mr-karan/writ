@@ -97,15 +97,16 @@ func (r *Runner) step(ctx context.Context, sc *scratch, creds bool, name string,
 		cgroup: cg,
 	}.run(ctx)
 	// The kernel's kill at a limit ends the step before writ's measure.
-	limit := ""
+	limit, shared := "", false
 	if cg != nil {
-		limit = cg.hit()
+		limit, shared = cg.hit()
 	}
 	if over := scratchHit(); limit == "" {
 		limit = over
 	}
 	if limit == "" && err != nil && cg != nil {
 		limit = cg.sharedHit()
+		shared = limit != ""
 	}
 	exit, exited := errors.AsType[*exec.ExitError](err)
 	code := -1
@@ -114,7 +115,7 @@ func (r *Runner) step(ctx context.Context, sc *scratch, creds bool, name string,
 	}
 	switch {
 	case limit != "":
-		return stdout, &StepError{Step: name, Code: code, Stdout: stdout, Stderr: stderr, Limit: limit}
+		return stdout, &StepError{Step: name, Code: code, Stdout: stdout, Stderr: stderr, Limit: limit, Shared: shared}
 	case err == nil:
 		return stdout, nil
 	case exited:

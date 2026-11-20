@@ -737,3 +737,36 @@ func TestScratchChargesLinksAShare(t *testing.T) {
 		})
 	}
 }
+
+// A step refused a process names the limit that refused it. Before Linux
+// 6.15, which added pids.events.local, the kernel counted a refusal by
+// runs' pids.max in the refused step's own pids.events, so the step's
+// pids.peak tells its own limit from the one every step shares.
+// Directories stand in for the step's cgroup and runs.
+func TestStepNamesThePidsLimitThatRefusedIt(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		files  map[string]string
+		want   string
+		shared bool
+	}{
+		{"before 6.15, at its own limit", map[string]string{"pids.events": "max 1\n", "pids.peak": "64\n"}, "limits.run_pids", false},
+		{"before 6.15, below its own limit", map[string]string{"pids.events": "max 1\n", "pids.peak": "40\n"}, "TasksMax", true},
+		{"from 6.15", map[string]string{"pids.events": "max 1\n", "pids.events.local": "max 1\n", "pids.peak": "64\n"}, "limits.run_pids", false},
+		{"refused nothing", map[string]string{"pids.events": "max 0\n", "pids.peak": "40\n"}, "", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for file, text := range c.files {
+				if err := os.WriteFile(filepath.Join(dir, file), []byte(text), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cg := &stepCgroup{dir: dir, limits: Limits{Pids: 64}, runs: cgroupSetup{base: t.TempDir(), pids: 72}}
+			got, shared := cg.hit()
+			if c.want == "" && got != "" || !strings.Contains(got, c.want) || shared != c.shared {
+				t.Fatalf("the step names %q, shared %v, not %s", got, shared, c.want)
+			}
+		})
+	}
+}
