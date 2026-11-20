@@ -155,7 +155,7 @@ notify: ops (webhook) hears applied drift in prod for payments/**, drift on-chan
 notify: ops: test message sent
 ```
 
-The notify lines of `writ serve --check --notify-test` in `TestServeCheckNotify`, `internal/cli/servecheck_notify_test.go`, 2026-11-20. When `--check` can't reach the control database, it says so on a `notify: delivery counts not read` line and doesn't fail.
+The notify lines of `writ serve --check --notify-test` in `TestServeCheckNotify`, `internal/cli/servecheck_notify_test.go`, 2026-11-20. When `--check` can't reach the control database, it says so on a `notify: delivery counts not read` line and doesn't fail. `--check` reads the database before `writ serve` migrates it, so on the first check after an upgrade to the release that adds notifications, it prints `notify: delivery counts appear after writ serve migrates the control database` and doesn't fail either.
 
 The **Notifications** card on the control UI's Settings page shows each notifier's kind, events, how many messages it delivered and failed, its last delivery, and its last error. `GET /v1/config` returns the same under `notifiers`. Neither shows a URL, a secret, or a file path.
 
