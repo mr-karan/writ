@@ -58,7 +58,7 @@ On the webhook's row, select **Test > Push events**. GitLab shows the answer und
 
 ## Use a signing token instead
 
-GitLab 19.1 and later can sign each delivery with a signing token, which GitLab shows starting with `whsec_`. Put that token in `webhook_secret_file` in place of a secret token. When the file starts with `whsec_`, `writ serve` checks the delivery's `webhook-signature` header, the HMAC-SHA256 of `webhook-id`, `webhook-timestamp`, and the raw body under the token's key, and refuses a delivery whose `webhook-timestamp` is more than 5 minutes from its clock. It then ignores `X-Gitlab-Token`.
+GitLab 19.1 and later can sign each delivery with a signing token, which GitLab shows starting with `whsec_`. Put that token in `webhook_secret_file` in place of a secret token. When the file starts with `whsec_`, `writ serve` checks the delivery's `webhook-signature` header, the HMAC-SHA256 of `webhook-id`, `webhook-timestamp`, and the raw body under the token's key, and refuses a delivery whose `webhook-timestamp` is more than 5 minutes from its clock. It then ignores `X-Gitlab-Token`. A secret token you chose yourself must not start with `whsec_`, or every delivery fails verification.
 
 A signing token proves the body too, and the timestamp stops a recorded delivery from being sent again later. `writ serve` doesn't read the body, so for Writ the gain is the replay window, not the body.
 
@@ -82,18 +82,18 @@ Every delivery gets an audit row, op `hook`, which only a principal with `admin`
 | 202 | `writ.hook/v0`, `queued: true` | The delivery passed its check and is a push event. A read of the default branch's head is queued. |
 | 200 | `writ.hook/v0`, `duplicate: true` | GitLab sent this delivery already: the same `webhook-id`, or `Idempotency-Key` before GitLab 19.0. It's not acted on again. |
 | 200 | `writ.hook/v0`, `queued: false` | The delivery passed its check, but isn't a push event, so nothing is read. |
-| 401 | class `auth`: `the delivery failed verification` | The delivery didn't prove it came from the repository's Git host, for any reason. |
-| 413 | class `usage` | The body is over 1 MiB. |
+| 401 | class `auth`: `the delivery failed verification` | The delivery didn't prove it came from the repository's Git host, for any reason, a body over 1 MiB included. |
 | 429 | class `usage`, `Retry-After: 1` | More than 10 deliveries a second from one client address, or more than 5 for one repository. |
 
 A 401 says the same words whatever the reason, so a sender learns nothing. The audit row's `check` says which:
 
 | `check` | Reason |
 | --- | --- |
+| `hook-body` | The body is over 1 MiB, or couldn't be read |
 | `hook-unknown` | No pinned repository of that name has a webhook at that forge |
 | `hook-no-token` | No `X-Gitlab-Token` header |
 | `hook-token` | `X-Gitlab-Token` isn't the secret |
-| `hook-secret-file` | `writ serve` couldn't read the secret file, or a `whsec_` token in it isn't base64. The log says why. |
+| `hook-secret-file` | `writ serve` couldn't read the secret file, it isn't a regular file of at most 4 KiB, or a `whsec_` token in it isn't base64. The log says why. |
 | `hook-no-signature` | Under a signing token, no `webhook-id`, `webhook-timestamp`, or `webhook-signature` |
 | `hook-timestamp` | Under a signing token, `webhook-timestamp` is more than 5 minutes from now |
 | `hook-signature` | Under a signing token, the signature isn't the body's |

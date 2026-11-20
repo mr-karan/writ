@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -127,8 +128,19 @@ func secretEqual(got, want []byte) bool {
 var deliveryRE = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 
 // gitlabDelivery is webhook-id, or Idempotency-Key before GitLab 19.0:
-// GitLab keeps each the same across the retries of a delivery.
+// GitLab keeps each the same across the retries of a delivery. A signed
+// delivery is keyed by its webhook-id alone, which the signature covers,
+// so a replay can't change its key with a header no one signed. An id the
+// pattern doesn't take is keyed by its SHA-256.
 func gitlabDelivery(h http.Header) string {
+	if h.Get("webhook-signature") != "" {
+		id := h.Get("webhook-id")
+		if id == "" || deliveryRE.MatchString(id) {
+			return id
+		}
+		sum := sha256.Sum256([]byte(id))
+		return "sha256:" + hex.EncodeToString(sum[:])
+	}
 	for _, k := range []string{"webhook-id", "Idempotency-Key"} {
 		if v := h.Get(k); deliveryRE.MatchString(v) {
 			return v
@@ -246,12 +258,34 @@ func (s *Server) hasHook(r control.Repo) bool {
 	return ok
 }
 
+// hookSecretMax is the most a webhook secret file may hold.
+const hookSecretMax = 4096
+
+// CheckHookSecret reports whether file is a webhook secret file writ
+// serve can use, for writ serve --check. Its error never holds what the
+// file does.
+func CheckHookSecret(file string) error {
+	_, err := readHookSecret(file)
+	return err
+}
+
 // readHookSecret reads a webhook secret file. The error names the file,
 // never what it holds.
 func readHookSecret(file string) ([]byte, error) {
-	b, err := os.ReadFile(file)
+	f, err := os.Open(file)
 	if err != nil {
 		return nil, fmt.Errorf("read webhook_secret_file: %w", err)
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("webhook_secret_file %s is not a regular file", file)
+	}
+	b, err := io.ReadAll(io.LimitReader(f, hookSecretMax+1))
+	if err != nil {
+		return nil, fmt.Errorf("read webhook_secret_file: %w", err)
+	}
+	if len(b) > hookSecretMax {
+		return nil, fmt.Errorf("webhook_secret_file %s is over %d bytes", file, hookSecretMax)
 	}
 	b = bytes.TrimSpace(b)
 	if len(b) == 0 {
@@ -269,23 +303,31 @@ func (s *Server) receiveHook(w http.ResponseWriter, r *http.Request) {
 	e := &req.entry
 	e.Op = "hook"
 	if !s.hooks.addrs.allow(s.clientKey(r)) {
+		// Like the server's address limit, this leaves no audit row, so a
+		// sender can't fill the control database: shed counts it instead.
+		req.audited = true
+		s.shed.add(s, s.remoteOf(r))
 		w.Header().Set("Retry-After", "1")
-		s.refuse(w, r, FormatHook, diag.Usage, http.StatusTooManyRequests, "more than %d webhook deliveries a second from %s", hookPerAddress, e.Remote)
+		msg := fmt.Sprintf("more than %d webhook deliveries a second from %s", hookPerAddress, s.remoteOf(r))
+		s.reply(w, http.StatusTooManyRequests, refusal{Format: FormatHook, Diagnostics: []Diagnostic{{"error", string(diag.Usage), msg}}})
+		return
+	}
+	// The body is read before the repository is looked up, the same way
+	// for every name, so neither its status nor whether the connection
+	// stays open tells a sender which names have a webhook.
+	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, hookBody))
+	if errors.As(err, new(*http.MaxBytesError)) {
+		s.hookRefused(w, r, "hook-body")
+		return
+	}
+	if err != nil {
+		s.hookRefused(w, r, "hook-body")
 		return
 	}
 	forgeName, name := r.PathValue("forge"), r.PathValue("repo")
 	spec, f, hf, ok := s.hookSpec(forgeName, name)
 	if !ok {
 		s.hookRefused(w, r, "hook-unknown")
-		return
-	}
-	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, hookBody))
-	if errors.As(err, new(*http.MaxBytesError)) {
-		s.refuse(w, r, FormatHook, diag.Usage, http.StatusRequestEntityTooLarge, "the body is over %d bytes", hookBody)
-		return
-	}
-	if err != nil {
-		s.refuse(w, r, FormatHook, diag.Usage, http.StatusBadRequest, "the body could not be read")
 		return
 	}
 	secret, err := readHookSecret(spec.WebhookSecretFile)

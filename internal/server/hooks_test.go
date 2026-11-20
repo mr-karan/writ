@@ -213,10 +213,14 @@ func TestHookRefusals(t *testing.T) {
 	if r := f.do("GET", hookPath, "", nil); r.status != http.StatusMethodNotAllowed {
 		t.Fatalf("GET: %d %s", r.status, r.body)
 	}
-	// A body over the limit is refused before the secret is checked.
+	// A body over the limit is refused, before the secret is checked and
+	// before the repository is looked up, with the same 401 for a name
+	// with a webhook and for any other, so its status tells a sender
+	// nothing of which names exist.
 	big := bytes.Repeat([]byte(" "), 1<<20+1)
-	if r := f.hook(hookPath, hookSecret, "big", big); r.status != http.StatusRequestEntityTooLarge {
-		t.Fatalf("a large body: %d %s", r.status, r.body)
+	known, unknown := f.hook(hookPath, hookSecret, "big", big), f.hook("/v1/hooks/gitlab/nope", hookSecret, "big2", big)
+	if known.status != http.StatusUnauthorized || unknown.status != known.status || !bytes.Equal(unknown.body, known.body) {
+		t.Fatalf("a large body: %d %s, for an unknown name %d %s", known.status, known.body, unknown.status, unknown.body)
 	}
 	// Another event than a push passes its check and reads nothing.
 	if r := f.hook(hookPath, hookSecret, "mr", push, "X-Gitlab-Event", "Merge Request Hook"); r.status != http.StatusOK || r.doc["queued"] != false {
@@ -395,6 +399,109 @@ func TestHookBackstopPoll(t *testing.T) {
 	for _, c := range f.gitlab.Calls() {
 		if strings.Contains(c, "/projects/4242/") {
 			t.Fatalf("the poll called %s for a repository with a webhook", c)
+		}
+	}
+}
+
+// A body under the cap is read whole for every name, so whether the
+// connection stays open tells a sender nothing of which names have a
+// webhook either.
+func TestHookReadsTheBodyForEveryName(t *testing.T) {
+	f := hookFixture(t, hookSecret)
+	mid := bytes.Repeat([]byte(" "), 512<<10)
+	var closes []bool
+	for _, p := range []string{hookPath, "/v1/hooks/gitlab/nope"} {
+		req, _ := http.NewRequest("POST", f.http.URL+p, bytes.NewReader(mid))
+		req.Header.Set("X-Gitlab-Token", "wrong")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("%s: %d", p, resp.StatusCode)
+		}
+		closes = append(closes, resp.Close)
+	}
+	if closes[0] != closes[1] {
+		t.Fatalf("the connection closed for one name and not the other: %v", closes)
+	}
+}
+
+// A signed delivery is deduplicated by its signed webhook-id alone, so a
+// replay inside the window can't make itself new with an unsigned
+// Idempotency-Key, whatever the id looks like.
+func TestHookSignedReplayIsDropped(t *testing.T) {
+	key := []byte("0123456789abcdef0123456789abcdef")
+	f := hookFixture(t, "whsec_"+base64.StdEncoding.EncodeToString(key))
+	body := []byte(`{"object_kind":"push"}`)
+	for _, id := range []string{"msg_ok", "msg/slash+" + strings.Repeat("x", 140)} {
+		ts := time.Now().Unix()
+		mac := hmac.New(sha256.New, key)
+		fmt.Fprintf(mac, "%s.%d.", id, ts)
+		mac.Write(body)
+		h := []string{"webhook-id", id, "webhook-timestamp", strconv.FormatInt(ts, 10), "webhook-signature", "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil))}
+		var got []int
+		for i := range 3 {
+			got = append(got, f.hook(hookPath, "", "replay-"+strconv.Itoa(i), body, h...).status)
+		}
+		if got[0] != http.StatusAccepted || got[1] != http.StatusOK || got[2] != http.StatusOK {
+			t.Fatalf("webhook-id %.20q sent three times with fresh Idempotency-Keys: %v, want 202 200 200", id, got)
+		}
+		time.Sleep(1100 * time.Millisecond)
+	}
+}
+
+// The webhook route's address limit leaves no audit row for what it
+// refuses, as the server's own limit does, so a flood can't fill the
+// control database.
+func TestHookLimitLeavesNoAuditRow(t *testing.T) {
+	at := time.Now()
+	f := hookFixture(t, hookSecret, func(o *server.Options) { o.Now = func() time.Time { return at } })
+	limited := 0
+	for range 30 {
+		r := f.hook(hookPath, "wrong", "", nil)
+		rows := len(f.audit(controltest.AuditFilter{Request: r.header.Get("X-Request-Id")}))
+		switch r.status {
+		case http.StatusTooManyRequests:
+			limited++
+			if rows != 0 {
+				t.Fatalf("a delivery the hook limit refused wrote %d audit rows", rows)
+			}
+		case http.StatusUnauthorized:
+			if rows != 1 {
+				t.Fatalf("a refused delivery wrote %d audit rows, want 1", rows)
+			}
+		}
+	}
+	if limited == 0 {
+		t.Fatal("no delivery hit the hook limit")
+	}
+}
+
+// A webhook secret file must be a regular file of at most 4 KiB, read
+// with a bound, so a misconfigured path can't make each unverified
+// delivery read without end.
+func TestHookSecretFileIsBounded(t *testing.T) {
+	dir := t.TempDir()
+	big := filepath.Join(dir, "big")
+	if err := os.WriteFile(big, bytes.Repeat([]byte("a"), 4097), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ok := filepath.Join(dir, "ok")
+	if err := os.WriteFile(ok, []byte(hookSecret+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.CheckHookSecret(ok); err != nil {
+		t.Fatalf("a good secret file: %v", err)
+	}
+	for _, p := range []string{big, dir} {
+		err := server.CheckHookSecret(p)
+		if err == nil {
+			t.Fatalf("%s: no error", p)
+		}
+		if strings.Contains(err.Error(), "aaaa") {
+			t.Fatalf("the error holds the file's contents: %v", err)
 		}
 	}
 }

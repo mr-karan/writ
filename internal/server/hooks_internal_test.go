@@ -10,6 +10,7 @@ import (
 	"go/token"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,7 +86,22 @@ func TestHookProofsCompareInConstantTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// An import under another name is checked by its package's name.
+	alias := map[string]string{}
+	for _, im := range f.Imports {
+		path := strings.Trim(im.Path.Value, `"`)
+		if im.Name != nil {
+			alias[im.Name.Name] = path[strings.LastIndex(path, "/")+1:]
+		}
+	}
+	pkg := func(name string) string {
+		if p, ok := alias[name]; ok {
+			return p
+		}
+		return name
+	}
 	calls := map[string]map[string]bool{}
+	proofs := map[string]bool{"got": true, "sig": true, "sigs": true, "secret": true, "want": true, "key": true, "b64key": true, "body": true}
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok {
@@ -97,11 +113,24 @@ func TestHookProofsCompareInConstantTime(t *testing.T) {
 				switch x := c.Fun.(type) {
 				case *ast.SelectorExpr:
 					if id, ok := x.X.(*ast.Ident); ok {
-						seen[id.Name+"."+x.Sel.Name] = true
+						seen[pkg(id.Name)+"."+x.Sel.Name] = true
 					}
 				case *ast.Ident:
 					seen[x.Name] = true
 				}
+			}
+			// In the functions that check a proof, no == or != may touch
+			// one, but to ask whether it's empty.
+			if b, ok := n.(*ast.BinaryExpr); ok && (b.Op == token.EQL || b.Op == token.NEQ) && (fn.Name.Name == "verifyGitLab" || fn.Name.Name == "verifySigned") {
+				if empty(b.X) || empty(b.Y) {
+					return true
+				}
+				ast.Inspect(b, func(m ast.Node) bool {
+					if id, ok := m.(*ast.Ident); ok && proofs[id.Name] {
+						t.Errorf("%s compares %s with %s", fn.Name.Name, id.Name, b.Op)
+					}
+					return true
+				})
 			}
 			return true
 		})
@@ -116,7 +145,7 @@ func TestHookProofsCompareInConstantTime(t *testing.T) {
 		}
 	}
 	for fn, c := range calls {
-		for _, eq := range []string{"bytes.Equal", "hmac.Equal", "strings.EqualFold", "subtle.ConstantTimeCompare", "slices.Equal"} {
+		for _, eq := range []string{"bytes.Equal", "bytes.Compare", "hmac.Equal", "strings.EqualFold", "strings.Compare", "subtle.ConstantTimeCompare", "slices.Equal", "slices.Compare", "reflect.DeepEqual"} {
 			if c[eq] && !(fn == "secretEqual" && eq == "subtle.ConstantTimeCompare") {
 				t.Errorf("%s compares with %s", fn, eq)
 			}
@@ -190,4 +219,14 @@ func TestHookDeliveries(t *testing.T) {
 	if got := h.take(); len(got) != 1 || got[0] != "infra" || len(h.take()) != 0 {
 		t.Fatalf("queued %v", got)
 	}
+}
+
+// empty reports whether e is the empty string literal, 0, or nil, which
+// a check may compare a proof or its length with to see that one was sent.
+func empty(e ast.Expr) bool {
+	if l, ok := e.(*ast.BasicLit); ok {
+		return l.Value == `""` || l.Value == "0"
+	}
+	id, ok := e.(*ast.Ident)
+	return ok && id.Name == "nil"
 }
