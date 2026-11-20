@@ -163,10 +163,11 @@ The **Notifications** card on the control UI's Settings page shows each notifier
 
 Delivery never holds up a plan or an apply. Each notifier has its own queue of 128 events and one sender, so a slow receiver delays only its own messages.
 
-- **Retries.** A timeout, a connection failure, a `429`, or a `5xx` is retried after 1 s, 4 s, 16 s, 1 min, and 3 min. After the last retry, `writ serve` gives up, logs a warning, and counts the event as failed. Any other status fails at once.
+- **Retries.** A timeout, a connection failure, a DNS lookup that timed out or failed for now, a `429`, or a `5xx` is retried after 1 s, 4 s, 16 s, 1 min, and 3 min. A `429` with `Retry-After`, in seconds or as an HTTP date, waits as long as it asks when that's longer, up to 5 minutes. After the last retry, `writ serve` gives up, logs a warning, and counts the event as failed. Any other status fails at once.
+- **Failures an operator must fix.** A certificate Writ doesn't trust, or one that's expired or not for the host, and a host name that doesn't resolve fail at once, with no retry. The last error says why: `tls: certificate signed by an unknown authority`, `tls: certificate expired or not yet valid`, `tls: certificate is not valid for the host`, `tls: certificate not valid`, `tls: handshake failed`, or `dns: no such host`.
 - **Bounds.** Each attempt has 10 seconds. A body is at most 16 KiB, and Writ reads at most 4 KiB of the answer, which it keeps nothing of.
 - **Where it sends.** Only to the URL in `url_file`. It must be `https://`, or `http://` on a loopback address for tests, with no user name or password in it. Writ follows no redirect: a `3xx` answer is a failure.
-- **A full queue.** When a notifier's queue is full, the new event is dropped for that notifier and logged. The next delivery records how many were dropped as failed.
+- **A full queue.** When a notifier's queue is full, the new event is dropped for that notifier and logged. After its next delivery, the notifier records how many were dropped as failed, under each dropped event's own kind.
 - **Restarts.** `writ serve` reads each `url_file` and `secret_file` once, when it starts. Restart it after you change one. Events still queued when it stops are not sent.
 
 The isolation check of `writ serve --check` also checks that a provider uid can't read a `url_file` or a `secret_file`, as it does for the other secret files. A notifier's outbound requests come from `writ serve` itself, not from an OpenTofu run, so the environment's `egress` list doesn't apply to them. `writ serve` honors `HTTPS_PROXY` for them.
