@@ -13,9 +13,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/mr-karan/writ/internal/runas"
 )
@@ -40,14 +43,44 @@ func init() {
 // The helper's descriptors after stdin, stdout, and stderr: the status pipe,
 // which closes when tofu starts and carries the error when the view fails,
 // the run's directory and its home, which the view's binds of them must
-// match, and with a run's own network, its end of the socket pair through
-// which it hands writ the listeners it makes in the run's namespace.
+// match, with a run's own network, its end of the socket pair through
+// which it hands writ the listeners it makes in the run's namespace, and
+// with a saved plan, the sealed file that holds it, which tofu inherits.
 const (
 	statusFD = 3
 	runFD    = 4
 	homeFD   = 5
 	netFD    = 6
+	planFD   = 7
 )
+
+// sealPlan puts plan in a memfd, sealed so that no process may write,
+// grow, or shrink it, which every later step of sc inherits as planFD,
+// and returns the path at which tofu opens it. Every file in the run's
+// directory is the run's to change, as any process of the run may: a
+// provider that show starts could write over a saved plan there after
+// show read it and before writ or apply did.
+func (sc *scratch) sealPlan(plan []byte) (string, error) {
+	fd, err := unix.MemfdCreate("writ-saved-plan", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
+	if err != nil {
+		return "", fmt.Errorf("tofu: seal the saved plan: %w", err)
+	}
+	f := os.NewFile(uintptr(fd), "saved plan")
+	if _, err := f.Write(plan); err != nil {
+		f.Close()
+		return "", fmt.Errorf("tofu: seal the saved plan: %w", err)
+	}
+	const seals = unix.F_SEAL_SEAL | unix.F_SEAL_SHRINK | unix.F_SEAL_GROW | unix.F_SEAL_WRITE
+	if _, err := unix.FcntlInt(f.Fd(), unix.F_ADD_SEALS, seals); err != nil {
+		f.Close()
+		return "", fmt.Errorf("tofu: seal the saved plan: %w", err)
+	}
+	if sc.plan != nil {
+		sc.plan.Close()
+	}
+	sc.plan = f
+	return "/dev/fd/" + strconv.Itoa(planFD), nil
+}
 
 // viewTmp is where the view binds the run's home again, for TMPDIR. Each
 // provider makes its go-plugin socket there, and a socket's path must fit
@@ -174,6 +207,13 @@ func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 		}
 		defer lnRecv.Close()
 		cmd.ExtraFiles = append(cmd.ExtraFiles, lnSend)
+	}
+	if c.plan != nil {
+		// A nil entry is a descriptor the helper does not have.
+		for len(cmd.ExtraFiles) < planFD-3 {
+			cmd.ExtraFiles = append(cmd.ExtraFiles, nil)
+		}
+		cmd.ExtraFiles = append(cmd.ExtraFiles, c.plan)
 	}
 	cmd.SysProcAttr = viewAttr(c.user, c.net != nil)
 	err = runas.StartMapped(cmd)

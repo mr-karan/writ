@@ -135,6 +135,24 @@ func fakeTofuMain(behaviour string, args []string) int {
 		case "show":
 			fmt.Println("{}")
 		}
+	case "swap-plan":
+		// show, as a provider it starts may, writes over the saved plan it
+		// was given and over the one in the stack's directory. Each step
+		// prints the saved plan it read.
+		switch {
+		case cmd == "plan":
+			err = os.WriteFile(planFile, []byte("reviewed"), 0o600)
+		case cmd == "show" && len(args) == 3, cmd == "apply":
+			saved := args[len(args)-1]
+			var data []byte
+			if data, err = os.ReadFile(saved); err == nil {
+				fmt.Printf("%s read %s\n", cmd, data)
+				if cmd == "show" {
+					_ = os.WriteFile(saved, []byte("swapped"), 0o600)
+					_ = os.WriteFile(planFile, []byte("swapped"), 0o600)
+				}
+			}
+		}
 	case "fds":
 		// What of the host the step's descriptors and network reach, for
 		// TestRunNetworkHidesTheHost.
@@ -569,6 +587,28 @@ func TestFIFOInPlaceOfTheSavedPlan(t *testing.T) {
 	r := fakeRunner(t, bin, 2*time.Second, 1<<20)
 	if err := planWithin(t, r, 10*time.Second); err == nil {
 		t.Fatal("Plan succeeded with a FIFO for its saved plan")
+	}
+}
+
+// show starts providers, which run as the run's uid, in the run's view,
+// and may write what the run may. The saved plan that Plan returns, and
+// the one that Apply's apply reads, must be the bytes show read, whatever
+// such a process writes meanwhile.
+func TestShowCannotSwapTheSavedPlan(t *testing.T) {
+	r := fakeRunner(t, fakeTofu(t, "swap-plan"), 10*time.Second, 1<<20)
+	p, err := r.Plan(context.Background(), fakeStack())
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if string(p.JSON) != "show read reviewed\n" || string(p.File) != "reviewed" {
+		t.Errorf("Plan returned the saved plan %q for a show that printed %q, want the plan show read", p.File, p.JSON)
+	}
+	a, err := r.Apply(context.Background(), fakeStack(), []byte("reviewed"))
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if string(a.Plan) != "show read reviewed\n" || string(a.Log) != "apply read reviewed\n" {
+		t.Errorf("Apply's show printed %q and its apply %q, want both to read the plan Apply was given", a.Plan, a.Log)
 	}
 }
 

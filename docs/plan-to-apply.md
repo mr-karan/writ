@@ -46,7 +46,7 @@ A plan starts when you run `writ plan --remote` from a clean Git work tree or wh
 1. `writ serve` installs the providers pinned in `.terraform.lock.hcl` into `tofu.plugin_cache` using a synthetic config, so stack code never runs with write access to the cache.
 2. It allocates a free `provider_uids` UID and creates a private Linux user, mount, and PID namespace with a read-only filesystem view.
 3. It runs `tofu init -lockfile=readonly` with **no cloud credentials**.
-4. It assumes the environment's `plan_role` via STS and runs `tofu plan -lock=false` and `tofu show -json`. On the `http` state backend, the run receives a short-lived read-only state token. On S3, `plan_role` has read-only bucket permissions.
+4. It assumes the environment's `plan_role` via STS and runs `tofu plan -lock=false` and `tofu show -json`. On the `http` state backend, the run receives a short-lived read-only state token. On S3, `plan_role` has read-only bucket permissions. Writ reads the saved plan as soon as `tofu plan` exits, and `tofu show` reads that copy from a sealed in-memory file that no process can change, so the plan document, the policy input, the plan ID, and the sealed saved plan all come from the same bytes.
 5. `internal/mask` strips secrets from the plan JSON using OpenTofu's sensitive marks, learned values (including encoded forms), secret-like attribute names, `provider_env` values, assumed role credentials, and the prior state's sealed [secret set](glossary.md).
 
 ## 3. Policy evaluation (plan point) and sealing
@@ -85,7 +85,7 @@ When you run `writ apply --remote ID` or `writ apply --remote --merged --env ENV
 2. **Staleness checks**: Writ refuses the apply if the plan expired, if a newer plan exists for that `stack@env`, if state changed since the plan, or (for branch applies by ID) if the branch moved to different stack files.
 3. **Apply-point policy**: Writ evaluates every policy set again with `input.writ.decision == "apply"`, the caller's identity, and the current approvals (binding a digest of the approvals so they cannot change between evaluation and start). Nothing overrides a policy deny.
 4. **Atomic start**: In one database transaction, Writ records the CI token's `jti` (one apply per token), records the `Idempotency-Key` (so lost network replies never trigger a duplicate apply), enforces one running apply per `stack@env`, transitions the plan to `applying`, and creates the run row.
-5. **Execution**: Writ opens the sealed saved plan, assumes the environment's `apply_role`, grants a write-capable state token (for `http` backend), and runs `tofu apply` in an isolated provider UID namespace.
+5. **Execution**: Writ opens the sealed saved plan, assumes the environment's `apply_role`, grants a write-capable state token (for `http` backend), and runs `tofu apply` in an isolated provider UID namespace. `tofu show` and `tofu apply` read the saved plan from a sealed in-memory file, not from the run's scratch directory, so no process of the run can replace it between the two.
 
 ## 6. Post-apply indexing, audit, and crash recovery
 

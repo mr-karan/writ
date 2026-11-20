@@ -3,13 +3,17 @@
 package tofu
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"net/http"
 	"net/http/cgi"
@@ -17,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -104,6 +109,17 @@ func TestGate(t *testing.T) {
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build testdata/hold: %v\n%s", err, out)
+	}
+	// testdata/swap goes in the cache as a provider of its own, which a
+	// run reads as it reads hashicorp/random.
+	swap := filepath.Join(shared, filepath.FromSlash(swapPackage))
+	if err := os.MkdirAll(swap, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	build = exec.Command("go", "build", "-o", filepath.Join(swap, "terraform-provider-swap_v1.0.0"), "./testdata/swap")
+	build.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build testdata/swap: %v\n%s", err, out)
 	}
 	self, err := os.Executable()
 	if err != nil {
@@ -250,6 +266,60 @@ func gateChild(t *testing.T) {
 				want = map[string]string{"random_pet.p": "no-op", "tls_private_key.k": "no-op", "local_file.f": "create"}
 				if got := actions(t, again.JSON); !maps.Equal(got, want) {
 					t.Fatalf("the plan after the apply: %v, want %v", got, want)
+				}
+			})
+		}
+	})
+
+	t.Run("a provider that show starts cannot swap the saved plan", func(t *testing.T) {
+		lock := fmt.Sprintf("provider \"example.com/acme/swap\" {\n  version     = \"1.0.0\"\n  constraints = \"1.0.0\"\n  hashes = [\n    %q,\n  ]\n}\n",
+			packageHash(t, filepath.Join(cache, filepath.FromSlash(swapPackage))))
+		const tf = `terraform {
+  required_providers {
+    swap = { source = "example.com/acme/swap", version = "1.0.0" }
+  }
+}
+
+resource "random_pet" "p" {
+  provider = swap
+}
+`
+		for _, u := range users {
+			t.Run(u.name, func(t *testing.T) {
+				files := fstest.MapFS{"main.tf": {Data: []byte(tf)}, LockFile: {Data: []byte(lock)}}
+				s := Stack{Files: files, Dir: ".", User: u.user}
+				swapping := Stack{Files: maps.Clone(files), Dir: ".", User: u.user}
+				swapping.Files.(fstest.MapFS)["swap"] = &fstest.MapFile{}
+				// tofu writes the providers' schemas into the saved plan,
+				// and its show of a saved plan that holds them starts no
+				// provider, so this swap never runs; Plan must hold even
+				// for a show that does start them.
+				p, err := r.Plan(ctx, swapping)
+				if err != nil {
+					t.Fatalf("plan: %v", stepText(err))
+				}
+				if _, err := PlanSerial(p.File); err != nil {
+					t.Fatalf("Plan returned the saved plan %.40q, not the one show read: %v", p.File, err)
+				}
+				want := map[string]string{"random_pet.p": "create"}
+				if got := actions(t, p.JSON); !maps.Equal(got, want) {
+					t.Fatalf("the plan's changes: %v, want %v", got, want)
+				}
+				clean, err := r.Plan(ctx, s)
+				if err != nil {
+					t.Fatalf("plan without the swap: %v", stepText(err))
+				}
+				// A saved plan without the schemas makes show start the
+				// providers, and tofu still applies it.
+				a, err := r.Apply(ctx, swapping, withoutSchemas(t, clean.File))
+				if err != nil {
+					t.Fatalf("apply, with a provider that writes over the saved plan in show: %v", stepText(err))
+				}
+				if got := actions(t, a.Plan); !maps.Equal(got, want) {
+					t.Fatalf("the apply's show of the saved plan has changes %v, want %v", got, want)
+				}
+				if a.ShowErr != nil || !slices.Equal(stateResources(t, a.State.Unmasked), []string{"random_pet.p"}) {
+					t.Fatalf("the apply's show of the state it left: %v\n%s", stepText(a.ShowErr), a.State.Unmasked)
 				}
 			})
 		}
@@ -1037,6 +1107,67 @@ func stateResources(t *testing.T, js []byte) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// withoutSchemas returns plan without the providers' schemas that tofu
+// writes into a saved plan.
+func withoutSchemas(t *testing.T, plan []byte) []byte {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(plan), int64(len(plan)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	found := false
+	for _, f := range zr.File {
+		if f.Name == "tfschemas" {
+			found = true
+			continue
+		}
+		if err := zw.Copy(f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("the saved plan holds no tfschemas")
+	}
+	return buf.Bytes()
+}
+
+// swapPackage is where testdata/swap is in the plugin cache.
+var swapPackage = "example.com/acme/swap/1.0.0/" + runtime.GOOS + "_" + runtime.GOARCH
+
+// packageHash is the h1: hash that tofu records of the provider package
+// in dir: the SHA-256 of a line for each file, in order of its name, of
+// the file's SHA-256 in hex, two spaces, and its name.
+func packageHash(t *testing.T, dir string) string {
+	t.Helper()
+	var lines []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
+			return err
+		}
+		lines = append(lines, fmt.Sprintf("%x  %s\n", sha256.Sum256(data), filepath.ToSlash(rel)))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(lines)
+	sum := sha256.Sum256([]byte(strings.Join(lines, "")))
+	return "h1:" + base64.StdEncoding.EncodeToString(sum[:])
 }
 
 func stack(t *testing.T, tf string, env ...string) Stack {

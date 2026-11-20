@@ -227,7 +227,11 @@ func (e *StepError) Error() string {
 const planFile = "tfplan"
 
 // Plan runs init, a saved plan without the state lock, and show -json, in
-// a scratch directory that is removed when Plan returns.
+// a scratch directory that is removed when Plan returns. It reads the
+// saved plan once plan has ended, when no process of the run is left, and
+// show reads those bytes as a sealed file (sealPlan): a provider that show
+// starts may write what the run may, and the JSON must be of the File that
+// Plan returns.
 func (r *Runner) Plan(ctx context.Context, s Stack) (Plan, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.opts.Timeout)
 	defer cancel()
@@ -243,11 +247,15 @@ func (r *Runner) Plan(ctx context.Context, s Stack) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	js, err := r.step(ctx, sc, true, "show", "show", "-json", planFile)
+	file, err := sc.read(planFile, r.opts.MaxOutput)
 	if err != nil {
 		return Plan{}, err
 	}
-	file, err := sc.read(planFile, r.opts.MaxOutput)
+	saved, err := sc.sealPlan(file)
+	if err != nil {
+		return Plan{}, err
+	}
+	js, err := r.step(ctx, sc, true, "show", "show", "-json", saved)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -292,8 +300,10 @@ const ApplyStop = 2 * time.Hour
 
 // Apply runs init, show -json of plan, a Plan's File, and then applies
 // plan, and after an apply that succeeded, show -json of the state it
-// left, in a scratch directory that is removed when Apply returns. s must
-// hold the files the plan was made from. Init and both shows get no
+// left, in a scratch directory that is removed when Apply returns. Both
+// show and apply read plan as a sealed file (sealPlan), so a provider that
+// show starts cannot change what apply applies. s must hold the files the
+// plan was made from. Init and both shows get no
 // credentials. At Options.ApplyTimeout, init and the shows are killed,
 // and apply is interrupted and has ApplyStop to end. On an error from
 // apply, it returns what apply wrote too. For a stack with StateCreds,
@@ -308,18 +318,19 @@ func (r *Runner) Apply(ctx context.Context, s Stack, plan []byte) (Applied, erro
 		return Applied{}, err
 	}
 	defer sc.remove()
-	if err := sc.write(planFile, plan); err != nil {
+	saved, err := sc.sealPlan(plan)
+	if err != nil {
 		return Applied{}, err
 	}
 	if err := r.init(ctx, sc); err != nil {
 		return Applied{}, err
 	}
-	js, err := r.step(ctx, sc, false, "show", "show", "-json", planFile)
+	js, err := r.step(ctx, sc, false, "show", "show", "-json", saved)
 	if err != nil {
 		return Applied{}, err
 	}
 	sc.stop = ApplyStop
-	log, err := r.step(ctx, sc, true, "apply", "apply", "-input=false", "-json", planFile)
+	log, err := r.step(ctx, sc, true, "apply", "apply", "-input=false", "-json", saved)
 	var se *StepError
 	if errors.As(err, &se) && hasError(se.Stdout, "Saved plan is stale") {
 		err = fmt.Errorf("%w: %w", ErrStale, err)

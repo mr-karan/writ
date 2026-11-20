@@ -41,7 +41,7 @@ Because an OpenTofu plan on an unmerged branch executes provider and module code
 
 - **Config-owned rules**: Teams, grants, approval rules, and Rego policies live only in `writ serve`'s config on the server. A merge request cannot edit CI YAML or repo files to weaken grants, skip approvals, or disable policies.
 - **No self-approval**: Whenever an approval rule applies, the plan's author can never approve it. `writ serve --check` refuses `approve` grants to CI teams that do not match a person claim, and refuses `override` or `adopt` grants to any CI team.
-- **Plan binding**: Approving a plan approves its SHA-256 plan ID (binding the masked plan, binary saved plan, commit SHA, stack, and environment). Applying a stale plan, a superseded plan, or a commit whose sources differ from the approved plan is refused.
+- **Plan binding**: Approving a plan approves its SHA-256 plan ID (binding the masked plan, binary saved plan, commit SHA, stack, and environment). Applying a stale plan, a superseded plan, or a commit whose sources differ from the approved plan is refused. The masked plan is rendered from the saved plan that Writ seals: Writ reads the saved plan when `tofu plan` exits, and `tofu show` and `tofu apply` read it from a sealed in-memory file that no process of the run can write.
 
 ## Run isolation
 

@@ -27,6 +27,13 @@ func startConfined(cmd *exec.Cmd, c command) (func(), error) {
 	return func() {}, runas.Start(cmd)
 }
 
+// sealPlan writes plan into the stack's directory and returns its path.
+// Only Linux seals it: a team's writ serve, whose runs have uids of their
+// own, runs only there.
+func (sc *scratch) sealPlan(plan []byte) (string, error) {
+	return planFile, sc.write(planFile, plan)
+}
+
 // maxSocketPath is the size of sun_path on macOS and the BSDs, which holds
 // a Unix socket's path and its closing NUL.
 const maxSocketPath = 104
