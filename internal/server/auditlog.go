@@ -66,7 +66,7 @@ type AuditRow struct {
 	ElapsedMS      int64 `json:"elapsed_ms"`
 }
 
-// listAudit is GET /v1/audit?plan=&run=&env=&stack=&person=&op=&since=&until=&limit=&cursor=.
+// listAudit is GET /v1/audit?plan=&run=&env=&stack=&person=&op=&changes=&since=&until=&limit=&cursor=.
 // Every filter value it records on its own row is one it checked first,
 // so the row quotes nothing else the request sent.
 func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +97,18 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	case f.Op != "" && !slices.Contains(AuditOps, f.Op):
 		bad("op must be one of " + strings.Join(AuditOps, ", "))
+		return
+	}
+	switch q.Get("changes") {
+	case "", "false":
+	case "true":
+		if f.Op == string(authz.Read) || f.Op == "state-read" {
+			bad("changes leaves out the rows of op read and state-read, so it takes neither as op")
+			return
+		}
+		f.Changes = true
+	default:
+		bad("changes must be true or false")
 		return
 	}
 	if f.Env != "" {

@@ -44,6 +44,14 @@ writ audit --remote --person gitlab/user/1001
 writ audit --remote --op apply --since 2026-11-19T00:00:00Z --until 2026-11-19T23:59:59Z
 ```
 
+Leave out the reads with `--changes`. It drops the rows of op `read` and `state-read`, and the requests by `GET` or `HEAD` that name no op and were allowed or needed no decision, such as `GET /v1/whoami`, a control UI page, and its static files. Every other row stays: plans, approvals, applies, overrides, adoptions, admin actions, state writes and locks, webhook deliveries, sign-ins, the server's start, and a refused request of no op, such as a failed token. Without `--changes` every row prints, as before.
+
+```sh
+writ audit --remote --changes
+```
+
+`--changes` takes no `--op read` or `--op state-read`.
+
 Valid `--op` values are `read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`, `state-read`, `state-write`, `state-lock`, `state-unlock`, and `hook`, a Git host's [webhook delivery](webhooks.md#what-writ-serve-answers).
 
 ### 3. Page through older rows
@@ -59,6 +67,7 @@ writ audit --remote --limit 2 --cursor CURSOR_FROM_PREVIOUS_OUTPUT
 
 Open Audit in the control UI's sidebar, `/ui/audit`. It shows the same rows `GET /v1/audit` gives your session, newest first, one row an entry: its decision, the method, route, and status, the operation, the `stack@env`, who sent it, with a person or a CI icon, and when.
 
+- The page shows only the changes, as `writ audit --remote --changes` does, so the reads of its own pages, their static files, and CI polls don't drown the plans, approvals, applies, and webhook deliveries. Show reads, beside the pickers, shows every row (`?reads=1`), and Changes goes back. Both are links, so they work with scripts off, and the pickers, the filter form, and Older entries keep the one you chose. With an Op picked, the page shows that op's rows, reads too.
 - The Env, Op, and Time pickers, and More filters, narrow the page by environment, stack, person, operation, plan, run, and time. Each is a GET parameter of the page (`?env=prod&stack=app`, `?person=gitlab/user/1001`, `?since=2026-11-19T00:00:00Z`), so the page works with scripts off and its URL can be shared.
 - Older entries opens the next page with the API's encrypted cursor.
 - Each plan's and run's page has an Audit trail button, which opens `/ui/audit?plan=ID` or `/ui/audit?run=ID`.

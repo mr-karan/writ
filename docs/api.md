@@ -36,7 +36,7 @@
 | `GET /v1/runs/{id}?wait=60s` | `read` | `writ.remote-run/v0`. With `wait`, the request waits for a run that applies to end, at most 120 seconds. |
 | `GET /v1/applies?env=&stack=&limit=` | `read` | `writ.remote-runs/v0`: the runs `writ serve` started, newest first, with each one's stack, plan, status, and times, only those of stacks the token can read. `more` says older runs were left out. Each run carries its plan's source digest in `sources`. |
 | `POST /v1/apply-requests/{key}/outcome` | a token, and for a `started` key, the run's principal or `admin` | `writ.apply-outcome/v0`: `started` with the run, or `none`. A key with no row gets a `none` row. See [When an answer is lost](apply.md#when-an-answer-is-lost). |
-| `GET /v1/audit?plan=&run=&env=&stack=&person=&op=&since=&until=&limit=&cursor=` | any token | `writ.audit/v0`: a page of the audit log, newest first, only the rows the token may see. See [Read the audit log](#read-the-audit-log). |
+| `GET /v1/audit?plan=&run=&env=&stack=&person=&op=&changes=&since=&until=&limit=&cursor=` | any token | `writ.audit/v0`: a page of the audit log, newest first, only the rows the token may see. See [Read the audit log](#read-the-audit-log). |
 | `GET`, `POST`, `LOCK`, `UNLOCK /v1/tfstate/{stack}` (and `/v1/tfstate/{stack}/lock`) | a run's state token | OpenTofu `http` state backend protocol, reachable only by a running plan or apply's single-run token (`plan` tokens may only `GET`; `apply` tokens may `GET`, `POST`, `LOCK`, and `UNLOCK`). |
 | `GET`, `POST /ui/...` | browser session cookie | HTML pages and actions of the [control UI](sign-in.md#the-control-ui) (`/ui/`, `/ui/plans`, `/ui/plans/{id}`, `/ui/runs/{id}`, `/ui/drift/{id}`, `/ui/audit`, `/ui/stacks/{env}/{stack...}`, `/ui/login`, `/ui/callback`, `/ui/logout`, `/ui/dev-login`). |
 
@@ -310,6 +310,7 @@ A plan, an approval or its withdrawal, an apply, an adoption, a new repository, 
 | `env`, and `stack` with it | Of the environment, and of the stack there. A row that lists several stacks matches each of them. `env` must be one `writ serve` plans in, as on `GET /v1/plans`. |
 | `person` | Of the person, by the id `writ whoami` prints, such as `gitlab/user/1001` |
 | `op` | Of the operation: `read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`, `state-read`, `state-write`, `state-lock`, `state-unlock`, or `hook`. Any other value returns 400. |
+| `changes` | `true` leaves out the reads: the rows of op `read` and `state-read`, and the requests by `GET` or `HEAD` that name no op and were allowed or needed no decision, such as `GET /v1/whoami`, a control UI page, and its static files. A refused request of no op, a sign-in, and the server's start stay. It takes no `op` of `read` or `state-read`. `false`, or none, gives every row. |
 | `since`, `until` | At or after `since`, and before `until`, both RFC 3339 times |
 | `limit` | At most this many, from 1 to 200, 50 by default |
 | `cursor` | After the last row of the page whose `next` this is. A cursor works until `writ serve` restarts, and then returns 400: read the first page again. |

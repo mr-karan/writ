@@ -524,6 +524,9 @@ td.notes .chip { margin-bottom: 0.125rem; }
 .audit-actions { align-self: end; }
 .audit-actions button { width: 100%; }
 .audit-op { white-space: nowrap; }
+/* A principal's name and its person id each keep to one line, so a
+   squeezed By column never breaks "tester (dev)" at its space. */
+.audit-by .by, .audit-by .id { white-space: nowrap; }
 .theme { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--inset); }
 .theme legend { float: left; padding: 0; font-size: var(--fs-2); color: var(--muted-foreground); width: 9rem; line-height: var(--ctl); }
 fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: contents; }

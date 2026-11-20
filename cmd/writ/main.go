@@ -105,10 +105,11 @@ WRIT_ID_TOKEN, else your session from writ login, else the dev token:
   runs     --remote --env ENV [--stack NAME] [--json] [--limit N]
                                           list the runs writ serve started, newest first
   audit    --remote [--env ENV [--stack NAME]] [--plan ID] [--run ID] [--person ID] [--op OP]
-           [--since TIME] [--until TIME] [--limit N] [--cursor C] [--json]
+           [--changes] [--since TIME] [--until TIME] [--limit N] [--cursor C] [--json]
                                           list the rows of writ serve's audit log that the token may
                                           see, newest first; --plan takes in its approvals, its run,
-                                          and the run's state writes; TIME is RFC 3339
+                                          and the run's state writes; --changes leaves out reads;
+                                          TIME is RFC 3339
   whoami   [--remote] [--json]            print the control plane, who the token speaks for, its
                                           teams, and its grants
   serve    --config FILE [--check [--notify-test]]
@@ -562,6 +563,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 		fs.StringVar(&o.Run, "run", "", "the rows of the run with this `id`")
 		fs.StringVar(&o.Person, "person", "", "the rows of the person with this `id`, as writ whoami prints it")
 		fs.StringVar(&o.Op, "op", "", "the rows of this `operation`, such as plan, approve, apply, or state-write")
+		fs.BoolVar(&o.Changes, "changes", false, "leave out the reads: the rows of op read and state-read, and the GET requests of no op that were allowed or needed no decision")
 		fs.StringVar(&o.Since, "since", "", "the rows at or after this RFC 3339 `time`")
 		fs.StringVar(&o.Until, "until", "", "the rows before this RFC 3339 `time`")
 		fs.StringVar(&o.Cursor, "cursor", "", "the `cursor` of the next page, as the last page printed it")

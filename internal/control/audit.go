@@ -26,6 +26,11 @@ type AuditFilter struct {
 	Env, Stack string
 	Person     string
 	Op         string
+	// Changes leaves out the reads: the rows of op read and state-read,
+	// and the requests of no op, by GET or HEAD, that were allowed or
+	// needed no decision, such as GET /v1/whoami, a control UI page, or
+	// its static files. A refused request of no op stays.
+	Changes bool
 	// Since keeps rows at or after it, Until rows before it.
 	Since, Until time.Time
 	Limit        int
@@ -77,6 +82,9 @@ func (s *Store) AuditRows(ctx context.Context, f AuditFilter) (entries []Entry, 
 	}
 	if f.Op != "" {
 		add("op = ?", f.Op)
+	}
+	if f.Changes {
+		add("NOT (op IN ('read', 'state-read') OR kind = 'request' AND op = '' AND method IN ('GET', 'HEAD') AND decision IN ('allowed', 'none'))")
 	}
 	if !f.Since.IsZero() {
 		add("at >= ?", f.Since.UnixMilli())

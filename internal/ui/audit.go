@@ -14,9 +14,28 @@ type auditData struct {
 	Envs, Ops                                               []string
 	EnvPick, OpPick, TimePick                               picker
 	Filtered, MoreOpen                                      bool
-	Rows                                                    []server.AuditRow
-	Next                                                    string
+	// Reads shows the reads beside the changes. With no op filter the
+	// page shows only the changes, as GET /v1/audit?changes=true does,
+	// unless reads=1 asks for every row.
+	Reads bool
+	// ChangesHref and ReadsHref are the page with only the changes and
+	// with the reads too.
+	ChangesHref, ReadsHref string
+	Rows                   []server.AuditRow
+	Next                   string
 }
+
+// ReadsParam is the reads parameter of a link of the audit page: "1" when the
+// page shows the reads, else "", which link leaves out.
+func (d auditData) ReadsParam() string {
+	if d.Reads {
+		return "1"
+	}
+	return ""
+}
+
+// Changes reports whether the page shows only the changes.
+func (d auditData) Changes() bool { return !d.Reads && d.Op == "" }
 
 // audit shows the audit log from GET /v1/audit, newest first, with the same
 // per-row authorization, withheld refusal reasons, stripped state hashes,
@@ -34,11 +53,16 @@ func (u *UI) audit(w http.ResponseWriter, r *http.Request, s *server.Session) {
 		Since:  q.Get("since"),
 		Until:  q.Get("until"),
 		Cursor: q.Get("cursor"),
+		Reads:  q.Get("reads") == "1",
 		Ops:    server.AuditOps,
+	}
+	changes := ""
+	if d.Changes() {
+		changes = "true"
 	}
 	var doc server.AuditDoc
 	target := link("/v1/audit",
-		"env", d.Env, "stack", d.Stack, "person", d.Person, "op", d.Op,
+		"env", d.Env, "stack", d.Stack, "person", d.Person, "op", d.Op, "changes", changes,
 		"plan", d.Plan, "run", d.Run, "since", d.Since, "until", d.Until, "cursor", d.Cursor,
 	)
 	if !f.main(target, &doc) {
@@ -56,11 +80,13 @@ func (u *UI) audit(w http.ResponseWriter, r *http.Request, s *server.Session) {
 		if e == "" {
 			st = ""
 		}
-		return link("/ui/audit", "env", e, "stack", st, "person", d.Person, "op", d.Op, "plan", d.Plan, "run", d.Run, "since", d.Since, "until", d.Until)
+		return link("/ui/audit", "env", e, "stack", st, "person", d.Person, "op", d.Op, "plan", d.Plan, "run", d.Run, "since", d.Since, "until", d.Until, "reads", d.ReadsParam())
 	})
 	d.OpPick = newPicker("Op", d.Op, server.AuditOps, func(op string) string {
-		return link("/ui/audit", "env", d.Env, "stack", d.Stack, "person", d.Person, "op", op, "plan", d.Plan, "run", d.Run, "since", d.Since, "until", d.Until)
+		return link("/ui/audit", "env", d.Env, "stack", d.Stack, "person", d.Person, "op", op, "plan", d.Plan, "run", d.Run, "since", d.Since, "until", d.Until, "reads", d.ReadsParam())
 	})
+	d.ChangesHref = link("/ui/audit", "env", d.Env, "stack", d.Stack, "person", d.Person, "plan", d.Plan, "run", d.Run, "since", d.Since, "until", d.Until)
+	d.ReadsHref = link("/ui/audit", "env", d.Env, "stack", d.Stack, "person", d.Person, "plan", d.Plan, "run", d.Run, "since", d.Since, "until", d.Until, "reads", "1")
 	d.TimePick = auditTimePicker(u.now().UTC().Truncate(time.Second), d)
 	d.MoreOpen = d.Stack != "" || d.Person != "" || d.Plan != "" || d.Run != "" || d.Since != "" || d.Until != ""
 	d.Filtered = d.Env != "" || d.Op != "" || d.MoreOpen
@@ -85,7 +111,7 @@ func auditTimePicker(now time.Time, d auditData) picker {
 	p := picker{Label: "Time", Value: current}
 	p.Items = append(p.Items, pickItem{
 		Name:    "all",
-		Href:    link("/ui/audit", "env", d.Env, "stack", d.Stack, "person", d.Person, "op", d.Op, "plan", d.Plan, "run", d.Run),
+		Href:    link("/ui/audit", "env", d.Env, "stack", d.Stack, "person", d.Person, "op", d.Op, "plan", d.Plan, "run", d.Run, "reads", d.ReadsParam()),
 		Current: d.Since == "" && d.Until == "",
 	})
 	for _, w := range []struct {
@@ -100,7 +126,7 @@ func auditTimePicker(now time.Time, d auditData) picker {
 		since := now.Add(-w.d).Format(time.RFC3339)
 		p.Items = append(p.Items, pickItem{
 			Name: w.name,
-			Href: link("/ui/audit", "env", d.Env, "stack", d.Stack, "person", d.Person, "op", d.Op, "plan", d.Plan, "run", d.Run, "since", since),
+			Href: link("/ui/audit", "env", d.Env, "stack", d.Stack, "person", d.Person, "op", d.Op, "plan", d.Plan, "run", d.Run, "since", since, "reads", d.ReadsParam()),
 		})
 	}
 	return p
@@ -108,6 +134,9 @@ func auditTimePicker(now time.Time, d auditData) picker {
 
 func auditCLI(d auditData) string {
 	parts := []string{"writ audit --remote"}
+	if d.Changes() {
+		parts = append(parts, "--changes")
+	}
 	for _, kv := range [][2]string{
 		{"--env", d.Env}, {"--stack", d.Stack}, {"--person", d.Person},
 		{"--op", d.Op}, {"--plan", d.Plan}, {"--run", d.Run},
