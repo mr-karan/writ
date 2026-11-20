@@ -273,6 +273,34 @@ func (s *Store) DriftPlan(ctx context.Context, id string) (DriftCheck, error) {
 	return c, s.db.Error(err)
 }
 
+// DriftCheck returns the drift check named by key, its ref or the id of
+// the plan it made, or ErrNotFound when no kept check matches.
+func (s *Store) DriftCheck(ctx context.Context, key string) (DriftCheck, error) {
+	c, err := scanDrift(s.db.QueryRowContext(ctx, "SELECT "+driftColumns+" FROM drift_checks WHERE ref = ? OR (plan_id = ? AND plan_id <> '') ORDER BY started_at DESC, ref DESC LIMIT 1", key, key))
+	if errors.Is(err, sqldb.ErrNoRows) {
+		return DriftCheck{}, ErrNotFound
+	}
+	return c, s.db.Error(err)
+}
+
+// DriftHistory returns the kept drift checks of stack@env, newest first.
+func (s *Store) DriftHistory(ctx context.Context, env, stack string) ([]DriftCheck, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT "+driftColumns+" FROM drift_checks WHERE env = ? AND stack = ? ORDER BY started_at DESC, ref DESC LIMIT ?", env, stack, keepDriftChecks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DriftCheck
+	for rows.Next() {
+		c, err := scanDrift(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
 // DriftStack is one stack@env that drift checks plan: what its state
 // index holds, the drift writ serve read on S3, and its newest check.
 type DriftStack struct {

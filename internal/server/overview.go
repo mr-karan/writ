@@ -127,6 +127,7 @@ type Alert struct {
 	Stack   string `json:"stack"`
 	Plan    string `json:"plan"`
 	Run     string `json:"run"`
+	Drift   string `json:"drift,omitempty"`
 	Repo    string `json:"repo"`
 	Message string `json:"message"`
 	At      string `json:"at"`
@@ -245,12 +246,12 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 				switch c.Status {
 				case DriftDrifted:
 					a := alert
-					a.Kind, a.At = AlertDrifted, cmp.Or(c.DriftedSince, c.CheckedAt)
+					a.Kind, a.Drift, a.At = AlertDrifted, c.Ref, cmp.Or(c.DriftedSince, c.CheckedAt)
 					a.Message = plural(c.Outside, "change") + " outside OpenTofu, " + plural(c.Code, "change") + " the code would make"
 					doc.Alerts = append(doc.Alerts, a)
 				case DriftFailed:
 					a := alert
-					a.Kind, a.At, a.Message = AlertDriftCheckFailed, c.CheckedAt, c.Error
+					a.Kind, a.Drift, a.At, a.Message = AlertDriftCheckFailed, c.Ref, c.CheckedAt, c.Error
 					doc.Alerts = append(doc.Alerts, a)
 				}
 			}

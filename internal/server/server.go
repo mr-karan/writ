@@ -537,6 +537,7 @@ func (s *Server) routeTable() []apiRoute {
 		{"/v1/repos/{name}", true, map[string]http.HandlerFunc{"GET": s.getRepo}},
 		{"/v1/dev/ui-link", true, map[string]http.HandlerFunc{"POST": s.uiLink}},
 		{"/v1/drift", true, map[string]http.HandlerFunc{"GET": s.listDrift}},
+		{"/v1/drift/{id}", true, map[string]http.HandlerFunc{"GET": s.getDrift}},
 		{"/v1/index", true, map[string]http.HandlerFunc{"GET": s.stateIndex}},
 		{"/v1/overview", true, map[string]http.HandlerFunc{"GET": s.overview}},
 		{"/v1/audit", true, map[string]http.HandlerFunc{"GET": s.listAudit}},
@@ -821,6 +822,8 @@ func formatOf(route, method string) string {
 		return FormatConfig
 	case route == "/v1/drift":
 		return FormatDrift
+	case route == "/v1/drift/{id}":
+		return FormatDriftCheck
 	case route == "/v1/index":
 		return FormatStateIndex
 	case route == "/v1/overview":
