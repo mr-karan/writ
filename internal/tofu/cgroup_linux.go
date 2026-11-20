@@ -470,13 +470,13 @@ func (c *stepCgroup) hit() (string, bool) {
 }
 
 // ownPidsHit reports whether the step's own pids.max refused a process
-// that its pids.events counts. From Linux 6.15, which added
-// pids.events.local, pids.events counts only the refusals of the step's
-// own limit. Before, it counted every refusal of a process the step
-// started, runsCgroup's too, and a step whose pids.peak never reached its
-// own limit was refused by runsCgroup's.
+// that its pids.events counts. Before Linux 6.15, pids.events counted
+// every refusal of a process the step started, runsCgroup's too, and from
+// it so does a cgroup filesystem mounted with pids_localevents, though
+// the step's cgroup then has pids.events.local. A step whose pids.peak
+// never reached its own limit was refused by runsCgroup's.
 func (c *stepCgroup) ownPidsHit() bool {
-	if _, err := os.Stat(filepath.Join(c.dir, "pids.events.local")); err == nil || c.runs.pids == 0 {
+	if c.runs.pids == 0 {
 		return true
 	}
 	text, err := os.ReadFile(filepath.Join(c.dir, "pids.peak"))

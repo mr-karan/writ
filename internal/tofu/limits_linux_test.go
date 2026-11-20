@@ -739,10 +739,11 @@ func TestScratchChargesLinksAShare(t *testing.T) {
 }
 
 // A step refused a process names the limit that refused it. Before Linux
-// 6.15, which added pids.events.local, the kernel counted a refusal by
-// runs' pids.max in the refused step's own pids.events, so the step's
-// pids.peak tells its own limit from the one every step shares.
-// Directories stand in for the step's cgroup and runs.
+// 6.15, which added pids.events.local, and from it on a cgroup filesystem
+// mounted with pids_localevents, the kernel counts a refusal by runs'
+// pids.max in the refused step's own pids.events, so the step's pids.peak
+// tells its own limit from the one every step shares. Directories stand
+// in for the step's cgroup and runs.
 func TestStepNamesThePidsLimitThatRefusedIt(t *testing.T) {
 	for _, c := range []struct {
 		name   string
@@ -752,7 +753,8 @@ func TestStepNamesThePidsLimitThatRefusedIt(t *testing.T) {
 	}{
 		{"before 6.15, at its own limit", map[string]string{"pids.events": "max 1\n", "pids.peak": "64\n"}, "limits.run_pids", false},
 		{"before 6.15, below its own limit", map[string]string{"pids.events": "max 1\n", "pids.peak": "40\n"}, "TasksMax", true},
-		{"from 6.15", map[string]string{"pids.events": "max 1\n", "pids.events.local": "max 1\n", "pids.peak": "64\n"}, "limits.run_pids", false},
+		{"from 6.15, at its own limit", map[string]string{"pids.events": "max 1\n", "pids.events.local": "max 1\n", "pids.peak": "64\n"}, "limits.run_pids", false},
+		{"from 6.15 with pids_localevents, below its own limit", map[string]string{"pids.events": "max 1\n", "pids.events.local": "max 0\n", "pids.peak": "40\n"}, "TasksMax", true},
 		{"refused nothing", map[string]string{"pids.events": "max 0\n", "pids.peak": "40\n"}, "", false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
