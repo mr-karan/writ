@@ -66,7 +66,7 @@ $ writ serve --config /etc/writ/serve --check
 $ writ serve --config /etc/writ/serve
 ```
 
-Here, `--check` parses the config and prints what each team can do. With a `tofu` block, it runs `tofu version`. With `provider_uids` it also runs `writ` as a provider's uid to check what that uid can read and reach, including the EC2 instance metadata addresses. It doesn't contact Postgres, your Git host, or the issuers.
+Here, `--check` parses the config and prints what each team can do. With a `tofu` block, it runs `tofu version`, and prints the [run limits](run-isolation.md#check-that-the-limits-hold) each OpenTofu step would get, or warns why it would get none. With `provider_uids` it also runs `writ` as a provider's uid to check what that uid can read and reach, including the EC2 instance metadata addresses. It doesn't contact Postgres, your Git host, or the issuers.
 
 Here's what it printed for the NixOS module's sample config. That run was as a user who can't switch users, so the isolation check only warns:
 
@@ -123,7 +123,7 @@ You'll find it in the repository's flake as `nixosModules.writ-serve`, with the 
 
 Without the flake, import `deploy/nixos/writ-serve.nix` and set `package` to any package whose `bin/writ` is the binary.
 
-When you set `providerUids`, the unit gets `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL`. The module also creates `/var/lib/writ-tofu` for the `tofu` block's `plugin_cache` and `scratch_dir`, and loads the firewall rule from [How providers are kept from the keys](serve.md#how-providers-are-kept-from-the-keys).
+When you set `providerUids`, the unit gets `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL`. The module also creates `/var/lib/writ-tofu` for the `tofu` block's `plugin_cache` and `scratch_dir`, and loads the firewall rule from [How providers are kept from the keys](serve.md#how-providers-are-kept-from-the-keys). It sets `Delegate=yes` and leaves `ProtectControlGroups` off, so `writ serve` can give each OpenTofu step a cgroup of its own with the config's [run limits](run-isolation.md#limit-what-each-run-uses).
 
 If your host sets `networking.nftables.enable`, the rule joins that ruleset, which flushes every other table when it loads. Otherwise a unit of the module, `writ-serve-metadata-firewall`, loads it before `writ serve` starts.
 

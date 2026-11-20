@@ -102,7 +102,7 @@ export const how = {
 } as const;
 
 export const security = {
-  title: 'Twelve layers of defense around every run',
+  title: 'Thirteen layers of defense around every run',
   lede: 'Because an OpenTofu plan on an unmerged branch executes provider and module code, Writ isolates credentials, state keys, processes, secrets, and approvals on the server.',
   layers: [
     {
@@ -164,6 +164,11 @@ export const security = {
       num: '12',
       title: 'Per-run network egress control',
       text: 'With `egress_mode = "enforce"`, each run gets its own network namespace and reaches the network only through Writ\'s egress proxy, which allows just the hosts each environment lists and never metadata, loopback, or private addresses a wildcard names.',
+    },
+    {
+      num: '13',
+      title: 'Per-run resource limits and a seccomp filter',
+      text: 'Each OpenTofu step runs in its own cgroup with memory, process, and CPU limits, and is killed whole when it ends; a seccomp filter refuses mounts, new namespaces, `ptrace`, `bpf`, and the rest of the kernel a run never needs.',
     },
   ],
   limit:
