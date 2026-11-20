@@ -94,12 +94,18 @@ func (s *Server) clientKey(r *http.Request) string {
 }
 
 // limitClients counts every request against the limit of its client's
-// address before any other work, and answers 429 past it. A refused
-// request leaves no audit row, so a client that sends bad tokens fast
-// cannot fill the control database: shed counts those requests instead.
+// address before any other work, and answers 429 past it.
 func (s *Server) limitClients(next http.Handler) http.Handler {
+	return s.limitBy(s.clients, s.clientKey, next)
+}
+
+// limitBy counts every request against l's limit of its key before any
+// other work, and answers 429 past it. A refused request leaves no audit
+// row, so a client that sends bad tokens fast cannot fill the control
+// database: shed counts those requests instead.
+func (s *Server) limitBy(l *limiter, key func(*http.Request) string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.clients.allow(s.clientKey(r)) {
+		if l.allow(key(r)) {
 			next.ServeHTTP(w, r)
 			return
 		}

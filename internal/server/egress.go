@@ -59,18 +59,27 @@ func (s *Server) stateBase() string {
 	return runLoopback + strconv.Itoa(statePort)
 }
 
-// initEgress makes the handler of the state port: the state backend
-// behind the address limit and the audit row, as on writ serve's own
-// listener, and no other route. A run is no trusted proxy, so its
-// X-Forwarded-For is dropped and its audit rows show its own address.
+// initEgress makes what the state port serves: the state backend behind
+// the audit row, as on writ serve's own listener, and no other route.
 func (s *Server) initEgress() {
 	if !s.cfg.EgressMode.On() {
 		return
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/tfstate/", http.HandlerFunc(s.serveState))
-	h := s.limitClients(s.audit(mux))
-	s.stateOnly = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s.stateOnly = s.audit(mux)
+	s.runClients = newLimiter(s.cfg.Limits.RequestsPerAddress, maxBuckets, s.now)
+}
+
+// stateHandler is the handler of the state port of run id. Every run
+// reaches it from 127.0.0.1, so it counts the run's requests against
+// limits.requests_per_address on a limit of the run's own, apart from
+// writ serve's own listener and from every other run. A run is no
+// trusted proxy, so its X-Forwarded-For is dropped and its audit rows
+// show its own address.
+func (s *Server) stateHandler(id string) http.Handler {
+	h := s.limitBy(s.runClients, func(*http.Request) string { return id }, s.stateOnly)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r.Header.Del("X-Forwarded-For")
 		h.ServeHTTP(w, r)
 	})
@@ -92,7 +101,7 @@ func (r *tofuRun) net() *tofu.Net {
 	if r.proxy == nil {
 		return nil
 	}
-	n := &tofu.Net{Ports: map[int]http.Handler{egressPort: r.proxy, statePort: r.s.stateOnly}}
+	n := &tofu.Net{Ports: map[int]http.Handler{egressPort: r.proxy, statePort: r.s.stateHandler(r.spec.id)}}
 	if r.s.broker != nil {
 		n.Ports[credsPort] = r.s.broker.Handler()
 	}

@@ -337,3 +337,50 @@ func TestTofuEgressPlanMarks(t *testing.T) {
 		t.Errorf("writ serve's log, which should hold a run egress line without %s:\n%s", tofuCanary, logged)
 	}
 }
+
+// The state port counts a run's requests against
+// limits.requests_per_address on a limit of its own, keyed by the run.
+// Every run reaches it from 127.0.0.1, so a run that floods it is
+// refused, and neither writ serve's own listener, which a client on
+// loopback reaches, nor another run's state port counts its requests.
+func TestTofuEgressStatePortLimit(t *testing.T) {
+	var log syncBuffer
+	runner := &fakeTofu{}
+	f := tofuApplyFixtureEdit(t, runner, func(text string) string {
+		return strings.Replace(withEgress("enforce", `[]`)(text), "requests_per_address = 1000", "requests_per_address = 20", 1)
+	}, frozen(&log))
+	var flood []int
+	var own, other int
+	runner.plan = func() (tofu.Plan, error) {
+		runner.mu.Lock()
+		s, n := runner.stacks[len(runner.stacks)-1], len(runner.stacks)
+		runner.mu.Unlock()
+		state := serveRunPort(t, s.Net.Ports[3130])
+		if n > 1 {
+			other = getVia(t, state, "/v1/tfstate/app", "not-a-token")
+			return createOnly()
+		}
+		for range 40 {
+			flood = append(flood, getVia(t, state, "/v1/tfstate/app", "not-a-token"))
+		}
+		own = f.do("GET", "/v1/whoami", f.token(nil), nil).status
+		return createOnly()
+	}
+	f.planCommit(tofuFiles(), "flood")
+	f.planCommit(tofuFiles(), "after")
+	refused := 0
+	for _, c := range flood {
+		if c == http.StatusTooManyRequests {
+			refused++
+		}
+	}
+	if len(flood) != 40 || flood[0] == http.StatusTooManyRequests || refused != 20 {
+		t.Errorf("the state port answered %v, want the 20 requests past the run's limit of 20 refused", flood)
+	}
+	if own != http.StatusOK {
+		t.Errorf("after a run's 40 requests to its state port, writ serve's own listener answered a client on loopback %d", own)
+	}
+	if other == 0 || other == http.StatusTooManyRequests {
+		t.Errorf("after one run's 40 requests to its state port, the next run's state port answered %d", other)
+	}
+}

@@ -99,9 +99,11 @@ type Server struct {
 	// broker serves each plan's role credentials to its providers. It is
 	// nil when no environment names a role.
 	broker *awsrole.Broker
-	// stateOnly serves the state backend alone, on the state port of a
-	// run's own network. It is nil under egress_mode off.
-	stateOnly http.Handler
+	// stateOnly is the state backend alone behind the audit row, which
+	// the state port of a run's own network serves, and runClients counts
+	// each run's requests to it. Both are nil under egress_mode off.
+	stateOnly  http.Handler
+	runClients *limiter
 	// uids holds the free provider_uids. It is nil without them.
 	uids chan uint32
 	reap func(uid uint32) error
