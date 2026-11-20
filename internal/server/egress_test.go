@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -302,4 +303,37 @@ func TestTofuEgressCredentials(t *testing.T) {
 		t.Fatalf("the run's own credential port served %v, which STS did not issue for this run", fetched)
 	}
 
+}
+
+// A plan's network record is made after the mask learns the plan's
+// marks: a host that spells a variable only the plan marks sensitive is
+// swept in the record the API serves and in the run egress log line.
+func TestTofuEgressPlanMarks(t *testing.T) {
+	var log syncBuffer
+	runner := &fakeTofu{}
+	f := tofuApplyFixtureEdit(t, runner, withEgress("enforce", `["*.amazonaws.com"]`), func(o *server.Options) {
+		o.Log = slog.New(slog.NewTextHandler(&log, nil))
+	})
+	runner.plan = func() (tofu.Plan, error) {
+		runner.mu.Lock()
+		s := runner.stacks[len(runner.stacks)-1]
+		runner.mu.Unlock()
+		connectVia(t, serveRunPort(t, s.Net.Ports[3128]), tofuCanary+".example.org:443")
+		return tofu.Plan{File: []byte("saved"), JSON: []byte(tofuPlanJSON)}, nil
+	}
+	p, _ := f.planCommit(tofuFiles(), "egress-mask")
+	if p.Plan.Status != "pending" {
+		t.Fatalf("plan %+v\n%s", p.Plan, p.Text)
+	}
+	want := []server.NetworkDestination{{Host: "(sensitive).example.org", Port: 443, Verdict: "refused", Reason: "not in the list", Count: 1}}
+	if n := networkOf(t, p.Network); !slices.Equal(n.Destinations, want) {
+		t.Errorf("the plan's network %+v, want %+v", n.Destinations, want)
+	}
+	if served := f.do("GET", "/v1/plans/"+p.Plan.Ref, f.token(nil), nil); strings.Contains(string(served.body), tofuCanary) {
+		t.Errorf("the plan the API serves holds %s:\n%s", tofuCanary, served.body)
+	}
+	logged := log.String()
+	if !strings.Contains(logged, `msg="run egress"`) || strings.Contains(logged, tofuCanary) {
+		t.Errorf("writ serve's log, which should hold a run egress line without %s:\n%s", tofuCanary, logged)
+	}
 }

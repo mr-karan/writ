@@ -163,15 +163,16 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 	}
 	// The hosts the run asked for are its output too, so the record of
 	// them waits for the mask that sweeps the rest.
-	net := run.network(m)
-	res.Network = net.raw()
 	if refused {
+		net := run.network(m)
+		res.Network = net.raw()
 		return refusedTofu(res, se, m, onS3, egressDiagnostics(net, env, se.Stdout, se.Stderr)), nil
 	}
 	doc, err := m.Plan(raw.JSON)
 	if err != nil {
 		return res, fmt.Errorf("the mask refused the plan, so writ serve keeps nothing of it: %w", err)
 	}
+	res.Network = run.network(m).raw()
 	body, err := json.Marshal(doc)
 	if err != nil {
 		return res, err
