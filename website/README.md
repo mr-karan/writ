@@ -23,7 +23,7 @@ Rerun `bun run content` after you edit a file under `docs/` while `bun run dev` 
 The site holds no copy of the docs. `docs/` and `README.md` stay the source.
 
 - `content.manifest.ts` says which file goes on which page, the page titles, and the navigation order. Each page is one whole file today. The manifest can also join parts of several files by selector.
-- `scripts/gen-content.ts` runs before `dev` and `build`. It writes the pages into `content/docs/`, writes each one again as plain Markdown under `public/raw/` with an index in `public/llms.txt`, and writes `content/landing.json`: the list of what Writ is not yet and every terminal output that the landing page shows, cut from `README.md`, `docs/quick-start.md`, `docs/agents.md`, and `docs/policy.md`. All of that is git-ignored.
+- `scripts/gen-content.ts` runs before `dev` and `build`. It writes the pages into `content/docs/`, writes each one again as plain Markdown under `public/raw/` with an index in `public/llms.txt`, and writes `content/landing.json`: the list of current limits and every terminal output and code block that the landing page shows, cut from `README.md`, `docs/quick-start.md`, `docs/agents.md`, `docs/write-a-policy.md`, and `docs/policy.md`. All of that is git-ignored.
 - A selector that no longer matches its source fails the build. When that happens, fix the selector in `content.manifest.ts` or in `scripts/gen-content.ts`.
 
 To add a docs page, add an entry to `pages` and to `nav` in `content.manifest.ts`. If other docs link to the new file, add it to `fileRoutes`.

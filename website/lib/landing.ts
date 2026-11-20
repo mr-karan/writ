@@ -1,21 +1,21 @@
 // The landing page's copy, in one place for review. Strings take the inline
 // Markdown that components/inline.tsx renders: `code`, **bold**, and links.
-// Every terminal output, HCL snippet, and the list of limits come from
-// content/landing.json instead, which scripts/gen-content.ts cuts from the
-// README and the docs.
+// Every terminal output, HCL snippet, Rego snippet, and the list of limits
+// come from content/landing.json instead, which scripts/gen-content.ts cuts
+// from the README and the docs.
 
 export const hero = {
   // The headline, with the phrase the page sets in color.
   title: { plain: 'Plan, approve, and apply infra changes.', accent: 'The cloud keys stay home.' },
   art: 'An island drawn in small cubes, seen from above. A stone keep stands on it, with ochre in its court and a tall tower that bears a key, and ochre cubes rise from the tower to a cloud. Two small huts on the shore face its gate. Part of the land at the lower left is drawn as a wire frame.',
-  lede: 'Writ is a self-hosted, open-source control plane for OpenTofu. CI jobs prove identity with OIDC and hold no cloud credentials. Writ plans commits on your server, waits for your team to approve that exact sealed plan, applies it in a sandbox, and records every step in an audit log.',
+  lede: 'Writ is a self-hosted, open-source control plane for OpenTofu. CI jobs prove identity with OIDC and hold no cloud credentials. Writ plans commits on your server, enforces OPA/Rego policy, waits for your team to approve that exact sealed plan, applies it in a sandbox, and records every step in an audit log.',
   facts: [
     { label: 'License', text: 'Apache 2.0' },
     { label: 'Deployment', text: 'Self-hosted, single Go binary' },
     { label: 'Price', text: 'Free, no seat, run, or resource meter' },
-    { label: 'Status', text: 'Version 0, OpenTofu 1.13.9 only.' },
+    { label: 'Engine', text: 'OpenTofu 1.13.9, isolated per run.' },
   ],
-  notYet: { text: 'What Writ isn’t, yet', href: '#notyet' },
+  more: { text: 'Supported platforms', href: '/docs/status' },
 };
 
 export const what = {
@@ -99,6 +99,104 @@ export const how = {
   refusal: 'If a newer plan replaced the approved one, the state moved, or the branch changed, Writ refuses the apply. You plan and approve again.',
   caption:
     'Output of `TestTofuApproveApply`, 2026-11-16. Prompts `alice $` and `bob $` show who ran each command. [How a plan becomes an apply](/docs/plan-to-apply)',
+} as const;
+
+export const security = {
+  title: 'Eleven layers of defense around every run',
+  lede: 'Because an OpenTofu plan on an unmerged branch executes provider and module code, Writ isolates credentials, state keys, processes, secrets, and approvals on the server.',
+  layers: [
+    {
+      num: '01',
+      title: 'No cloud credentials in CI',
+      text: 'CI jobs authenticate to Writ with single-use OIDC JWTs (`WRIT_ID_TOKEN`); AWS role credentials and state encryption keys never leave `writ serve`.',
+    },
+    {
+      num: '02',
+      title: 'Short-lived STS sessions per run',
+      text: 'Each run receives a dedicated STS session for the environment’s `plan_role` or `apply_role` over loopback, tagged with the caller’s `SourceIdentity` for CloudTrail.',
+    },
+    {
+      num: '03',
+      title: 'Separate provider UIDs and metadata firewall',
+      text: 'Every concurrent run executes under its own Linux UID from `provider_uids`, blocked by `nftables` from `169.254.169.254` and `fd00:ec2::254`.',
+    },
+    {
+      num: '04',
+      title: 'Linux user, mount, and PID namespaces',
+      text: 'Runs execute inside a `pivot_root` read-only `tmpfs` filesystem view with all capabilities cleared (`no_new_privs`) and server keys and shells unmounted.',
+    },
+    {
+      num: '05',
+      title: 'Secrets masked from every output and record',
+      text: '`internal/mask` strips sensitive values, secret-named attributes, and the STS credentials served to a run from plans, diagnostics, logs, and stored records.',
+    },
+    {
+      num: '06',
+      title: 'Sealed, immutable saved plans',
+      text: 'Saved plans and `http`-backend states are encrypted per environment with AES-256-GCM; `writ apply --remote` applies the exact approved plan binary and refuses if state moved or the plan expired.',
+    },
+    {
+      num: '07',
+      title: 'Server-enforced grants, approvals, and policy',
+      text: 'Teams, grants, approval rules, and mandatory OPA/Rego policies live in `writ serve`’s host config, where no CI YAML edit can weaken them.',
+    },
+    {
+      num: '08',
+      title: 'Authors cannot approve their own plans',
+      text: 'Self-approval is refused whenever an approval rule applies, matched by stable `IDENTITY/user/ID` across CI OIDC tokens, CLI sessions, and browser sessions.',
+    },
+    {
+      num: '09',
+      title: 'Synchronous audit log of every request',
+      text: 'Every API, UI, and state request commits an audit row with the caller’s verified identity before `writ serve` responds, readable via `GET /v1/audit` and `writ audit --remote`.',
+    },
+    {
+      num: '10',
+      title: 'Scheduled drift checks and S3 state verification',
+      text: 'Scheduled drift checks detect out-of-band cloud edits, and S3 state versions written outside Writ block approvals until reviewed with `writ state adopt`.',
+    },
+    {
+      num: '11',
+      title: 'Per-address and per-principal rate and time limits',
+      text: 'Token-bucket rate limits per client IP and per principal, bounded concurrent runs, and hard plan (`30m`) and apply (`4h`) execution deadlines protect the server.',
+    },
+  ],
+  limit:
+    'Outside the EC2 metadata firewall and module-source allow-lists, runs share the host network so providers can reach registries and cloud APIs. Enforce stricter egress rules at your host or VPC firewall if required.',
+  link: { text: 'Read the full security model', href: '/docs/security-model' },
+} as const;
+
+export const policySection = {
+  title: 'Your rules, as code',
+  lede: 'Approval rules decide how many people must review a plan. Policy decides what no plan may do, whoever approves it. Write OPA Rego rules over OpenTofu’s plan JSON, test them locally with `conftest`, and enforce them on the server at both plan and apply time.',
+  verdicts: [
+    {
+      title: 'Deny at plan',
+      text: 'Refuses the plan (`status = refused`) and discards the saved plan bytes, so no approval or apply can use it.',
+    },
+    {
+      title: 'Deny at apply',
+      text: 'Re-evaluates the live policy set against `input.writ.now`, the caller, and `input.writ.approvals` right before `tofu apply` starts.',
+    },
+    {
+      title: 'Warn without blocking',
+      text: '`warn*` rules and `advisory` sets attach warnings to the plan in the CLI, control UI, and API while allowing approval and apply.',
+    },
+    {
+      title: 'No override for a mandatory deny',
+      text: '`writ apply --remote --override` bypasses approval counts only. To recover from a mandatory policy deny, fix the code and plan again.',
+    },
+  ],
+  regoTitle: 'policy/baseline/tls.rego',
+  regoCaption: 'Rules in `examples/policy/tls.rego` and `examples/policy/files.rego`. Verified locally with `conftest verify --policy examples/policy`.',
+  outputTitle: 'writ plan --remote (exit code 1)',
+  outputCaption: 'Output of `TestTofuPlanByCommit`, 2026-11-15.',
+  limit: 'Policies load from the server config so a merge request cannot weaken the rules that check it. Test locally with `conftest verify` and `conftest test`.',
+  links: [
+    { text: 'Write and test policies', href: '/docs/write-a-policy' },
+    { text: 'Policy cookbook (12 recipes)', href: '/docs/policy-cookbook' },
+    { text: 'Policy reference', href: '/docs/policy-reference' },
+  ],
 } as const;
 
 export const tour = {
@@ -209,22 +307,22 @@ export const benefits = {
 } as const;
 
 export const whenToUse = {
-  title: 'When to use Writ, and when plain CI is enough',
-  lede: 'Running a control plane adds Postgres, a Linux host, and state keys to back up. Make sure the trade-off fits your team.',
-  plainCi: {
-    title: 'Plain CI + OIDC may be enough when',
+  title: 'When Writ fits your team',
+  lede: 'Writ is built for teams that want dedicated server-side credential isolation, exact plan-bound approvals, and OPA/Rego policy without per-resource SaaS pricing.',
+  writ: {
+    title: 'Writ is built for teams where',
     items: [
-      'One small team owns the repo and runners, and everyone who can merge is already trusted to change production.',
-      'You prefer zero extra server infrastructure beyond GitLab runners and your existing state bucket.',
-      'You need GitHub Actions, Terraform (not OpenTofu), or merge-request plan comments right now.',
+      'CI pipelines and developer laptops must never hold cloud credentials or state encryption keys.',
+      'Approvals must bind to the exact sealed plan that applies, and a plan’s author must never self-approve.',
+      'You want masked plans, OPA/Rego policy at plan and apply, scheduled drift checks, and a synchronous audit log on your own server.',
     ],
   },
-  writ: {
-    title: 'Reach for Writ when',
+  plainCi: {
+    title: 'When plain CI with OIDC fits',
     items: [
-      'CI pipelines and developer laptops must not hold cloud credentials or state encryption keys.',
-      'Approvals must bind to the exact saved plan that applies, and a plan’s author must never self-approve.',
-      'You want masked plans, Rego policy at plan and apply, scheduled drift checks, and a synchronous audit log without per-resource SaaS billing.',
+      'One small team owns the repository and runners, and everyone who can merge is already trusted to change production directly.',
+      'You prefer running zero server infrastructure beyond GitLab runners and your existing state bucket.',
+      'You need GitHub Actions, Terraform (rather than OpenTofu), or merge-request plan comments right now.',
     ],
   },
 } as const;
@@ -267,7 +365,7 @@ export const trust = {
       link: { text: 'Read the audit log', href: '/docs/audit-log' },
     },
   ],
-  notYet: { title: 'What Writ isn’t, yet', link: { text: 'Status and limits', href: '/docs/status' } },
+  notYet: { title: 'Current scope and limits', link: { text: 'Supported platforms and limits', href: '/docs/status' } },
 } as const;
 
 export const tryIt = {
@@ -287,11 +385,11 @@ export const questions: { q: string; a: string }[] = [
   { q: 'Does Writ run Terraform?', a: 'No. Writ runs OpenTofu 1.13.9 only. If you are moving from Terraform, [Migrate from Terraform](/docs/migrate-from-terraform) shows how Writ handles existing lock files and state.' },
   {
     q: 'Does it work with GitHub?',
-    a: 'Not yet. GitLab is the only Git host Writ fetches from today, and the CI components target GitLab CI. Nobody has run those jobs on a real GitLab instance yet.',
+    a: 'Not yet. GitLab is the remote Git host Writ polls today (`writ serve --dev` also reads local Git repositories), and the bundled CI components target GitLab CI. See [Supported platforms and limits](/docs/status).',
   },
   {
-    q: 'Should I move production to it?',
-    a: 'Not yet. Writ is at version 0, and end-to-end tests run against local stand-ins rather than live cloud accounts. Read [Status and limits](/docs/status) first.',
+    q: 'How do Rego policies interact with approvals and overrides?',
+    a: 'Approval rules decide how many teammates must approve a plan; Rego policies decide what no plan may do, whoever approves it. Writ evaluates policies at plan creation and again before apply, and `--override` never bypasses a mandatory policy deny. See the [Policy cookbook](/docs/policy-cookbook).',
   },
   {
     q: 'How are runs isolated on the server?',

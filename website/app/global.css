@@ -1181,6 +1181,96 @@ a.btn {
   }
 }
 
+/* Security: eleven layers on a two-column rule grid, no cards. */
+.sec-layers {
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: clamp(24px, 4vw, 56px);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.sec-layers li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 16px 0;
+  border-top: 1px solid var(--color-rule);
+}
+
+.sec-layer-num {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-3);
+}
+
+.sec-layers h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.sec-layers p {
+  margin: 4px 0 0;
+  color: var(--color-ink-2);
+}
+
+.sec-more {
+  margin: 14px 0 0;
+}
+
+/* Policy section: 5/7 split, verdicts on the left, Rego and plan output on the right. */
+.policy-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: clamp(24px, 4vw, 56px);
+  align-items: start;
+}
+
+.verdict-list {
+  margin: 0;
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.verdict-list > div {
+  padding: 14px 0;
+  border-top: 1px solid var(--color-rule);
+}
+
+.verdict-list > div:first-child {
+  border-top-color: var(--color-ink);
+}
+
+.verdict-list dt {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-ink);
+}
+
+.verdict-list dd {
+  margin: 4px 0 0;
+  color: var(--color-ink-2);
+}
+
+.policy-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 14px;
+}
+
+@media (max-width: 860px) {
+  .sec-layers,
+  .policy-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Terminals: dark in both themes. */
 .term {
   background: var(--term-bg);

@@ -2,7 +2,7 @@
 // theme as the docs, so nothing is highlighted in the browser.
 
 import { getHighlighter } from 'fumadocs-core/highlight';
-import { sessionLanguage, writThemes } from './highlight';
+import { regoLanguage, sessionLanguage, writThemes } from './highlight';
 
 interface Token {
   content: string;
@@ -12,7 +12,7 @@ interface Token {
 
 const plain = 'var(--syn-fg)';
 const highlighter = getHighlighter('js', {
-  langs: [sessionLanguage, 'hcl'],
+  langs: [sessionLanguage, regoLanguage, 'hcl'],
   themes: [writThemes.light],
 });
 

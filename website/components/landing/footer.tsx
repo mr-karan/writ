@@ -15,7 +15,8 @@ export function Footer() {
           <Link href="/docs">Docs</Link>
           <Link href="/docs/quick-start">Quick start</Link>
           <Link href="/docs/security-model">Security model</Link>
-          <Link href="/docs/status">Status and limits</Link>
+          <Link href="/docs/policy-cookbook">Policy cookbook</Link>
+          <Link href="/docs/status">Supported platforms</Link>
           <Link href="/docs/compare">Comparison</Link>
           <a href={repoUrl('SECURITY.md')}>Security policy</a>
           <a href={site.repo}>GitHub</a>

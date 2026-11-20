@@ -56,8 +56,8 @@ export const pages: Page[] = [
   },
   {
     slug: 'status',
-    title: 'Status and limits',
-    description: 'What works in version 0, how it is tested, and what is missing.',
+    title: 'Supported platforms and limits',
+    description: 'Supported platforms, how Writ is tested, and current feature limits.',
     parts: whole('docs/status.md'),
   },
   {
@@ -103,6 +103,12 @@ export const pages: Page[] = [
     title: 'Write and test policies',
     description: 'Write a Rego policy, test it locally with conftest, wire it into writ serve, and start from the examples.',
     parts: whole('docs/write-a-policy.md'),
+  },
+  {
+    slug: 'policy-cookbook',
+    title: 'Policy cookbook',
+    description: 'Twelve copy-pasteable Rego rules and unit tests for tags, S3, encryption, security groups, instance sizes, regions, change windows, and approvals.',
+    parts: whole('docs/policy-cookbook.md'),
   },
   {
     slug: 'adopt-state',
@@ -239,7 +245,7 @@ export const pages: Page[] = [
   {
     slug: 'architecture',
     title: 'Architecture',
-    description: 'The package map of version 0, data flow, enforced invariants, and dependencies.',
+    description: 'The package map, data flow, enforced invariants, and dependencies.',
     parts: whole('docs/architecture.md'),
   },
   {
@@ -294,6 +300,7 @@ export const nav: NavEntry[] = [
   'apply',
   'approvals',
   'write-a-policy',
+  'policy-cookbook',
   'adopt-state',
   'migrate-from-terraform',
   'secrets',
@@ -340,6 +347,7 @@ export const fileRoutes: Record<string, string> = {
   'docs/apply.md': '/docs/apply',
   'docs/approvals.md': '/docs/approvals',
   'docs/write-a-policy.md': '/docs/write-a-policy',
+  'docs/policy-cookbook.md': '/docs/policy-cookbook',
   'docs/adopt-state.md': '/docs/adopt-state',
   'docs/migrate-from-terraform.md': '/docs/migrate-from-terraform',
   'docs/secrets.md': '/docs/secrets',

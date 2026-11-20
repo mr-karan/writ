@@ -17,18 +17,18 @@ export function Compare() {
         </div>
 
         <div className="when-grid">
-          <div className="when-col">
-            <h3>{whenToUse.plainCi.title}</h3>
-            <ul>
-              {whenToUse.plainCi.items.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
           <div className="when-col when-writ">
             <h3>{whenToUse.writ.title}</h3>
             <ul>
               {whenToUse.writ.items.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="when-col">
+            <h3>{whenToUse.plainCi.title}</h3>
+            <ul>
+              {whenToUse.plainCi.items.map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>
