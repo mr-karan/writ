@@ -26,6 +26,8 @@ type AuditOptions struct {
 	Cursor       string
 	Limit        int
 	JSON         bool
+	// Changes leaves out the reads, as GET /v1/audit?changes=true does.
+	Changes bool
 }
 
 // RemoteAudit is `writ audit --remote`: the rows of writ serve's audit log
@@ -53,6 +55,9 @@ func (a *App) RemoteAudit(ctx context.Context, o AuditOptions) (err error) {
 		return err
 	}
 	q := url.Values{"limit": {strconv.Itoa(o.Limit)}}
+	if o.Changes {
+		q.Set("changes", "true")
+	}
 	for k, v := range map[string]string{"env": a.opts.Env, "stack": o.Stack, "plan": o.Plan, "run": o.Run, "person": o.Person,
 		"op": o.Op, "since": o.Since, "until": o.Until, "cursor": o.Cursor} {
 		if v != "" {

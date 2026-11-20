@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mr-karan/writ/internal/server"
 )
 
 // Bounds of the client.
@@ -33,6 +35,8 @@ type remote struct {
 	// stack with no environment in its environment dev.
 	dev  bool
 	http *http.Client
+	// seen takes writ serve's version from each answer that names it.
+	seen func(version string)
 }
 
 // Where a remote command's token came from.
@@ -68,7 +72,8 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 		case !answersDev(ctx, c):
 			return nil, usagef("the dev control plane in %s does not answer at %s: start it with writ serve --dev", dir, c.URL)
 		}
-		r := &remote{base: strings.TrimSuffix(c.URL, "/"), token: c.Token, from: "the dev control plane", tokenFrom: tokenDev, dev: true, http: apiClient()}
+		r := a.newRemote(strings.TrimSuffix(c.URL, "/"))
+		r.token, r.from, r.tokenFrom, r.dev = c.Token, "the dev control plane", tokenDev, true
 		if from == "--server" {
 			r.from = "--server dev"
 		}
@@ -80,7 +85,8 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 	if base, err = checkServer(base, from); err != nil {
 		return nil, err
 	}
-	r := &remote{base: base, from: from, http: apiClient()}
+	r := a.newRemote(base)
+	r.from = from
 	if ciToken != "" {
 		r.token, r.tokenFrom = ciToken, tokenCI
 		return r, nil
@@ -101,6 +107,12 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 		return r, nil
 	}
 	return nil, usagef("no token for %s: sign in with writ login %s, or in GitLab CI set id_tokens: { WRIT_ID_TOKEN: { aud: %s } } on the job", base, base, base)
+}
+
+// newRemote is a client of the control plane at base, with no token, that
+// tells the App writ serve's version.
+func (a *App) newRemote(base string) *remote {
+	return &remote{base: base, http: apiClient(), seen: a.noteServerVersion}
 }
 
 // apiClient is the HTTP client of every request to a control plane. It
@@ -189,6 +201,9 @@ func (r *remote) once(ctx context.Context, method, path string, body []byte, tim
 		return 0, nil, fmt.Errorf("%s %s: %w", method, r.base+path, errors.Unwrap(err))
 	}
 	defer resp.Body.Close()
+	if v := resp.Header.Get(server.VersionHeader); v != "" && r.seen != nil {
+		r.seen(v[:min(len(v), 64)])
+	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse))
 	if err != nil {
 		return 0, nil, err

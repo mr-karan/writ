@@ -128,9 +128,10 @@ func TestAuditPageAuthorization(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p := tc.b.get("/ui/audit")
+			// The reads show too, so every row the rules allow shows.
+			p := tc.b.get("/ui/audit?reads=1")
 			if p.status != http.StatusOK {
-				t.Fatalf("GET /ui/audit: %d %s", p.status, text(p.doc))
+				t.Fatalf("GET /ui/audit?reads=1: %d %s", p.status, text(p.doc))
 			}
 			checkPage(t, p, "")
 			for _, w := range tc.want {
@@ -219,10 +220,10 @@ func TestAuditPageNeverLeaksRequestSecrets(t *testing.T) {
 	if !held {
 		t.Fatal("no audit row quotes the secret; the test no longer proves the page holds it back")
 	}
-	// Read every page, so no row the secret's requests left is past the
-	// first.
+	// Read every page, with the reads, so no row the secret's requests
+	// left is past the first or left out.
 	var body strings.Builder
-	for next, pages := "/ui/audit", 0; next != ""; pages++ {
+	for next, pages := "/ui/audit?reads=1", 0; next != ""; pages++ {
 		if pages == 20 {
 			t.Fatal("/ui/audit has over 20 pages")
 		}
@@ -373,5 +374,94 @@ func TestAuditPageFiltersPagingAndLinks(t *testing.T) {
 	// JSON link returns writ.audit/v0.
 	if body := root.read("/ui/audit?env=prod&as=json"); !strings.Contains(string(body), `"format":"`+server.FormatAudit+`"`) {
 		t.Errorf("/ui/audit?as=json: %s", body)
+	}
+}
+
+// /ui/audit shows only the changes by default: the reads that its own
+// pages, their static files, and CI polls write are left out, as GET
+// /v1/audit?changes=true leaves them out. Show reads, a link that works
+// with scripts off, shows every row, and every link and the filter form
+// of that view keep it. An op filter shows that op's rows, reads too. The
+// By column keeps a principal and its person id on one line each.
+func TestAuditPageShowsChangesUnlessReadsAreAsked(t *testing.T) {
+	f := auditUIFixture(t)
+	at := f.clock.Now().Add(-time.Hour).Truncate(time.Second)
+	for i, e := range []control.Entry{
+		{Request: "CHGPLAN0000000000000000001", Env: "prod", Stacks: []string{"network"}, Op: "plan", Method: "POST", Route: "/v1/plans", Status: 202, Principal: "tester (dev)", PrincipalKind: "person", Person: "dev/tester", Decision: control.Allowed},
+		{Request: "CHGREAD0000000000000000002", Env: "prod", Stacks: []string{"network"}, Op: "read", Method: "GET", Route: "/v1/applies", Status: 200, Principal: "tester (dev)", PrincipalKind: "person", Person: "dev/tester", Decision: control.Allowed},
+		{Request: "CHGSTAT0000000000000000003", Method: "GET", Route: "/ui/static/", Status: 200, Decision: control.NoDecision},
+		{Request: "CHGAPLY0000000000000000004", Env: "prod", Stacks: []string{"network"}, Op: "apply", Method: "POST", Route: "/v1/runs", Status: 202, Principal: "tester (dev)", PrincipalKind: "person", Person: "dev/tester", Decision: control.Allowed},
+	} {
+		e.At, e.Kind = at.Add(time.Duration(i)*time.Second), "request"
+		if err := f.store.Audit(context.Background(), e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root := signInGroup(f, "7003", "root", "acme/admins")
+	has := func(p page, ids ...string) string {
+		var out []string
+		for _, id := range ids {
+			if strings.Contains(p.body, id) {
+				out = append(out, id[:7])
+			}
+		}
+		return strings.Join(out, " ")
+	}
+	ids := []string{"CHGPLAN0000000000000000001", "CHGREAD0000000000000000002", "CHGSTAT0000000000000000003", "CHGAPLY0000000000000000004"}
+	window := "&since=" + url.QueryEscape(at.Format(time.RFC3339))
+
+	changes := root.get("/ui/audit?since=" + url.QueryEscape(at.Format(time.RFC3339)))
+	checkPage(t, changes, "")
+	if got := has(changes, ids...); got != "CHGPLAN CHGAPLY" {
+		t.Errorf("the default view shows %s, want CHGPLAN CHGAPLY", got)
+	}
+	if !strings.Contains(changes.body, `<p>CLI <code>writ audit --remote --changes --since`) {
+		t.Errorf("the default view's command lacks --changes")
+	}
+	var readsHref string
+	each(changes.doc, func(n *html.Node) {
+		if n.Data == "a" && strings.TrimSpace(text(n)) == "Show reads" {
+			readsHref, _ = attr(n, "href")
+		}
+	})
+	if want := "/ui/audit?reads=1" + window; readsHref != want {
+		t.Fatalf("Show reads links %q, want %q", readsHref, want)
+	}
+	if !strings.Contains(changes.body, `aria-current="true">Changes</a>`) || strings.Contains(changes.body, `name="reads"`) {
+		t.Errorf("the default view's toggle or form:\n%s", changes.body)
+	}
+
+	reads := root.get(readsHref)
+	checkPage(t, reads, "")
+	if got := has(reads, ids...); got != "CHGPLAN CHGREAD CHGSTAT CHGAPLY" {
+		t.Errorf("Show reads shows %s, want every row", got)
+	}
+	if !strings.Contains(reads.body, `aria-current="true">Show reads</a>`) || !strings.Contains(reads.body, `<input type="hidden" name="reads" value="1">`) {
+		t.Errorf("the reads view's toggle or form:\n%s", reads.body)
+	}
+	if strings.Contains(reads.body, "--changes") {
+		t.Errorf("the reads view's command has --changes")
+	}
+	// Every link of the reads view to the page keeps reads=1, but Changes
+	// and Clear filters.
+	each(reads.doc, func(n *html.Node) {
+		href, _ := attr(n, "href")
+		if n.Data != "a" || !strings.HasPrefix(href, "/ui/audit?") {
+			return
+		}
+		if label := strings.TrimSpace(text(n)); label != "Changes" && !strings.Contains(href, "reads=1") {
+			t.Errorf("the link %q, %s, drops reads=1", label, href)
+		}
+	})
+
+	// An op filter shows that op's rows, reads too, and no toggle.
+	op := root.get("/ui/audit?op=read" + window)
+	if got := has(op, ids...); got != "CHGREAD" || strings.Contains(op.body, "Show reads") {
+		t.Errorf("op=read shows %s", got)
+	}
+
+	// The By cell keeps "tester (dev)" and dev/tester on a line each.
+	if !strings.Contains(reads.body, `<td data-label="By" class="audit-by">`) {
+		t.Error("the By cell lacks audit-by")
 	}
 }

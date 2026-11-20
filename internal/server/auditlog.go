@@ -66,7 +66,7 @@ type AuditRow struct {
 	ElapsedMS      int64 `json:"elapsed_ms"`
 }
 
-// listAudit is GET /v1/audit?plan=&run=&env=&stack=&person=&op=&since=&until=&limit=&cursor=.
+// listAudit is GET /v1/audit?plan=&run=&env=&stack=&person=&op=&changes=&since=&until=&limit=&cursor=.
 // Every filter value it records on its own row is one it checked first,
 // so the row quotes nothing else the request sent.
 func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +97,18 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	case f.Op != "" && !slices.Contains(AuditOps, f.Op):
 		bad("op must be one of " + strings.Join(AuditOps, ", "))
+		return
+	}
+	switch q.Get("changes") {
+	case "", "false":
+	case "true":
+		if f.Op == string(authz.Read) || f.Op == "state-read" {
+			bad("changes leaves out the rows of op read and state-read, so it takes neither as op")
+			return
+		}
+		f.Changes = true
+	default:
+		bad("changes must be true or false")
 		return
 	}
 	if f.Env != "" {
@@ -143,7 +155,16 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	var rows []control.Entry
 	var next string
 	if readable {
-		f.Keep = func(e control.Entry) bool { return s.auditVisible(teams, every, e) }
+		// A hook row has no environment, so a filter of one leaves it out.
+		var hooks map[string]string
+		if !every && f.Env == "" {
+			var err error
+			if hooks, err = s.readableHookRepos(r.Context(), teams); err != nil {
+				s.dbFailed(w, r, FormatAudit, err)
+				return
+			}
+		}
+		f.Keep = func(e control.Entry) bool { return s.auditVisible(teams, every, hooks, e) }
 		var err error
 		rows, next, err = s.store.AuditRows(r.Context(), f)
 		if errors.Is(err, control.ErrBadCursor) {
@@ -212,11 +233,15 @@ func (s *Server) openCursor(sealed string) (string, bool) {
 // auditVisible reports whether a principal in teams may see e. A row of a
 // stack@env needs read on every stack it names there, and a row of an
 // environment and no stack, read on some stack there, as an
-// environment's other records do. A row of no environment, or of every
-// one, such as a sign-in, the server's start, or a repository's add,
-// needs admin on every stack in every environment: every is that
-// decision. every also sees every other row.
-func (s *Server) auditVisible(teams []string, every bool, e control.Entry) bool {
+// environment's other records do. A webhook delivery's row that names its
+// repository needs read on some stack of that repository and the same
+// project identity as the current repository in hooks. A row of no
+// environment, or of every one, otherwise needs admin on every stack in
+// every environment. The every decision also covers all other rows.
+func (s *Server) auditVisible(teams []string, every bool, hooks map[string]string, e control.Entry) bool {
+	if repo, ok := hookRepo(e); ok && !every {
+		return e.HookProject != "" && hooks[repo] == e.HookProject
+	}
 	switch {
 	case every:
 		return true

@@ -534,3 +534,89 @@ func TestAuditReadHidesStateHash(t *testing.T) {
 		}
 	}
 }
+
+// changes=true leaves out the reads, which a control UI's pages and a CI
+// job's polls write many of: the rows of op read and state-read, and the
+// GET and HEAD requests of no op that were allowed or needed no decision,
+// such as GET /v1/whoami and a page's static files. Every other row stays:
+// a refused request of no op, a sign-in, the server's start, and every
+// change. Without it every row shows, as before.
+func TestAuditChangesLeavesOutReads(t *testing.T) {
+	f, tok := auditFixture(t)
+	at := time.Date(2030, 1, 2, 3, 0, 0, 0, time.UTC)
+	rows := []control.Entry{
+		{Request: "READ", Kind: "request", Method: "GET", Op: "read", Env: "prod", Stacks: []string{"network"}, Decision: control.Allowed},
+		{Request: "STATIC", Kind: "request", Method: "GET", Route: "/ui/static/", Decision: control.NoDecision},
+		{Request: "WHOAMI", Kind: "request", Method: "GET", Route: "/v1/whoami", Decision: control.Allowed},
+		{Request: "HEAD", Kind: "request", Method: "HEAD", Route: "/ui/", Decision: control.NoDecision},
+		{Request: "STATEREAD", Kind: "request", Method: "GET", Op: "state-read", Env: "prod", Stacks: []string{"network"}, Decision: control.Allowed},
+		{Request: "READDENIED", Kind: "request", Method: "GET", Op: "read", Env: "prod", Stacks: []string{"network"}, Decision: control.Denied},
+		{Request: "AUTHFAILED", Kind: "request", Method: "GET", Route: "/v1/whoami", Decision: control.AuthFailed},
+		{Request: "PLAN", Kind: "request", Method: "POST", Op: "plan", Env: "prod", Stacks: []string{"network"}, Decision: control.Allowed},
+		{Request: "APPROVE", Kind: "request", Method: "POST", Op: "approve", Env: "prod", Stacks: []string{"network"}, Decision: control.Allowed},
+		{Request: "APPLY", Kind: "request", Method: "POST", Op: "apply", Env: "prod", Stacks: []string{"network"}, Decision: control.Allowed},
+		{Request: "STATEWRITE", Kind: "request", Method: "POST", Op: "state-write", Env: "prod", Stacks: []string{"network"}, Decision: control.Allowed},
+		{Request: "HOOK", Kind: "request", Method: "POST", Op: "hook", Decision: control.AuthFailed},
+		{Request: "SIGNIN", Kind: "sign-in", Method: "GET", Route: "/ui/callback", Decision: control.Allowed},
+		{Request: "STARTED", Kind: "started", Decision: control.NoDecision},
+		{Request: "LOGOUT", Kind: "request", Method: "POST", Route: "/ui/logout", Decision: control.NoDecision},
+	}
+	for i, e := range rows {
+		e.At = at.Add(time.Duration(i) * time.Second)
+		if err := f.store.Audit(context.Background(), e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	window := url.Values{"since": {at.Format(time.RFC3339)}, "until": {at.Add(time.Hour).Format(time.RFC3339)}, "limit": {"2"}}
+	ids := func(query url.Values) string {
+		t.Helper()
+		q := url.Values{}
+		for k, v := range window {
+			q[k] = v
+		}
+		for k, v := range query {
+			q[k] = v
+		}
+		got, _ := f.auditAll(tok["root"], q)
+		var out []string
+		for _, r := range got {
+			out = append(out, r.Request)
+		}
+		return strings.Join(out, " ")
+	}
+	if got, want := ids(url.Values{"changes": {"true"}}), "LOGOUT STARTED SIGNIN HOOK STATEWRITE APPLY APPROVE PLAN AUTHFAILED"; got != want {
+		t.Errorf("changes=true: %s\nwant %s", got, want)
+	}
+	if got, want := ids(url.Values{"changes": {"true"}, "op": {"apply"}}), "APPLY"; got != want {
+		t.Errorf("changes=true&op=apply: %s, want %s", got, want)
+	}
+	all := "LOGOUT STARTED SIGNIN HOOK STATEWRITE APPLY APPROVE PLAN AUTHFAILED READDENIED STATEREAD HEAD WHOAMI STATIC READ"
+	for _, q := range []url.Values{{}, {"changes": {"false"}}} {
+		if got := ids(q); got != all {
+			t.Errorf("%s: %s\nwant %s", q.Encode(), got, all)
+		}
+	}
+	// A reader of network@prod sees the changes of network@prod only.
+	q := url.Values{"changes": {"true"}}
+	for k, v := range window {
+		q[k] = v
+	}
+	nora, _ := f.auditAll(tok["nora"], q)
+	var got []string
+	for _, r := range nora {
+		got = append(got, r.Request)
+	}
+	if want := "STATEWRITE APPLY APPROVE PLAN"; strings.Join(got, " ") != want {
+		t.Errorf("nora's changes: %v, want %s", got, want)
+	}
+	for _, c := range []struct{ query, want string }{
+		{"changes=yes", "changes must be true or false"},
+		{"changes=true&op=read", "changes leaves out the rows of op read and state-read"},
+		{"changes=true&op=state-read", "changes leaves out the rows of op read and state-read"},
+	} {
+		r := f.do("GET", "/v1/audit?"+c.query, tok["root"], nil)
+		if r.status != http.StatusBadRequest || !strings.Contains(string(r.body), c.want) {
+			t.Errorf("%s: %d %s", c.query, r.status, r.body)
+		}
+	}
+}

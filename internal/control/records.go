@@ -874,6 +874,9 @@ type Entry struct {
 	Grants   []int
 	ConfigID int64
 	Elapsed  time.Duration
+
+	// HookProject is the Git host and project id of a webhook audit row.
+	HookProject string
 }
 
 // Audit writes audit rows, all of them or none.
@@ -897,11 +900,11 @@ func insertAudit(ctx context.Context, tx *sqldb.Tx, e Entry) error {
 	}
 	var id int64
 	err := tx.QueryRowContext(ctx, `INSERT INTO audit (at, request, kind, method, route, status, remote, issuer, subject, person, principal,
-			principal_kind, via, teams, op, env, stacks, plan, run, addrs, risks, decision, check_failed, reason, grants, config_id, elapsed_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+			principal_kind, via, teams, op, env, stacks, plan, run, addrs, risks, decision, check_failed, reason, grants, config_id, elapsed_ms, hook_project)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 		e.At.UnixMilli(), e.Request, e.Kind, e.Method, e.Route, e.Status, e.Remote, e.Issuer, e.Subject, e.Person, e.Principal,
 		e.PrincipalKind, e.Via, list(e.Teams), e.Op, e.Env, list(e.Stacks), e.Plan, e.Run, list(e.Addrs), list(e.Risks),
-		string(e.Decision), e.Check, e.Reason, list(e.Grants), cfg, e.Elapsed.Milliseconds()).Scan(&id)
+		string(e.Decision), e.Check, e.Reason, list(e.Grants), cfg, e.Elapsed.Milliseconds(), e.HookProject).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("write audit row: %w", err)
 	}

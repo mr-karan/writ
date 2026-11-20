@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -13,11 +14,13 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/mr-karan/writ/internal/authz"
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
 )
@@ -258,6 +261,73 @@ func (s *Server) hasHook(r control.Repo) bool {
 	return ok
 }
 
+// hookVia starts the via of a hook row whose path names a pinned
+// repository with a webhook, before the repository's name. A delivery
+// to any other name leaves no via.
+const hookVia = "webhook of repository "
+
+// hookRepo is the repository a hook row names, and whether it names one.
+func hookRepo(e control.Entry) (string, bool) {
+	if e.Op != "hook" {
+		return "", false
+	}
+	name, ok := strings.CutPrefix(e.Via, hookVia)
+	return name, ok && name != ""
+}
+
+// HookRepo is the repository the audit row of a webhook delivery names,
+// "" for a row of anything else or of a delivery to a name with no
+// webhook.
+func HookRepo(r AuditRow) string {
+	name, _ := hookRepo(control.Entry{Op: r.Op, Via: r.Via})
+	return name
+}
+
+// readableHookRepos are the pinned repositories with a webhook of which
+// teams may read at least one stack, in some environment, of those the
+// head of the default branch holds.
+func (s *Server) readableHookRepos(ctx context.Context, teams []string) (map[string]string, error) {
+	out := map[string]string{}
+	if !s.cfg.PinRepos {
+		return out, nil
+	}
+	envs := s.envNames()
+	for _, spec := range s.cfg.Repos {
+		if spec.WebhookSecretFile == "" {
+			continue
+		}
+		rp, err := s.store.Repo(ctx, spec.Name)
+		if errors.Is(err, control.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if rp.Head == "" || rp.Origin != control.FromConfig || !s.sameSpec(rp, spec) {
+			continue
+		}
+		head, err := s.store.Commit(ctx, rp.Name, rp.Head)
+		if errors.Is(err, control.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if slices.ContainsFunc(stacksOf(head), func(d discovered) bool {
+			return slices.ContainsFunc(envs, func(env string) bool {
+				return s.cfg.Policy.Decide(teams, authz.Read, []string{rp.Prefix + d.Dir}, env, nil).Allowed
+			})
+		}) {
+			out[rp.Name] = hookProject(rp)
+		}
+	}
+	return out, nil
+}
+
+func hookProject(r control.Repo) string {
+	return r.ForgeURL + "\n" + r.ProjectID
+}
+
 // hookSecretMax is the most a webhook secret file may hold.
 const hookSecretMax = 4096
 
@@ -329,6 +399,14 @@ func (s *Server) receiveHook(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		s.hookRefused(w, r, "hook-unknown")
 		return
+	}
+	e.Via = hookVia + name
+	rp, err := s.store.Repo(r.Context(), name)
+	switch {
+	case err == nil && rp.Origin == control.FromConfig && s.sameSpec(rp, spec):
+		e.HookProject = hookProject(rp)
+	case err != nil && !errors.Is(err, control.ErrNotFound):
+		s.log.Warn("could not identify the project for a webhook audit row", "repo", name, "err", err)
 	}
 	secret, err := readHookSecret(spec.WebhookSecretFile)
 	if err != nil {

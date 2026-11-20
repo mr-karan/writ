@@ -37,25 +37,42 @@ type RemoteOptions struct {
 }
 
 // remoteFailed prints a refused request's document, as JSON or as its
-// diagnostics, and returns ErrFailed. A body that is not JSON, such as a
-// proxy's error page, is printed by neither: the error says so, and writ
-// writes the failure document.
+// diagnostics, and returns ErrFailed. A body that is no refusal, such as a
+// proxy's error page or an answer of a newer writ serve that this writ
+// does not know, is printed by neither: the error says what came, and
+// writ writes the failure document.
 func (a *App) remoteFailed(asJSON bool, doc []byte) error {
 	if !json.Valid(doc) {
 		return errors.New("writ serve, or a proxy before it, refused the request with a body that is not JSON")
+	}
+	diags, ok := refusalDiags(doc)
+	if !ok {
+		return a.unusable("an answer that is not a refusal and not one this command expects" + formatWords(doc))
 	}
 	if asJSON {
 		a.opts.Stdout.Write(doc)
 		return ErrFailed
 	}
-	var head struct {
-		Diagnostics []jsonDiag `json:"diagnostics"`
-	}
-	_ = json.Unmarshal(doc, &head)
-	for _, d := range head.Diagnostics {
+	for _, d := range diags {
 		fmt.Fprintf(a.humanOutput(), "%s: %s: %s\n", d.Severity, d.Class, escapeHuman(d.Message, false))
 	}
 	return ErrFailed
+}
+
+// formatWords names a document's format and ok, for an error about it.
+func formatWords(doc []byte) string {
+	var head struct {
+		Format string `json:"format"`
+		OK     *bool  `json:"ok"`
+	}
+	if json.Unmarshal(doc, &head) != nil || head.Format == "" {
+		return ""
+	}
+	w := " (" + escapeHuman(head.Format[:min(len(head.Format), 64)], false)
+	if head.OK != nil {
+		w += fmt.Sprintf(", ok %t", *head.OK)
+	}
+	return w + ")"
 }
 
 // tofuStack reports whether the stack directory holds OpenTofu code.
@@ -201,6 +218,9 @@ func (a *App) printRemotePlan(asJSON bool, doc []byte) error {
 	var p server.RemotePlan
 	if err := json.Unmarshal(doc, &p); err != nil {
 		return fmt.Errorf("writ serve sent a plan that is not %s", server.FormatRemotePlan)
+	}
+	if _, refused := refusalDiags(doc); !refused && (p.Format != server.FormatRemotePlan || p.Plan == nil) {
+		return a.unusable("a body that is not " + server.FormatRemotePlan + " with a plan" + formatWords(doc))
 	}
 	if asJSON {
 		if _, err := a.opts.Stdout.Write(doc); err != nil {

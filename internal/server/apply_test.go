@@ -81,6 +81,23 @@ func mainJob(f *fixture, sha string) string {
 		"pipeline_source": "push", "pipeline_id": "1849290", "job_id": "9922150"})
 }
 
+func deniedMainJob(f *fixture, sha string) string {
+	return f.token(map[string]any{"sha": sha, "ref": "main", "ref_path": "refs/heads/main", "ref_protected": "false",
+		"pipeline_source": "push", "pipeline_id": "1849291", "job_id": "9922151"})
+}
+
+func checkMergedDenial(t *testing.T, r response, hidden ...string) {
+	t.Helper()
+	if r.status != http.StatusForbidden || r.class() != "denied" {
+		t.Errorf("merged apply without a grant: %d %s", r.status, r.body)
+	}
+	for _, value := range hidden {
+		if strings.Contains(string(r.body), value) {
+			t.Errorf("merged apply disclosed %q: %s", value, r.body)
+		}
+	}
+}
+
 func runRequest(m map[string]any) *bytes.Reader {
 	m["format"] = "writ.run-request/v1"
 	b, _ := json.Marshal(m)
@@ -166,6 +183,10 @@ func TestMergeRequestFlow(t *testing.T) {
 		t.Fatalf("applied with no approval: %d %s", r.status, r.body)
 	}
 
+	t.Run("approval details require an apply grant", func(t *testing.T) {
+		checkMergedDenial(t, f.do("POST", "/v1/runs", deniedMainJob(f, early), mergedRequest("network")), id, "needs 1 approval")
+	})
+
 	// alice cannot approve her own plan, a job of another pipeline cannot
 	// approve it, and an approve job on a team that matches only the job is
 	// refused by the config check (TestApproveGrantNeedsAPerson).
@@ -231,10 +252,37 @@ func TestMergeRequestFlow(t *testing.T) {
 		t.Fatalf("history %v", moves)
 	}
 
-	// The same commit again has nothing to apply.
-	if r := f.do("POST", "/v1/runs", mainJob(f, merged), mergedRequest("network")); r.status != http.StatusConflict || !strings.Contains(string(r.body), "nothing to apply") {
+	// The same commit again, as a retried apply job sends it, has nothing
+	// to apply: a 200 that names the plan and the run that applied it, and
+	// no run starts. It was a 409 saved-plan refusal, which failed the job.
+	r = f.do("POST", "/v1/runs", mainJob(f, merged), mergedRequest("network"))
+	var again server.RemoteRun
+	_ = json.Unmarshal(r.body, &again)
+	if r.status != http.StatusOK || !again.OK || again.Run != nil || again.Plan != id ||
+		!strings.Contains(again.Text, "Run "+runID+" applied plan "+id+" of network@prod") || !strings.Contains(again.Text, "there is nothing to apply") {
 		t.Fatalf("a second apply: %d %s", r.status, r.body)
 	}
+	if n := len(f.tofu.appliedSoFar()); n != 1 {
+		t.Fatalf("the second apply ran OpenTofu: %d applies", n)
+	}
+	if rows := f.audit(controltest.AuditFilter{Request: r.header.Get("X-Request-Id")}); len(rows) != 1 || rows[0].Decision != control.Allowed || rows[0].Run != runID ||
+		rows[0].Plan != id || !strings.Contains(rows[0].Reason, "nothing to apply: run "+runID) {
+		t.Fatalf("the second apply's audit rows %+v", rows)
+	}
+	// Once the state moves past what the run wrote, the same request is
+	// refused, so the job asks for a new plan.
+	raw := controltest.Raw(t, f.loc)
+	if _, err := raw.ExecContext(context.Background(), `INSERT INTO tfstate_versions (env, stack, version, serial, lineage, sha256, run_id, created_at, sealed)
+		VALUES ('prod', 'network', 99, 99, 'lin', 'hash', 'OUTSIDEXXXXXXXXXXXXXXXXXXX', 0, ?)`, []byte("sealed")); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.do("POST", "/v1/runs", mainJob(f, merged), mergedRequest("network")); r.status != http.StatusConflict || r.class() != "state" ||
+		!strings.Contains(string(r.body), "is at version 99, which run "+runID+" did not write: plan again") {
+		t.Fatalf("an apply after the state moved: %d %s", r.status, r.body)
+	}
+	t.Run("applied run details require an apply grant", func(t *testing.T) {
+		checkMergedDenial(t, f.do("POST", "/v1/runs", deniedMainJob(f, merged), mergedRequest("network")), id, runID, "version 99")
+	})
 	// The audit trail names the approval and the run.
 	rows := f.audit(controltest.AuditFilter{Plan: id})
 	var kinds []string

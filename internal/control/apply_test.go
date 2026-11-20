@@ -331,7 +331,7 @@ func TestBeginApply(t *testing.T) {
 // An apply of a plan that expired, or whose state changed after it was
 // requested, is refused, and the plan becomes expired or superseded.
 func TestStalePlans(t *testing.T) {
-	each(t, func(t *testing.T, s *control.Store, _ string) {
+	each(t, func(t *testing.T, s *control.Store, loc string) {
 		ctx := context.Background()
 		l := newLifecycle(t, s)
 		var se *control.StaleError
@@ -405,6 +405,42 @@ func TestStalePlans(t *testing.T) {
 		}
 		if last, err := s.LastApplied(ctx, "prod", "cache", t0); err != nil || last.ID != a {
 			t.Fatalf("last applied %+v, %v", last, err)
+		}
+		// The newest run on cache applied a, but kept no HTTP state.
+		if p, run, moved, err := s.NewestRunApplied(ctx, "prod", "cache", t0); err != nil || p.ID != a || run != "RUN4" || !strings.Contains(moved, "no http state version") {
+			t.Fatalf("newest run applied %s %s %q, %v", p.ID, run, moved, err)
+		}
+		// A newer run that failed can have changed the state, so no plan
+		// is the newest run's applied one.
+		c := l.plan("cache", t0.Add(15*time.Second), control.Approved, 0)
+		if _, err := l.begin(c, "RUN6", "", t0.Add(16*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.FinishRun(ctx, "RUN6", control.RunResult{Status: control.RunFailed, EndedAt: t0.Add(17 * time.Second)}, l.entry("apply")); err != nil {
+			t.Fatal(err)
+		}
+		if p, run, _, err := s.NewestRunApplied(ctx, "prod", "cache", t0); !errors.Is(err, control.ErrNotFound) {
+			t.Fatalf("after a failed run: %s %s, %v", p.ID, run, err)
+		}
+		for _, tc := range []struct {
+			name string
+			at   time.Time
+		}{
+			{"equal timestamps", t0.Add(12 * time.Second)},
+			{"clock stepped back", t0.Add(11 * time.Second)},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				raw := controltest.Raw(t, loc)
+				if _, err := raw.ExecContext(ctx, "UPDATE runs SET started_at = ? WHERE id = 'RUN6'", tc.at.UnixMilli()); err != nil {
+					t.Fatal(err)
+				}
+				if _, run, _, err := s.NewestRunApplied(ctx, "prod", "cache", t0); !errors.Is(err, control.ErrNotFound) {
+					t.Fatalf("after the newer run failed: got run %s, err %v", run, err)
+				}
+			})
+		}
+		if _, _, _, err := s.NewestRunApplied(ctx, "prod", "nothing-ran", t0); !errors.Is(err, control.ErrNotFound) {
+			t.Fatalf("a stack with no run: %v", err)
 		}
 	})
 }

@@ -417,3 +417,54 @@ func TestMigratePlanNoChanges(t *testing.T) {
 		}
 	})
 }
+
+// writ serve --check reads the delivery counts before writ serve migrates
+// the database. On the first start after an upgrade to the release that
+// adds notification_status, migration 0020, the table is not there yet:
+// the peek says so with ErrNotMigrated, and not as a failed operation,
+// which --check printed as SQLSTATE 42P01. An empty database, before any
+// migration, says the same.
+func TestPeekBeforeTheMigration(t *testing.T) {
+	if controltest.Default().Name != "postgres" {
+		t.Skip("the peek reads Postgres only")
+	}
+	ctx := context.Background()
+	files := fstest.MapFS{}
+	ents, err := os.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range ents {
+		if e.Name() >= "0020_" {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join("migrations", e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files["migrations/"+e.Name()] = &fstest.MapFile{Data: b}
+	}
+	empty := controltest.Postgres.New(t)
+	if _, err := control.PeekNotificationStatuses(ctx, empty); !errors.Is(err, control.ErrNotMigrated) {
+		t.Fatalf("peek of an empty database: %v, want ErrNotMigrated", err)
+	}
+	loc := controltest.Postgres.New(t)
+	raw := controltest.Raw(t, loc)
+	if err := raw.Migrate(ctx, sqldb.Migrations{Files: files, Dir: "migrations", Schema: control.Schema, What: "v19 database", Now: time.Now}); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := raw.Version(ctx); err != nil || v != 19 {
+		t.Fatalf("the database is at version %d, %v; want 19", v, err)
+	}
+	if _, err := control.PeekNotificationStatuses(ctx, loc); !errors.Is(err, control.ErrNotMigrated) {
+		t.Fatalf("peek of a version 19 database: %v, want ErrNotMigrated", err)
+	}
+	s, err := control.Open(ctx, control.Options{Location: loc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if got, err := control.PeekNotificationStatuses(ctx, loc); err != nil || len(got) != 0 {
+		t.Fatalf("peek after the migration: %v, %v", got, err)
+	}
+}

@@ -26,6 +26,11 @@ type AuditFilter struct {
 	Env, Stack string
 	Person     string
 	Op         string
+	// Changes leaves out the reads: the rows of op read and state-read,
+	// and the requests of no op, by GET or HEAD, that were allowed or
+	// needed no decision, such as GET /v1/whoami, a control UI page, or
+	// its static files. A refused request of no op stays.
+	Changes bool
 	// Since keeps rows at or after it, Until rows before it.
 	Since, Until time.Time
 	Limit        int
@@ -78,6 +83,9 @@ func (s *Store) AuditRows(ctx context.Context, f AuditFilter) (entries []Entry, 
 	if f.Op != "" {
 		add("op = ?", f.Op)
 	}
+	if f.Changes {
+		add("NOT (op IN ('read', 'state-read') OR kind = 'request' AND op = '' AND method IN ('GET', 'HEAD') AND decision IN ('allowed', 'none'))")
+	}
 	if !f.Since.IsZero() {
 		add("at >= ?", f.Since.UnixMilli())
 	}
@@ -100,7 +108,7 @@ func (s *Store) AuditRows(ctx context.Context, f AuditFilter) (entries []Entry, 
 		scan = f.Limit + 1
 	}
 	q := `SELECT id, at, request, kind, method, route, status, remote, issuer, subject, person, principal, principal_kind, via, teams, op, env,
-		stacks, plan, run, addrs, risks, decision, check_failed, reason, grants, coalesce(config_id, 0), elapsed_ms FROM audit WHERE ` +
+		stacks, plan, run, addrs, risks, decision, check_failed, reason, grants, coalesce(config_id, 0), elapsed_ms, hook_project FROM audit WHERE ` +
 		strings.Join(where, " AND ") + " ORDER BY at DESC, id DESC LIMIT ?"
 	rows, err := s.db.QueryContext(ctx, q, append(args, scan)...)
 	if err != nil {
@@ -116,7 +124,7 @@ func (s *Store) AuditRows(ctx context.Context, f AuditFilter) (entries []Entry, 
 		var id, at, ms int64
 		var d, teams, stacks, addrs, risks, grants string
 		err := rows.Scan(&id, &at, &e.Request, &e.Kind, &e.Method, &e.Route, &e.Status, &e.Remote, &e.Issuer, &e.Subject, &e.Person, &e.Principal,
-			&e.PrincipalKind, &e.Via, &teams, &e.Op, &e.Env, &stacks, &e.Plan, &e.Run, &addrs, &risks, &d, &e.Check, &e.Reason, &grants, &e.ConfigID, &ms)
+			&e.PrincipalKind, &e.Via, &teams, &e.Op, &e.Env, &stacks, &e.Plan, &e.Run, &addrs, &risks, &d, &e.Check, &e.Reason, &grants, &e.ConfigID, &ms, &e.HookProject)
 		if err != nil {
 			return nil, "", err
 		}

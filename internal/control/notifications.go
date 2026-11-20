@@ -2,6 +2,7 @@ package control
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/mr-karan/writ/internal/sqldb"
@@ -70,8 +71,14 @@ func (s *Store) NotificationStatuses(ctx context.Context) (map[string]Notificati
 	return queryNotificationStatuses(ctx, s.db)
 }
 
+// ErrNotMigrated means a read of writ serve --check found the table it
+// reads missing: the control database is at a schema version before the
+// migration that adds it, which writ serve applies when it starts.
+var ErrNotMigrated = errors.New("the control database lacks a table a migration adds")
+
 // PeekNotificationStatuses reads the delivery statuses in the Postgres
-// database at location without migrating it, for writ serve --check.
+// database at location without migrating it, for writ serve --check. It
+// returns ErrNotMigrated before the migration that adds them.
 func PeekNotificationStatuses(ctx context.Context, location string) (map[string]NotificationStatus, error) {
 	if err := CheckURL(location); err != nil {
 		return nil, err
@@ -83,6 +90,16 @@ func PeekNotificationStatuses(ctx context.Context, location string) (map[string]
 		return nil, err
 	}
 	defer db.Close()
+	// The catalog includes tables the connecting role cannot read.
+	var exists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = ? AND c.relname = 'notification_status' AND c.relkind IN ('r', 'p'))`, Schema).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, ErrNotMigrated
+	}
 	return queryNotificationStatuses(ctx, db)
 }
 

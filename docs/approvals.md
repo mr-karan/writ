@@ -104,7 +104,7 @@ A plan is `no-changes` when OpenTofu would find nothing to apply: each resource 
 
 A `no-changes` plan never expires, keeps no saved plan, and isn't counted among the plans that wait or apply. No one approves or applies it: by its id, Writ refuses both as `state`, `plan ID changes no resource`. An approval of a pipeline lists it and approves the pipeline's other plans, so the approve job of a merge request whose plans change nothing passes.
 
-After the merge, the apply job finds the newest plan of the merged commit's sources. When that plan is `no-changes`, the job says there is nothing to apply and exits 0, as long as no run applied to the `stack@env`, and its state didn't move, after the plan was requested. Otherwise it's refused as `state`, and you plan again. [Apply after a merge](apply.md#apply-after-a-merge) shows the output.
+After the merge, the apply job finds the newest plan of the merged commit's sources. When that plan is `no-changes`, the job says there is nothing to apply and exits 0, as long as no run applied to the `stack@env`, and its state didn't move, after the plan was requested. For a stale no-changes plan, Writ checks whether the newest run applied those sources and wrote the current HTTP state version. If it cannot verify that, it refuses the apply as `state` and asks you to plan again. [Apply after a merge](apply.md#apply-after-a-merge) shows the output.
 
 Plans made before this release keep the status they had: a live plan that changes nothing stays `approved` until it expires.
 

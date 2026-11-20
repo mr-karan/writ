@@ -119,6 +119,10 @@ id_tokens:
     aud: https://writ.example.com
 ```
 
+## Pin the CLI to the server's version
+
+Use the image of the `writ serve` version you run, and change both together. A CLI older than the server can meet an answer it doesn't know. `writ` 0.1.5 met the 200 that `writ serve` 0.1.7 sends when a merged apply has nothing to apply, and its apply job failed. Today's `writ` warns on stderr when the server is newer, and fails with an error that names both versions when it gets an answer it can't use. See [Version skew](commands.md#version-skew).
+
 From there, the client reads `WRIT_SERVER` and `WRIT_ID_TOKEN`. It sends a token only over HTTPS, or over HTTP to a loopback address.
 
 To see what a job did, use `writ plan --remote --json`, which prints the `writ.remote-plan/v0` document. You can also run `writ show --remote ID` and `writ runs --remote` to print what the control plane keeps.
@@ -129,7 +133,9 @@ To see what a job did, use `writ plan --remote --json`, which prints the `writ.r
 - **`401 auth: this token already made a plan` (or `already applied`)**: Each CI OIDC token can perform only one write (plan, approve, or apply). Re-run the job so GitLab issues a fresh token with a new `jti`.
 - **`403 denied` on merge request from a fork**: Fork merge requests run under the fork's `project_id`, which does not match your `repo` or `team` rules. Writ refuses fork plans by design.
 - **Approve job fails with `403 denied` when the MR author runs it**: Wherever an approval rule applies, the plan's author cannot approve it. Ask a teammate in `infra_reviewers` to run the manual approve job or approve in the control UI.
-- **A merge request changes no resource**: Its plan job ends with a `no-changes` plan, its approve job passes with nothing to approve, and after the merge the apply job prints that there is nothing to apply and passes. If a run applied to the stack between the plan and the merge, the apply job fails with `state` and asks you to plan again. See [A plan that changes nothing](approvals.md#a-plan-that-changes-nothing).
+- **A merge request changes no resource**: Its plan job ends with a `no-changes` plan, its approve job passes with nothing to approve, and after the merge the apply job prints that there is nothing to apply and passes. If a run applied to the stack between the plan and the merge, Writ checks whether the newest run applied those same sources and wrote the current HTTP state version. If it can't verify that, it asks you to plan again. See [A plan that changes nothing](approvals.md#a-plan-that-changes-nothing).
+- **A job prints `writ: warning: writ serve is ... and this writ is ...`, or fails with `which this writ cannot use`**: The job's `writ` is older than the server. Use the image of the server's version. See [Pin the CLI to the server's version](#pin-the-cli-to-the-servers-version).
+- **A retried apply job**: The retry passes when the newest run applied the merged sources and wrote the current HTTP state version. When Writ can't verify the version, including on S3, it fails with `state` and asks you to plan again. See [Apply after a merge](apply.md#apply-after-a-merge).
 - **Apply job on `main` fails with `saved-plan: no approved plan matches`**: The merge request was rebased or edited after the last approved plan. Re-run the plan job and approve the new plan, or plan the merged commit and approve it.
 
 ## Next steps

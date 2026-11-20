@@ -343,7 +343,10 @@ func (a *App) checkNotify(ctx context.Context, cfg *server.Config, test bool) er
 		return ErrFailed
 	}
 	statuses, err := control.PeekNotificationStatuses(ctx, cfg.Database)
-	if err != nil {
+	switch {
+	case errors.Is(err, control.ErrNotMigrated):
+		fmt.Fprintln(w, "notify: delivery counts appear after writ serve migrates the control database")
+	case err != nil:
 		fmt.Fprintf(w, "notify: delivery counts not read: %v\n", err)
 	}
 	for _, n := range cfg.Notifiers {
