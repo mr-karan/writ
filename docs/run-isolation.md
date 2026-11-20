@@ -103,7 +103,7 @@ These system calls fail with `EPERM`:
 - `kexec_load`, `kexec_file_load`, `init_module`, `finit_module`, and `delete_module`
 - `mount`, `umount2`, `pivot_root`, `mount_setattr`, `open_tree`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick`, and `open_by_handle_at`
 - `unshare`, `setns`, and `clone` with a flag that makes a namespace
-- `ptrace`
+- `ptrace`, and `process_vm_readv`, `process_vm_writev`, and `pidfd_getfd`, which read another process's memory, write it, or copy its descriptors
 - `keyctl`, `add_key`, and `request_key`
 - `bpf`, `perf_event_open`, `userfaultfd`, and `io_uring_setup`
 

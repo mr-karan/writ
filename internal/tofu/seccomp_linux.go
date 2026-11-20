@@ -15,9 +15,12 @@ import (
 // once the helper has made its view: loading kernel code, mounting,
 // reaching the kernel's keyrings, BPF, perf events, userfaultfd, and
 // io_uring, each a large part of the kernel that a run never needs, and
-// ptrace. unshare and setns are denied too, and clone with a namespace
-// flag, so no process of a run makes a user namespace, in which it would
-// hold every capability again.
+// ptrace and the calls that, like it, reach into another process:
+// process_vm_readv and process_vm_writev, which read and write its
+// memory, and pidfd_getfd, which copies its descriptors. unshare and
+// setns are denied too, and clone with a namespace flag, so no process of
+// a run makes a user namespace, in which it would hold every capability
+// again.
 var seccompDenied = []uint32{
 	unix.SYS_KEXEC_LOAD, unix.SYS_KEXEC_FILE_LOAD,
 	unix.SYS_INIT_MODULE, unix.SYS_FINIT_MODULE, unix.SYS_DELETE_MODULE,
@@ -25,7 +28,7 @@ var seccompDenied = []uint32{
 	unix.SYS_OPEN_TREE, unix.SYS_MOVE_MOUNT, unix.SYS_FSOPEN, unix.SYS_FSCONFIG, unix.SYS_FSMOUNT, unix.SYS_FSPICK,
 	unix.SYS_OPEN_BY_HANDLE_AT,
 	unix.SYS_UNSHARE, unix.SYS_SETNS,
-	unix.SYS_PTRACE,
+	unix.SYS_PTRACE, unix.SYS_PROCESS_VM_READV, unix.SYS_PROCESS_VM_WRITEV, unix.SYS_PIDFD_GETFD,
 	unix.SYS_KEYCTL, unix.SYS_ADD_KEY, unix.SYS_REQUEST_KEY,
 	unix.SYS_BPF, unix.SYS_PERF_EVENT_OPEN, unix.SYS_USERFAULTFD, unix.SYS_IO_URING_SETUP,
 }

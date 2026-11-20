@@ -49,6 +49,10 @@ func seccompProbe() string {
 	call("io_uring_setup", unix.SYS_IO_URING_SETUP, 0, 0)
 	call("bpf", unix.SYS_BPF, unix.BPF_PROG_LOAD, 0, 0)
 	call("mount", unix.SYS_MOUNT, 0, 0, 0)
+	// No iovec, so an allowed call reads and writes nothing.
+	call("process_vm_readv", unix.SYS_PROCESS_VM_READV, uintptr(os.Getpid()), 0, 0, 0, 0, 0)
+	call("process_vm_writev", unix.SYS_PROCESS_VM_WRITEV, uintptr(os.Getpid()), 0, 0, 0, 0, 0)
+	call("pidfd_getfd", unix.SYS_PIDFD_GETFD, uintptr(none), 0, 0)
 	if os.Getenv("PROBE_CLONE") != "" {
 		call("clone", unix.SYS_CLONE, unix.CLONE_NEWUSER|uintptr(unix.SIGCHLD))
 	}
@@ -85,7 +89,8 @@ func TestSeccompFilter(t *testing.T) {
 	want := map[string]string{
 		"unshare": "EPERM", "clone": "EPERM", "clone3": "ENOSYS", "setns": "EPERM", "ptrace": "EPERM",
 		"keyctl": "EPERM", "perf_event_open": "EPERM", "userfaultfd": "EPERM", "io_uring_setup": "EPERM",
-		"bpf": "EPERM", "mount": "EPERM", "exec": "ok",
+		"bpf": "EPERM", "mount": "EPERM", "process_vm_readv": "EPERM", "process_vm_writev": "EPERM",
+		"pidfd_getfd": "EPERM", "exec": "ok",
 	}
 	for name, w := range want {
 		if got[name] != w {
@@ -95,7 +100,7 @@ func TestSeccompFilter(t *testing.T) {
 	out, _ := exec.Command(bin, "probe").Output()
 	control := probeLines(string(out))
 	t.Logf("outside a run:\n%s", out)
-	for _, name := range []string{"unshare", "clone3", "setns", "ptrace"} {
+	for _, name := range []string{"unshare", "clone3", "setns", "ptrace", "process_vm_readv", "process_vm_writev", "pidfd_getfd"} {
 		if control[name] == want[name] {
 			t.Errorf("%s outside a run: %q, as under the filter, so the test proves nothing of it", name, control[name])
 		}
