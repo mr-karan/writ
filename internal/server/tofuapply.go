@@ -124,17 +124,19 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 	}
 	res, err := s.tofuRunner.Apply(ctx, stk, saved)
 	doc := TofuApply{Format: FormatTofuApply, Status: "apply-failed", Events: []TofuApplyEvent{}, Diagnostics: []Diagnostic{}}
-	// The network document is made once the mask learned the plan's
-	// secrets, below, before the run's output is read.
-	var net *NetworkDoc
 	// The mask learns the plan's secrets, as it did when it masked the
 	// plan, before it reads the events: an address can hold a value that
 	// only the plan marks, as a for_each key of nonsensitive() does.
 	_, merr := m.Plan(res.Plan)
 	withheld := len(res.Plan) > 0 && merr != nil
-	if !withheld {
-		net = tr.network(m)
+	// The network document is made once the mask learned the plan's
+	// secrets, before the run's output is read, with every host withheld
+	// when it could not.
+	swept := m
+	if withheld {
+		swept = nil
 	}
+	net := tr.network(swept)
 	switch {
 	case len(res.Plan) == 0:
 	case withheld:

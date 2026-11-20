@@ -170,6 +170,7 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 	}
 	doc, err := m.Plan(raw.JSON)
 	if err != nil {
+		res.Network = run.network(nil).raw()
 		return res, fmt.Errorf("the mask refused the plan, so writ serve keeps nothing of it: %w", err)
 	}
 	res.Network = run.network(m).raw()

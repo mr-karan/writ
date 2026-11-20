@@ -384,3 +384,67 @@ func TestTofuEgressStatePortLimit(t *testing.T) {
 		t.Errorf("after one run's 40 requests to its state port, the next run's state port answered %d", other)
 	}
 }
+
+// A plan or an apply whose mask cannot read the plan keeps none of
+// tofu's output, and still keeps its network record and logs its run
+// egress line, with each host withheld, since only the plan's marks
+// could sweep it.
+func TestTofuEgressMaskRefusesPlan(t *testing.T) {
+	const unreadable = `{"format_version":"9.0"}`
+	want := []server.NetworkDestination{{Host: "(withheld)", Port: 443, Verdict: "refused", Reason: "not in the list", Count: 1}}
+	setup := func(t *testing.T) (*fakeTofu, *fixture, *syncBuffer) {
+		var log syncBuffer
+		runner := &fakeTofu{}
+		f := tofuApplyFixtureEdit(t, runner, withEgress("enforce", `[]`), func(o *server.Options) {
+			o.Log = slog.New(slog.NewTextHandler(&log, nil))
+		})
+		return runner, f, &log
+	}
+	check := func(t *testing.T, f *fixture, log *syncBuffer, id string, network json.RawMessage, path string) {
+		t.Helper()
+		if n := networkOf(t, network); n.Mode != "enforce" || !slices.Equal(n.Destinations, want) {
+			t.Errorf("the network %+v, want %+v", n, want)
+		}
+		if served := f.do("GET", path, f.token(nil), nil); strings.Contains(string(served.body), tofuCanary) {
+			t.Errorf("%s holds %s:\n%s", path, tofuCanary, served.body)
+		}
+		logged := log.String()
+		if !strings.Contains(logged, `msg="run egress" run=`+id) || !strings.Contains(logged, "(withheld):443 refused x1") || strings.Contains(logged, tofuCanary) {
+			t.Errorf("writ serve's log, which should hold the run's egress line with the host withheld:\n%s", logged)
+		}
+	}
+
+	t.Run("plan", func(t *testing.T) {
+		runner, f, log := setup(t)
+		runner.plan = func() (tofu.Plan, error) {
+			runner.mu.Lock()
+			s := runner.stacks[len(runner.stacks)-1]
+			runner.mu.Unlock()
+			connectVia(t, serveRunPort(t, s.Net.Ports[3128]), tofuCanary+".example.org:443")
+			return tofu.Plan{File: []byte("saved"), JSON: []byte(unreadable)}, nil
+		}
+		p, _ := f.planCommit(tofuFiles(), "withheld")
+		if p.Plan.Status != "failed" || !strings.Contains(p.Text, "the mask refused the plan") {
+			t.Fatalf("plan %+v\n%s", p.Plan, p.Text)
+		}
+		check(t, f, log, p.Plan.Ref, p.Network, "/v1/plans/"+p.Plan.Ref)
+	})
+
+	t.Run("apply", func(t *testing.T) {
+		runner, f, log := setup(t)
+		id := approvedTofuPlan(t, f, "withheld")
+		runner.mu.Lock()
+		runner.applyShow = []byte(unreadable)
+		runner.apply = func(context.Context, stateCall) ([]byte, error) {
+			applied := runner.appliedSoFar()
+			connectVia(t, serveRunPort(t, applied[len(applied)-1].stack.Net.Ports[3128]), tofuCanary+".example.org:443")
+			return nil, nil
+		}
+		runner.mu.Unlock()
+		run := f.tofuRun(bob(f), map[string]any{"plan": id})
+		if !strings.Contains(run.Text, "the mask could not read the saved plan") {
+			t.Fatalf("run %+v\n%s", run.Run, run.Text)
+		}
+		check(t, f, log, run.Run.ID, run.Network, "/v1/runs/"+run.Run.ID)
+	})
+}

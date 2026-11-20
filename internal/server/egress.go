@@ -137,8 +137,14 @@ type NetworkDestination struct {
 	Count   int    `json:"count"`
 }
 
+// withheldHost is a host in the record of a run whose mask could not
+// read its plan.
+const withheldHost = "(withheld)"
+
 // network returns the run's NetworkDoc, nil for a run with no egress
-// proxy, and logs one line of it. m sweeps each host.
+// proxy, and logs one line of it. m sweeps each host. A nil m, of a run
+// whose mask could not read its plan, withholds every host, since only
+// the plan's marks could sweep one.
 func (r *tofuRun) network(m *mask.Mask) *NetworkDoc {
 	if r.proxy == nil {
 		return nil
@@ -149,7 +155,10 @@ func (r *tofuRun) network(m *mask.Mask) *NetworkDoc {
 	var line []string
 	refused := false
 	for _, d := range dests {
-		host := printable(string(m.Event([]byte(d.Host))))
+		host := withheldHost
+		if m != nil {
+			host = printable(string(m.Event([]byte(d.Host))))
+		}
 		doc.Destinations = append(doc.Destinations, NetworkDestination{Host: host, Port: d.Port, Verdict: string(d.Verdict), Reason: d.Reason, Count: d.Count})
 		line = append(line, fmt.Sprintf("%s %s x%d", destination(host, d.Port), d.Verdict, d.Count))
 		refused = refused || d.Verdict == egress.Refused

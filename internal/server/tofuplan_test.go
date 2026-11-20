@@ -109,6 +109,9 @@ type fakeTofu struct {
 	// stands for tofu in each: nil writes one state version.
 	applied []appliedPlan
 	apply   func(ctx context.Context, c stateCall) ([]byte, error)
+	// applyShow, when set, is the show -json of the saved plan that each
+	// apply through apply returns, in place of tofuPlanJSON.
+	applyShow []byte
 	// state is show -json of the state each apply leaves, tofuStateJSON
 	// when "", and showErr the error of that show.
 	state   string
@@ -170,14 +173,17 @@ func (f *fakeTofu) Apply(ctx context.Context, s tofu.Stack, plan []byte) (tofu.A
 	c := stateCall{addr: envValue(s.Env, "TF_HTTP_ADDRESS"), token: envValue(s.Env, "TF_HTTP_PASSWORD")}
 	f.mu.Lock()
 	f.applied = append(f.applied, appliedPlan{stack: s, saved: plan, token: c})
-	apply, applyS3 := f.apply, f.applyS3
+	apply, applyS3, show := f.apply, f.applyS3, f.applyShow
 	f.mu.Unlock()
+	if show == nil {
+		show = []byte(tofuPlanJSON)
+	}
 	if s.StateCreds && applyS3 != nil {
 		return applyS3()
 	}
 	if apply != nil {
 		log, err := apply(ctx, c)
-		return tofu.Applied{Plan: []byte(tofuPlanJSON), Log: log}, err
+		return tofu.Applied{Plan: show, Log: log}, err
 	}
 	for _, step := range []struct{ method, path, body string }{
 		{"LOCK", "/lock", `{"ID":"lock-1","Operation":"OperationTypeApply"}`},
