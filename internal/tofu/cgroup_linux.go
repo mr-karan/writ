@@ -434,14 +434,36 @@ func (c *stepCgroup) remove() error {
 // that no directory names but a process of the cgroup holds open or maps,
 // each counted once and as at least scratchInode. A mapped file counts as
 // the end of its furthest mapping, since a mapping, unlike a descriptor,
-// gives no way to stat the file.
-func (c *stepCgroup) heldRemoved(dev uint64) (int64, error) {
+// gives no way to stat the file. It reads /proc as u, the run's user:
+// /proc/PID/fd belongs to the uid of its process, and the kernel lets no
+// other uid without CAP_DAC_READ_SEARCH list it, though writ made the user
+// namespace the process runs in.
+func (c *stepCgroup) heldRemoved(u *User, dev uint64) (int64, error) {
 	pids, err := cgroupProcs(c.dir)
 	if err != nil {
 		return 0, err
 	}
 	held := map[uint64]int64{}
-	for _, pid := range pids {
+	var denied []int
+	err = asUser(u, func() error {
+		for _, pid := range pids {
+			err := heldByProcess(pid, dev, held)
+			if u != nil && errors.Is(err, os.ErrPermission) {
+				denied = append(denied, pid)
+				continue
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	// A process that made itself not dumpable gives its /proc/PID/fd to
+	// root of its user namespace, which is writ's uid.
+	for _, pid := range denied {
 		if err := heldByProcess(pid, dev, held); err != nil {
 			return 0, err
 		}

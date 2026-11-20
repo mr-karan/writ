@@ -204,18 +204,32 @@ func fakeTofuMain(behaviour string, args []string) int {
 		for err == nil {
 			err = unix.Renameat2(unix.AT_FDCWD, "d", unix.AT_FDCWD, "p", unix.RENAME_EXCHANGE)
 		}
-	case "scratch-unlinked", "scratch-mapped":
+	case "nap":
+		// A step longer than one of writ's measures, which plans nothing.
+		time.Sleep(2 * time.Second)
+		if cmd == "plan" {
+			err = os.WriteFile(planFile, []byte("saved"), 0o600)
+		}
+	case "scratch-unlinked", "scratch-mapped", "scratch-undumpable":
 		// 64 MiB written into a file of the stack's directory that the fake
 		// removed first and holds open, or, for scratch-mapped, holds only
-		// through a shared mapping; then it waits.
+		// through a shared mapping; then it waits. scratch-undumpable first
+		// makes itself not dumpable, which gives its /proc/PID/fd to root
+		// of its user namespace.
+		if behaviour == "scratch-undumpable" {
+			err = unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0)
+		}
 		var f *os.File
-		if f, err = os.Create("fill.bin"); err == nil {
+		if err == nil {
+			f, err = os.Create("fill.bin")
+		}
+		if err == nil {
 			err = os.Remove("fill.bin")
 		}
 		chunk := bytes.Repeat([]byte{1}, 1<<20)
 		switch {
 		case err != nil:
-		case behaviour == "scratch-unlinked":
+		case behaviour != "scratch-mapped":
 			for i := 0; i < 64 && err == nil; i++ {
 				_, err = f.Write(chunk)
 			}

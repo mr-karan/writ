@@ -215,6 +215,43 @@ func planAsRunUserWithoutRoot(t *testing.T) {
 		t.Log(err)
 	})
 
+	// writ reads the step's /proc/PID/fd, which belongs to the run's uid,
+	// at each measure of the run's directory.
+	limited := func(t *testing.T, behaviour string, l Limits) (*Runner, Stack) {
+		t.Helper()
+		if os.Getenv(nonRootCgroupEnv) == "" {
+			t.Skip("no delegated cgroup: systemd-run --user could not make one")
+		}
+		r := newRunnerOpts(t, Options{Binary: fakeTofu(t, behaviour), PluginCache: cache, ScratchRoot: scratch, Timeout: time.Minute, ApplyTimeout: time.Minute, MaxOutput: 1 << 20, Limits: l})
+		if e := r.Enforcement(); e.Cgroup == "" {
+			t.Fatalf("in a cgroup delegated to writ, limits are off: %s", e.CgroupOff)
+		}
+		s := fakeStack()
+		s.User = &User{UID: 61040, GID: 61040}
+		return r, s
+	}
+
+	t.Run("a step longer than a measure passes as the run's uid", func(t *testing.T) {
+		r, s := limited(t, "nap", testLimits)
+		if _, err := r.Plan(ctx, s); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("a removed file the run's uid holds stops at limits.run_scratch", func(t *testing.T) {
+		// Room in memory for the page cache of what the fake writes.
+		l := testLimits
+		l.Memory = 1 << 30
+		for _, fake := range []string{"scratch-unlinked", "scratch-undumpable"} {
+			r, s := limited(t, fake, l)
+			_, err := r.Plan(ctx, s)
+			if se, ok := errors.AsType[*StepError](err); !ok || !strings.Contains(se.Limit, "held more than limits.run_scratch") {
+				t.Fatalf("%s: the plan returned %v, not a stop at limits.run_scratch", fake, err)
+			}
+			t.Logf("%s: %v", fake, err)
+		}
+	})
+
 	t.Run("plans while other runs act as their uids", func(t *testing.T) {
 		stop := make(chan struct{})
 		var wg sync.WaitGroup

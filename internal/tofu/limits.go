@@ -234,9 +234,7 @@ func (sc *scratch) usage(max int64, cg *stepCgroup, deadline time.Time) (int64, 
 	if err != nil || cg == nil {
 		return w.total, err
 	}
-	// As writ: the user namespace of the run's processes is writ's, so it
-	// may read their descriptors and mappings whatever uid they run as.
-	held, err := cg.heldRemoved(dev)
+	held, err := cg.heldRemoved(sc.user, dev)
 	return w.total + held, err
 }
 
