@@ -62,6 +62,9 @@ type Options struct {
 	// Reap kills what a provider left running as a uid before the uid
 	// serves another plan. Nil means runas.Reap.
 	Reap func(uid uint32) error
+	// WrapExecutor, when set, wraps the executor of the OpenTofu runs, so
+	// a test sees each job that crosses to it.
+	WrapExecutor func(runner.Executor) runner.Executor
 	// DevToken is the one token a Config.Dev server accepts, and DevUser
 	// the name of the user it stands for.
 	DevToken, DevUser string

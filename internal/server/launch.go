@@ -43,6 +43,9 @@ func (s *Server) initProviders(opts Options) error {
 	}
 	if opts.Tofu != nil {
 		s.exec = &runner.Local{Tofu: opts.Tofu, UIDs: uids, Work: filepath.Join(s.cfg.Data, "work"), Relay: s.relay}
+		if opts.WrapExecutor != nil {
+			s.exec = opts.WrapExecutor(s.exec)
+		}
 	}
 	roles := false
 	for _, e := range s.cfg.Envs {
