@@ -130,6 +130,17 @@ func runLimits(t *testing.T) {
 			t.Fatalf("the step that filled its directory ran %v, so writ's measure did not stop it", d)
 		}
 	})
+	t.Run("scratch, in a removed file a process holds", func(t *testing.T) {
+		for _, fake := range []string{"scratch-unlinked", "scratch-mapped"} {
+			l := testLimits
+			l.Memory = 1 << 30
+			start := time.Now()
+			requireLimit(t, fakeRunnerLimits(t, fake, l), "limits.run_scratch")
+			if d := time.Since(start); d > 10*time.Second {
+				t.Fatalf("the step that filled a removed file ran %v, so writ's measure did not stop it", d)
+			}
+		}
+	})
 	t.Run("a process left behind dies with the step's cgroup", func(t *testing.T) {
 		r := fakeRunnerLimits(t, "leave", testLimits)
 		if _, err := r.Plan(context.Background(), fakeStack()); err == nil {

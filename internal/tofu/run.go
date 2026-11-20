@@ -83,7 +83,7 @@ func (r *Runner) step(ctx context.Context, sc *scratch, creds bool, name string,
 		}
 		defer cg.remove()
 	}
-	ctx, scratchHit := r.watchScratch(ctx, sc)
+	ctx, scratchHit := r.watchScratch(ctx, sc, cg)
 	stdout, stderr, err := command{
 		binary: r.opts.Binary,
 		args:   args,

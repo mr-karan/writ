@@ -197,6 +197,36 @@ func fakeTofuMain(behaviour string, args []string) int {
 		for err == nil {
 			err = unix.Renameat2(unix.AT_FDCWD, "d", unix.AT_FDCWD, "p", unix.RENAME_EXCHANGE)
 		}
+	case "scratch-unlinked", "scratch-mapped":
+		// 64 MiB written into a file of the stack's directory that the fake
+		// removed first and holds open, or, for scratch-mapped, holds only
+		// through a shared mapping; then it waits.
+		var f *os.File
+		if f, err = os.Create("fill.bin"); err == nil {
+			err = os.Remove("fill.bin")
+		}
+		chunk := bytes.Repeat([]byte{1}, 1<<20)
+		switch {
+		case err != nil:
+		case behaviour == "scratch-unlinked":
+			for i := 0; i < 64 && err == nil; i++ {
+				_, err = f.Write(chunk)
+			}
+		default:
+			var mem []byte
+			if err = f.Truncate(64 << 20); err == nil {
+				mem, err = syscall.Mmap(int(f.Fd()), 0, 64<<20, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+			}
+			if err == nil {
+				err = f.Close()
+				for i := 0; i < len(mem); i += len(chunk) {
+					copy(mem[i:], chunk)
+				}
+			}
+		}
+		if err == nil {
+			time.Sleep(time.Hour)
+		}
 	case "scratch-inodes":
 		// 8192 empty files, which hold no data but an inode each.
 		for i := 0; i < 8192 && err == nil; i++ {

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -298,6 +299,101 @@ func (c *stepCgroup) hit() string {
 func (c *stepCgroup) remove() error {
 	c.f.Close()
 	return os.Remove(c.dir)
+}
+
+// heldRemoved returns the bytes on disk of the files on the filesystem dev
+// that no directory names but a process of the cgroup holds open or maps,
+// each counted once and as at least scratchInode. A mapped file counts as
+// the end of its furthest mapping, since a mapping, unlike a descriptor,
+// gives no way to stat the file.
+func (c *stepCgroup) heldRemoved(dev uint64) (int64, error) {
+	pids, err := cgroupProcs(c.dir)
+	if err != nil {
+		return 0, err
+	}
+	held := map[uint64]int64{}
+	for _, pid := range pids {
+		if err := heldByProcess(pid, dev, held); err != nil {
+			return 0, err
+		}
+	}
+	var total int64
+	for _, n := range held {
+		total += max(n, scratchInode)
+	}
+	return total, nil
+}
+
+// heldByProcess adds to held, by inode, the bytes of each removed file on
+// dev that the process pid holds open or maps. A process that exits
+// meanwhile holds nothing.
+func heldByProcess(pid int, dev uint64, held map[uint64]int64) error {
+	proc := "/proc/" + strconv.Itoa(pid)
+	f, err := os.Open(proc + "/fd")
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read the descriptors of the step's process %d: %w", pid, err)
+	}
+	defer f.Close()
+	for {
+		names, err := f.Readdirnames(256)
+		if errors.Is(err, io.EOF) || errors.Is(err, unix.ESRCH) || errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read the descriptors of the step's process %d: %w", pid, err)
+		}
+		for _, n := range names {
+			var st unix.Stat_t
+			err := unix.Stat(proc+"/fd/"+n, &st)
+			if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ESRCH) {
+				// Closed meanwhile.
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("read a descriptor of the step's process %d: %w", pid, err)
+			}
+			if st.Mode&unix.S_IFMT == unix.S_IFREG && st.Nlink == 0 && st.Dev == dev {
+				held[st.Ino] = max(held[st.Ino], st.Blocks*512)
+			}
+		}
+	}
+	maps, err := os.Open(proc + "/maps")
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read the mappings of the step's process %d: %w", pid, err)
+	}
+	defer maps.Close()
+	want := fmt.Sprintf("%02x:%02x", unix.Major(dev), unix.Minor(dev))
+	sc := bufio.NewScanner(maps)
+	for sc.Scan() {
+		// START-END PERMS OFFSET MAJ:MIN INODE PATH (deleted)
+		line := sc.Text()
+		if !strings.HasSuffix(line, " (deleted)") {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) < 6 || f[3] != want {
+			continue
+		}
+		start, end, _ := strings.Cut(f[0], "-")
+		lo, err1 := strconv.ParseUint(start, 16, 64)
+		hi, err2 := strconv.ParseUint(end, 16, 64)
+		off, err3 := strconv.ParseUint(f[2], 16, 64)
+		ino, err4 := strconv.ParseUint(f[4], 10, 64)
+		if err := errors.Join(err1, err2, err3, err4); err != nil || ino == 0 {
+			continue
+		}
+		held[ino] = max(held[ino], int64(off+hi-lo))
+	}
+	if err := sc.Err(); err != nil && !errors.Is(err, unix.ESRCH) {
+		return fmt.Errorf("read the mappings of the step's process %d: %w", pid, err)
+	}
+	return nil
 }
 
 // cgroupKeys reads a cgroup file of "KEY VALUE" lines.

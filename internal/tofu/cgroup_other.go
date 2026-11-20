@@ -17,3 +17,4 @@ func newStepCgroup(string, Limits) (*stepCgroup, error) { return nil, errNoCgrou
 func (*stepCgroup) kill() error                         { return nil }
 func (*stepCgroup) hit() string                         { return "" }
 func (*stepCgroup) remove() error                       { return nil }
+func (*stepCgroup) heldRemoved(uint64) (int64, error)   { return 0, nil }

@@ -108,7 +108,7 @@ func (e *errScratch) Error() string { return e.msg }
 // stops the watch and returns what the step reached, if anything: the
 // watch's finding, or a last measure, exact once no process of the step
 // is left.
-func (r *Runner) watchScratch(ctx context.Context, sc *scratch) (context.Context, func() string) {
+func (r *Runner) watchScratch(ctx context.Context, sc *scratch, cg *stepCgroup) (context.Context, func() string) {
 	max := r.opts.Limits.Scratch
 	if max <= 0 {
 		return ctx, func() string { return "" }
@@ -127,7 +127,7 @@ func (r *Runner) watchScratch(ctx context.Context, sc *scratch) (context.Context
 				return
 			case <-t.C:
 			}
-			if msg := sc.overScratch(max); msg != "" {
+			if msg := sc.overScratch(max, cg); msg != "" {
 				cancel(&errScratch{msg})
 				return
 			}
@@ -146,7 +146,7 @@ func (r *Runner) watchScratch(ctx context.Context, sc *scratch) (context.Context
 		if e, ok := errors.AsType[*errScratch](context.Cause(ctx)); ok {
 			return e.msg
 		}
-		return sc.overScratch(max)
+		return sc.overScratch(max, cg)
 	}
 }
 
@@ -160,11 +160,11 @@ var errScratchSlow = errors.New("the measure took too long")
 // errScratchDeep is a run's directory nested deeper than scratchDepth.
 var errScratchDeep = errors.New("the directory nests too deeply")
 
-// overScratch is why sc's directory is over max bytes, or "". The words
-// are writ's own: a name in the directory is the run's to choose, and may
-// hold a secret.
-func (sc *scratch) overScratch(max int64) string {
-	n, err := sc.usage(max, time.Now().Add(scratchWithin))
+// overScratch is why sc's directory, with the removed files that cg's
+// processes hold, is over max bytes, or "". The words are writ's own: a
+// name in the directory is the run's to choose, and may hold a secret.
+func (sc *scratch) overScratch(max int64, cg *stepCgroup) string {
+	n, err := sc.usage(max, cg, time.Now().Add(scratchWithin))
 	switch {
 	case errors.Is(err, errScratchSlow):
 		return slowScratch
@@ -184,10 +184,14 @@ func (sc *scratch) overScratch(max int64) string {
 
 // usage returns the bytes on disk of sc's directory, read as the run's
 // user, counting each file with hard links once and each file and
-// directory as at least scratchInode. It stops once the count passes max,
-// and fails past deadline.
-func (sc *scratch) usage(max int64, deadline time.Time) (int64, error) {
+// directory as at least scratchInode. With cg, it adds the files on the
+// directory's filesystem that no directory names any longer but cg's
+// processes hold open or mapped: a run could write into such a file for
+// as long as the step runs. It stops once the count passes max, and fails
+// past deadline.
+func (sc *scratch) usage(max int64, cg *stepCgroup, deadline time.Time) (int64, error) {
 	w := scratchWalk{max: max, deadline: deadline}
+	var dev uint64
 	err := asUser(sc.user, func() error {
 		f, err := sc.run.OpenFile(".", os.O_RDONLY|syscall.O_DIRECTORY, 0)
 		if err != nil {
@@ -198,15 +202,22 @@ func (sc *scratch) usage(max int64, deadline time.Time) (int64, error) {
 		if err := unix.Fstat(int(f.Fd()), &st); err != nil {
 			return err
 		}
+		dev = uint64(st.Dev)
 		if err := w.charge(&st); err != nil {
 			return err
 		}
 		return w.dir(f, 0)
 	})
 	if errors.Is(err, errScratchOver) {
-		err = nil
+		return w.total, nil
 	}
-	return w.total, err
+	if err != nil || cg == nil {
+		return w.total, err
+	}
+	// As writ: the user namespace of the run's processes is writ's, so it
+	// may read their descriptors and mappings whatever uid they run as.
+	held, err := cg.heldRemoved(dev)
+	return w.total + held, err
 }
 
 // errScratchOver ends a walk whose count passed its max.
