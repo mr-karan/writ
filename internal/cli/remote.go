@@ -238,6 +238,8 @@ func printPlanLine(w io.Writer, p *server.PlanInfo) {
 		printApprovals(w, p)
 	case "planning":
 		fmt.Fprintf(w, "Plan %s for %s (%s), by %s, is still planning.\n", p.Ref, p.Env, strings.Join(stacks, ", "), who)
+	case "no-changes":
+		fmt.Fprintf(w, "Plan %s for %s (%s), by %s, changes no resource: there is nothing to apply.\n", p.ID, p.Env, strings.Join(stacks, ", "), who)
 	default:
 		name := p.ID
 		if name == "" {
@@ -262,8 +264,6 @@ func printApprovals(w io.Writer, p *server.PlanInfo) {
 		by = append(by, escapeHuman(a.Display, false))
 	}
 	switch {
-	case len(p.Stacks) == 1 && p.Stacks[0].Changes == 0:
-		fmt.Fprintln(w, "It has no change to apply.")
 	case p.Source.Kind != "commit" && p.Status == "pending":
 		return
 	case ap.Need == 0:
