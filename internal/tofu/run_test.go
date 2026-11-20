@@ -21,6 +21,8 @@ import (
 	"testing/fstest"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/mr-karan/writ/internal/runas"
 )
 
@@ -180,6 +182,27 @@ func fakeTofuMain(behaviour string, args []string) int {
 		if cmd == "init" {
 			if err = os.Rename("../files", "../files.old"); err == nil {
 				err = syscall.Mkfifo("../files", 0o600)
+			}
+		}
+	case "fifo-swap":
+		// The stack's directory holds d, a directory, and p, a FIFO, which
+		// the fake swaps until it is killed, so writ's measure meets a FIFO
+		// where it listed a directory.
+		if cmd != "plan" {
+			break
+		}
+		if err = os.Mkdir("d", 0o700); err == nil {
+			err = syscall.Mkfifo("p", 0o600)
+		}
+		for err == nil {
+			err = unix.Renameat2(unix.AT_FDCWD, "d", unix.AT_FDCWD, "p", unix.RENAME_EXCHANGE)
+		}
+	case "scratch-inodes":
+		// 8192 empty files, which hold no data but an inode each.
+		for i := 0; i < 8192 && err == nil; i++ {
+			var f *os.File
+			if f, err = os.Create(fmt.Sprintf("empty-%d", i)); err == nil {
+				err = f.Close()
 			}
 		}
 	case "fifo-plan":

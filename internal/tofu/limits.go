@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
+	"io"
+	"os"
 	"strconv"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // Limits bound what each step of a run may use. A zero field bounds
@@ -78,6 +81,21 @@ func seccompStatus() (bool, string) {
 // step runs.
 const scratchEvery = 500 * time.Millisecond
 
+// scratchWithin bounds one measure of the run's directory. A measure that
+// takes longer stops the step, as a directory over the limit does: a run
+// that makes its directory too slow to measure must not escape the limit.
+const scratchWithin = 10 * time.Second
+
+// scratchInode is the least that a measure charges each file and
+// directory, the size of a block on most filesystems: a file that holds
+// no data still costs the filesystem an inode, and a run of empty files
+// must still meet limits.run_scratch.
+const scratchInode = 4096
+
+// scratchDepth is how deeply a measure descends into the run's directory.
+// Each level holds a descriptor open while the measure is below it.
+const scratchDepth = 256
+
 // errScratch is the cause with which writ ends a step whose run's
 // directory holds more than Limits.Scratch.
 type errScratch struct{ msg string }
@@ -117,8 +135,14 @@ func (r *Runner) watchScratch(ctx context.Context, sc *scratch) (context.Context
 	}()
 	return ctx, func() string {
 		close(stop)
-		<-done
 		defer cancel(nil)
+		select {
+		case <-done:
+		case <-time.After(2 * scratchWithin):
+			// Each measure ends by scratchWithin, so this is a bound
+			// that only a measure stuck in the kernel reaches.
+			return slowScratch
+		}
 		if e, ok := errors.AsType[*errScratch](context.Cause(ctx)); ok {
 			return e.msg
 		}
@@ -126,62 +150,165 @@ func (r *Runner) watchScratch(ctx context.Context, sc *scratch) (context.Context
 	}
 }
 
+// slowScratch is why writ stopped a step whose run's directory it could
+// not measure within scratchWithin.
+var slowScratch = fmt.Sprintf("writ could not measure the run's directory, which limits.run_scratch bounds, within %s, so it stopped the step", scratchWithin)
+
+// errScratchSlow is a measure that passed scratchWithin.
+var errScratchSlow = errors.New("the measure took too long")
+
+// errScratchDeep is a run's directory nested deeper than scratchDepth.
+var errScratchDeep = errors.New("the directory nests too deeply")
+
 // overScratch is why sc's directory is over max bytes, or "". The words
 // are writ's own: a name in the directory is the run's to choose, and may
 // hold a secret.
 func (sc *scratch) overScratch(max int64) string {
-	n, err := sc.usage()
-	if err != nil {
+	n, err := sc.usage(max, time.Now().Add(scratchWithin))
+	switch {
+	case errors.Is(err, errScratchSlow):
+		return slowScratch
+	case errors.Is(err, errScratchDeep):
+		return fmt.Sprintf("the run's directory nests more than %d directories deep, past which writ does not measure it for limits.run_scratch, so it stopped the step", scratchDepth)
+	case err != nil:
 		why := "it could not be read"
 		if errno, ok := errors.AsType[syscall.Errno](err); ok {
 			why = errno.Error()
 		}
 		return fmt.Sprintf("writ could not measure the run's directory, which limits.run_scratch bounds (%s), so it stopped the step; a run's files must stay readable by its own user", why)
-	}
-	if n > max {
-		return fmt.Sprintf("the run's directory held %s on disk, more than limits.run_scratch, %s", formatSize(n), formatSize(max))
+	case n > max:
+		return fmt.Sprintf("the run's directory held more than limits.run_scratch, %s, on disk", formatSize(max))
 	}
 	return ""
 }
 
-// usage returns the bytes on disk of sc's directory, counting each file
-// with hard links once, read as the run's user.
-func (sc *scratch) usage() (int64, error) {
-	var total int64
-	seen := map[[2]uint64]bool{}
+// usage returns the bytes on disk of sc's directory, read as the run's
+// user, counting each file with hard links once and each file and
+// directory as at least scratchInode. It stops once the count passes max,
+// and fails past deadline.
+func (sc *scratch) usage(max int64, deadline time.Time) (int64, error) {
+	w := scratchWalk{max: max, deadline: deadline}
 	err := asUser(sc.user, func() error {
-		return fs.WalkDir(sc.run.FS(), ".", func(p string, d fs.DirEntry, err error) error {
-			if errors.Is(err, fs.ErrNotExist) {
-				// Removed while writ walked.
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			info, err := sc.run.Lstat(p)
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			st, ok := info.Sys().(*syscall.Stat_t)
-			if !ok {
-				total += info.Size()
-				return nil
-			}
-			if st.Nlink > 1 && !info.IsDir() {
-				id := [2]uint64{uint64(st.Dev), uint64(st.Ino)}
-				if seen[id] {
-					return nil
-				}
-				seen[id] = true
-			}
-			total += int64(st.Blocks) * 512
-			return nil
-		})
+		f, err := sc.run.OpenFile(".", os.O_RDONLY|syscall.O_DIRECTORY, 0)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		var st unix.Stat_t
+		if err := unix.Fstat(int(f.Fd()), &st); err != nil {
+			return err
+		}
+		if err := w.charge(&st); err != nil {
+			return err
+		}
+		return w.dir(f, 0)
 	})
-	return total, err
+	if errors.Is(err, errScratchOver) {
+		err = nil
+	}
+	return w.total, err
+}
+
+// errScratchOver ends a walk whose count passed its max.
+var errScratchOver = errors.New("over the limit")
+
+// scratchWalk is one measure of a run's directory. It reads each
+// directory through a descriptor of its own, opened from its parent's
+// with O_DIRECTORY and O_NOFOLLOW, so a run that swaps a directory for a
+// FIFO or a symbolic link while writ walks makes the open fail at once
+// rather than block or lead out of the run's directory. It reads names a
+// batch at a time and keeps none, so a directory of many files costs writ
+// no more memory than one of few.
+type scratchWalk struct {
+	max      int64
+	deadline time.Time
+	total    int64
+	// seen holds the files with more than one link already charged.
+	seen map[[2]uint64]bool
+}
+
+// charge adds st's blocks, at least scratchInode, to the count, once for
+// a file with several links, and fails once the count passes max.
+func (w *scratchWalk) charge(st *unix.Stat_t) error {
+	if st.Nlink > 1 && st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		id := [2]uint64{uint64(st.Dev), st.Ino}
+		if w.seen[id] {
+			return nil
+		}
+		if w.seen == nil {
+			w.seen = map[[2]uint64]bool{}
+		}
+		w.seen[id] = true
+	}
+	w.total += max(int64(st.Blocks)*512, scratchInode)
+	if w.total > w.max {
+		return errScratchOver
+	}
+	return nil
+}
+
+// dir charges each entry of the directory f, depth levels below the
+// run's directory, and walks each directory among them.
+func (w *scratchWalk) dir(f *os.File, depth int) error {
+	if depth >= scratchDepth {
+		return errScratchDeep
+	}
+	for {
+		if time.Now().After(w.deadline) {
+			return errScratchSlow
+		}
+		names, err := f.Readdirnames(256)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for _, name := range names {
+			if err := w.entry(int(f.Fd()), name, depth); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// entry charges the entry name of the directory fd, and walks it if it is
+// a directory. An entry that the run removed or swapped for another kind
+// of file since writ listed it is charged as what it is now, or skipped
+// once gone: the next measure finds it.
+func (w *scratchWalk) entry(fd int, name string, depth int) error {
+	var st unix.Stat_t
+	err := unix.Fstatat(fd, name, &st, unix.AT_SYMLINK_NOFOLLOW)
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return w.charge(&st)
+	}
+	sub, err := unix.Openat(fd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	switch {
+	case errors.Is(err, unix.ENOENT):
+		return nil
+	case errors.Is(err, unix.ENOTDIR), errors.Is(err, unix.ELOOP):
+		if err := unix.Fstatat(fd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return nil
+		}
+		return w.charge(&st)
+	case err != nil:
+		return err
+	}
+	f := os.NewFile(uintptr(sub), name)
+	defer f.Close()
+	if err := unix.Fstat(sub, &st); err != nil {
+		return err
+	}
+	if err := w.charge(&st); err != nil {
+		return err
+	}
+	return w.dir(f, depth+1)
 }
 
 // formatSize writes n bytes as the config writes a size, in GiB, MiB, or

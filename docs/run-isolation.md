@@ -120,14 +120,14 @@ A provider that forks or allocates without bound could take the memory, processe
 | `run_memory` | `4GiB` | The kernel kills every process of the step. The step gets no swap, and the page cache of the files it writes counts. |
 | `run_pids` | `1024` | The step can't start another process or thread. Threads count too: an idle `hashicorp/random` 3.9.1 provider runs 9 on a 16-CPU host. |
 | `run_cpus` | `2` | The step runs slower. Nothing fails. |
-| `run_scratch` | `8GiB` | `writ serve` stops the step once the run's directory has more than this on disk. |
+| `run_scratch` | `8GiB` | `writ serve` stops the step once the run's directory has more than this on disk. Each file and directory counts as at least 4KiB, the inode it costs the filesystem, so many empty files count too. |
 
 When a step reaches a limit, the plan or run fails, and its first diagnostic names the limit:
 
 ```
 tofu init stopped at a limit: the run used all of limits.run_memory, 64MiB, and the kernel killed it
 tofu init stopped at a limit: the run reached limits.run_pids, 64 processes and threads, and could start no more
-tofu init stopped at a limit: the run's directory held 64.0MiB on disk, more than limits.run_scratch, 16MiB
+tofu init stopped at a limit: the run's directory held more than limits.run_scratch, 16MiB, on disk
 ```
 
 Output of `TestRunLimits`, 2026-11-20, with a fake `tofu` that allocates, forks, and writes past limits of 64MiB, 64, and 16MiB.
@@ -187,7 +187,7 @@ Output of `writ serve --check`, 2026-11-20, of a config with `run_memory = "2GiB
 
 ### What run limits don't cover
 
-- **Scratch is measured, not enforced by the kernel.** `writ serve` walks the run's directory every half second while a step runs, and once more after it ends. A step can pass `run_scratch` by what it writes in half a second, and a step that keeps moving its files can hide them from the walk until it ends. A non-root `writ serve` can't mount a size-limited filesystem where every step of a run sees it. For a hard bound, put `tofu.scratch_dir` on a filesystem of its own, so a full scratch can't fill `data` or Postgres, and set user quotas there for `provider_uids`.
+- **Scratch is measured, not enforced by the kernel.** `writ serve` walks the run's directory every half second while a step runs, and once more after it ends. A step can pass `run_scratch` by what it writes in half a second, and a step that keeps moving its files can hide them from one walk, but rarely from every walk until it ends. Each walk stops once it has counted past `run_scratch`, and opens each directory so that a FIFO or a symbolic link swapped in for it fails at once rather than blocks the walk. A walk that takes more than 10 seconds, or meets a directory more than 256 levels deep, stops the step, as a full directory does. A whole walk of 300,000 empty files, under the default `run_scratch`, took `writ serve` 0.3 seconds of CPU and 15MiB of allocations on a 16-CPU host. A non-root `writ serve` can't mount a size-limited filesystem where every step of a run sees it. For a hard bound, put `tofu.scratch_dir` on a filesystem of its own, so a full scratch can't fill `data` or Postgres, and set user quotas there for `provider_uids`.
 - **Disk bandwidth isn't limited.** The `io` controller's limits need the scratch device's numbers, which a device-mapper or btrfs filesystem doesn't give reliably.
 - **Each step has its own limits.** A run's `init` and `plan` each get `run_memory`, one after the other.
 - **The limits of concurrent runs add up.** `limits.plans` runs at `run_memory` each can use more memory than the host has, so size the host or the limits for both.

@@ -305,3 +305,21 @@ func limitsWithoutCgroupFS(t *testing.T) {
 	t.Logf("each step's cgroup is under %s", e.Cgroup)
 	requireLimit(t, r, "limits.run_memory")
 }
+
+// A run that swaps a directory of its own for a FIFO while writ measures
+// its directory must not block the measure: an open of a FIFO waits for a
+// writer that never comes, and the step would never end.
+func TestScratchMeasureMeetsAFIFO(t *testing.T) {
+	r := fakeRunnerLimits(t, "fifo-swap", Limits{Scratch: 16 << 20})
+	r.opts.Timeout = 3 * time.Second
+	if err := planWithin(t, r, 30*time.Second); err == nil {
+		t.Fatal("the fake's plan passed")
+	}
+}
+
+// Each file costs the filesystem an inode, though it holds no data, so the
+// measure charges it at least scratchInode: a run of empty files must
+// still meet limits.run_scratch.
+func TestScratchCountsEachInode(t *testing.T) {
+	requireLimit(t, fakeRunnerLimits(t, "scratch-inodes", testLimits), "limits.run_scratch")
+}
