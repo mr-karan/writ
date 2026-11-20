@@ -77,17 +77,19 @@ func TestStartMapped(t *testing.T) {
 	inNamespaces(t, "TestStartMapped")
 }
 
-// TestStartBesideStartMapped starts processes as other users, as a
-// provider's start and writ serve --check do, while StartMapped starts
+// TestStartMappedRacesCredentialStart starts processes as other users, as
+// a provider's start and writ serve --check do, while StartMapped starts
 // processes in user namespaces, after AsUser, as uid 1000 with the
 // capabilities writ serve has. Go starts a process that switches users
 // with CLONE_VM, so the child's setresuid marks writ itself not dumpable.
-func TestStartBesideStartMapped(t *testing.T) {
+// With WRIT_REPRO_UNLOCKED set, those starts skip Start's lock, as they
+// did before it, and the test fails.
+func TestStartMappedRacesCredentialStart(t *testing.T) {
 	if os.Getenv(childEnv) != "" {
-		startBesideStartMappedChild(t)
+		startMappedRacesCredentialStartChild(t)
 		return
 	}
-	inNamespaces(t, "TestStartBesideStartMapped")
+	inNamespaces(t, "TestStartMappedRacesCredentialStart")
 }
 
 // inNamespaces runs the test name of this package's test binary again
@@ -165,7 +167,7 @@ func startMappedChild(t *testing.T) {
 	}
 }
 
-func startBesideStartMappedChild(t *testing.T) {
+func startMappedRacesCredentialStartChild(t *testing.T) {
 	if os.Getuid() != writUID {
 		t.Fatalf("the child runs as uid %d, not %d", os.Getuid(), writUID)
 	}
@@ -182,6 +184,10 @@ func startBesideStartMappedChild(t *testing.T) {
 		cmd := exec.Command(truePath)
 		cmd.Args = []string{"true"}
 		return cmd
+	}
+	start := Start
+	if os.Getenv("WRIT_REPRO_UNLOCKED") != "" {
+		start = (*exec.Cmd).Start
 	}
 	if err := AsUser(User{UID: runUID, GID: runUID}, func() error { return nil }); err != nil {
 		t.Fatal(err)
@@ -201,7 +207,7 @@ func startBesideStartMappedChild(t *testing.T) {
 				}
 				cmd := command()
 				cmd.SysProcAttr = SysProcAttr(&u)
-				err := Start(cmd)
+				err := start(cmd)
 				if err == nil {
 					err = cmd.Wait()
 				}
@@ -243,6 +249,31 @@ func startBesideStartMappedChild(t *testing.T) {
 	t.Logf("%d processes started as other users beside %d StartMapped", started.Load(), n)
 	if len(failed) > 0 {
 		t.Fatalf("StartMapped failed %d of %d times beside starts as other users; first: %v", len(failed), n, failed[0])
+	}
+}
+
+// TestStartMappedPanicLeavesNotDumpable panics in StartMapped's start,
+// as a nil command does, while writ is not dumpable. Left dumpable, writ
+// would let any process of its uid read its memory from then on.
+func TestStartMappedPanicLeavesNotDumpable(t *testing.T) {
+	if _, _, e := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 0, 0); e != 0 {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_DUMPABLE, 1, 0) })
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("StartMapped of a nil command did not panic")
+			}
+		}()
+		_ = StartMapped(nil)
+	}()
+	if d := dumpable(t); d != 0 {
+		t.Fatalf("after a panic in StartMapped writ is dumpable %d, want 0", d)
+	}
+	// The lock is free again, or this waits for ever.
+	if err := NotDumpable(); err != nil {
+		t.Fatal(err)
 	}
 }
 
