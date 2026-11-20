@@ -78,7 +78,9 @@ in
         The provider_uids of configFile. writ serve runs each plan's
         providers as one of these uids, which no user on the host may
         have. Setting it gives writ serve CAP_SETUID, CAP_SETGID, and
-        CAP_KILL, makes /var/lib/writ-tofu for the tofu block's
+        CAP_KILL, delegates the unit's cgroup to the writ user so that
+        each OpenTofu step gets a cgroup of its own with the config's
+        run limits, makes /var/lib/writ-tofu for the tofu block's
         plugin_cache and scratch_dir, which must be outside data, and
         loads an nftables rule that drops these uids' traffic to the
         instance metadata addresses. writ serve --check, which runs
@@ -164,7 +166,15 @@ in
         # /proc, as this option makes.
         ProtectKernelTunables = lib.versionAtLeast config.boot.kernelPackages.kernel.version "7.2";
         ProtectKernelModules = true;
-        ProtectControlGroups = true;
+        # With provider uids, writ serve gives each OpenTofu step a cgroup
+        # of its own under the unit's, which it moves itself out of into
+        # the leaf serve, so the step's limits.run_memory, run_pids, and
+        # run_cpus hold. That needs the unit's cgroup delegated to the
+        # writ user and /sys/fs/cgroup writable, which
+        # ProtectControlGroups would make read-only. Without provider
+        # uids, no OpenTofu runs.
+        Delegate = isolated;
+        ProtectControlGroups = !isolated;
         RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
         # The user, mount, and pid namespaces of each tofu process's
         # private filesystem view.
