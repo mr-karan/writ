@@ -2,7 +2,7 @@
 
 Approval rules decide how many people must look at a plan. Policy decides what no plan may do, whoever approves it. You write those rules in Rego, and `writ serve` checks every plan of an OpenTofu stack against them twice: when the plan is created, the plan point, and when someone asks to apply it, the apply point.
 
-Your policy reads the masked plan document with OpenTofu's own key names. So the same `.rego` file runs under `conftest` on the output of `tofu show -json`. To write one, see [Write and test a policy](write-a-policy.md).
+Your policy reads the masked plan document with OpenTofu's own key names. So the same `.rego` file runs under `conftest` on the output of `tofu show -json`. To write one step by step, see [Write and test a policy](write-a-policy.md); for ready-to-use rules and unit tests, see the [Policy cookbook](policy-cookbook.md).
 
 ## Where policy lives
 
@@ -95,6 +95,7 @@ If a message isn't printable, Writ quotes it, and the mask sweeps it again after
 ## Next steps
 
 - [Write and test a policy](write-a-policy.md)
+- [Policy cookbook](policy-cookbook.md)
 - [Policy input and built-ins](policy-reference.md)
 - [Approvals](approvals.md)
 - [Secrets and the mask](secrets.md)
