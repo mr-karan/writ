@@ -60,7 +60,7 @@ func (a *App) Serve(ctx context.Context, o ServeOptions) error {
 		if err := printServeCheck(a.humanOutput(), o.Config, cfg); err != nil {
 			return err
 		}
-		return errors.Join(a.checkTofu(ctx, cfg), a.checkIsolation(ctx, cfg))
+		return errors.Join(a.checkTofu(ctx, cfg), a.checkIsolation(ctx, cfg), a.checkLimits(cfg))
 	}
 	log := slog.New(slog.NewJSONHandler(a.opts.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	for _, d := range diags {
@@ -251,6 +251,44 @@ func (a *App) checkTofu(ctx context.Context, cfg *server.Config) error {
 	}
 	fmt.Fprintf(a.humanOutput(), "tofu: git %s: ok\n", git)
 	return nil
+}
+
+// checkLimits prints what writ serve would enforce of the limits of each
+// OpenTofu step, and warns of what it would not, and why. It moves writ
+// into no cgroup, so it reports on the cgroup --check runs in: run it
+// where writ serve runs, as the unit's ExecStartPre does.
+func (a *App) checkLimits(cfg *server.Config) error {
+	if cfg.Tofu == nil {
+		return nil
+	}
+	w := a.humanOutput()
+	l := runLimits(cfg)
+	e := tofu.CheckLimits(l)
+	var warn diag.List
+	if e.Cgroup != "" {
+		fmt.Fprintf(w, "limits: each OpenTofu step runs in a cgroup of its own under %s: memory %s with no swap, %d processes and threads, %v CPUs\n", e.Cgroup, sizeWords(l.Memory), l.Pids, l.CPUs)
+	} else {
+		warn.Warnf(diag.Usage, diag.Span{}, "limits not enforced: %s; writ serve runs each OpenTofu step without limits.run_memory, run_pids, and run_cpus", e.CgroupOff)
+	}
+	fmt.Fprintf(w, "limits: writ measures each run's directory, and stops a step past %s\n", sizeWords(l.Scratch))
+	if e.Seccomp {
+		fmt.Fprintln(w, "seccomp: each OpenTofu process runs under writ's seccomp filter")
+	} else {
+		warn.Warnf(diag.Usage, diag.Span{}, "seccomp filter not installed: %s", e.SeccompOff)
+	}
+	printDiags(w, warn)
+	return nil
+}
+
+// sizeWords writes a size as the config does.
+func sizeWords(n int64) string {
+	switch {
+	case n%(1<<30) == 0:
+		return fmt.Sprintf("%dGiB", n>>30)
+	case n%(1<<20) == 0:
+		return fmt.Sprintf("%dMiB", n>>20)
+	}
+	return fmt.Sprintf("%dKiB", n>>10)
 }
 
 // checkIsolation prints writ serve --check's isolation part: writ runs

@@ -306,8 +306,16 @@ env "prod" {
 		t.Fatal(err)
 	}
 	s := &served{t: t, is: is, url: srvURL, db: db, data: data, log: &syncBuffer{}, stack: &stackDir{t: t, dir: jobDir}}
-	if r := s.stack.exec(nil, "serve", "--config", cfg, "--check"); r.code != 0 {
-		t.Fatalf("writ serve --check: %s", r)
+	check := s.stack.exec(nil, "serve", "--config", cfg, "--check")
+	if check.code != 0 {
+		t.Fatalf("writ serve --check: %s", check)
+	}
+	// It says whether each step gets a cgroup of its own, and why not:
+	// this test's writ serve shares its cgroup, so it does not.
+	if out := check.stdout + check.stderr; !strings.Contains(out, "limits: each OpenTofu step runs in a cgroup of its own") && !strings.Contains(out, "limits not enforced: ") ||
+		!strings.Contains(out, "limits: writ measures each run's directory, and stops a step past 8GiB") ||
+		!strings.Contains(out, "seccomp: each OpenTofu process runs under writ's seccomp filter") {
+		t.Fatalf("writ serve --check does not report the run limits: %s", check)
 	}
 	stop := serveAgain(t, s, cfg)
 	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(100 * time.Millisecond) {
