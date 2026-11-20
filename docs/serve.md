@@ -594,21 +594,26 @@ Each step of a run, `init`, `plan`, `show`, `apply`, and `state pull`, starts in
 | --- | --- | --- |
 | `127.0.0.1:3128` | The egress proxy | `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, and `https_proxy` |
 | `127.0.0.1:3129` | The [credential endpoint](#roles-and-credentials), with the run's token, as on the host | `AWS_CONTAINER_CREDENTIALS_FULL_URI` |
-| `127.0.0.1:3130` | The [http state backend](#opentofu-stacks), `/v1/tfstate/` and no other route, with its audit rows and the address limit | `TF_HTTP_ADDRESS` |
+| `127.0.0.1:3130` | The [http state backend](#opentofu-stacks), `/v1/tfstate/` and no other route, with its audit rows and a limit of the run's own | `TF_HTTP_ADDRESS` |
 
-`NO_PROXY` and `no_proxy` are `127.0.0.1,localhost,::1`, so the credential endpoint and the state backend are reached directly. The state port drops the `X-Forwarded-For` of a run's request, because a run is no trusted proxy. The plugin cache's Fill and the `tofu version` check keep `writ serve`'s network: they run no code of a stack.
+`NO_PROXY` and `no_proxy` are `127.0.0.1,localhost,::1`, so the credential endpoint and the state backend are reached directly. The state port drops the `X-Forwarded-For` of a run's request, because a run is no trusted proxy. Every run reaches the state port from `127.0.0.1`, so it counts a run's requests against `limits.requests_per_address` in a bucket keyed by the run, apart from `writ serve`'s own listener and from every other run.
 
-The proxy is the security boundary, and it identifies the run by the listener its connection came in on, not by anything the run sends. The firewall rule for the metadata service still applies. Each step's network ends with the step: `writ serve` closes its listeners and every connection when the step's processes are gone.
+The provider install gets a namespace of its own too, behind a proxy of its own: see [The provider install](#the-provider-install). The `tofu version` check keeps `writ serve`'s network, because it reads no file of a stack.
+
+The proxy is the security boundary, and it identifies the run by the listener its connection came in on, not by anything the run sends. The firewall rule for the metadata service still applies. Each port of a step holds at most 256 connections open and closes one that waits 10 seconds for a request. Each step's network ends with the step: `writ serve` closes its listeners and every connection when the step's processes are gone.
 
 ### What the proxy allows
 
 The proxy takes `CONNECT HOST:PORT`, for TLS or any protocol on any port, and a plain HTTP request for an absolute `http://` URL. It decides on the host and port, before it connects:
 
 - It never connects to a loopback, link-local, multicast, broadcast, or unspecified address, or to `fd00:ec2::254`, in any mode. `169.254.169.254`, the instance metadata service, is link-local.
+- A NAT64 address counts as the IPv4 address it embeds, because a translator on the network connects there: `64:ff9b::a9fe:a9fe` is the metadata service. Every address of the local-use prefix `64:ff9b:1::/48` is private.
 - An IP address is allowed only when the list has it.
 - Under `enforce`, a name the list lacks is refused before any lookup, so a lookup can't carry data out through DNS.
-- `writ serve` resolves a listed name with its own resolver, and connects only to an address it checked. A second lookup, as a rebinding name would answer, can't move the connection.
+- `writ serve` resolves a listed name with its own resolver, and connects only to an address it checked. A second lookup, as a rebinding name would answer, can't move the connection. A name whose lookup fails is recorded `unresolved`, and the proxy connects nowhere.
 - A name that resolves to a private address, of RFC 1918, unique local IPv6, or `100.64.0.0/10`, is allowed only when the list has that exact name. A wildcard doesn't allow it, so a public domain can't lead a run into the network `writ serve` runs in.
+
+With VPC interface endpoints and their private DNS, AWS names such as `sts.eu-west-1.amazonaws.com` resolve to private addresses in your VPC. `*.amazonaws.com` doesn't allow those, so list each endpoint's exact name under `enforce`.
 
 An item is `HOST`, `*.DOMAIN`, or an IP address, with an optional `:PORT`. `*.amazonaws.com` matches `sts.amazonaws.com` and not `amazonaws.com`. An item with no port allows 443 only, and `HOST:80` allows plain HTTP. A run has at most 128 connections open through the proxy. A connection ends after 10 minutes with no byte either way, after an hour, or with its step. The proxy keeps only the host and port of each request, never a path, a header, or a body.
 
@@ -616,7 +621,7 @@ An item is `HOST`, `*.DOMAIN`, or an IP address, with an optional `:PORT`. `*.am
 
 Under `report`, the proxy lets a destination the list lacks through, and records it as `unlisted`. It still refuses what it never connects to: loopback, link-local, and the rest of the list above. Under `enforce`, it refuses every destination the list lacks.
 
-Under both, every run records what it asked for: each `host:port`, its verdict, `allowed`, `unlisted`, or `refused`, the reason, and how many requests got it. A plan and a run keep it as `network`, in the [API](api.md) and on their pages in the control UI, and `writ serve` logs one `run egress` line for each run, the runs that read state for the index or an adoption included. Each host is swept by the run's [mask](secrets.md), because a run chooses its hosts and can spell a secret in one.
+Under both, every run records what it asked for: each `host:port`, its verdict, `allowed`, `unlisted`, `refused`, or `unresolved`, the reason, and how many requests got it. A plan and a run keep it as `network`, in the [API](api.md) and on their pages in the control UI, and `writ serve` logs one `run egress` line for each run, the runs that read state for the index or an adoption included. Each host is swept by the run's [mask](secrets.md), after the mask learns the plan's sensitive values, because a run chooses its hosts and can spell a secret in one. When the mask can't read the plan, the run keeps its record and logs its line with each host shown as `(withheld)`.
 
 When the proxy refuses a `CONNECT`, the reason is in its answer's status line, so a provider's error says `writ egress refused HOST:PORT: REASON`. When a step fails, its diagnostics also name each destination the proxy refused, with the env's egress list:
 
@@ -635,9 +640,22 @@ Output of `TestTofuEgress`, 2026-11-20.
 
 ### What a run fetches
 
-Providers come from the plugin cache. Fill installs them as `writ` before the run starts, on `writ serve`'s own network, and the run's `init` reads them from the cache and asks no registry. So an env's list doesn't need the providers' registry.
+Providers come from the plugin cache. Fill installs them as `writ` before the run starts, and the run's `init` reads them from the cache and asks no registry. So an env's list doesn't need the providers' registry.
 
 Modules are another matter: the run's first `init` fetches each remote module, inside its own namespace. If your stacks use registry modules or modules from a Git host, list those hosts, such as `registry.opentofu.org`, the host its download URLs point to, and your Git host. A stack whose state is on S3 needs its endpoint in the list, such as `*.amazonaws.com`, because the backend reaches it through the proxy.
+
+### The provider install
+
+Fill writes the configuration `tofu init` runs, but the stack's `.terraform.lock.hcl` chooses each provider's registry, and the registry chooses the hosts the install downloads from. So under `egress_mode = "off"`, a stack can send the install, which runs as `writ`'s own uid, to any host `writ serve` reaches. No firewall rule of the provider uids holds `writ`'s uid, so that includes the metadata service, and the error text of a request it sends ends up in the plan's diagnostics.
+
+Under `report` and `enforce`, two rules hold the install:
+
+- A provider whose registry `provider_registries` doesn't list fails the plan before the install starts. Its diagnostic names the registry and `provider_registries`. The default list is `registry.opentofu.org` and `registry.terraform.io`. See [the config](config.md#settings-and-blocks).
+- Fill runs `tofu init` in a network namespace of its own, as a run's steps do, and its one port, `127.0.0.1:3128`, is a proxy of its own. A registry sends downloads to hosts of its choice, such as a CDN, so this proxy has no list. It connects to any public address on any port, in both modes. It refuses a private address, and everything the run's proxy never connects to.
+
+The run's record lists the install's destinations first, with `step` set to `install`, and its Network card marks them `provider install`. A plan whose install fails keeps them. The env's `egress` list has no say over the install, so a failed step's diagnostics leave the install's refusals out. Fill still writes the plugin cache, and a later install of the same providers reads it.
+
+A registry, or a download host, on a private address can't serve the install under `report` or `enforce`. Fill the plugin cache with those providers another way, or run under `off`.
 
 ### Connections around the proxy
 

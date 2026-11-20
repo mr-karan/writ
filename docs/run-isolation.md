@@ -100,7 +100,7 @@ Two layers decide what a run can reach. The first is always on: it limits what a
 - **Module source allow-list**: Before `tofu` runs, `writ serve` checks every `module` `source` (after recursively decoding percent-escapes). Only local paths inside the repo (`./`, `../`), registry addresses, and remote network addresses with at most `ref` and `depth` query parameters are allowed. `file://`, absolute paths, `~`, `oci://`, fragments (`#`), and `go-getter` parameters like `checksum` or `sshkey` are refused.
 - **Git over HTTPS only**: When `tofu.git` is set, Writ sets `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_CONFIG_NOSYSTEM=1`, and `GIT_CONFIG_GLOBAL=/dev/null`, and omits `ssh` from the view, so only HTTPS module clones succeed.
 - **No cloud credentials during `init`**: `tofu init` fetches modules and providers without cloud credentials. Only `plan` and `apply` (and the S3 backend configuration step) receive the run's role credentials.
-- **Provider binaries pinned by lock file**: `writ serve` installs providers into `tofu.plugin_cache` itself from `.terraform.lock.hcl` using a synthetic config, so stack code never runs with write access to the plugin cache.
+- **Provider binaries pinned by lock file**: `writ serve` installs providers into `tofu.plugin_cache` itself from `.terraform.lock.hcl` using a synthetic config, so stack code never runs with write access to the plugin cache. The lock file still chooses each provider's registry, and the registry the hosts the install downloads from, as `writ`'s own uid.
 
 Under `egress_mode = "off"`, the default, that is all: a run shares the host's network, so code the commit chose can reach anything the host reaches, with the run's role credentials and the env's `provider_env` values in hand.
 
@@ -119,11 +119,13 @@ env "prod" {
 
 Each step of a run then starts in a network namespace of its own that holds only loopback: no other interface, no route, and no DNS server. Its one way out is Writ's egress proxy, which `writ serve` serves on the run's loopback, at `127.0.0.1:3128`, set as `HTTPS_PROXY` and `HTTP_PROXY`. The credential endpoint and the state backend reach the run on its loopback too. [Egress](serve.md#egress) has the full design: the ports, how the proxy knows which run a connection is from, and the record each run keeps.
 
+The provider install runs in a namespace of its own too, behind a proxy that allows any public address and refuses private ones, and it installs only from the registries `provider_registries` lists: `registry.opentofu.org` and `registry.terraform.io` unless you set it. See [The provider install](serve.md#the-provider-install).
+
 An item of `egress` is `HOST`, `*.DOMAIN`, or an IP address, with an optional `:PORT`. An item with no port allows 443 only, so plain HTTP needs `HOST:80`. `*.amazonaws.com` matches `sts.amazonaws.com` and not `amazonaws.com`. See [the config's env block](config.md#env) for every rule `--check` applies to the list.
 
 The two modes:
 
-| `egress_mode` | A destination the list has | A destination the list lacks | Loopback, link-local (the metadata service), multicast, unspecified, `fd00:ec2::254` |
+| `egress_mode` | A destination the list has | A destination the list lacks | Loopback, link-local (the metadata service), multicast, unspecified, `fd00:ec2::254`, and a NAT64 address of one |
 | --- | --- | --- | --- |
 | `off` (default) | the host's network, no proxy | the host's network, no proxy | reachable, except the metadata addresses the `nftables` rule drops |
 | `report` | allowed and recorded | allowed and recorded as `unlisted` | refused |
@@ -137,18 +139,19 @@ Under `report` and `enforce`, every plan and run records each `host:port` it ask
 error: writ's egress proxy refused 192.0.2.11:8080 (an IP address the list does not have); env prod's egress is [192.0.2.10:8080], under egress_mode enforce: add what the stack needs to the env's egress list
 ```
 
-`writ serve --check` prints the mode and each env's list when the mode is on:
+`writ serve --check` prints the mode, each env's list, and `provider_registries` when the mode is on:
 
 ```
 egress: enforce; each OpenTofu run reaches the network only through writ's egress proxy, which refuses a destination its env's egress does not list
 egress: env prod allows *.amazonaws.com, registry.opentofu.org, nomad.example.internal:80
+egress: providers install only from registry.opentofu.org, registry.terraform.io
 ```
 
 #### What to list
 
-Providers come from the plugin cache, which `writ serve` fills on its own network before the run starts, so the list doesn't need the providers' registry. List what the run itself reaches:
+Providers come from the plugin cache, which `writ serve` fills behind the install's own proxy before the run starts, so the list doesn't need the providers' registry. List what the run itself reaches:
 
-- the cloud APIs your providers call, such as `*.amazonaws.com`, and any other API a provider talks to, such as `nomad.example.internal:4646`;
+- the cloud APIs your providers call, such as `*.amazonaws.com`, and any other API a provider talks to, such as `nomad.example.internal:4646`. With VPC interface endpoints and their private DNS, AWS names such as `sts.eu-west-1.amazonaws.com` resolve to private addresses in your VPC, which `*.amazonaws.com` doesn't allow, so list each endpoint's exact name;
 - the S3 endpoint of a stack whose state is on S3;
 - for remote modules, `registry.opentofu.org`, the host its download URLs point to, and your Git host.
 
@@ -167,6 +170,7 @@ Providers come from the plugin cache, which `writ serve` fills on its own networ
 - **Clients that ignore proxy settings fail.** Under `report` and `enforce`, a client that ignores `HTTPS_PROXY` or connects to an IP address directly finds no route and no DNS. A client that sends the proxy only IP addresses needs each address listed.
 - **A listed name is resolved by `writ serve`'s resolver**, so a run can make it look up any name the list allows.
 - **Not every path runs behind it.** `writ serve --dev` has no `egress_mode`, and `writ import bulk` runs providers on the host's network.
+- **A private registry can't serve the provider install.** The install's proxy refuses every private address, so a registry or download host on one fails the install under `report` and `enforce`.
 
 If you need limits that egress doesn't give, such as per-bucket rules, add them at your VPC firewall or with `meta skuid 61000-61063` rules in `nftables`.
 
@@ -177,6 +181,7 @@ If you need limits that egress doesn't give, such as per-bucket rules, add them 
 - **Plan fails because a `local-exec` provisioner or `external` data source cannot find `/bin/sh`**: The filesystem view intentionally omits shells. Replace shell provisioners with declarative resources or a static binary inside the stack.
 - **`provider_uids` exhausted with withheld UIDs**: If a provider process refuses to exit after a run, Writ withholds its UID until `writ serve` restarts. Check logs for the stuck run and restart `writ serve` during a quiet window.
 - **A plan fails with `writ egress refused HOST:PORT`** under `enforce`: the env's `egress` lacks that destination. Add it, or run under `report` first to collect what your stacks reach. See [Roll it out](#roll-it-out).
+- **A plan fails with `which provider_registries does not list`** under `report` or `enforce`: the stack's lock file has a provider from a registry `provider_registries` lacks. Add the registry's host to `provider_registries` if you trust it.
 - **A step fails with `network is unreachable` or a failed lookup** under `report` or `enforce`: a process of the run connected without the proxy, and its diagnostics say so. A run has no route but the proxy, so that client needs to honor `HTTPS_PROXY`.
 - **SSH module source (`git@host:org/repo`) fails**: The view has no `ssh` binary or keys. Switch module sources to HTTPS (`git::https://...`).
 
