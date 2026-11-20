@@ -53,6 +53,7 @@ func parseTemplates(u *UI) (*template.Template, error) {
 			return driftBox{d, every, checks}
 		},
 		"auditRecord": auditRecord,
+		"hookRepo":    server.HookRepo,
 		"add":         func(a, b int) int { return a + b },
 		"grants": func(caption string, gs []server.GrantInfo, teams bool) grantTable {
 			t := grantTable{Caption: caption, Teams: teams}

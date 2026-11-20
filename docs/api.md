@@ -318,7 +318,8 @@ Which rows a token sees follows its grants:
 
 - A row of a `stack@env` needs `read` on every stack the row lists there.
 - A row of an environment that lists no stack, such as a list of an environment's plans, needs `read` on some stack there.
-- A row of no environment, or of every one, needs `admin` on every stack in every environment, as `POST /v1/repos` does. These are the server's start, sign-ins and sign-outs, `GET /v1/whoami`, refused tokens, the added repositories, and requests refused before they set a `stack@env`. A principal with that grant sees every row.
+- A webhook delivery's row, op `hook`, whose path names a pinned repository with a webhook needs `read` on some stack of that repository, in any environment: a stack the head of its default branch holds, with the repository's prefix. Its `via` is `webhook of repository NAME`. See [Get changes in seconds with a webhook](webhooks.md#what-writ-serve-answers).
+- A row of no environment, or of every one, needs `admin` on every stack in every environment, as `POST /v1/repos` does. These are the server's start, sign-ins and sign-outs, `GET /v1/whoami`, refused tokens, the added repositories, webhook deliveries to a name with no webhook, and requests refused before they set a `stack@env`. A principal with that grant sees every row.
 
 An approval of a pipeline's plans in several environments leaves one row for each environment, and each row lists only that environment's stacks and grants. So a token that reads only staging sees the staging part of the approval and nothing of prod.
 

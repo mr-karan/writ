@@ -10,7 +10,8 @@ For the full route specification and grant rules, see [API: Read the audit log](
 - Appropriate grants for the rows you want to inspect:
   - Rows for a specific `stack@env` require `read` on every stack listed in that row.
   - Rows for an environment with no specific stack require `read` on at least one stack in that environment.
-  - Server-wide rows (server starts, sign-ins, sign-outs, `GET /v1/whoami`, failed auth attempts, repository additions) require `admin` on every stack in every environment (`envs = ["*"]`, `stacks = ["**"]`).
+  - A [webhook](webhooks.md) delivery's row, op `hook`, whose path names a pinned repository with a webhook, passed or refused, requires `read` on at least one stack of that repository, in any environment: one of the stacks the head of its default branch holds, with the repository's prefix. Its `via` is `webhook of repository NAME`, and the control UI shows the repository as its target.
+  - Server-wide rows (server starts, sign-ins, sign-outs, `GET /v1/whoami`, failed auth attempts, repository additions, and a webhook delivery to a name with no webhook) require `admin` on every stack in every environment (`envs = ["*"]`, `stacks = ["**"]`).
 
 ## Steps
 

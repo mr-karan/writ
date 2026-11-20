@@ -143,7 +143,16 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	var rows []control.Entry
 	var next string
 	if readable {
-		f.Keep = func(e control.Entry) bool { return s.auditVisible(teams, every, e) }
+		// A hook row has no environment, so a filter of one leaves it out.
+		var hooks map[string]bool
+		if !every && f.Env == "" {
+			var err error
+			if hooks, err = s.readableHookRepos(r.Context(), teams); err != nil {
+				s.dbFailed(w, r, FormatAudit, err)
+				return
+			}
+		}
+		f.Keep = func(e control.Entry) bool { return s.auditVisible(teams, every, hooks, e) }
 		var err error
 		rows, next, err = s.store.AuditRows(r.Context(), f)
 		if errors.Is(err, control.ErrBadCursor) {
@@ -212,11 +221,17 @@ func (s *Server) openCursor(sealed string) (string, bool) {
 // auditVisible reports whether a principal in teams may see e. A row of a
 // stack@env needs read on every stack it names there, and a row of an
 // environment and no stack, read on some stack there, as an
-// environment's other records do. A row of no environment, or of every
-// one, such as a sign-in, the server's start, or a repository's add,
-// needs admin on every stack in every environment: every is that
-// decision. every also sees every other row.
-func (s *Server) auditVisible(teams []string, every bool, e control.Entry) bool {
+// environment's other records do. A webhook delivery's row that names its
+// repository needs read on some stack of that repository: hooks holds the
+// repositories teams may read so. A row of no environment, or of every
+// one, such as a sign-in, the server's start, or a repository's add, and
+// a delivery's row that names no repository, needs admin on every stack
+// in every environment: every is that decision. every also sees every
+// other row.
+func (s *Server) auditVisible(teams []string, every bool, hooks map[string]bool, e control.Entry) bool {
+	if repo, ok := hookRepo(e); ok && !every {
+		return hooks[repo]
+	}
 	switch {
 	case every:
 		return true

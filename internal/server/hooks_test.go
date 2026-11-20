@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -34,6 +35,12 @@ const hookPath = "/v1/hooks/gitlab/infra"
 // new head soon. Both repositories are read when it returns.
 func hookFixture(t *testing.T, secret string, setup ...func(*server.Options)) *fixture {
 	t.Helper()
+	return hookFixtureWith(t, secret, "", setup...)
+}
+
+// hookFixtureWith is hookFixture with more config text.
+func hookFixtureWith(t *testing.T, secret, more string, setup ...func(*server.Options)) *fixture {
+	t.Helper()
 	file := filepath.Join(t.TempDir(), "infra_hook")
 	if err := os.WriteFile(file, []byte(secret+"\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -52,7 +59,8 @@ repo {
   project = "acme/apps"
   path = "infra"
   prefix = "apps/"
-}`, file)), setup...)
+}
+%s`, file, more)), setup...)
 	f.gitlab.AddProject(4242, "acme/infra", "main")
 	f.gitlab.Commit(4242, "main", infraFiles())
 	f.gitlab.AddProject(4343, "acme/apps", "main")
@@ -503,5 +511,95 @@ func TestHookSecretFileIsBounded(t *testing.T) {
 		if strings.Contains(err.Error(), "aaaa") {
 			t.Fatalf("the error holds the file's contents: %v", err)
 		}
+	}
+}
+
+// A delivery's row is a row of no environment, which only admin on every
+// stack in every environment used to see, so the team that runs a
+// repository could not see its own repository's deliveries. A row whose
+// path names a pinned repository with a webhook, passed or refused, now
+// shows to a principal that may read a stack of that repository at the
+// head of its default branch, and to no one else but admin. A delivery to
+// any other name names no repository, and stays admin's.
+func TestHookRowsShowToTheRepositorysReaders(t *testing.T) {
+	f := hookFixtureWith(t, hookSecret, `
+team "network_readers" {
+  issuer = "gitlab"
+  match = { user_login = ["nora"] }
+}
+
+team "apps_readers" {
+  issuer = "gitlab"
+  match = { user_login = ["ava"] }
+}
+
+grant {
+  teams = ["network_readers"]
+  stacks = ["network"]
+  envs = ["prod"]
+  can = ["read"]
+}
+
+grant {
+  teams = ["apps_readers"]
+  stacks = ["apps/**"]
+  envs = ["*"]
+  can = ["read", "plan", "approve"]
+}
+`)
+	as := func(login string) string { return f.token(map[string]any{"user_login": login, "project_id": "5000"}) }
+	push := hostilePush(strings.Repeat("a", 40))
+	passed := f.hook(hookPath, hookSecret, "d-1", push)
+	refused := f.hook(hookPath, "not-the-secret", "", push)
+	unknown := f.hook("/v1/hooks/gitlab/nope", hookSecret, "", push)
+	if passed.status != http.StatusAccepted || refused.status != http.StatusUnauthorized || unknown.status != http.StatusUnauthorized {
+		t.Fatalf("deliveries: %d, %d, %d", passed.status, refused.status, unknown.status)
+	}
+	id := func(r response) string { return r.header.Get("X-Request-Id") }
+	for _, c := range []struct {
+		who  string
+		tok  string
+		want []string
+	}{
+		{"a reader of network, a stack of infra", as("nora"), []string{id(refused), id(passed)}},
+		{"a team that reads, plans, and approves apps, another repository", as("ava"), nil},
+		{"a principal with no grant", as("zed"), nil},
+		{"admin on every stack in every environment", admin(f), []string{id(unknown), id(refused), id(passed)}},
+	} {
+		t.Run(c.who, func(t *testing.T) {
+			rows, bodies := f.auditAll(c.tok, url.Values{"op": {"hook"}})
+			var got []string
+			for _, row := range rows {
+				got = append(got, row.Request)
+			}
+			if !slices.Equal(got, c.want) {
+				t.Fatalf("hook rows %v, want %v", got, c.want)
+			}
+			for _, row := range rows {
+				if row.Request == id(passed) && (row.Reason == "" || row.Via != "webhook of repository infra") ||
+					row.Request == id(refused) && (row.Check != "hook-token" || row.Reason != "" || row.Via != "webhook of repository infra") ||
+					row.Request == id(unknown) && row.Via != "" {
+					t.Errorf("row %+v", row)
+				}
+			}
+			if c.want == nil && strings.Contains(string(bodies), "infra") {
+				t.Errorf("a page names infra: %s", bodies)
+			}
+			// With no op filter the same hook rows show among the rest.
+			all, _ := f.auditAll(c.tok, url.Values{})
+			got = nil
+			for _, row := range all {
+				if row.Op == "hook" {
+					got = append(got, row.Request)
+				}
+			}
+			if !slices.Equal(got, c.want) {
+				t.Fatalf("hook rows of the whole log %v, want %v", got, c.want)
+			}
+		})
+	}
+	// A filter of an environment leaves out every row of none.
+	if rows, _ := f.auditAll(as("nora"), url.Values{"env": {"prod"}, "op": {"hook"}}); len(rows) != 0 {
+		t.Fatalf("hook rows in prod: %+v", rows)
 	}
 }
