@@ -85,6 +85,7 @@ func (r *Runner) step(ctx context.Context, sc *scratch, creds bool, name string,
 		net:    sc.net,
 		max:    r.opts.MaxOutput,
 		stop:   sc.stop,
+		plan:   sc.plan,
 	}.run(ctx)
 	if err == nil {
 		return stdout, nil
@@ -110,6 +111,9 @@ type command struct {
 	// stop, when set, is how long the process has to end after SIGINT
 	// when its context's deadline passes, before it is killed.
 	stop time.Duration
+	// plan, when set, is the sealed saved plan that the process reads at
+	// the path sealPlan returned.
+	plan *os.File
 }
 
 // view is what of a run a tofu process sees, besides its binary and the
@@ -241,6 +245,9 @@ type scratch struct {
 	// fill marks Fill's run, the one that may write the plugin cache.
 	fill bool
 	stop time.Duration
+	// plan is the saved plan that sealPlan sealed, which every later step
+	// is given.
+	plan *os.File
 }
 
 // file is one regular file of a Stack's Files.
@@ -401,6 +408,9 @@ func (r *Runner) makeScratch(dirs []string, files []file, dir string, env []stri
 func (sc *scratch) remove() {
 	if sc.run != nil {
 		sc.run.Close()
+	}
+	if sc.plan != nil {
+		sc.plan.Close()
 	}
 	if sc.name == "" {
 		return
