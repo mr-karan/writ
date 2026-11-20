@@ -98,11 +98,11 @@ Run T5QKSTXGRYE66SZBECBPGUV7QV of plan f38f9206b30b2f7ffbcaca647a9b8190 for dev 
 
 Output of a real run, 2026-11-16.
 
-If no approved plan matches, and the newest plan of the sources isn't `no-changes`:
+When no approved plan matches and there is no current `no-changes` plan:
 
-- If the newest run on the `stack@env` applied a plan of the same sources, there is nothing to apply, as when a retried apply job sends the same commit again. Writ answers 200 with `run` `null` and that plan's id, and the job prints `Run RUN applied plan ID of STACK@ENV, which has the sources of REPO at COMMIT, and the state has not moved since: there is nothing to apply.`, starts no run, and exits 0. If the state moved since, because the newest version of the state on Writ's `http` backend is one that run didn't write, Writ refuses it as `state` and asks you to plan again. After a newer run that failed or still applies, this rule doesn't hold, and the job fails as below.
-- If a plan with the same sources lacks approvals, Writ refuses it as `denied`, with its id, and nothing changes.
-- Any other sources, including the code of a stack it reads, are refused as `saved-plan`, and nothing changes.
+- A matching plan that lacks approvals is refused as `denied`. The response includes its id after Writ checks the caller's apply grant.
+- A retry succeeds if the newest run on the `stack@env` applied the same sources and wrote the current state version on Writ's `http` backend. The job says there is nothing to apply, starts no run, and exits 0. If the current version is missing or was written by someone else, Writ refuses the retry as `state` and asks you to plan again. The same refusal applies to S3, where Writ doesn't verify the state left by the run.
+- A newer run that's still applying or failed prevents the retry from using an earlier successful run. With no matching plan or run, Writ asks for a new plan.
 
 Here's a commit that no plan was created for:
 
@@ -111,7 +111,7 @@ $ writ apply --remote --merged --stack app --repo demo --commit de72518e5a53e44a
 error: saved-plan: no approved plan of app@dev matches the sources of demo at de72518e: plan the merge request again after a rebase, and approve the new plan
 ```
 
-If the newest plan of the merged sources is `no-changes`, there is nothing to apply: the job says so, starts no run, and exits 0. Here the merge request planned files that were already applied:
+If the newest plan of the merged sources is `no-changes` and still describes the state, there is nothing to apply: the job says so, starts no run, and exits 0. Here the merge request planned files that were already applied:
 
 ```
 $ writ show --remote abc0596aff0857c996028b716be98aee
@@ -125,7 +125,7 @@ $ writ apply --remote --merged --env prod --stack app
 Plan abc0596aff0857c996028b716be98aee of app@prod has the sources of infra at 2357a3f0 and changes no resource: there is nothing to apply.
 ```
 
-Output of `TestTofuApproveApply` in `e2e/`, 2026-11-20. If a run applied to the `stack@env`, or its state moved, after that plan was requested, the job fails with `state` and asks you to plan again. [A plan that changes nothing](approvals.md#a-plan-that-changes-nothing) says when a plan is `no-changes`.
+Output of `TestTofuApproveApply` in `e2e/`, 2026-11-20. If a run applied to the `stack@env`, or its state moved after the plan was requested, Writ checks the newest run before asking you to plan again. This lets you retry an apply that reverted to the no-changes plan's sources when the revert wrote the current HTTP state version. [A plan that changes nothing](approvals.md#a-plan-that-changes-nothing) says when a plan is `no-changes`.
 
 If the author removes the approve job from the branch, the merge request can merge, and the job on `main` finds no approved plan. So `main` has code that isn't applied until someone approves the plan and runs the job again. The control plane, not the pipeline, is the gate.
 

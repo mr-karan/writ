@@ -410,8 +410,9 @@ type Dispatcher struct {
 }
 
 type worker struct {
-	target Target
-	queue  chan Event
+	target   Target
+	queue    chan Event
+	cooldown time.Time
 	// dropped counts the events Emit found no room for, by kind. The
 	// worker reports them, so Emit never waits on OnResult.
 	mu      sync.Mutex
@@ -530,7 +531,7 @@ func (d *Dispatcher) runWorker(w *worker) {
 		case <-d.ctx.Done():
 			return
 		case ev := <-w.queue:
-			d.deliver(w.target, ev)
+			d.deliver(w, ev)
 			dropped := w.takeDropped()
 			for _, kind := range slices.Sorted(maps.Keys(dropped)) {
 				n := dropped[kind]
@@ -540,13 +541,17 @@ func (d *Dispatcher) runWorker(w *worker) {
 	}
 }
 
-func (d *Dispatcher) deliver(target Target, ev Event) {
+func (d *Dispatcher) deliver(w *worker, ev Event) {
+	target := w.target
 	var lastErr string
-	var after time.Duration
 	attempts := 0
 	for attempt := 0; attempt <= len(d.backoff); attempt++ {
+		delay := time.Until(w.cooldown)
 		if attempt > 0 {
-			timer := time.NewTimer(max(d.backoff[attempt-1], after))
+			delay = max(d.backoff[attempt-1], delay)
+		}
+		if delay > 0 {
+			timer := time.NewTimer(delay)
 			select {
 			case <-d.ctx.Done():
 				timer.Stop()
@@ -557,7 +562,9 @@ func (d *Dispatcher) deliver(target Target, ev Event) {
 		attempts++
 		out := sendOnce(d.ctx, d.client, target, ev, d.now(), d.version)
 		retryable, errMsg := out.retryable, out.err
-		after = out.after
+		if out.after > 0 {
+			w.cooldown = time.Now().Add(out.after)
+		}
 		if errMsg == "" {
 			d.log.Debug("notification delivered", "notifier", target.Name, "event", ev.Event, "stack", ev.Stack, "env", ev.Env, "attempts", attempts)
 			d.report(Result{
@@ -728,6 +735,8 @@ func classifyClientErr(err error) (retryable bool, msg string) {
 		return false, "tls: certificate not valid"
 	case errors.As(err, &alert):
 		return false, "tls: handshake failed"
+	case errors.Is(err, http.ErrSchemeMismatch):
+		return false, "tls: the receiver answered HTTPS with plaintext HTTP"
 	}
 	var dns *net.DNSError
 	if errors.As(err, &dns) {

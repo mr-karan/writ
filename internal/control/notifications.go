@@ -90,23 +90,17 @@ func PeekNotificationStatuses(ctx context.Context, location string) (map[string]
 		return nil, err
 	}
 	defer db.Close()
-	if err := peekTable(ctx, db, "notification_status"); err != nil {
+	// The catalog includes tables the connecting role cannot read.
+	var exists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = ? AND c.relname = 'notification_status' AND c.relkind IN ('r', 'p'))`, Schema).Scan(&exists); err != nil {
 		return nil, err
 	}
+	if !exists {
+		return nil, ErrNotMigrated
+	}
 	return queryNotificationStatuses(ctx, db)
-}
-
-// peekTable returns ErrNotMigrated when the control database's schema has
-// no table named table.
-func peekTable(ctx context.Context, db *sqldb.DB, table string) error {
-	var n int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?`, Schema, table).Scan(&n); err != nil {
-		return err
-	}
-	if n == 0 {
-		return ErrNotMigrated
-	}
-	return nil
 }
 
 func queryNotificationStatuses(ctx context.Context, db *sqldb.DB) (map[string]NotificationStatus, error) {

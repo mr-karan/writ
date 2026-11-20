@@ -598,6 +598,34 @@ grant {
 			}
 		})
 	}
+	t.Run("replacement project cannot read old deliveries", func(t *testing.T) {
+		if err := f.store.Audit(context.Background(), control.Entry{
+			At: time.Now(), Request: "legacy-hook", Op: "hook", Kind: "request", Via: "webhook of repository infra", Decision: control.Allowed,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		f.gitlab.AddProject(4444, "acme/replacement", "main")
+		head := f.gitlab.Commit(4444, "main", changed("# replacement\n"))
+		f.restart(func(config string) string {
+			return strings.Replace(config, "project = \"acme/infra\"", "project = \"acme/replacement\"", 1)
+		})
+		f.srv.Poll()
+		if rp := f.waitHead("infra", head); rp.ProjectID != "4444" {
+			t.Fatalf("replacement repository: %+v", rp)
+		}
+		current := f.hook(hookPath, hookSecret, "d-new", push)
+		if current.status != http.StatusAccepted {
+			t.Fatalf("replacement delivery: %d %s", current.status, current.body)
+		}
+		rows, _ := f.auditAll(as("nora"), url.Values{"op": {"hook"}})
+		if len(rows) != 1 || rows[0].Request != id(current) {
+			t.Errorf("reader of the replacement project sees %+v", rows)
+		}
+		rows, _ = f.auditAll(admin(f), url.Values{"op": {"hook"}})
+		if len(rows) != 5 {
+			t.Errorf("admin sees %d hook rows, want 5", len(rows))
+		}
+	})
 	// A filter of an environment leaves out every row of none.
 	if rows, _ := f.auditAll(as("nora"), url.Values{"env": {"prod"}, "op": {"hook"}}); len(rows) != 0 {
 		t.Fatalf("hook rows in prod: %+v", rows)

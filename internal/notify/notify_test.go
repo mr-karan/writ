@@ -763,3 +763,68 @@ func TestQueueDropsReportTheirOwnKind(t *testing.T) {
 		t.Errorf("drops by kind %v, want apply-failed 2 and plan-failed 1", drops)
 	}
 }
+
+func TestRetryAfterHoldsNextDelivery(t *testing.T) {
+	requests := make(chan time.Time, 3)
+	var attempts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- time.Now()
+		switch attempts.Add(1) {
+		case 1:
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case 2:
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+		}
+	}))
+	defer srv.Close()
+	results := make(chan notify.Result, 2)
+	d := notify.New(notify.Options{
+		Targets:  []notify.Target{{Name: "ops", Kind: notify.KindWebhook, URL: srv.URL, Events: []notify.EventKind{notify.EventApplied}}},
+		Backoff:  []time.Duration{time.Millisecond},
+		OnResult: func(r notify.Result) { results <- r },
+	})
+	defer d.Close()
+	for _, id := range []string{"FIRST", "SECOND"} {
+		d.Emit(notify.Event{ID: id, Event: notify.EventApplied, Stack: "app", Env: "prod", Status: "applied"})
+	}
+	for i, wantOK := range []bool{false, true} {
+		select {
+		case r := <-results:
+			if r.OK != wantOK || r.Attempts != 2-i {
+				t.Fatalf("delivery %d: %+v", i+1, r)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("delivery %d did not finish", i+1)
+		}
+	}
+	<-requests
+	lastFirst, firstSecond := <-requests, <-requests
+	if gap := firstSecond.Sub(lastFirst); gap < 900*time.Millisecond {
+		t.Errorf("second event sent %v after the first event's 429, want a one-second wait", gap)
+	}
+}
+
+func TestHTTPSOnPlaintextListenerIsPermanent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("plaintext handler received a request")
+	}))
+	defer srv.Close()
+	results := make(chan notify.Result, 1)
+	d := notify.New(notify.Options{
+		Targets: []notify.Target{{Name: "ops", Kind: notify.KindWebhook, URL: "https" + strings.TrimPrefix(srv.URL, "http"),
+			Events: []notify.EventKind{notify.EventApplied}}},
+		Backoff:  []time.Duration{time.Millisecond},
+		OnResult: func(r notify.Result) { results <- r },
+	})
+	defer d.Close()
+	d.Emit(notify.Event{ID: "RUN", Event: notify.EventApplied, Stack: "app", Env: "prod", Status: "applied"})
+	select {
+	case r := <-results:
+		if r.OK || r.Attempts != 1 || !strings.HasPrefix(r.Err, "tls:") {
+			t.Fatalf("delivery: %+v, want a permanent TLS error", r)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("delivery did not finish")
+	}
+}

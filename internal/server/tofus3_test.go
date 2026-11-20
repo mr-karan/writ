@@ -789,3 +789,48 @@ func TestTofuMasksMultilineSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestMergedS3RetryAfterOutsideWrite(t *testing.T) {
+	var serial atomic.Int64
+	state := func() tofu.State {
+		return tofu.State{Unmasked: []byte(tofuStateJSON), Serial: tofu.Serial{Lineage: "L1", Serial: serial.Load()}}
+	}
+	runner := &fakeTofu{
+		plan: func() (tofu.Plan, error) {
+			return tofu.Plan{File: savedPlan(t, "L1", serial.Load()), JSON: []byte(tofuPlanJSON)}, nil
+		},
+		applyS3: func() (tofu.Applied, error) {
+			serial.Store(4)
+			return tofu.Applied{Plan: []byte(tofuPlanJSON), State: state()}, nil
+		},
+		pull: func() (tofu.State, error) { return state(), nil },
+	}
+	f := tofuS3Fixture(t, runner, func(config string) string {
+		return strings.Replace(config, `can = ["read", "apply"]
+  risks = ["create"]`, `can = ["read", "apply"]
+  risks = ["create", "update", "replace", "delete", "data-loss"]`, 1)
+	})
+	files := tofuS3Files()
+	p, _ := f.planCommit(files, "s3")
+	if p.Plan.Status != "pending" {
+		t.Fatalf("plan: %s\n%s", p.Plan.Status, p.Text)
+	}
+	if r := f.do("POST", "/v1/plans/"+p.Plan.ID+"/approvals", bob(f), nil); r.status != http.StatusOK {
+		t.Fatalf("approve: %d %s", r.status, r.body)
+	}
+	sha := f.gitlab.Commit(4242, "main", files)
+	main := mainJob(f, sha)
+	r := f.do("POST", "/v1/runs", main, mergedRequest("app"))
+	if r.status != http.StatusAccepted {
+		t.Fatalf("apply: %d %s", r.status, r.body)
+	}
+	if run := f.waitRun(main, r.doc["run"].(map[string]any)["id"].(string)); run.Run.Status != "applied" {
+		t.Fatalf("run: %+v", run.Run)
+	}
+
+	serial.Store(5)
+	r = f.do("POST", "/v1/runs", mainJob(f, sha), mergedRequest("app"))
+	if r.status != http.StatusConflict || !strings.Contains(string(r.body), "plan again") {
+		t.Fatalf("retry after outside write: %d %s", r.status, r.body)
+	}
+}

@@ -435,7 +435,7 @@ func TestPeekBeforeTheMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), "0020_") {
+		if e.Name() >= "0020_" {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join("migrations", e.Name()))

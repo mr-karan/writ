@@ -156,7 +156,7 @@ func (s *Server) listAudit(w http.ResponseWriter, r *http.Request) {
 	var next string
 	if readable {
 		// A hook row has no environment, so a filter of one leaves it out.
-		var hooks map[string]bool
+		var hooks map[string]string
 		if !every && f.Env == "" {
 			var err error
 			if hooks, err = s.readableHookRepos(r.Context(), teams); err != nil {
@@ -234,15 +234,13 @@ func (s *Server) openCursor(sealed string) (string, bool) {
 // stack@env needs read on every stack it names there, and a row of an
 // environment and no stack, read on some stack there, as an
 // environment's other records do. A webhook delivery's row that names its
-// repository needs read on some stack of that repository: hooks holds the
-// repositories teams may read so. A row of no environment, or of every
-// one, such as a sign-in, the server's start, or a repository's add, and
-// a delivery's row that names no repository, needs admin on every stack
-// in every environment: every is that decision. every also sees every
-// other row.
-func (s *Server) auditVisible(teams []string, every bool, hooks map[string]bool, e control.Entry) bool {
+// repository needs read on some stack of that repository and the same
+// project identity as the current repository in hooks. A row of no
+// environment, or of every one, otherwise needs admin on every stack in
+// every environment. The every decision also covers all other rows.
+func (s *Server) auditVisible(teams []string, every bool, hooks map[string]string, e control.Entry) bool {
 	if repo, ok := hookRepo(e); ok && !every {
-		return hooks[repo]
+		return e.HookProject != "" && hooks[repo] == e.HookProject
 	}
 	switch {
 	case every:

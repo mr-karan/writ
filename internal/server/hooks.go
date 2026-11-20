@@ -262,9 +262,8 @@ func (s *Server) hasHook(r control.Repo) bool {
 }
 
 // hookVia starts the via of a hook row whose path names a pinned
-// repository with a webhook, before the repository's name. A reader of
-// one of the repository's stacks sees the row: auditVisible reads the name
-// back. A delivery to any other name leaves no via.
+// repository with a webhook, before the repository's name. A delivery
+// to any other name leaves no via.
 const hookVia = "webhook of repository "
 
 // hookRepo is the repository a hook row names, and whether it names one.
@@ -287,8 +286,8 @@ func HookRepo(r AuditRow) string {
 // readableHookRepos are the pinned repositories with a webhook of which
 // teams may read at least one stack, in some environment, of those the
 // head of the default branch holds.
-func (s *Server) readableHookRepos(ctx context.Context, teams []string) (map[string]bool, error) {
-	out := map[string]bool{}
+func (s *Server) readableHookRepos(ctx context.Context, teams []string) (map[string]string, error) {
+	out := map[string]string{}
 	if !s.cfg.PinRepos {
 		return out, nil
 	}
@@ -304,7 +303,7 @@ func (s *Server) readableHookRepos(ctx context.Context, teams []string) (map[str
 		if err != nil {
 			return nil, err
 		}
-		if rp.Head == "" {
+		if rp.Head == "" || rp.Origin != control.FromConfig || !s.sameSpec(rp, spec) {
 			continue
 		}
 		head, err := s.store.Commit(ctx, rp.Name, rp.Head)
@@ -314,13 +313,19 @@ func (s *Server) readableHookRepos(ctx context.Context, teams []string) (map[str
 		if err != nil {
 			return nil, err
 		}
-		out[rp.Name] = slices.ContainsFunc(stacksOf(head), func(d discovered) bool {
+		if slices.ContainsFunc(stacksOf(head), func(d discovered) bool {
 			return slices.ContainsFunc(envs, func(env string) bool {
 				return s.cfg.Policy.Decide(teams, authz.Read, []string{rp.Prefix + d.Dir}, env, nil).Allowed
 			})
-		})
+		}) {
+			out[rp.Name] = hookProject(rp)
+		}
 	}
 	return out, nil
+}
+
+func hookProject(r control.Repo) string {
+	return r.ForgeURL + "\n" + r.ProjectID
 }
 
 // hookSecretMax is the most a webhook secret file may hold.
@@ -396,6 +401,13 @@ func (s *Server) receiveHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e.Via = hookVia + name
+	rp, err := s.store.Repo(r.Context(), name)
+	switch {
+	case err == nil && rp.Origin == control.FromConfig && s.sameSpec(rp, spec):
+		e.HookProject = hookProject(rp)
+	case err != nil && !errors.Is(err, control.ErrNotFound):
+		s.log.Warn("could not identify the project for a webhook audit row", "repo", name, "err", err)
+	}
 	secret, err := readHookSecret(spec.WebhookSecretFile)
 	if err != nil {
 		s.log.Error("a webhook delivery is refused: its secret is unreadable", "request", req.id, "repo", name, "err", err)

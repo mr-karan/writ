@@ -81,6 +81,23 @@ func mainJob(f *fixture, sha string) string {
 		"pipeline_source": "push", "pipeline_id": "1849290", "job_id": "9922150"})
 }
 
+func deniedMainJob(f *fixture, sha string) string {
+	return f.token(map[string]any{"sha": sha, "ref": "main", "ref_path": "refs/heads/main", "ref_protected": "false",
+		"pipeline_source": "push", "pipeline_id": "1849291", "job_id": "9922151"})
+}
+
+func checkMergedDenial(t *testing.T, r response, hidden ...string) {
+	t.Helper()
+	if r.status != http.StatusForbidden || r.class() != "denied" {
+		t.Errorf("merged apply without a grant: %d %s", r.status, r.body)
+	}
+	for _, value := range hidden {
+		if strings.Contains(string(r.body), value) {
+			t.Errorf("merged apply disclosed %q: %s", value, r.body)
+		}
+	}
+}
+
 func runRequest(m map[string]any) *bytes.Reader {
 	m["format"] = "writ.run-request/v1"
 	b, _ := json.Marshal(m)
@@ -165,6 +182,10 @@ func TestMergeRequestFlow(t *testing.T) {
 	if r := f.do("POST", "/v1/runs", mainJob(f, early), mergedRequest("network")); r.status != http.StatusForbidden || !strings.Contains(string(r.body), "needs 1 approval;") {
 		t.Fatalf("applied with no approval: %d %s", r.status, r.body)
 	}
+
+	t.Run("approval details require an apply grant", func(t *testing.T) {
+		checkMergedDenial(t, f.do("POST", "/v1/runs", deniedMainJob(f, early), mergedRequest("network")), id, "needs 1 approval")
+	})
 
 	// alice cannot approve her own plan, a job of another pipeline cannot
 	// approve it, and an approve job on a team that matches only the job is
@@ -259,6 +280,9 @@ func TestMergeRequestFlow(t *testing.T) {
 		!strings.Contains(string(r.body), "is at version 99, which run "+runID+" did not write: plan again") {
 		t.Fatalf("an apply after the state moved: %d %s", r.status, r.body)
 	}
+	t.Run("applied run details require an apply grant", func(t *testing.T) {
+		checkMergedDenial(t, f.do("POST", "/v1/runs", deniedMainJob(f, merged), mergedRequest("network")), id, runID, "version 99")
+	})
 	// The audit trail names the approval and the run.
 	rows := f.audit(controltest.AuditFilter{Plan: id})
 	var kinds []string

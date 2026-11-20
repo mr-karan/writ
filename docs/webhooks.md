@@ -75,7 +75,9 @@ poll_every_with_hook = "10m"
 
 ## What writ serve answers
 
-Every delivery gets an audit row, op `hook`. When the path names a pinned repository with a webhook, the row's `via` is `webhook of repository NAME`, whether the delivery passed its check or not, and any principal that may `read` at least one stack of that repository, in any environment, can read it. The repository's stacks are the ones the head of its default branch holds, with its prefix. A delivery to any other name names no repository, and only a principal with `admin` on every stack in every environment can read its row, as with the other rows of no environment. Read them with `writ audit --remote --op hook`, or on the audit page with the Op picker set to `hook`.
+Every delivery gets an audit row with op `hook`. When the path names a pinned repository with a webhook, the row's `via` says `webhook of repository NAME`. You can read a row for the repository's current Git host and project id if you have `read` on one of its stacks in any environment. The stack names come from the head of the default branch, with the repository's prefix.
+
+Only principals with `admin` on every stack in every environment can read rows for an earlier project, an unknown webhook, or a row without a stored project identity. Read webhook rows with `writ audit --remote --op hook` or set the audit page's Op picker to `hook`.
 
 | Status | Body | When |
 | --- | --- | --- |

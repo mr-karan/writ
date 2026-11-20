@@ -59,7 +59,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var plan control.Plan
-	var merged, appliedBy string
+	var merged mergedApply
 	switch {
 	case body.Plan != "" && body.Merged != nil:
 		s.refuse(w, r, FormatRemoteRun, diag.Usage, http.StatusBadRequest, "a run names a plan by its id, plan, or by a merged commit, merged, not both")
@@ -79,11 +79,37 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var ok bool
-		if plan, merged, appliedBy, ok = s.byMerged(w, r, body); !ok {
+		if merged, ok = s.byMerged(w, r, body); !ok {
 			return
 		}
+		plan = merged.plan
 	default:
 		s.refuse(w, r, FormatRemoteRun, diag.Usage, http.StatusBadRequest, "a run needs plan, a plan's id, or merged, a commit of the default branch")
+		return
+	}
+	pr := req.principal
+	e := &req.entry
+	e.Env, e.Stacks = plan.Env, []string{plan.Stack}
+	if merged.commit == "" {
+		e.Plan, e.Risks = plan.ID, plan.Risks
+	}
+	env, ok := s.envOf(plan.Env)
+	if !ok {
+		s.refuse(w, r, FormatRemoteRun, diag.Usage, http.StatusConflict, "plan %s is of env %s, which this config no longer serves", plan.ID, trunc(plan.Env))
+		return
+	}
+	d := s.cfg.Policy.Decide(pr.teams, authz.Apply, []string{plan.Stack}, plan.Env, plan.Risks)
+	if !d.Allowed {
+		if merged.commit != "" {
+			s.refuse(w, r, FormatRemoteRun, diag.Denied, http.StatusForbidden, "%s may not apply to %s@%s", pr.info.Display, plan.Stack, plan.Env)
+			return
+		}
+		s.refuse(w, r, FormatRemoteRun, diag.Denied, http.StatusForbidden, "%s may not apply plan %s: %s", pr.info.Display, plan.ID, d.Reason)
+		return
+	}
+	e.Plan, e.Risks = plan.ID, plan.Risks
+	if refusal := merged.refusal; refusal != nil {
+		s.refuse(w, r, FormatRemoteRun, refusal.class, refusal.status, "%s", refusal.msg)
 		return
 	}
 	// A plan of an OpenTofu stack made before writ serve kept saved plans
@@ -95,22 +121,9 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		s.refuse(w, r, FormatRemoteRun, diag.SavedPlan, http.StatusConflict, "plan %s keeps no saved plan, so it cannot apply: plan its commit again", plan.ID)
 		return
 	}
-	pr := req.principal
-	e := &req.entry
-	e.Op, e.Env, e.Stacks, e.Plan, e.Risks = string(authz.Apply), plan.Env, []string{plan.Stack}, plan.ID, plan.Risks
-	env, ok := s.envOf(plan.Env)
-	if !ok {
-		s.refuse(w, r, FormatRemoteRun, diag.Usage, http.StatusConflict, "plan %s is of env %s, which this config no longer serves", plan.ID, trunc(plan.Env))
-		return
-	}
-	d := s.cfg.Policy.Decide(pr.teams, authz.Apply, []string{plan.Stack}, plan.Env, plan.Risks)
-	if !d.Allowed {
-		s.refuse(w, r, FormatRemoteRun, diag.Denied, http.StatusForbidden, "%s may not apply plan %s: %s", pr.info.Display, plan.ID, d.Reason)
-		return
-	}
 	grants := oneBased(d.Grants)
-	if plan.Status == control.NoChanges || appliedBy != "" {
-		s.nothingToApply(w, r, plan, merged, appliedBy, grants)
+	if plan.Status == control.NoChanges || merged.appliedBy != "" {
+		s.nothingToApply(w, r, plan, merged.commit, merged.appliedBy, grants)
 		return
 	}
 	if body.Override != "" {
@@ -133,7 +146,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
 	rules := s.rules()
 	named := control.ByPlan
-	if merged != "" {
+	if merged.commit != "" {
 		named = control.ByMerged
 	}
 	e.Run, e.Decision, e.Grants, e.At, e.Status = runID, control.Allowed, grants, req.start, http.StatusAccepted
@@ -143,7 +156,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 	s.pend(runID)
 	run, err := s.store.BeginApply(r.Context(), control.ApplyRequest{
-		RunID: runID, PlanID: plan.ID, Via: pr.via(), Override: body.Override, Rules: rules, NamedBy: named, MergedCommit: merged, Now: now,
+		RunID: runID, PlanID: plan.ID, Via: pr.via(), Override: body.Override, Rules: rules, NamedBy: named, MergedCommit: merged.commit, Now: now,
 		Actor: control.Principal{Issuer: pr.info.Issuer, Subject: pr.info.Subject, Person: pr.info.Person, Display: pr.info.Display, Detail: pr.detail()},
 		Use:   pr.use("apply"), Audit: *e,
 		RoleSession: s.roleSessionOf(plan.Env, runID, pr),
@@ -274,101 +287,110 @@ func (s *Server) refMoved(ctx context.Context, p control.Plan) (string, error) {
 	if head == p.Source.Commit {
 		return "", nil
 	}
-	digest, err := s.commitDigest(ctx, rp, c, head, p.Stack)
+	sources, err := s.commitSources(ctx, rp, c, head, p.Stack)
 	if err != nil {
 		return "", forgeRefusal(err)
 	}
-	if digest == p.SourceDigest {
+	if sources.Digest == p.SourceDigest {
 		return "", nil
 	}
 	return fmt.Sprintf("%s moved to %s, whose sources of %s differ from the plan's, made at %s", p.Source.Ref, forge.Short(head), p.Stack, forge.Short(p.Source.Commit)), nil
 }
 
-// byMerged finds the plan an apply after a merge names: the newest
-// approved plan of the repository's stack@env whose sources equal the
-// merged commit's. The merged commit must be on the default branch. From
-// a CI job, the repository and commit are the token's own, and the job
-// must run on the default branch.
-func (s *Server) byMerged(w http.ResponseWriter, r *http.Request, body RunRequest) (plan control.Plan, merged, appliedBy string, ok bool) {
+type mergedApply struct {
+	plan      control.Plan
+	commit    string
+	appliedBy string
+	refusal   *repoError
+}
+
+// byMerged finds the plan an apply after a merge names. Refusals that
+// describe the selected plan or its state wait for its apply grant.
+func (s *Server) byMerged(w http.ResponseWriter, r *http.Request, body RunRequest) (mergedApply, bool) {
 	ctx := r.Context()
 	pr := reqOf(r).principal
 	if len(body.Stacks) != 1 {
 		s.refuse(w, r, FormatRemoteRun, diag.Usage, http.StatusBadRequest, "an apply after a merge names exactly one stack")
-		return control.Plan{}, "", "", false
+		return mergedApply{}, false
 	}
 	stack := body.Stacks[0]
 	e, ok := s.target(w, r, FormatRemoteRun, body.Env, stack)
 	if !ok {
-		return control.Plan{}, "", "", false
+		return mergedApply{}, false
 	}
 	env := e.Name
 	in, rerr := s.mergedSource(ctx, pr, body.Merged)
 	if rerr != nil {
 		s.refuse(w, r, FormatRemoteRun, rerr.class, rerr.status, "%s", rerr.msg)
-		return control.Plan{}, "", "", false
+		return mergedApply{}, false
 	}
 	rp, c, commit := in.repo, in.client, in.source.Commit
 	if _, ok := stackDir(rp, stack); !ok {
 		s.refuse(w, r, FormatRemoteRun, diag.Usage, http.StatusBadRequest, "stack %s is not a stack name of repository %s", stack, rp.Name)
-		return control.Plan{}, "", "", false
+		return mergedApply{}, false
 	}
-	digest, err := s.commitDigest(ctx, rp, c, commit, stack)
+	sources, err := s.commitSources(ctx, rp, c, commit, stack)
 	if err != nil {
 		rerr := forgeRefusal(err)
 		s.refuse(w, r, FormatRemoteRun, rerr.class, rerr.status, "read %s at %s: %s", rp.Name, forge.Short(commit), rerr.msg)
-		return control.Plan{}, "", "", false
+		return mergedApply{}, false
 	}
-	p, t, err := s.store.MergedPlan(ctx, rp.Name, env, stack, digest, s.rules(), s.now())
+	now := s.now()
+	p, t, err := s.store.MergedPlan(ctx, rp.Name, env, stack, sources.Digest, s.rules(), now)
+	// The run reads the selected plan's commit through rp and checks
+	// the sources again, even if the plan's repository was removed.
+	p.Source.Repo = rp.Name
+	match := mergedApply{plan: p, commit: commit}
 	switch {
 	case err == nil && t.Status == control.NoChanges:
-		reqOf(r).entry.Plan = p.ID
 		why, err := s.store.StateMoved(ctx, p)
 		if err != nil {
 			s.dbFailed(w, r, FormatRemoteRun, err)
-			return control.Plan{}, "", "", false
+			return mergedApply{}, false
 		}
-		if why != "" {
-			s.refuse(w, r, FormatRemoteRun, diag.State, http.StatusConflict, "plan %s of %s@%s matches the sources at %s and changes no resource, but %s: plan again",
-				p.ID, stack, env, forge.Short(commit), why)
-			return control.Plan{}, "", "", false
+		if why == "" {
+			return match, true
 		}
-		p.Source.Repo = rp.Name
-		return p, commit, "", true
+		match.refusal = &repoError{status: http.StatusConflict, class: diag.State, msg: fmt.Sprintf(
+			"plan %s of %s@%s matches the sources at %s and changes no resource, but %s: plan again",
+			p.ID, stack, env, forge.Short(commit), why)}
 	case err == nil && t.Status == control.Approved:
-		// A request of rp at the plan's commit made this plan, though the
-		// plan may name a repository since removed, so the run reads the
-		// commit through rp. The run checks the sources' digest again.
-		p.Source.Repo = rp.Name
-		return p, commit, "", true
+		return match, true
 	case err == nil:
-		reqOf(r).entry.Plan = p.ID
-		s.refuse(w, r, FormatRemoteRun, diag.Denied, http.StatusForbidden, "plan %s of %s@%s matches the sources at %s and needs %s; approve it with writ approve --remote %s",
-			p.ID, stack, env, forge.Short(commit), approvalWords(t.Need), p.ID)
-		return control.Plan{}, "", "", false
+		match.refusal = &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf(
+			"plan %s of %s@%s matches the sources at %s and needs %s; approve it with writ approve --remote %s",
+			p.ID, stack, env, forge.Short(commit), approvalWords(t.Need), p.ID)}
+		return match, true
 	case !errors.Is(err, control.ErrNotFound):
 		s.dbFailed(w, r, FormatRemoteRun, err)
-		return control.Plan{}, "", "", false
+		return mergedApply{}, false
 	}
-	// A retried apply job after a run that applied these sources finds
-	// nothing to apply, so it passes, while the state is still what that
-	// run left.
-	last, run, moved, err := s.store.NewestRunApplied(ctx, env, stack, s.now())
+
+	// A stale no-changes plan can predate a revert that applied the
+	// same sources. In either case, check the newest run.
+	last, run, moved, err := s.store.NewestRunApplied(ctx, env, stack, now)
 	switch {
-	case err == nil && last.SourceDigest == digest && moved != "":
-		reqOf(r).entry.Plan = last.ID
-		s.refuse(w, r, FormatRemoteRun, diag.State, http.StatusConflict, "run %s applied plan %s of %s@%s, which has the sources of %s at %s, but %s: plan again",
-			run, last.ID, stack, env, rp.Name, forge.Short(commit), moved)
-		return control.Plan{}, "", "", false
-	case err == nil && last.SourceDigest == digest:
+	case err == nil && last.SourceDigest == sources.Digest:
 		last.Source.Repo = rp.Name
-		return last, commit, run, true
+		retry := mergedApply{plan: last, commit: commit, appliedBy: run}
+		if sources.Backend == nil || sources.Backend.Type != control.BackendHTTP {
+			moved = "writ serve cannot verify that state outside its http backend stayed at the run's version"
+		}
+		if moved != "" {
+			retry.refusal = &repoError{status: http.StatusConflict, class: diag.State, msg: fmt.Sprintf(
+				"run %s applied plan %s of %s@%s, which has the sources of %s at %s, but %s: plan again",
+				run, last.ID, stack, env, rp.Name, forge.Short(commit), moved)}
+		}
+		return retry, true
 	case err != nil && !errors.Is(err, control.ErrNotFound):
 		s.dbFailed(w, r, FormatRemoteRun, err)
-		return control.Plan{}, "", "", false
+		return mergedApply{}, false
+	case match.refusal != nil:
+		return match, true
 	}
 	s.refuse(w, r, FormatRemoteRun, diag.SavedPlan, http.StatusConflict, "no approved plan of %s@%s matches the sources of %s at %s: plan the merge request again after a rebase, and approve the new plan",
 		stack, env, rp.Name, forge.Short(commit))
-	return control.Plan{}, "", "", false
+	return mergedApply{}, false
 }
 
 // mergedSource finds the repository and commit of an apply after a merge,

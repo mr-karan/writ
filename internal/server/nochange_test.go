@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/mr-karan/writ/internal/control/controltest"
+	"github.com/mr-karan/writ/internal/forge/forgetest"
 	"github.com/mr-karan/writ/internal/server"
 	"github.com/mr-karan/writ/internal/tofu"
 )
@@ -209,8 +211,60 @@ func TestNoChangePlanAfterARun(t *testing.T) {
 		if r.status != http.StatusConflict || r.class() != "state" || !strings.Contains(string(r.body), n.Plan.ID) || !strings.Contains(string(r.body), "plan again") {
 			t.Fatalf("the merge of the no-change plan after a run: %d %s", r.status, r.body)
 		}
+		t.Run("stale plan details require an apply grant", func(t *testing.T) {
+			sha := f.gitlab.Commit(4242, "main", quiet)
+			checkMergedDenial(t, f.do("POST", "/v1/runs", deniedMainJob(f, sha), mergedRequest("network")), n.Plan.ID, "plan again")
+		})
 		if got := f.waitPlan(f.token(nil), n.Plan.ID); got.Plan.Status != "no-changes" {
 			t.Fatalf("the no-change plan after a run is %s", got.Plan.Status)
+		}
+	})
+}
+
+func TestMergedRetryAfterRevertingToNoChangeSources(t *testing.T) {
+	controltest.Each(t, func(t *testing.T, e controltest.Engine) {
+		f, set := noChangeFixture(t, e)
+		a, b := changed("# sources A\n"), changed("# sources B\n")
+		noChange := f.mrPlan(f.gitlab.Commit(4242, "before", a), "before", "network", "600")
+		if noChange.Plan.Status != "no-changes" {
+			t.Fatalf("first plan: %s", noChange.Plan.Status)
+		}
+
+		apply := func(branch, pipeline string, files map[string]forgetest.File, serial int) (string, string, string) {
+			t.Helper()
+			f.tofu.mu.Lock()
+			f.tofu.apply = func(_ context.Context, c stateCall) ([]byte, error) {
+				for _, step := range []struct{ method, path, body string }{
+					{"LOCK", "/lock", `{"ID":"lock-1","Operation":"OperationTypeApply"}`},
+					{"POST", "?ID=lock-1", fmt.Sprintf(`{"version":4,"serial":%d,"lineage":"revert","resources":[]}`, serial)},
+					{"UNLOCK", "/lock", `{"ID":"lock-1"}`},
+				} {
+					if status := f.tofu.call(c, step.method, step.path, step.body); status != http.StatusOK {
+						return nil, fmt.Errorf("%s state: %d", step.method, status)
+					}
+				}
+				return nil, nil
+			}
+			f.tofu.mu.Unlock()
+			p := f.mrPlan(f.gitlab.Commit(4242, branch, files), branch, "network", pipeline)
+			sha := f.gitlab.Commit(4242, "main", files)
+			main := mainJob(f, sha)
+			r := f.do("POST", "/v1/runs", main, mergedRequest("network"))
+			if r.status != http.StatusAccepted {
+				t.Fatalf("apply %s: %d %s", branch, r.status, r.body)
+			}
+			id := r.doc["run"].(map[string]any)["id"].(string)
+			if run := f.waitRun(main, id); run.Run.Status != "applied" {
+				t.Fatalf("run %s: %+v", branch, run.Run)
+			}
+			return sha, p.Plan.ID, id
+		}
+		set(tofuPlanJSONOf("[]", outputChange, "[]"))
+		apply("change", "601", b, 1)
+		sha, plan, id := apply("revert", "602", a, 2)
+		r := f.do("POST", "/v1/runs", mainJob(f, sha), mergedRequest("network"))
+		if r.status != http.StatusOK || r.doc["plan"] != plan || !strings.Contains(string(r.body), id) {
+			t.Fatalf("retry after revert: %d %s", r.status, r.body)
 		}
 	})
 }

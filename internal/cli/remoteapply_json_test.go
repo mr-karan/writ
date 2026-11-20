@@ -224,3 +224,47 @@ func TestRemoteApplyYesNothingToApply(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoteApplyChangedRunResponse(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+	}{
+		{"nothing to apply", http.StatusOK},
+		{"started run", http.StatusAccepted},
+		{"polled run", http.StatusOK},
+		{"key outcome", http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set(server.VersionHeader, "9.9.9")
+				w.Header().Set("Content-Type", "application/json")
+				if tc.name == "polled run" && r.Method == http.MethodPost {
+					w.WriteHeader(http.StatusAccepted)
+					_ = json.NewEncoder(w).Encode(server.RemoteRun{Format: server.FormatRemoteRun, OK: true,
+						Run: &server.RunInfo{ID: standInRun, Status: "applying"}})
+					return
+				}
+				if tc.name == "key outcome" && r.URL.Path == "/v1/runs" {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(`{"format":"writ.changed/v99","ok":true,"execution":{"id":"other","status":"applied"}}`))
+			}))
+			defer s.Close()
+			for _, asJSON := range []bool{false, true} {
+				var out bytes.Buffer
+				a := standInApp(t, s.URL, &out)
+				a.opts.Env = "prod"
+				err := a.RemoteApply(context.Background(), RemoteApplyOptions{JSON: asJSON, Merged: true, Stack: "network"})
+				if err == nil || !strings.Contains(err.Error(), "install writ 9.9.9") {
+					t.Errorf("json %v: got %v, want the version-skew error", asJSON, err)
+				}
+				if asJSON && out.Len() != 0 {
+					t.Errorf("json mode printed an incompatible response: %s", out.String())
+				}
+			}
+		})
+	}
+}

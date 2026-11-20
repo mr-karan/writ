@@ -148,22 +148,21 @@ func (s *Server) commitSnapshot(ctx context.Context, r control.Repo, c forge.Cli
 	return snap, nil
 }
 
-// commitDigest is the source digest of stack at a commit, which a plan of
-// that commit records: the source match compares the two. It is the
-// digest of the files TofuSources gathers.
-func (s *Server) commitDigest(ctx context.Context, r control.Repo, c forge.Client, commit, stack string) (string, error) {
+// commitSources gathers the files and backend of a stack at a commit.
+// Its digest is compared with the one recorded by the plan.
+func (s *Server) commitSources(ctx context.Context, r control.Repo, c forge.Client, commit, stack string) (repo.TofuStack, error) {
 	dir, ok := stackDir(r, stack)
 	if !ok {
-		return "", fmt.Errorf("stack %s is not a stack name of repository %s", stack, r.Name)
+		return repo.TofuStack{}, fmt.Errorf("stack %s is not a stack name of repository %s", stack, r.Name)
 	}
 	snap, err := s.commitSnapshot(ctx, r, c, commit)
 	if err != nil {
-		return "", err
+		return repo.TofuStack{}, err
 	}
 	ts, err := repo.TofuSources(ctx, c, r.ProjectID, snap, dir, s.store, repo.DefaultLimits)
 	if err != nil {
-		return "", err
+		return repo.TofuStack{}, err
 	}
 	s.keepBlobs(r.Name, snap)
-	return ts.Digest, nil
+	return ts, nil
 }

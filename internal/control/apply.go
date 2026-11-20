@@ -591,17 +591,22 @@ func (s *Store) LastApplied(ctx context.Context, env, stack string, now time.Tim
 	return plans[0], nil
 }
 
-// NewestRunApplied returns the plan of the newest run on stack@env, and
-// that run's id, when the run applied it. It returns ErrNotFound when no
-// run started there, or the newest did not apply: it failed, or it still
-// applies. moved says why the state may have changed since the run, ""
-// when it did not: the newest version of the state on writ serve's http
-// backend is one the run did not write.
+// NewestRunApplied returns the newest run and its plan if the run applied.
+// It returns ErrNotFound when no run started or the newest is applying or
+// failed. If no HTTP state version was written by that run, moved explains
+// why the state might differ from what the run left.
 func (s *Store) NewestRunApplied(ctx context.Context, env, stack string, now time.Time) (p Plan, run, moved string, err error) {
-	var planID string
+	var planID, wrote string
 	var status RunStatus
-	err = s.db.QueryRowContext(ctx, `SELECT id, plan_id, status FROM runs WHERE env = ? AND stack = ? ORDER BY started_at DESC LIMIT 1`, env, stack).
-		Scan(&run, &planID, &status)
+	var version int64
+	// BeginApply records the Applying event after taking the stack's turn.
+	// Its generated id orders starts even when the server clock goes back.
+	err = s.db.QueryRowContext(ctx, `SELECT r.id, r.plan_id, r.status, coalesce(v.version, 0), coalesce(v.run_id, '')
+		FROM runs r JOIN plans p ON p.id = r.plan_id
+		JOIN plan_events e ON e.plan_ref = p.ref AND e.to_status = 'applying' AND e.run = r.id
+		LEFT JOIN tfstate_versions v ON v.env = r.env AND v.stack = r.stack AND v.version = (
+			SELECT max(version) FROM tfstate_versions WHERE env = r.env AND stack = r.stack)
+		WHERE r.env = ? AND r.stack = ? ORDER BY e.id DESC LIMIT 1`, env, stack).Scan(&run, &planID, &status, &version, &wrote)
 	switch {
 	case errors.Is(err, sqldb.ErrNoRows):
 		return Plan{}, "", "", ErrNotFound
@@ -617,14 +622,9 @@ func (s *Store) NewestRunApplied(ctx context.Context, env, stack string, now tim
 	if len(plans) == 0 {
 		return Plan{}, "", "", ErrNotFound
 	}
-	var version int64
-	var wrote string
-	err = s.db.QueryRowContext(ctx, `SELECT version, run_id FROM tfstate_versions WHERE env = ? AND stack = ? ORDER BY version DESC LIMIT 1`, env, stack).
-		Scan(&version, &wrote)
 	switch {
-	case errors.Is(err, sqldb.ErrNoRows):
-	case err != nil:
-		return Plan{}, "", "", err
+	case version == 0:
+		moved = fmt.Sprintf("writ serve has no http state version for %s@%s", stack, env)
 	case wrote != run:
 		moved = fmt.Sprintf("the state of %s@%s is at version %d, which run %s did not write", stack, env, version, run)
 	}

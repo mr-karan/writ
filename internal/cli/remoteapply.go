@@ -266,14 +266,14 @@ func (a *App) startRemoteRun(ctx context.Context, r *remote, body []byte, key st
 			return run, nil, err
 		case status == http.StatusAccepted:
 			var started server.RemoteRun
-			if err := json.Unmarshal(b, &started); err != nil || started.Run == nil {
-				return nil, nil, fmt.Errorf("writ serve answered 202 with a body that is not %s", server.FormatRemoteRun)
+			if err := json.Unmarshal(b, &started); err != nil || !validRunAnswer(started) {
+				return nil, nil, a.unusable("a 202 answer without a usable " + server.FormatRemoteRun + " run" + formatWords(b))
 			}
 			return started.Run, nil, nil
 		case status == http.StatusOK:
 			var none server.RemoteRun
 			if err := json.Unmarshal(b, &none); err != nil || none.Format != server.FormatRemoteRun || !none.OK || none.Run != nil || none.Plan == "" {
-				return nil, nil, fmt.Errorf("writ serve answered 200 with a body that is not %s with nothing to apply", server.FormatRemoteRun)
+				return nil, nil, a.unusable("a 200 answer without a usable " + server.FormatRemoteRun + " for nothing to apply" + formatWords(b))
 			}
 			return nil, b, nil
 		case keyClosed(status, b):
@@ -347,17 +347,21 @@ func (a *App) askOutcome(ctx context.Context, r *remote, key string, asJSON bool
 		if err != nil || status == http.StatusServiceUnavailable || status == http.StatusTooManyRequests {
 			continue
 		}
-		var doc server.ApplyOutcome
-		if status != http.StatusOK || json.Unmarshal(b, &doc) != nil || doc.Format != server.FormatOutcome {
+		if status != http.StatusOK {
 			if !asJSON {
 				_ = a.remoteFailed(false, b)
 			}
 			break
 		}
-		switch {
-		case doc.Outcome == server.OutcomeStarted && doc.Run != nil:
+		var doc server.ApplyOutcome
+		if json.Unmarshal(b, &doc) != nil || doc.Format != server.FormatOutcome || !validOutcome(doc) {
+			return nil, fmt.Errorf("%w. Check whether a run started with writ show --remote --request %s",
+				a.unusable("an answer without a usable "+server.FormatOutcome+formatWords(b)), key)
+		}
+		switch doc.Outcome {
+		case server.OutcomeStarted:
 			return doc.Run, nil
-		case doc.Outcome == server.OutcomeNone:
+		case server.OutcomeNone:
 			if asJSON {
 				a.opts.Stdout.Write(b)
 				return nil, ErrFailed
@@ -365,7 +369,6 @@ func (a *App) askOutcome(ctx context.Context, r *remote, key string, asJSON bool
 			fmt.Fprintf(a.humanOutput(), "error: state-io: no run started: writ serve closed the key %s of this command's requests with no run; run the command again\n", key)
 			return nil, ErrFailed
 		}
-		break
 	}
 	msg := fmt.Sprintf("writ serve did not say whether the apply request with the key %s started a run; ask later with: writ show --remote --request %s", key, key)
 	if asJSON {
@@ -393,8 +396,8 @@ func (a *App) showRequest(ctx context.Context, r *remote, o ShowOptions) error {
 	if status != http.StatusOK {
 		return a.remoteFailed(o.JSON, b)
 	}
-	if err := json.Unmarshal(b, &doc); err != nil || doc.Format != server.FormatOutcome {
-		return fmt.Errorf("writ serve sent a body that is not %s", server.FormatOutcome)
+	if err := json.Unmarshal(b, &doc); err != nil || doc.Format != server.FormatOutcome || !validOutcome(doc) {
+		return a.unusable("an answer without a usable " + server.FormatOutcome + formatWords(b))
 	}
 	if o.JSON {
 		if _, err := a.opts.Stdout.Write(b); err != nil {
@@ -442,21 +445,21 @@ func (a *App) waitRun(ctx context.Context, r *remote, id string) ([]byte, error)
 		}
 	}()
 	for {
-		doc, err := r.get(wctx, path, remotePollWait+remoteTimeout)
+		status, doc, err := r.call(wctx, http.MethodGet, path, nil, remotePollWait+remoteTimeout)
 		select {
 		case <-detached:
 			return nil, errDetached
 		default:
 		}
 		if err != nil {
-			if re, ok := errors.AsType[*remoteError](err); ok {
-				return re.doc, nil
-			}
 			return nil, err
 		}
+		if status >= 300 {
+			return doc, nil
+		}
 		var run server.RemoteRun
-		if err := json.Unmarshal(doc, &run); err != nil || run.Run == nil {
-			return nil, fmt.Errorf("writ serve sent a run that is not %s", server.FormatRemoteRun)
+		if err := json.Unmarshal(doc, &run); err != nil || status != http.StatusOK || !validRunAnswer(run) || run.Run.ID != id {
+			return nil, a.unusable("a poll answer without a usable " + server.FormatRemoteRun + " for run " + id + formatWords(doc))
 		}
 		if run.Run.Status != "applying" {
 			return doc, nil
@@ -471,11 +474,9 @@ func (a *App) waitRun(ctx context.Context, r *remote, id string) ([]byte, error)
 // else the apply's text and a line that names the run.
 func (a *App) printRemoteRun(asJSON bool, doc []byte) error {
 	var run server.RemoteRun
-	if err := json.Unmarshal(doc, &run); err != nil {
-		return fmt.Errorf("writ serve sent a run that is not %s", server.FormatRemoteRun)
-	}
-	if _, refused := refusalDiags(doc); !refused && (run.Format != server.FormatRemoteRun || run.Run == nil) {
-		return a.unusable("a body that is not " + server.FormatRemoteRun + " with a run" + formatWords(doc))
+	_, refused := refusalDiags(doc)
+	if err := json.Unmarshal(doc, &run); err != nil || !refused && !validRunAnswer(run) {
+		return a.unusable("an answer without a usable " + server.FormatRemoteRun + " run" + formatWords(doc))
 	}
 	if asJSON {
 		if _, err := a.opts.Stdout.Write(doc); err != nil {
@@ -501,4 +502,17 @@ func (a *App) printRemoteRun(asJSON bool, doc []byte) error {
 		return ErrFailed
 	}
 	return nil
+}
+
+func validRunAnswer(doc server.RemoteRun) bool {
+	return doc.Format == server.FormatRemoteRun && validRun(doc.Run)
+}
+
+func validOutcome(doc server.ApplyOutcome) bool {
+	return doc.Outcome == server.OutcomeNone && doc.Run == nil ||
+		doc.Outcome == server.OutcomeStarted && validRun(doc.Run)
+}
+
+func validRun(run *server.RunInfo) bool {
+	return run != nil && run.ID != "" && (run.Status == "applying" || run.Status == "applied" || run.Status == "failed")
 }

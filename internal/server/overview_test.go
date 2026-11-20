@@ -521,14 +521,20 @@ func (f *fixture) restart(edit func(string) string) {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	srv, err := server.New(context.Background(), server.Options{Config: cfg, Store: f.store, Verifier: v, Tofu: f.tofu, Reap: func(uint32) error { return nil }, Version: "test"})
+	opts := server.Options{Config: cfg, Store: f.store, Verifier: v, Reap: func(uint32) error { return nil }, Version: "test"}
+	if f.tofu != nil {
+		opts.Tofu = f.tofu
+	}
+	srv, err := server.New(context.Background(), opts)
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	h := httptest.NewServer(srv.Handler())
 	f.t.Cleanup(func() { h.Close(); srv.Close() })
 	f.cfg, f.srv, f.http = cfg, srv, h
-	f.tofu.base = h.URL
+	if f.tofu != nil {
+		f.tofu.base = h.URL
+	}
 }
 
 // GET /v1/plans pages over the plans the caller may read: a reader of web
