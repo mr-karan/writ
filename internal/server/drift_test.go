@@ -616,9 +616,9 @@ func TestTofuPlanWhileStateMoves(t *testing.T) {
 }
 
 // GET /v1/drift/{id} returns one drift check by its ref or plan id, with
-// its changes and diagnostics, and enforces read on the check's stack@env.
-// GET /v1/drift?env=&stack= includes recent checks, and GET /v1/overview
-// carries the check's ref on drift alerts.
+// its changes or its error, and enforces read on the check's stack@env.
+// GET /v1/drift?env=&stack= lists the stack's kept checks, and GET
+// /v1/overview names the check on drift alerts.
 func TestGetDriftCheck(t *testing.T) {
 	runner := &fakeTofu{}
 	runner.plan = driftPlan(true)
@@ -634,8 +634,11 @@ func TestGetDriftCheck(t *testing.T) {
 	if c.Ref == "" || c.Plan == "" {
 		t.Fatalf("check lacks ref or plan: %+v", c)
 	}
-	if len(listed.Stacks[0].Checks) != 1 || listed.Stacks[0].Checks[0].Ref != c.Ref {
-		t.Fatalf("stack recent checks: %+v", listed.Stacks[0].Checks)
+	if len(listed.Checks) != 1 || listed.Checks[0].Ref != c.Ref || listed.Checks[0].Plan != c.Plan || listed.Checks[0].Code != c.Code {
+		t.Fatalf("kept checks: %+v", listed.Checks)
+	}
+	if all := f.drift(tok, "?env=prod"); all.Checks != nil {
+		t.Fatalf("GET /v1/drift of an env lists kept checks: %+v", all.Checks)
 	}
 
 	for _, id := range []string{c.Ref, c.Plan} {
@@ -659,6 +662,9 @@ func TestGetDriftCheck(t *testing.T) {
 	webTok := f.token(map[string]any{"project_id": "4343"})
 	if r := f.do("GET", "/v1/drift/"+c.Ref, webTok, nil); r.status != http.StatusForbidden || r.class() != "denied" {
 		t.Fatalf("web_readers reading app's drift check: %d %s", r.status, r.body)
+	}
+	if d := f.drift(webTok, "?env=prod&stack=app"); len(d.Stacks) != 0 || d.Checks != nil {
+		t.Fatalf("web_readers listing app's kept checks: %+v", d)
 	}
 	if r := f.do("GET", "/v1/drift/"+strings.Repeat("0", 32), tok, nil); r.status != http.StatusNotFound {
 		t.Fatalf("unknown drift check: %d %s", r.status, r.body)
@@ -689,12 +695,12 @@ func TestGetDriftCheck(t *testing.T) {
 	if failed == nil || failed.Status != server.DriftFailed || failed.Ref == "" || failed.Plan != "" {
 		t.Fatalf("failed check: %+v", failed)
 	}
-	if len(listed.Stacks[0].Checks) != 2 || listed.Stacks[0].Checks[0].Ref != failed.Ref || listed.Stacks[0].Checks[1].Ref != c.Ref {
-		t.Fatalf("recent checks after failure: %+v", listed.Stacks[0].Checks)
+	if len(listed.Checks) != 2 || listed.Checks[0].Ref != failed.Ref || listed.Checks[1].Ref != c.Ref {
+		t.Fatalf("kept checks after failure: %+v", listed.Checks)
 	}
 	r := f.do("GET", "/v1/drift/"+failed.Ref, tok, nil)
 	var fdoc server.DriftCheckDoc
-	if r.status != http.StatusOK || json.Unmarshal(r.body, &fdoc) != nil || fdoc.OK || len(fdoc.Diagnostics) != 1 || !strings.Contains(fdoc.Diagnostics[0].Message, "provider timed out") {
+	if r.status != http.StatusOK || json.Unmarshal(r.body, &fdoc) != nil || fdoc.OK || fdoc.Check == nil || fdoc.Check.Status != server.DriftFailed || !strings.Contains(fdoc.Check.Error, "provider timed out") {
 		t.Fatalf("failed drift check doc: %d %s", r.status, r.body)
 	}
 }

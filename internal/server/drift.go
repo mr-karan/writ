@@ -322,8 +322,11 @@ type DriftDoc struct {
 	More   bool         `json:"more"`
 	// Every is drift.every, how often writ serve checks each stack@env,
 	// such as 6h; "" when the config runs no drift checks.
-	Every       string       `json:"every"`
-	Diagnostics []Diagnostic `json:"diagnostics"`
+	Every string `json:"every"`
+	// Checks lists the kept drift checks of the one stack@env that env
+	// and stack name, newest first, and is left out without both.
+	Checks      []DriftCheckSummary `json:"checks,omitempty"`
+	Diagnostics []Diagnostic        `json:"diagnostics"`
 }
 
 // DriftStack is one stack@env of writ.drift/v0.
@@ -344,12 +347,9 @@ type DriftStack struct {
 	Checking bool `json:"checking"`
 	// Check is the newest drift check that ended, null when none did.
 	Check *DriftCheckInfo `json:"check"`
-	// Checks lists the kept drift checks of the stack, newest first,
-	// when GET /v1/drift filters on one stack@env.
-	Checks []DriftCheckSummary `json:"checks,omitempty"`
 }
 
-// DriftCheckSummary is one row of a stack's recent drift checks.
+// DriftCheckSummary is one of the kept drift checks of a stack@env.
 type DriftCheckSummary struct {
 	Ref       string `json:"ref"`
 	Plan      string `json:"plan"`
@@ -398,11 +398,8 @@ type DriftCheckDoc struct {
 	Backend string `json:"backend"`
 	// Every is drift.every, how often writ serve checks each stack@env,
 	// such as 6h; "" when the config runs no drift checks.
-	Every string          `json:"every"`
-	Check *DriftCheckInfo `json:"check"`
-	// Network is the writ.network/v1 of the check's run, null when none
-	// was recorded.
-	Network     json.RawMessage `json:"network"`
+	Every       string          `json:"every"`
+	Check       *DriftCheckInfo `json:"check"`
 	Diagnostics []Diagnostic    `json:"diagnostics"`
 }
 
@@ -426,20 +423,17 @@ func (s *Server) getDrift(w http.ResponseWriter, r *http.Request) {
 	if !s.decide(w, r, FormatDriftCheck, authz.Read, c.Stack, c.Env) {
 		return
 	}
-	backend := ""
-	if stacks, _, err := s.store.DriftStacks(r.Context(), c.Env, c.Stack, 1, func(string, string) bool { return true }); err == nil && len(stacks) == 1 {
-		backend = stacks[0].Backend
+	stacks, _, err := s.store.DriftStacks(r.Context(), c.Env, c.Stack, 1, func(string, string) bool { return true })
+	if err != nil {
+		s.dbFailed(w, r, FormatDriftCheck, err)
+		return
 	}
-	info := driftCheckInfo(c)
-	doc := DriftCheckDoc{
-		Format: FormatDriftCheck, OK: c.Status != control.DriftFailed, Env: c.Env, Stack: c.Stack, Backend: backend,
-		Check: info, Network: json.RawMessage("null"), Diagnostics: []Diagnostic{},
+	doc := DriftCheckDoc{Format: FormatDriftCheck, OK: c.Status != control.DriftFailed, Env: c.Env, Stack: c.Stack, Check: driftCheckInfo(c), Diagnostics: []Diagnostic{}}
+	if len(stacks) == 1 {
+		doc.Backend = stacks[0].Backend
 	}
 	if s.cfg.DriftEvery > 0 {
 		doc.Every = shortDuration(s.cfg.DriftEvery)
-	}
-	if c.Status == control.DriftFailed && c.Error != "" {
-		doc.Diagnostics = []Diagnostic{{Severity: "error", Class: string(diag.Usage), Message: c.Error}}
 	}
 	s.reply(w, http.StatusOK, doc)
 }
@@ -483,23 +477,20 @@ func (s *Server) listDrift(w http.ResponseWriter, r *http.Request) {
 		doc.Every = shortDuration(s.cfg.DriftEvery)
 	}
 	for _, st := range stacks {
-		row := *driftRow(st)
-		if env != "" && stack != "" {
-			history, err := s.store.DriftHistory(r.Context(), st.Env, st.Stack)
-			if err != nil {
-				s.dbFailed(w, r, FormatDrift, err)
-				return
-			}
-			for _, h := range history {
-				row.Checks = append(row.Checks, DriftCheckSummary{
-					Ref: h.Ref, Plan: h.PlanID, Status: string(h.Status),
-					StartedAt: stamp(h.StartedAt), CheckedAt: stamp(h.MadeAt),
-					Commit: h.Commit, Outside: h.Outside, Code: h.Code,
-				})
-			}
-		}
-		doc.Stacks = append(doc.Stacks, row)
+		doc.Stacks = append(doc.Stacks, *driftRow(st))
 		req.entry.Stacks = append(req.entry.Stacks, st.Stack)
+	}
+	if env != "" && stack != "" && len(stacks) == 1 {
+		history, err := s.store.DriftHistory(r.Context(), env, stack)
+		if err != nil {
+			s.dbFailed(w, r, FormatDrift, err)
+			return
+		}
+		doc.Checks = []DriftCheckSummary{}
+		for _, h := range history {
+			doc.Checks = append(doc.Checks, DriftCheckSummary{Ref: h.Ref, Plan: h.PlanID, Status: string(h.Status),
+				StartedAt: stamp(h.StartedAt), CheckedAt: stamp(h.MadeAt), Commit: h.Commit, Outside: h.Outside, Code: h.Code})
+		}
 	}
 	slices.Sort(req.entry.Stacks)
 	req.entry.Stacks = slices.Compact(req.entry.Stacks)
