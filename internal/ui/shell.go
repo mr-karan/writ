@@ -3,6 +3,7 @@ package ui
 import (
 	"cmp"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -402,8 +403,14 @@ func alertOf(a server.Alert) alert {
 	switch a.Kind {
 	case server.AlertDrifted:
 		r.Tone, r.Kind, r.AtWord = "wait", "Drift found", "first found"
+		if a.Drift != "" {
+			r.Href = "/ui/drift/" + url.PathEscape(a.Drift)
+		}
 	case server.AlertDriftCheckFailed:
 		r.Tone, r.Kind, r.AtWord = "bad", "Drift check failed", "checked"
+		if a.Drift != "" {
+			r.Href = "/ui/drift/" + url.PathEscape(a.Drift)
+		}
 	case server.AlertOutsideWrite:
 		r.Tone, r.Kind, r.AtWord = "wait", "State written outside Writ", "seen"
 	case server.AlertRunFailed:

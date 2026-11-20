@@ -55,8 +55,17 @@ func (u *UI) plans(w http.ResponseWriter, r *http.Request, s *server.Session) {
 // and the line of code behind it.
 func (u *UI) plan(w http.ResponseWriter, r *http.Request, s *server.Session) {
 	f := u.fetcher(w, r, s)
+	id := r.PathValue("id")
+	if r.URL.Query().Get("as") != "json" {
+		if status, _ := f.call("/v1/plans/" + url.PathEscape(id)); status == http.StatusNotFound {
+			if ds, _ := f.call("/v1/drift/" + url.PathEscape(id)); ds == http.StatusOK {
+				http.Redirect(w, r, "/ui/drift/"+url.PathEscape(id), http.StatusSeeOther)
+				return
+			}
+		}
+	}
 	var doc server.RemotePlan
-	if !f.main("/v1/plans/"+r.PathValue("id"), &doc) {
+	if !f.main("/v1/plans/"+url.PathEscape(id), &doc) {
 		return
 	}
 	q := r.URL.Query()

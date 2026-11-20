@@ -95,6 +95,11 @@ func TestNoScriptWalk(t *testing.T) {
 	}
 	run := f.apply(id)
 	f.driftCheck()
+	driftStacks, _, err := f.store.DriftStacks(context.Background(), "prod", "network", 1, func(string, string) bool { return true })
+	if err != nil || len(driftStacks) != 1 || driftStacks[0].Last == nil {
+		t.Fatalf("stored drift check: %+v %v", driftStacks, err)
+	}
+	driftRef := driftStacks[0].Last.Ref
 	f.noSecretSet("prod")
 	unsealed := f.planEnded(nil)
 	if unsealed.Status != "failed" {
@@ -111,6 +116,7 @@ func TestNoScriptWalk(t *testing.T) {
 		{"/ui/stack?stack=network&env=prod&view=runs", 200, short(run)},
 		{"/ui/?env=prod", 200, "drifted 1 outside, 2 in code"},
 		{"/ui/stack?stack=network&env=prod&view=drift", 200, "1 changed outside OpenTofu, 2 that the code would change"},
+		{"/ui/drift/" + driftRef, 200, "1 changed outside OpenTofu, 2 that the code would change"},
 		{"/ui/stack?stack=network&env=prod", 200, "1 in the last drift check"},
 		{"/ui/stack?stack=network&env=prod&group=module", 200, "tls_private_key.ca_key"},
 		{"/ui/stack?stack=network&env=prod&group=flat&q=CA-KEY", 200, "1 of 1 resources match"},
