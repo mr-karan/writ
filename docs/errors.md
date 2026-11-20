@@ -140,6 +140,8 @@ Common causes:
 
 - `plan ID is stale: plan ID of STACK@ENV is newer; plan again`
 - `plan ID expired at TIME: plan again`
+- `plan ID changes no resource; there is nothing to apply`, from `writ apply --remote ID`, and `plan ID changes no resource; there is nothing to approve or apply`, from `writ approve --remote ID`
+- `plan ID of STACK@ENV matches the sources at COMMIT and changes no resource, but run RUN applied to STACK@ENV after the plan was requested: plan again`
 - `another run is applying to STACK@ENV; try again when it ends`
 - `plan ID is a drift check of STACK@ENV, which writ serve never approves or applies: plan the stack to change it`
 - `plan ID is a speculative plan, of files a client sent, which writ serve never approves: push the commit and plan it`
@@ -147,7 +149,7 @@ Common causes:
 - `state version N of STACK@ENV is not its newest, version N: adopt the newest`
 - `an apply of STACK@ENV runs, which may write a newer state: adopt after it ends`
 
-What to do: plan again, or wait for the run that holds the `stack@env` and try again. [Why an approved plan can still be refused](approvals.md#why-an-approved-plan-can-still-be-refused) has each check.
+What to do: plan again, or wait for the run that holds the `stack@env` and try again. [Why an approved plan can still be refused](approvals.md#why-an-approved-plan-can-still-be-refused) has each check. A plan that changes no resource has nothing to apply: no command needs to run for it.
 
 ## `saved-plan`
 

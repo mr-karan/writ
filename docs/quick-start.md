@@ -108,17 +108,11 @@ OpenTofu apply of app@dev
 Apply: 1 added, 0 changed, 0 destroyed.
 State version 1 of app@dev.
 Run I3EP3I6DTYNC5PMVULSW6JYINL of plan 7ff2ad97b106fcbf4b4633baee25626a for dev (app), by alice (dev): applied at 2026-11-16T05:32:19Z.
-$ writ plan --remote
-commit plan of app@dev: repository writ-demo at 570edf03 (main), sent to http://127.0.0.1:7340
-OpenTofu 1.13.9 plan of app@dev
-
-No changes.
-Plan 096e5fe23db797b5b8b81eb9722c2199 for dev (app), by alice (dev), expires 2026-11-17T05:32:20Z.
-It is a commit plan of writ-demo at 570edf03.
-It has no change to apply.
 ```
 
 Output of a real run, 2026-11-16.
+
+Plan again now, and OpenTofu finds no changes: the plan is `no-changes`, and there is nothing to apply. See [A plan that changes nothing](approvals.md#a-plan-that-changes-nothing).
 
 To list the runs, newest first, use `writ runs --remote`:
 
