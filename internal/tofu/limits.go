@@ -196,6 +196,19 @@ const heldMapsMax = 16 << 20
 // errScratchMaps is a measure that read heldMapsMax of the step's maps.
 var errScratchMaps = errors.New("the step's processes map too much to read")
 
+// heldFilesMax bounds the removed files that one measure keeps, of every
+// process of the step together. Counted as scratchInode each, the default
+// run_scratch of 8GiB alone let a run hold some two million empty ones,
+// at some 116 bytes each to writ: a measure of them took more memory than
+// writ serve keeps for itself. No normal run holds this many removed
+// files, and writ keeps them in some 8MiB: a measure past it stops the
+// step, as one past the limit does.
+const heldFilesMax = 65536
+
+// errScratchFiles is a measure that found more than heldFilesMax removed
+// files.
+var errScratchFiles = errors.New("the step's processes hold too many removed files")
+
 // errScratchDeep is a run's directory nested deeper than scratchDepth.
 var errScratchDeep = errors.New("the directory nests too deeply")
 
@@ -209,6 +222,8 @@ func (sc *scratch) overScratch(max int64, cg *stepCgroup) string {
 		return slowScratch
 	case errors.Is(err, errScratchMaps):
 		return fmt.Sprintf("the step's processes map more than writ reads of them, %s of /proc/PID/maps, to measure the removed files they hold for limits.run_scratch, so it stopped the step", formatSize(heldMapsMax))
+	case errors.Is(err, errScratchFiles):
+		return fmt.Sprintf("the step's processes hold more than %d removed files, past which writ does not count them for limits.run_scratch, so it stopped the step", heldFilesMax)
 	case errors.Is(err, errScratchDeep):
 		return fmt.Sprintf("the run's directory nests more than %d directories deep, past which writ does not measure it for limits.run_scratch, so it stopped the step", scratchDepth)
 	case err != nil:
@@ -229,8 +244,9 @@ func (sc *scratch) overScratch(max int64, cg *stepCgroup) string {
 // directory names any longer but cg's threads hold open or mapped: a run
 // could write into such a file for as long as the step runs. It stops
 // once the count passes max, and fails with errScratchSlow past deadline,
-// or errScratchMaps past what it reads of the step's mappings, each of
-// which a step's measure counts as over max.
+// errScratchMaps past what it reads of the step's mappings, or
+// errScratchFiles past heldFilesMax removed files, each of which a step's
+// measure counts as over max.
 func (sc *scratch) usage(max int64, cg *stepCgroup, deadline time.Time) (int64, error) {
 	w := scratchWalk{max: max, deadline: deadline}
 	err := asUser(sc.user, func() error {

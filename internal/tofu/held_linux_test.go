@@ -253,3 +253,65 @@ func TestHeldFilesCountAMappedOpenFileOnce(t *testing.T) {
 		})
 	}
 }
+
+// A measure keeps at most heldFilesMax removed files, whatever the limit:
+// at the default run_scratch of 8GiB, the count of files at 4KiB each let
+// a run hold 2,097,151 empty removed files, and a measure of them
+// allocated some 800MiB, past what writ serve keeps for itself. Past the
+// cap the measure stops the step, and a count of open files with no
+// mapping builds no index of them.
+func TestHeldFilesStopPastTheirCap(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		add  func(h *heldFiles, ino uint64) error
+	}{
+		{"open", func(h *heldFiles, ino uint64) error { return h.addOpen(1, ino, 0, []byte("/run/f")) }},
+		{"mapped", func(h *heldFiles, ino uint64) error { return h.addMapped(1, ino, 0, []byte("/run/f")) }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHeldFiles(8<<30, time.Now().Add(time.Minute))
+			runtime.GC()
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			var err error
+			for ino := uint64(1); ino < 8<<30/scratchInode && err == nil; ino++ {
+				err = c.add(h, ino)
+			}
+			runtime.ReadMemStats(&after)
+			if !errors.Is(err, errScratchFiles) {
+				t.Fatalf("a measure of %d removed files returned %v, not errScratchFiles", len(h.open)+len(h.mapped), err)
+			}
+			if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 32<<20 {
+				t.Fatalf("a measure of %d removed files allocated %d bytes", len(h.open)+len(h.mapped), alloc)
+			}
+		})
+	}
+	h := newHeldFiles(8<<30, time.Now().Add(time.Minute))
+	for ino := range uint64(1000) {
+		if err := h.addOpen(1, ino, 0, []byte("/run/f")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if allocs := testing.AllocsPerRun(10, func() { h.total() }); allocs != 0 {
+		t.Fatalf("the total of 1000 open files and no mapping allocated %v times", allocs)
+	}
+}
+
+// A step whose processes hold more than heldFilesMax removed files stops,
+// with a message of its own, though they count far less than
+// run_scratch: here empty files that O_TMPFILE made, which no directory
+// ever named.
+func TestScratchStopsPastTheHeldFilesCap(t *testing.T) {
+	dir := t.TempDir()
+	for range heldFilesMax + 1 {
+		fd, err := unix.Open(dir, unix.O_TMPFILE|unix.O_RDWR|unix.O_CLOEXEC, 0o600)
+		if err != nil {
+			t.Fatalf("hold %d removed files: %v", heldFilesMax+1, err)
+		}
+		t.Cleanup(func() { unix.Close(fd) })
+	}
+	msg := scratchStandIn(t).overScratch(8<<30, cgroupStandIn(t, 1))
+	if want := strconv.Itoa(heldFilesMax) + " removed files"; !strings.Contains(msg, want) {
+		t.Fatalf("a step that holds %d removed files: %q, not one that names %s", heldFilesMax+1, msg, want)
+	}
+}

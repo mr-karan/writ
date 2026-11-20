@@ -521,7 +521,8 @@ func (c *stepCgroup) remove() error {
 // no other uid without CAP_DAC_READ_SEARCH list it, though writ made the
 // user namespace the thread runs in. It stops once what it found passes
 // max, and returns that much. It fails with errScratchSlow past deadline,
-// and with errScratchMaps past heldMapsMax.
+// with errScratchMaps past heldMapsMax, and with errScratchFiles past
+// heldFilesMax.
 func (c *stepCgroup) heldRemoved(u *User, max int64, deadline time.Time) (int64, error) {
 	tids, err := cgroupIDs(c.dir, "cgroup.threads")
 	if err != nil {
@@ -638,7 +639,8 @@ func (h *heldFiles) least() int64 {
 }
 
 // addOpen adds the removed file of a descriptor, and fails with
-// errScratchOver once h counts more than its max.
+// errScratchOver once h counts more than its max, or errScratchFiles once
+// it holds more than heldFilesMax files.
 func (h *heldFiles) addOpen(dev, ino uint64, blocks int64, path []byte) error {
 	id := [2]uint64{dev, ino}
 	old, seen := h.open[id]
@@ -653,7 +655,7 @@ func (h *heldFiles) addOpen(dev, ino uint64, blocks int64, path []byte) error {
 }
 
 // addMapped adds a mapping of a removed file that reaches end bytes into
-// it, and fails with errScratchOver once h counts more than its max.
+// it, and fails as addOpen does.
 func (h *heldFiles) addMapped(dev, ino uint64, end int64, path []byte) error {
 	m := mappedFile{dev: dev, ino: ino, path: maphash.Bytes(h.seed, path)}
 	h.mapped[m] = max(h.mapped[m], end)
@@ -665,11 +667,17 @@ func (h *heldFiles) check() error {
 	if h.least() > h.max {
 		return errScratchOver
 	}
+	if len(h.open)+len(h.mapped) > heldFilesMax {
+		return errScratchFiles
+	}
 	return nil
 }
 
 // total is the bytes of h's files, each at least scratchInode.
 func (h *heldFiles) total() int64 {
+	if len(h.mapped) == 0 {
+		return h.openBytes
+	}
 	byIno := map[uint64][][2]uint64{}
 	for id := range h.open {
 		byIno[id[1]] = append(byIno[id[1]], id)
