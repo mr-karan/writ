@@ -2,14 +2,14 @@
 
 Writ is designed around one rule: **cloud credentials and state encryption keys stay on the control plane server, never in CI pipelines or on developer laptops.**
 
-Because an OpenTofu plan on an unmerged branch executes provider and module code, Writ enforces twelve independent layers of defense across identity, secret handling, sandboxing, policy, and state integrity.
+Because an OpenTofu plan on an unmerged branch executes provider and module code, Writ enforces thirteen independent layers of defense across identity, secret handling, sandboxing, policy, and state integrity.
 
-## Twelve layers Writ enforces
+## Thirteen layers Writ enforces
 
 1. **No cloud credentials in CI.** CI jobs authenticate to Writ with single-use platform OIDC tokens (`WRIT_ID_TOKEN`); AWS role credentials and state encryption keys never leave `writ serve`.
 2. **Short-lived, narrowly scoped STS sessions per run.** Each run receives a dedicated STS session for the environment's `plan_role` or `apply_role` over loopback, tagged with the caller's `SourceIdentity` for CloudTrail attribution.
 3. **Dedicated provider UIDs and metadata firewall.** Every concurrent OpenTofu run executes under its own Linux UID from `provider_uids`, blocked by `nftables` from the instance metadata endpoints (`169.254.169.254` and `fd00:ec2::254`).
-4. **Linux user, mount, and PID namespaces.** Runs execute inside a `pivot_root` read-only `tmpfs` filesystem view with all capabilities cleared (`no_new_privs`) and server keys, database credentials, and shells unmounted.
+4. **Linux user, mount, PID, and IPC namespaces.** Runs execute inside a `pivot_root` read-only `tmpfs` filesystem view with all capabilities cleared (`no_new_privs`) and server keys, database credentials, and shells unmounted.
 5. **Secrets masked from every output and stored record.** `internal/mask` strips sensitive values, secret-named attributes, and the STS credentials served to a run before any plan, diagnostic, log, or state index row is stored or shown.
 6. **Sealed, immutable saved plans.** Saved plans and `http`-backend states are encrypted per environment with AES-256-GCM; `writ apply --remote` applies the exact approved plan binary and refuses if state moved or the plan expired (`plan_ttl`, default `24h`).
 7. **Server-enforced grants, approvals, and OPA/Rego policy.** Teams, grants, approval rules, and mandatory Rego policy sets live in `writ serve`'s host config, where no merge request or CI YAML change can weaken them.
@@ -18,6 +18,7 @@ Because an OpenTofu plan on an unmerged branch executes provider and module code
 10. **Scheduled drift checks and out-of-band state detection.** `writ serve` runs scheduled drift checks and detects S3 state versions written outside Writ, blocking approvals until an administrator reviews and runs `writ state adopt`.
 11. **Per-address and per-principal rate limits and execution timeouts.** Token-bucket rate limits per client IP and per authenticated principal, bounded concurrent runs (`limits.plans` and `limits.applies`), and hard plan (`30m`) and apply (`4h`) deadlines protect the server.
 12. **Per-run network egress control.** With `egress_mode = "enforce"`, each run gets a network namespace with only loopback and reaches the network only through Writ's egress proxy, which allows the hosts the environment's `egress` list names, never connects to metadata, loopback, or link-local addresses, and refuses private addresses a wildcard would reach. Provider installs are confined the same way, to the registries `provider_registries` lists. See [Run isolation and egress](run-isolation.md#egress).
+13. **Per-run resource limits and a seccomp filter.** Each OpenTofu step runs in a cgroup of its own, with `limits.run_memory` (no swap), `run_pids`, and `run_cpus`, and is killed whole with `cgroup.kill` when it ends, so one stack's providers can't starve `writ serve` or other runs; `run_scratch` bounds the run's directory on disk. Every `tofu` process runs under a seccomp filter that refuses the mount family, new namespaces, `ptrace`, `process_vm_readv`, `process_vm_writev`, `pidfd_getfd`, the keyrings, `bpf`, `perf_event_open`, `userfaultfd`, `io_uring_setup`, and loading kernel code. The cgroup limits need `writ serve` alone in a delegated cgroup; `writ serve --check` says when they're off, and why. See [Limit what each run uses](run-isolation.md#limit-what-each-run-uses).
 
 ## Who holds what
 
@@ -49,6 +50,8 @@ Because OpenTofu plans execute code from unmerged branches, a team's `writ serve
 
 - **Per-run UIDs**: Each concurrent run gets a dedicated UID from `provider_uids` with no supplementary groups and all capabilities cleared (`no_new_privs`). Concurrent runs cannot read each other's `/proc/PID/environ` or temporary directories.
 - **Private filesystem view**: User, mount, and PID namespaces with `pivot_root` onto a read-only `tmpfs` hide `data`, state keys, TLS keys, `provider_env` files, shells, `ssh`, and `hg`.
+- **Seccomp filter**: Every `tofu` process runs under a seccomp filter, so no process of a run can mount, make a namespace, trace a process, or reach the keyrings, BPF, perf events, `userfaultfd`, or `io_uring`. See [System calls a run can't make](run-isolation.md#system-calls-a-run-cant-make).
+- **Resource limits**: Each step runs in a cgroup of its own with `limits.run_memory`, `run_pids`, and `run_cpus`, and `cgroup.kill` ends whatever the step left when it ends. `run_scratch` bounds the run's directory on disk.
 - **Metadata firewall**: An `nftables` rule drops traffic from `provider_uids` to `169.254.169.254` and `fd00:ec2::254`, preventing providers from stealing the control plane host's AWS identity. `writ serve --check` actively tests both file permissions and metadata blocking as a provider UID.
 - **Source hygiene**: Stack commits are verified against Git SHA-1 blob IDs. Symlinks, `.terraform` directories, `.tf.json`/`.tofu.json`, `file://` module sources, and dangerous `go-getter` query parameters are rejected before OpenTofu runs.
 - **Per-run credentials**: AWS credentials are served over loopback behind a per-run random token rather than copied from the host environment.
@@ -89,6 +92,7 @@ See [Secrets and the mask](secrets.md) for the differential verification suite (
 - **Webhook bounds**: 10 deliveries a second from one client address, counted first, 5 a second for one repository, a 1 MiB body, and the newest 4,096 delivery ids remembered to drop a resend.
 - **Sign-in queue bounds**: At most 10 pending `writ login` sign-ins per client IP and 1,000 across the server, expiring after 10 minutes.
 - **Run concurrency and deadlines**: Bounded by `limits.plans_per_principal` (default 4), `limits.plans` (default 8), `limits.applies` (default 4), `limits.plan_timeout` (default `30m`), `limits.apply_start_timeout` (default `10m`), and `limits.apply_timeout` (default `4h`).
+- **Per-step resources**: Each OpenTofu step is bounded by `limits.run_memory` (default `4GiB`), `limits.run_pids` (default 1024), `limits.run_cpus` (default 2), and `limits.run_scratch` (default `8GiB`), and each stdout and stderr by 64 MiB.
 
 ## Known limits and assumptions
 
@@ -98,6 +102,7 @@ Review these boundaries when deploying Writ:
 - **Plan role permissions are your responsibility**: Writ assumes whatever `plan_role` you configure. Make sure its IAM policy is strictly read-only.
 - **S3 state isolation**: On `backend "s3"`, IAM role permissions (not Writ grants) prevent stacks in the same environment from referencing each other's S3 state keys.
 - **Network egress is off by default**: Under the default `egress_mode = "off"`, runs share the host's network, apart from the metadata firewall rule, so code a commit chose can reach anything the host reaches. Under `enforce`, an allowed host can still carry data out: `*.amazonaws.com` allows any S3 bucket, and the proxy decides by host and port, not by URL or content. `report` records but doesn't restrict. See [What egress doesn't cover](run-isolation.md#what-egress-doesnt-cover).
+- **Run limits need a delegated cgroup, and scratch is measured**: `run_memory`, `run_pids`, and `run_cpus` hold only when `writ serve` runs alone in a cgroup delegated to its user, as systemd's `Delegate=yes` gives it; otherwise it warns and runs steps without them. `run_scratch` is a measure `writ serve` takes while a step runs, every half second for most directories, not a kernel limit. It bounds a runaway or careless run, not one that tries to hide what it uses on disk, and a filesystem quota on the scratch filesystem is the hard bound. Disk bandwidth isn't limited. See [What run limits don't cover](run-isolation.md#what-run-limits-dont-cover).
 - **Mask limits**: The mask is an output filter, not information-flow tracking. Unmarked secrets in unmarked attributes, hashed secrets passed to `nonsensitive()`, and multi-line base64 without sensitive marks are not caught. See [What the mask can't do](secrets.md#what-the-mask-cant-do).
 
 See [Supported platforms and limits](status.md) for current platform requirements and scope.

@@ -34,6 +34,10 @@ limits {
   plan_timeout         = "30m"
   apply_start_timeout  = "10m"
   apply_timeout        = "4h"
+  run_memory           = "4GiB"
+  run_pids             = 1024
+  run_cpus             = 2
+  run_scratch          = "8GiB"
 }
 
 retention {
@@ -154,7 +158,7 @@ env "prod" {
 | `plan_ttl` | How long a plan stays live, pending or approved, before it expires (`>= 1m`). Default `24h`. |
 | `session_ttl` | How long a person's session lasts (`5m` to `168h`). There's no refresh. Default `12h`. |
 | `ui` | A block. `ui { enabled = false }` turns the [control UI](sign-in.md#the-control-ui) off. It's on by default when an issuer of kind `people` exists, and refused when `enabled = true` with no `people` issuer. |
-| `limits` | A block: `requests_per_second` (per principal, `>= 1`), `requests_per_address` (per client IP, `>= 1`), `plans_per_principal` (`>= 1`), `plans` (total concurrent plans, `>= 1`), `applies` (total concurrent applies, `>= 1`), `body` (largest request body after gzip decompression, `64KiB` to `64MiB`), `plan_timeout`, `apply_start_timeout`, and `apply_timeout` (each `>= 1s`). The defaults are in the sample above. See [Rate limits](api.md#rate-limits) and [Time limits](api.md#time-limits). |
+| `limits` | A block: `requests_per_second` (per principal, `>= 1`), `requests_per_address` (per client IP, `>= 1`), `plans_per_principal` (`>= 1`), `plans` (total concurrent plans, `>= 1`), `applies` (total concurrent applies, `>= 1`), `body` (largest request body after gzip decompression, `64KiB` to `64MiB`), `plan_timeout`, `apply_start_timeout`, and `apply_timeout` (each `>= 1s`), and the limits of each OpenTofu step: `run_memory` (`128MiB` to `1024GiB`, with no swap where the kernel keeps a swap account for cgroups), `run_pids` (processes and threads, `>= 64`), `run_cpus` (`0.1` to `1024`, such as `0.5`), and `run_scratch` (the run's directory on disk, `64MiB` to `1024GiB`). The defaults are in the sample above. See [Rate limits](api.md#rate-limits), [Time limits](api.md#time-limits), and [Limit what each run uses](run-isolation.md#limit-what-each-run-uses). |
 | `trusted_proxies` | Optional. A list of CIDRs, such as `["127.0.0.1/32"]`, of the proxies in front of `writ serve`. `X-Forwarded-For` is read only on a request from one of them. See [Rate limits](api.md#rate-limits). |
 | `retention` | A block: how long `audit` rows and spent `plans` are kept (each `>= 1h` when set). By default they're kept forever. See [Back up and upgrade](run.md#back-up-and-upgrade). |
 | `issuer "NAME"` | A token issuer to trust, one block each: `kind` (`gitlab-ci`, `github-actions`, or `people`), `url`, `identity`, and an optional `ca_file` for an instance with a private CA. See below. |
@@ -271,6 +275,7 @@ State has no field. An OpenTofu stack's state is on the http backend that `writ 
 - An element of `trusted_proxies` that isn't a CIDR or that sets bits past its prefix length.
 - A `drift` block without `every`, with an empty `every`, an `every` of zero or under a minute, in a config with no `tofu` block, or with `limits.plans` under 2.
 - A `tofu` block without `provider_uids`.
+- A `limits.run_memory` or `run_scratch` that isn't a size in `KiB`, `MiB`, or `GiB` within its bounds, a `run_pids` under 64, and a `run_cpus` that isn't a number from `0.1` to `1024`.
 - An `egress_mode` other than `off`, `report`, and `enforce`, and `report` or `enforce` in a config with no `tofu` block, or with an env whose `s3_endpoints` lists an `http://` endpoint on loopback, which a run's own namespace can't reach.
 - An `egress` item that isn't `HOST`, `*.DOMAIN`, or an IP address with an optional port, a wildcard of one label, such as `*.com`, and an IP address the proxy never connects to: loopback, link-local, multicast, unspecified, `fd00:ec2::254`, or a NAT64 address of one of them.
 - A `provider_registries` item that isn't a registry's host name, such as one with `https://` or a port.
@@ -285,8 +290,9 @@ It warns on:
 - Issuers of two identities whose URLs look like one host.
 - An env that sets `egress` under `egress_mode` `off`, where the list has no effect.
 - `provider_registries` under `egress_mode` `off`, where it has no effect.
+- With a `tofu` block, run limits that `writ serve` couldn't enforce from the cgroup `--check` runs in, and a seccomp filter the kernel can't run, with the reason. See [Check that the limits hold](run-isolation.md#check-that-the-limits-hold).
 
-It prints the approval rules, and under `egress_mode` `report` or `enforce`, the mode, each env's `egress` list, and `provider_registries`.
+It prints the approval rules, and under `egress_mode` `report` or `enforce`, the mode, each env's `egress` list, and `provider_registries`. With a `tofu` block, it prints the run limits each OpenTofu step gets, and whether the seccomp filter is on.
 
 A config that sets one of these removed settings is refused, and the setting is named: `provider` and `providers_dir`, because a stack runs the providers its `.terraform.lock.hcl` pins; `limits.files`; and an environment's `secret_env` or `state`. Delete them.
 

@@ -76,6 +76,14 @@ func (r *Runner) step(ctx context.Context, sc *scratch, creds bool, name string,
 		v.tools = r.git.files
 		env = append(env, r.git.path(sc.env))
 	}
+	var cg *stepCgroup
+	if r.cgroups.base != "" {
+		if cg, err = newStepCgroup(r.cgroups, r.opts.Limits); err != nil {
+			return nil, fmt.Errorf("tofu %s: make the step's cgroup: %w", name, err)
+		}
+		defer cg.remove()
+	}
+	ctx, scratchHit := r.watchScratch(ctx, sc, cg)
 	stdout, stderr, err := command{
 		binary: r.opts.Binary,
 		args:   args,
@@ -86,13 +94,32 @@ func (r *Runner) step(ctx context.Context, sc *scratch, creds bool, name string,
 		max:    r.opts.MaxOutput,
 		stop:   sc.stop,
 		plan:   sc.plan,
+		cgroup: cg,
 	}.run(ctx)
-	if err == nil {
-		return stdout, nil
+	// The kernel's kill at a limit ends the step before writ's measure.
+	limit, shared := "", false
+	if cg != nil {
+		limit, shared = cg.hit()
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
-		return stdout, &StepError{Step: name, Code: exit.ExitCode(), Stdout: stdout, Stderr: stderr}
+	if over := scratchHit(); limit == "" {
+		limit = over
+	}
+	if limit == "" && err != nil && cg != nil {
+		limit = cg.sharedHit()
+		shared = limit != ""
+	}
+	exit, exited := errors.AsType[*exec.ExitError](err)
+	code := -1
+	if exited {
+		code = exit.ExitCode()
+	}
+	switch {
+	case limit != "":
+		return stdout, &StepError{Step: name, Code: code, Stdout: stdout, Stderr: stderr, Limit: limit, Shared: shared}
+	case err == nil:
+		return stdout, nil
+	case exited:
+		return stdout, &StepError{Step: name, Code: code, Stdout: stdout, Stderr: stderr}
 	}
 	return stdout, fmt.Errorf("tofu %s: %w", name, err)
 }
@@ -114,6 +141,9 @@ type command struct {
 	// plan, when set, is the sealed saved plan that the process reads at
 	// the path sealPlan returned.
 	plan *os.File
+	// cgroup, when set, is the step's cgroup, which the process starts in
+	// and which is killed when it exits.
+	cgroup *stepCgroup
 }
 
 // view is what of a run a tofu process sees, besides its binary and the
@@ -138,10 +168,12 @@ type view struct {
 // and keeps up to c.max bytes of its stdout and of its stderr. A cancel, a
 // timeout, or output over the limit kills the group at once, except that
 // with c.stop a timeout sends SIGINT and kills only after c.stop, and the
-// group is killed when c exits, so no provider outlives it. When c runs as
-// a user, every process of that user is then killed too, which catches a
-// process that left the group with setsid. Its error is the context's
-// cause when there is one, even if c exited 0.
+// group is killed when c exits, so no provider outlives it. With
+// c.cgroup, the whole cgroup is killed then too, which catches every
+// process of the step wherever it went. When c runs as a user, every
+// process of that user is then killed too, which catches a process that
+// left the group with setsid. Its error is the context's cause when there
+// is one, even if c exited 0.
 func (c command) run(ctx context.Context) (stdout, stderr []byte, err error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -169,6 +201,11 @@ func (c command) run(ctx context.Context) (stdout, stderr []byte, err error) {
 		// A live member keeps the group's id from being reused after Wait
 		// reaps tofu, so this kills only what tofu left behind.
 		_ = killGroup(cmd.Process.Pid)
+		if c.cgroup != nil {
+			if kerr := c.cgroup.kill(); kerr != nil {
+				err = errors.Join(err, fmt.Errorf("tofu: %w", kerr))
+			}
+		}
 		if c.user != nil {
 			if rerr := runas.Reap(c.user.UID); rerr != nil {
 				err = errors.Join(err, fmt.Errorf("tofu: end what the run left as %s: %w", c.user, rerr))

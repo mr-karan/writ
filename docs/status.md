@@ -31,7 +31,7 @@ None of these tests reaches a real cloud host.
 
 ## What you'll run into today
 
-- **OpenTofu 1.13.9 on Linux for `writ serve`**: `writ serve` requires OpenTofu `1.13.9` and, for a team's server, Linux user, mount, and PID namespaces with `provider_uids` and `nftables`. The CLI (`writ plan --remote`, `writ approve --remote`, `writ apply --remote`, `writ login`) runs on Linux and macOS (`amd64` and `arm64`).
+- **OpenTofu 1.13.9 on Linux for `writ serve`**: `writ serve` requires OpenTofu `1.13.9` and, for a team's server, Linux user, mount, PID, and IPC namespaces with `provider_uids` and `nftables`. The CLI (`writ plan --remote`, `writ approve --remote`, `writ apply --remote`, `writ login`) runs on Linux and macOS (`amd64` and `arm64`).
 - **Single-node server**: `writ serve` runs as a single process against Postgres (or local files under `--dev`). A second `writ serve` on the same database fails the other's in-flight runs.
 - **Pending sign-in capacity**: Many client addresses together can fill the 1,000 slots for `writ login` sign-ins waiting on browser completion and block new sign-ins for up to 10 minutes. One client address can hold at most 10 slots. See [Sign-ins that wait](sign-in.md#sign-ins-that-wait).
 - **AWS STS credential broker**: Per-environment `plan_role` and `apply_role` assume AWS IAM roles via STS. Providers for other clouds read credentials from `provider_env`.

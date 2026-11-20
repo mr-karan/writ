@@ -66,7 +66,7 @@ func (a *App) Serve(ctx context.Context, o ServeOptions) error {
 		if err := printServeCheck(a.humanOutput(), o.Config, cfg); err != nil {
 			return err
 		}
-		return errors.Join(a.checkTofu(ctx, cfg), a.checkIsolation(ctx, cfg), a.checkNotify(ctx, cfg, o.NotifyTest))
+		return errors.Join(a.checkTofu(ctx, cfg), a.checkIsolation(ctx, cfg), a.checkLimits(cfg), a.checkNotify(ctx, cfg, o.NotifyTest))
 	}
 	log := slog.New(slog.NewJSONHandler(a.opts.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	for _, d := range diags {
@@ -257,6 +257,82 @@ func (a *App) checkTofu(ctx context.Context, cfg *server.Config) error {
 	}
 	fmt.Fprintf(a.humanOutput(), "tofu: git %s: ok\n", git)
 	return nil
+}
+
+// checkLimits prints what writ serve would enforce of the limits of each
+// OpenTofu step, and warns of what it would not, and why. It moves writ
+// into no cgroup, so it reports on the cgroup --check runs in: run it
+// where writ serve runs, as the unit's ExecStartPre does.
+func (a *App) checkLimits(cfg *server.Config) error {
+	if cfg.Tofu == nil {
+		return nil
+	}
+	w := a.humanOutput()
+	l := runLimits(cfg)
+	e := tofu.CheckLimits(l)
+	var warn diag.List
+	if e.Cgroup != "" {
+		fmt.Fprintln(w, cgroupLimitsLine(l, e))
+		if e.SwapOff != "" {
+			warn.Warnf(diag.Usage, diag.Span{}, "%s", e.SwapOff)
+		}
+		for _, msg := range sharedLimitWarnings(l, cfg.Limits.Plans+cfg.Limits.Applies, e) {
+			warn.Warnf(diag.Usage, diag.Span{}, "%s", msg)
+		}
+	} else {
+		warn.Warnf(diag.Usage, diag.Span{}, "limits not enforced: %s; writ serve runs each OpenTofu step without limits.run_memory, run_pids, and run_cpus", e.CgroupOff)
+	}
+	fmt.Fprintf(w, "limits: writ measures each run's directory, and stops a step past %s\n", sizeWords(l.Scratch))
+	if e.Seccomp {
+		fmt.Fprintln(w, "seccomp: each OpenTofu process runs under writ's seccomp filter")
+	} else {
+		warn.Warnf(diag.Usage, diag.Span{}, "seccomp filter not installed: %s", e.SeccompOff)
+	}
+	printDiags(w, warn)
+	return nil
+}
+
+// cgroupLimitsLine is --check's line of the limits each step's cgroup
+// holds, which says "with no swap" only where the kernel holds it.
+func cgroupLimitsLine(l tofu.Limits, e tofu.Enforcement) string {
+	swap := " with no swap"
+	if e.SwapOff != "" {
+		swap = ""
+	}
+	return fmt.Sprintf("limits: each OpenTofu step runs in a cgroup of its own under %s: memory %s%s, %d processes and threads, %v CPUs", e.Cgroup, sizeWords(l.Memory), swap, l.Pids, l.CPUs)
+}
+
+// sharedLimitWarnings says where slots steps at once, each at l's limits,
+// can need more processes or memory than e leaves every step together:
+// the limits of writ serve's cgroup less what writ serve keeps. Steps then
+// fail to start processes, or the kernel kills one, before any reaches
+// its own limit. It also says where nothing but the host bounds the
+// steps' memory together, as under the NixOS module, which sets no
+// MemoryMax.
+func sharedLimitWarnings(l tofu.Limits, slots int, e tofu.Enforcement) []string {
+	var out []string
+	if need := int64(l.Pids) * int64(slots); e.StepsPids > 0 && need > e.StepsPids {
+		out = append(out, fmt.Sprintf("limits.run_pids, %d, times %d plans and applies at once is %d, more than the %d processes and threads that writ's cgroup leaves every step together, its pids.max less what writ serve keeps; raise the unit's TasksMax, or lower limits.run_pids, plans, or applies", l.Pids, slots, need, e.StepsPids))
+	}
+	need := l.Memory * int64(slots)
+	if e.StepsMemory == 0 {
+		out = append(out, fmt.Sprintf("limits.run_memory, %s, times %d plans and applies at once is %s, and writ's cgroup sets no memory.max, so only the host's memory bounds every step together; set the unit's MemoryMax", sizeWords(l.Memory), slots, sizeWords(need)))
+	}
+	if e.StepsMemory > 0 && need > e.StepsMemory {
+		out = append(out, fmt.Sprintf("limits.run_memory, %s, times %d plans and applies at once is %s, more than the %s that writ's cgroup leaves every step together, its memory.max less what writ serve keeps; raise the unit's MemoryMax, or lower limits.run_memory, plans, or applies", sizeWords(l.Memory), slots, sizeWords(need), sizeWords(e.StepsMemory)))
+	}
+	return out
+}
+
+// sizeWords writes a size as the config does.
+func sizeWords(n int64) string {
+	switch {
+	case n%(1<<30) == 0:
+		return fmt.Sprintf("%dGiB", n>>30)
+	case n%(1<<20) == 0:
+		return fmt.Sprintf("%dMiB", n>>20)
+	}
+	return fmt.Sprintf("%dKiB", n>>10)
 }
 
 // checkNotify prints writ serve --check's notify part: each notifier,

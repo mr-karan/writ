@@ -12,13 +12,17 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/mr-karan/writ/internal/runas"
 )
@@ -106,6 +110,68 @@ func fakeTofuMain(behaviour string, args []string) int {
 		err = startSleeper()
 	case "loud":
 		fmt.Printf("%4096s", "x")
+	case "alloc":
+		// More memory than TestRunLimits allows, every page touched.
+		mem := make([]byte, 256<<20)
+		for i := 0; i < len(mem); i += 4096 {
+			mem[i] = 1
+		}
+		fmt.Println("allocated", len(mem))
+	case "forkbomb":
+		// Processes until the kernel refuses one.
+		for err == nil {
+			err = startSleeper()
+		}
+	case "hold":
+		// Processes until the kernel refuses one, held for six seconds.
+		for err == nil {
+			err = startSleeper()
+		}
+		time.Sleep(6 * time.Second)
+		return 1
+	case "spin":
+		// Four threads busy for two seconds, then the CPU time they took.
+		start := time.Now()
+		var wg sync.WaitGroup
+		for range 4 {
+			wg.Go(func() {
+				for time.Since(start) < 2*time.Second {
+				}
+			})
+		}
+		wg.Wait()
+		var ru syscall.Rusage
+		if err = syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err == nil {
+			cpu := time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
+			fmt.Printf("cpu %.2f wall %.2f\n", cpu.Seconds(), time.Since(start).Seconds())
+		}
+		if err == nil {
+			return 1
+		}
+	case "scratch", "scratch-exit":
+		// 64 MiB written into the stack's directory; scratch then waits.
+		var f *os.File
+		if f, err = os.Create("fill.bin"); err == nil {
+			chunk := bytes.Repeat([]byte{1}, 1<<20)
+			for i := 0; i < 64 && err == nil; i++ {
+				_, err = f.Write(chunk)
+			}
+			err = errors.Join(err, f.Close())
+		}
+		if err == nil && behaviour == "scratch" {
+			time.Sleep(time.Hour)
+		}
+	case "cgroup":
+		var cg []byte
+		if cg, err = os.ReadFile("/proc/self/cgroup"); err == nil {
+			fmt.Print(string(cg))
+		}
+		if cmd == "plan" {
+			err = os.WriteFile(planFile, []byte("saved"), 0o600)
+		}
+	case "seccomp":
+		fmt.Print(seccompProbe())
+		return 1
 	case "apply-event":
 		// apply reports a change, and on SIGINT, as tofu does, it reports
 		// the state it saved and exits.
@@ -125,6 +191,117 @@ func fakeTofuMain(behaviour string, args []string) int {
 			if err = os.Rename("../files", "../files.old"); err == nil {
 				err = syscall.Mkfifo("../files", 0o600)
 			}
+		}
+	case "fifo-swap":
+		// The stack's directory holds d, a directory, and p, a FIFO, which
+		// the fake swaps until it is killed, so writ's measure meets a FIFO
+		// where it listed a directory.
+		if cmd != "plan" {
+			break
+		}
+		if err = os.Mkdir("d", 0o700); err == nil {
+			err = syscall.Mkfifo("p", 0o600)
+		}
+		for err == nil {
+			err = unix.Renameat2(unix.AT_FDCWD, "d", unix.AT_FDCWD, "p", unix.RENAME_EXCHANGE)
+		}
+	case "nap":
+		// A step longer than one of writ's measures, which plans nothing.
+		time.Sleep(2 * time.Second)
+		if cmd == "plan" {
+			err = os.WriteFile(planFile, []byte("saved"), 0o600)
+		}
+	case "scratch-zombie":
+		// 64 MiB written into a removed file that a thread holds open, after
+		// the main thread exits alone, as SYS_EXIT ends one thread where
+		// exit_group ends them all. /proc/PID/fd then reads the dead main
+		// thread's descriptors, of which it has none. Fakes run from init,
+		// on the main thread.
+		held := make(chan error)
+		go func() {
+			f, err := os.Create("fill.bin")
+			if err == nil {
+				err = os.Remove("fill.bin")
+			}
+			chunk := bytes.Repeat([]byte{1}, 1<<20)
+			for i := 0; i < 64 && err == nil; i++ {
+				_, err = f.Write(chunk)
+			}
+			held <- err
+			time.Sleep(time.Hour)
+			runtime.KeepAlive(f)
+		}()
+		if err = <-held; err == nil {
+			syscall.RawSyscall(syscall.SYS_EXIT, 0, 0, 0)
+		}
+	case "scratch-unlinked", "scratch-mapped", "scratch-undumpable":
+		// 64 MiB written into a file of the stack's directory that the fake
+		// removed first and holds open, or, for scratch-mapped, holds only
+		// through a shared mapping; then it waits. scratch-undumpable first
+		// makes itself not dumpable, which gives its /proc/PID/fd to root
+		// of its user namespace.
+		if behaviour == "scratch-undumpable" {
+			err = unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0)
+		}
+		var f *os.File
+		if err == nil {
+			f, err = os.Create("fill.bin")
+		}
+		if err == nil {
+			err = os.Remove("fill.bin")
+		}
+		chunk := bytes.Repeat([]byte{1}, 1<<20)
+		switch {
+		case err != nil:
+		case behaviour != "scratch-mapped":
+			for i := 0; i < 64 && err == nil; i++ {
+				_, err = f.Write(chunk)
+			}
+		default:
+			var mem []byte
+			if err = f.Truncate(64 << 20); err == nil {
+				mem, err = syscall.Mmap(int(f.Fd()), 0, 64<<20, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+			}
+			if err == nil {
+				err = f.Close()
+				for i := 0; i < len(mem); i += len(chunk) {
+					copy(mem[i:], chunk)
+				}
+			}
+		}
+		if err == nil {
+			time.Sleep(time.Hour)
+		}
+	case "scratch-inodes":
+		// 8192 empty files, which hold no data but an inode each.
+		for i := 0; i < 8192 && err == nil; i++ {
+			var f *os.File
+			if f, err = os.Create(fmt.Sprintf("empty-%d", i)); err == nil {
+				err = f.Close()
+			}
+		}
+	case "sysv-shm":
+		// A System V shared memory segment of sysvShmKey: write makes it
+		// and leaves sysvShmMark in it, and read prints what a segment of
+		// that key holds, if there is one.
+		flags := 0
+		if cmd == "write" {
+			flags = unix.IPC_CREAT | 0o600
+		}
+		var id int
+		if id, err = unix.SysvShmGet(sysvShmKey, 1<<20, flags); err == nil {
+			var mem []byte
+			if mem, err = unix.SysvShmAttach(id, 0, 0); err == nil {
+				if cmd == "write" {
+					copy(mem, sysvShmMark)
+				}
+				fmt.Printf("segment holds %q\n", bytes.TrimRight(mem[:64], "\x00"))
+				err = unix.SysvShmDetach(mem)
+			}
+		}
+		if cmd == "read" && errors.Is(err, unix.ENOENT) {
+			fmt.Println("no segment")
+			err = nil
 		}
 	case "fifo-plan":
 		switch cmd {
@@ -639,4 +816,61 @@ func TestProcIsReadOnly(t *testing.T) {
 	if len(mounts) != 1 || !slices.Contains(strings.Split(mounts[0][1], ","), "ro") {
 		t.Errorf("the run's /proc mounts are %q, want one, read-only", mounts)
 	}
+}
+
+// The System V segment that the fake sysv-shm makes, and what it writes
+// in it.
+const (
+	sysvShmKey  = 0x77726974
+	sysvShmMark = "left by an earlier run"
+)
+
+// A step's System V shared memory dies with the step. Each step has an IPC
+// namespace of its own, so a later run can't attach to a segment an
+// earlier one made by its key, and no segment outlives the step on the
+// host, charged to a step's cgroup that is gone but still counts against
+// runs.
+func TestSysVMemoryDiesWithTheStep(t *testing.T) {
+	t.Cleanup(func() {
+		for _, id := range hostShm(t, sysvShmKey) {
+			_, _ = unix.SysvShmCtl(id, unix.IPC_RMID, nil)
+		}
+	})
+	bin := fakeTofu(t, "sysv-shm")
+	out, stderr, err := command{binary: bin, args: []string{"write"}, max: 1 << 20}.run(context.Background())
+	if err != nil || !strings.Contains(string(out), sysvShmMark) {
+		t.Fatalf("the first run made no segment: %v %s%s", err, out, stderr)
+	}
+	out, stderr, err = command{binary: bin, args: []string{"read"}, max: 1 << 20}.run(context.Background())
+	if err != nil {
+		t.Fatalf("the second run: %v %s%s", err, out, stderr)
+	}
+	if string(out) != "no segment\n" {
+		t.Errorf("a later run found the segment an earlier run made: %s", out)
+	}
+	if ids := hostShm(t, sysvShmKey); len(ids) > 0 {
+		t.Errorf("the host holds the segments %v of key %#x after the runs ended", ids, sysvShmKey)
+	}
+}
+
+// hostShm returns the ids of the System V shared memory segments of key in
+// this process's IPC namespace.
+func hostShm(t *testing.T, key int) []int {
+	t.Helper()
+	text, err := os.ReadFile("/proc/sysvipc/shm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []int
+	for line := range strings.Lines(string(text)) {
+		// key shmid perms size ...
+		if f := strings.Fields(line); len(f) > 1 && f[0] == strconv.Itoa(key) {
+			id, err := strconv.Atoi(f[1])
+			if err != nil {
+				t.Fatalf("/proc/sysvipc/shm lists %q", line)
+			}
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }

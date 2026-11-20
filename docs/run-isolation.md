@@ -10,6 +10,7 @@ Because a merge request chooses the OpenTofu code and providers that run on your
 - A range of unused numeric UIDs on the host, with at least as many UIDs as `limits.plans` (for example `61000-61063`). They do not need `/etc/passwd` entries.
 - `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL` granted to the `writ serve` service (the [NixOS module](run.md#on-nixos) configures these automatically).
 - `nftables` (or an equivalent firewall) on hosts with an instance metadata service.
+- For each run's memory, process, and CPU limits: cgroup v2, Linux 5.14 or later, and `writ serve` alone in a cgroup delegated to its user, as systemd's `Delegate=yes` gives it (the [NixOS module](run.md#on-nixos) sets it). See [Limit what each run uses](#limit-what-each-run-uses).
 - For `egress_mode` `report` or `enforce`: the `tofu` block, and no env whose `s3_endpoints` lists an `http://` endpoint on loopback, which a run's own namespace can't reach.
 
 ## Steps
@@ -79,7 +80,7 @@ Output of a real run, 2026-11-16, on a host without a metadata service. On an EC
 
 ## What each run can see on disk
 
-On Linux, `writ serve` runs every `tofu` process (`init`, `plan`, `show`, `apply`, and plugin cache fills) inside new **user, mount, and PID namespaces** with `pivot_root` onto a read-only `tmpfs`, `no_new_privs`, an empty capability bounding set, and no supplementary groups:
+On Linux, `writ serve` runs every `tofu` process (`init`, `plan`, `show`, `apply`, and plugin cache fills) inside new **user, mount, PID, and IPC namespaces** with `pivot_root` onto a read-only `tmpfs`, `no_new_privs`, an empty capability bounding set, no supplementary groups, and [writ's seccomp filter](#system-calls-a-run-cant-make):
 
 | Mounted path | Access |
 | --- | --- |
@@ -91,7 +92,150 @@ On Linux, `writ serve` runs every `tofu` process (`init`, `plan`, `show`, `apply
 | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/fd` links, PID-scoped `/proc` | standard / read-only |
 | Saved plan, for `show` and `apply`, at `/dev/fd/7` (a sealed in-memory file) | read-only |
 
-Nothing else from the host is visible: no `/home`, no `data`, no `/tmp`, no shell (`/bin/sh`), no `ssh`, and no `hg`. When a run finishes, `writ serve` kills every process belonging to that run's UID before returning the UID to the pool.
+Nothing else from the host is visible: no `/home`, no `data`, no `/tmp`, no shell (`/bin/sh`), no `ssh`, and no `hg`. Each step's System V shared memory, semaphores, and message queues live in its own IPC namespace and end with the step, so a later run can't attach to a segment an earlier run made. When a run finishes, `writ serve` kills every process belonging to that run's UID before returning the UID to the pool.
+
+## System calls a run can't make
+
+A process in the view has no capabilities, but it can still reach parts of the kernel that no OpenTofu run needs, and it could make a user namespace of its own and hold every capability inside it again. So the view's helper installs a seccomp filter after it makes the view and before it starts `tofu`, and every process of the run inherits it: OpenTofu, each provider, a module getter, and `git`.
+
+These system calls fail with `EPERM`:
+
+- `kexec_load`, `kexec_file_load`, `init_module`, `finit_module`, and `delete_module`
+- `mount`, `umount2`, `pivot_root`, `mount_setattr`, `open_tree`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick`, and `open_by_handle_at`
+- `unshare`, `setns`, and `clone` with a flag that makes a namespace
+- `ptrace`, and `process_vm_readv`, `process_vm_writev`, and `pidfd_getfd`, which read another process's memory, write it, or copy its descriptors
+- `keyctl`, `add_key`, and `request_key`
+- `bpf`, `perf_event_open`, `userfaultfd`, and `io_uring_setup`
+
+`clone3` and the x32 ABI fail with `ENOSYS`, because the filter can't read `clone3`'s flags, and glibc then falls back to `clone`. A system call of another architecture, such as i386 through `int 0x80`, kills the process. Go programs, OpenTofu and its providers among them, start processes and threads with `clone`, so the filter doesn't get in their way.
+
+The filter needs Linux 4.14 or later on amd64 or arm64. Elsewhere, `writ serve` runs `tofu` without it, and `writ serve --check` and the start log say so. `TestSeccompFilter` proves each denial: the same calls outside a run return what the kernel makes of them.
+
+## Limit what each run uses
+
+A provider that forks or allocates without bound could take the memory, processes, or CPU that `writ serve` and every other run need. So each OpenTofu step (`init`, `plan`, `show`, `apply`, or a plugin cache fill) runs in a cgroup of its own, with the limits from the config's [`limits` block](config.md#settings-and-blocks):
+
+| Limit | Default | When a step reaches it |
+| --- | --- | --- |
+| `run_memory` | `4GiB` | The kernel kills every process of the step. The step gets no swap where the kernel keeps a swap account for cgroups, and the page cache of the files it writes counts. |
+| `run_pids` | `1024` | The step can't start another process or thread. Threads count too: an idle `hashicorp/random` 3.9.1 provider runs 9 on a 16-CPU host. |
+| `run_cpus` | `2` | The step runs slower. Nothing fails. |
+| `run_scratch` | `8GiB` | `writ serve` stops the step once the run's directory has more than this on disk. Each file and directory counts as at least 4KiB, the inode it costs the filesystem, so many empty files count too. It's a measure that bounds a runaway run, not a hard bound; see [How writ serve measures scratch](#how-writ-serve-measures-scratch). |
+
+When a step reaches a limit, the plan or run fails, and its first diagnostic names the limit:
+
+```
+tofu init stopped at a limit: the run used all of limits.run_memory, 64MiB, and the kernel killed it
+tofu init stopped at a limit: the run reached limits.run_pids, 64 processes and threads, and could start no more
+tofu init stopped at a limit: the run's directory held more than limits.run_scratch, 16MiB, on disk
+```
+
+Output of `TestRunLimits`, 2026-11-20, with a fake `tofu` that allocates, forks, and writes past limits of 64MiB, 64, and 16MiB.
+
+When the kernel kills a step though neither its `run_memory` nor the steps' shared memory was reached, because the host itself ran out of memory, the diagnostic says so and keeps the step's exit code, instead of naming `run_memory`.
+
+When a step ends, `writ serve` kills every process left in its cgroup with `cgroup.kill`, wherever it went in the run's PID namespace and whatever its UID, and removes the cgroup.
+
+### How writ serve makes the cgroups
+
+At start, `writ serve` checks the cgroup it runs in. It moves itself into a child of that cgroup, named `serve`, and enables the `memory`, `pids`, and `cpu` controllers for the cgroup's children. It makes a second child, `runs`, which holds every step's cgroup, and sets its `pids.max` and `memory.max` to the least that its cgroup and each cgroup above it allow, less 128 processes and threads and 512MiB that `writ serve` keeps for itself. Without that, steps that together used all of a unit's `TasksMax` left `writ serve` unable to start a thread, and Go killed it. Each step then gets a child cgroup of `runs`, `run-` and a random name, and `writ serve` moves the step's first process into it before that process runs anything of its own. Go would start the process in the cgroup with `clone3`, but a seccomp filter such as systemd's `RestrictNamespaces=`, which the NixOS module sets, answers `clone3` with `ENOSYS`, so `writ serve` starts it with `clone` and moves it. cgroup v2 lets a cgroup give its children controllers only while it has no process of its own, so `writ serve` must be the only process in its cgroup when it starts. It needs:
+
+- cgroup v2, the unified hierarchy, and Linux 5.14 or later for `cgroup.kill`.
+- Its cgroup's `cgroup.procs` and `cgroup.subtree_control` writable by its user. Root can write them; for another user, systemd's `Delegate=yes` makes them so.
+- The `memory`, `pids`, and `cpu` controllers offered to its cgroup.
+- No other process in its cgroup.
+- Where its cgroup or one above it sets `pids.max` or `memory.max`, more than the 128 processes and threads, or the 512MiB, that `writ serve` keeps.
+
+When one of these is missing, `writ serve` still starts. It logs a warning that says why, and runs each step without `run_memory`, `run_pids`, and `run_cpus`. `run_scratch` and the seccomp filter don't need a cgroup and still hold.
+
+### Under systemd
+
+Add these lines to the `[Service]` section of `writ serve`'s unit, whether it runs as root or as its own user:
+
+```ini
+Delegate=yes
+# ProtectControlGroups=yes makes /sys/fs/cgroup read-only. Leave it unset.
+```
+
+`Delegate=yes` gives the unit's cgroup to its user, and keeps systemd from changing the controllers under it. The [NixOS module](run.md#on-nixos) sets both when you set `providerUids`. systemd runs a delegated unit's `ExecStartPre` in the unit cgroup's `.control` child, so `writ serve --check` run there reports on the unit's cgroup.
+
+### Under Nomad's exec driver
+
+A task of Nomad's exec driver runs in a cgroup of its own, under `nomad.slice`, with the `memory`, `pids`, and `cpu` controllers and the task's `memory_max`. The driver mounts a read-only `/sys` with no cgroup filesystem in it. A task that runs as `root` gets Nomad's legacy capability set, which has `CAP_SYS_ADMIN`. When `writ serve` runs as root and finds no cgroup v2 filesystem mounted, it mounts one at `/sys/fs/cgroup`, if that's an empty directory, and then makes each step's cgroup under the task's. Each step's limits then sit inside the task's own.
+
+For that, run the task as `root`, and make `writ` the task's command, so that it's the only process in the task's cgroup. When the task stops, Nomad kills its cgroup and removes it, with the cgroups of the steps under it.
+
+These facts come from the exec driver's source on Nomad's main branch, read 2026-11-20. `TestRunLimitsMountsCgroupFS` reproduces the setup in namespaces: `writ` as root, alone in its cgroup, with a read-only `/sys` and no cgroup filesystem. No Nomad agent has run it.
+
+### Check that the limits hold
+
+`writ serve --check` prints whether each step would get a cgroup, under which cgroup, and with which limits. It checks what `writ serve` checks at start: that the unit's cgroup is delegated to `writ`'s user, offers the `memory`, `pids`, and `cpu` controllers, and holds no other process. Then, in a cgroup of its own that it removes after, it checks `cgroup.kill` and starts a probe as a step's first process starts. It doesn't change the unit's own `cgroup.subtree_control`, which would keep systemd from starting `writ serve` in that cgroup, so it can't check that the unit's cgroup enables the controllers for its children: it checks that the cgroup offers them, and `writ serve` enables them at start. It reports the limits off, with the reason, if a check fails. Where the kernel keeps no swap account for cgroups, as `cgroup.memory=noswap` makes it, it leaves `with no swap` out and warns that a step may swap past `run_memory`; `writ serve` logs the same at start. It moves `writ` itself into no cgroup, so run it where `writ serve` runs: in the unit's `ExecStartPre`, or with `systemd-run --scope -p Delegate=yes`. In a delegated cgroup with `MemoryMax=32G`:
+
+```
+limits: each OpenTofu step runs in a cgroup of its own under /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p595929-i597350.scope/runs: memory 2GiB with no swap, 512 processes and threads, 2 CPUs
+limits: writ measures each run's directory, and stops a step past 4GiB
+seccomp: each OpenTofu process runs under writ's seccomp filter
+```
+
+In a unit with no `MemoryMax`, as the NixOS module sets none, only the host's memory bounds every step together:
+
+```
+limits: each OpenTofu step runs in a cgroup of its own under /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p595648-i600671.scope/runs: memory 2GiB with no swap, 512 processes and threads, 2 CPUs
+limits: writ measures each run's directory, and stops a step past 4GiB
+seccomp: each OpenTofu process runs under writ's seccomp filter
+warning[usage]
+  limits.run_memory, 2GiB, times 12 plans and applies at once is 24GiB, and writ's cgroup sets no memory.max, so only the host's memory bounds every step together; set the unit's MemoryMax
+```
+
+In a unit with `MemoryMax=32G` and `TasksMax=2048`, too few processes for 12 steps at once at `run_pids = 512`:
+
+```
+limits: each OpenTofu step runs in a cgroup of its own under /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p595971-i597357.scope/runs: memory 2GiB with no swap, 512 processes and threads, 2 CPUs
+limits: writ measures each run's directory, and stops a step past 4GiB
+seccomp: each OpenTofu process runs under writ's seccomp filter
+warning[usage]
+  limits.run_pids, 512, times 12 plans and applies at once is 6144, more than the 1920 processes and threads that writ's cgroup leaves every step together, its pids.max less what writ serve keeps; raise the unit's TasksMax, or lower limits.run_pids, plans, or applies
+```
+
+Where other processes share the cgroup, here the shell that started `writ` and the `tail` it piped the output to:
+
+```
+limits: writ measures each run's directory, and stops a step past 4GiB
+seccomp: each OpenTofu process runs under writ's seccomp filter
+warning[usage]
+  limits not enforced: writ's cgroup /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p125069-i4334344.scope holds processes other than writ serve, [125069 125106], and a cgroup whose children have limits may hold none; run writ serve alone in its cgroup, as a systemd unit with Delegate=yes or a Nomad task does; writ serve runs each OpenTofu step without limits.run_memory, run_pids, and run_cpus
+```
+
+Output of `writ serve --check`, 2026-11-20, of a config with `run_memory = "2GiB"`, `run_pids = 512`, `run_cpus = 2`, `run_scratch = "4GiB"`, and the default 8 plans and 4 applies, run by `systemd-run --user --scope -p Delegate=yes`: with `-p MemoryMax=32G`, directly, with `-p MemoryMax=32G -p TasksMax=2048`, and from a `bash -c` that stayed in the scope.
+
+### What run limits don't cover
+
+- **Scratch is measured, not enforced by the kernel.** `run_scratch` bounds a runaway or careless run, not one that tries to hide what it uses on disk; the hard bound is a filesystem quota. See [How writ serve measures scratch](#how-writ-serve-measures-scratch).
+- **Disk bandwidth isn't limited.** The `io` controller's limits need the scratch device's numbers, which a device-mapper or btrfs filesystem doesn't give reliably.
+- **Each step has its own limits.** A run's `init` and `plan` each get `run_memory`, one after the other.
+- **The limits of concurrent runs add up.** `limits.plans` runs at `run_memory` each can use more memory than the host has, so size the host or the limits for both. Every step together stays within `runs`, so they can't take what `writ serve` keeps, but a step can fail to start a process, or be killed, before it reaches its own limit. Its first diagnostic then names the limit the steps share and the unit's setting that raises it, `TasksMax` or `MemoryMax`. A step refused a process names the shared limit after its exit code, since the step may have failed for a reason of its own, and names it whenever it refused any step while the step ran, since the kernel doesn't say which. Before Linux 6.15, and from it on a cgroup filesystem mounted with `pids_localevents`, the kernel counts a refusal by the shared limit as the refused step's own, so a step names its own `run_pids` only when it reached that many processes and threads. `writ serve --check` warns when `run_pids` or `run_memory` times `limits.plans` plus `limits.applies` is more than `runs` allows, and when the unit sets no `MemoryMax`, so that nothing but the host bounds their memory together.
+- **`writ serve --dev` sets no run limits.** Its config has no `limits` block.
+
+### How writ serve measures scratch
+
+`writ serve` walks the run's directory every half second while a step runs, or four times as long as the last walk took when that's longer, and once more after the step ends. Each walk stops once it has counted past `run_scratch`. A step can pass `run_scratch` by what it writes between two walks.
+
+Each file and directory counts its blocks on disk, and at least 4KiB, the inode it costs the filesystem. A file with several links counts a share of its blocks at each link, so it counts once in all, and the walk keeps no list of the files it met. A link the run makes outside its directory, to a file its user owns elsewhere on the same filesystem, is a share no walk counts. A whole walk of 300,000 empty files, under the default `run_scratch`, took `writ serve` 0.3 seconds of CPU and 15MiB of allocations on a 16-CPU host.
+
+A process can also write into a file it removed but holds open or mapped, which no directory names. So each walk also reads the descriptors and mappings of every thread in the step's cgroup from `/proc`, and counts each removed file once, on whatever filesystem it lies: a run can make a btrfs subvolume in its own directory, whose files have a device of their own. A `memfd`, System V shared memory, or a shared anonymous mapping, which `/proc` names `/dev/zero`, doesn't count, because it's memory, which `run_memory` bounds, and it ends with the step: a `memfd` with the last process that holds it, and System V shared memory with the step's IPC namespace. A file the step mapped that something outside the run removes or replaces, such as a provider binary, counts too. A mapped file counts as the end of its furthest mapping, since a mapping gives no way to read the file's size on disk. Each walk reads the mappings of each process once, from one of its threads, which share them, and reads at most 16MiB of mappings across the step's processes: past that, it stops the step, as a full directory does, since a run can make each line of `/proc/PID/maps` some 60KB long with a deep path. It keeps a hash of each removed file's path, not the path, and stops once the files it found, each counted as at least 4KiB, pass `run_scratch`. It keeps at most 65,536 removed files, a file held both open and mapped counting once, some 16MiB: past that, it stops the step, since at 4KiB each the default `run_scratch` alone would let a run hold two million empty removed files and make each walk take more memory than `writ serve` keeps for itself.
+
+`writ serve` reads `/proc` as the run's user, because the kernel lets only a process's own UID list its descriptors, even for `writ serve`, which made the user namespace the process runs in. A process that made itself not dumpable gives its descriptors to root of that namespace, `writ serve`'s own UID, so `writ serve` reads those as itself. Without a cgroup, as when `writ serve` shares its cgroup, it can't list the step's processes, and a removed file escapes `run_scratch` until the step ends.
+
+Each walk opens each directory so that a FIFO or a symbolic link swapped in for it fails at once rather than blocks the walk. A walk that takes more than 10 seconds, its read of `/proc` included, or meets a directory more than 256 levels deep, stops the step, as a full directory does. The read of `/proc` checks the time at each batch of descriptors and each line of mappings, so a process that keeps mapping files ahead of the line `writ serve` reads can't keep the read going.
+
+The walk bounds a runaway or careless run, not a run that tries to hide what it uses on disk. Such a run can hide what it uses four ways:
+
+- Hold a removed file only in a descriptor in flight on a Unix socket, which no thread's descriptors list.
+- Hold a removed file only in a mapping, which counts as far as its furthest mapping reaches, not its blocks on disk: one mapped page can hide a large file.
+- Link a file of its user's from outside its directory, which the walk counts only a share of.
+- Move its files with `inotify` timing, so that each walk misses them.
+
+The hard bound is a filesystem quota on the scratch filesystem. Put `tofu.scratch_dir` on a filesystem of its own, so a full scratch can't fill `data` or Postgres, and set ext4 or XFS project quotas on each run's directory, or per-user quotas for `provider_uids`; either also counts the removed files a run keeps. `writ serve` sets no quota itself, and a non-root `writ serve` can't mount a size-limited filesystem where every step of a run sees it.
 
 ## Outbound traffic
 
@@ -187,6 +331,9 @@ If you need limits that egress doesn't give, such as per-bucket rules, add them 
 - **A plan fails with `which provider_registries does not list`** under `report` or `enforce`: the stack's lock file has a provider from a registry `provider_registries` lacks. Add the registry's host to `provider_registries` if you trust it.
 - **A step fails with `network is unreachable` or a failed lookup** under `report` or `enforce`: a process of the run connected without the proxy, and its diagnostics say so. A run has no route but the proxy, so that client needs to honor `HTTPS_PROXY`.
 - **SSH module source (`git@host:org/repo`) fails**: The view has no `ssh` binary or keys. Switch module sources to HTTPS (`git::https://...`).
+- **`limits not enforced: writ's cgroup ... holds processes other than writ serve`**: Another process shares `writ serve`'s cgroup, as a shell's does. Run `writ serve` as a systemd unit with `Delegate=yes`, or as a task's only process. See [How writ serve makes the cgroups](#how-writ-serve-makes-the-cgroups).
+- **`limits not enforced: writ's cgroup ... is not delegated to uid N`**: The unit lacks `Delegate=yes`, or sets `ProtectControlGroups=yes`. See [Under systemd](#under-systemd).
+- **A plan fails with `stopped at a limit: the run used all of limits.run_memory`**: The step's processes together needed more memory. Raise `limits.run_memory`, or split the stack. The same goes for `run_pids` and `run_scratch`.
 
 ## Next steps
 

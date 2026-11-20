@@ -198,15 +198,21 @@ fuzz-oidc time="2m":
 # providers as other uids behind the metadata firewall rule, the AWS
 # provider refreshing its credentials, plans as a run's uid from a writ
 # that is not root and holds only the capabilities its unit gives it,
-# and a run under egress_mode enforce, in its own network namespace,
-# reaching only what writ's egress proxy allows and still getting its
-# credentials. Needs unshare with subordinate uids. Postgres and
-# nftables come from nixpkgs. The isolation tests run without cgo, as
-# writ ships, so no -race there. just e2e runs writ serve end to end.
+# each OpenTofu step held to its memory, process, CPU, and scratch limits
+# in a cgroup of its own, from a writ that is not root in a cgroup
+# delegated as Delegate=yes delegates it and from a writ that is root
+# with no cgroup filesystem mounted, as under Nomad's exec driver, every
+# tofu process under writ's seccomp filter, and a run under egress_mode
+# enforce, in its own network namespace, reaching only what writ's
+# egress proxy allows and still getting its credentials. Needs unshare
+# with subordinate uids, and systemd-run --user for a delegated cgroup.
+# Postgres and nftables come from nixpkgs. The isolation tests run
+# without cgo, as writ ships, so no -race there. just e2e runs writ
+# serve end to end.
 test-serve:
 	nix shell nixpkgs#postgresql_18 -c go test -race -count=1 -timeout 20m ./internal/control/... ./internal/tfstate/... ./internal/server/... ./internal/ui/... ./internal/awsrole/...
 	go test -race -count=1 -tags uishowcase -run '^TestShowcaseServes$' ./internal/ui
-	CGO_ENABLED=0 nix shell nixpkgs#nftables -c go test -count=1 -run 'TestProviderIsolation|TestAWSProviderRefreshesCredentials|TestPlanAsRunUserWithoutRoot' ./internal/provider ./internal/tofu
+	CGO_ENABLED=0 nix shell nixpkgs#nftables -c go test -count=1 -run 'TestProviderIsolation|TestAWSProviderRefreshesCredentials|TestPlanAsRunUserWithoutRoot|TestRunLimits|TestRunLimitsUnderTheShippedUnit|TestSeccompFilter' ./internal/provider ./internal/tofu
 	CGO_ENABLED=0 nix shell nixpkgs#nftables -c go test -count=1 -run '^TestRunEgressIsolation$' ./internal/tofu
 
 # Run the flake's OpenTofu, which must be 1.13.9, against the http state
@@ -265,6 +271,10 @@ check-nixos:
 	writ="$(nix build --impure --no-link --print-out-paths --file deploy/nixos/check.nix writ)"
 	grep -qF "ExecStart=$writ/bin/writ serve" <(nix eval --impure --raw --file deploy/nixos/check.nix unit)
 	grep -qF "$(nix eval --impure --raw --file deploy/nixos/check.nix git)/bin" <(nix eval --impure --raw --file deploy/nixos/check.nix unit)
+	# Each OpenTofu step's cgroup needs the unit's cgroup delegated and
+	# writable.
+	grep -qxF "Delegate=true" <(nix eval --impure --raw --file deploy/nixos/check.nix unit)
+	! grep -qxF "ProtectControlGroups=true" <(nix eval --impure --raw --file deploy/nixos/check.nix unit)
 	tofu="$(nix build --impure --no-link --print-out-paths --file deploy/nixos/check.nix tofu)"
 	"$writ/bin/writ" serve --config "$dir/serve" --check | tee "$dir/check"
 	if ! grep -qxF "tofu: $tofu/bin/tofu is OpenTofu 1.13.9: ok" "$dir/check"; then

@@ -57,7 +57,14 @@ func newTofuRunner(ctx context.Context, cfg *server.Config) (*tofu.Runner, error
 			return nil, err
 		}
 	}
-	return tofu.New(ctx, tofu.Options{Binary: bin, Git: git, PluginCache: t.PluginCache, ScratchRoot: t.ScratchDir, Timeout: cfg.Limits.PlanTimeout, ApplyTimeout: cfg.Limits.ApplyTimeout, MaxOutput: maxTofuOutput})
+	return tofu.New(ctx, tofu.Options{Binary: bin, Git: git, PluginCache: t.PluginCache, ScratchRoot: t.ScratchDir, Timeout: cfg.Limits.PlanTimeout, ApplyTimeout: cfg.Limits.ApplyTimeout, MaxOutput: maxTofuOutput, Limits: runLimits(cfg)})
+}
+
+// runLimits are the config's limits of each OpenTofu step. The dev
+// control plane's config sets none.
+func runLimits(cfg *server.Config) tofu.Limits {
+	l := cfg.Limits
+	return tofu.Limits{Memory: l.RunMemory, Pids: l.RunPids, CPUs: l.RunCPUs, Scratch: l.RunScratch}
 }
 
 // serveTofu is the OpenTofu runner writ serve passes to the server, and
@@ -74,6 +81,16 @@ func serveTofu(ctx context.Context, cfg *server.Config, log *slog.Logger) (runne
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("tofu: %w", err)
+	}
+	e := r.Enforcement()
+	if e.CgroupOff != "" {
+		log.Warn("run limits: OpenTofu steps run without limits.run_memory, run_pids, and run_cpus", "why", e.CgroupOff)
+	}
+	if e.SwapOff != "" {
+		log.Warn("run limits: OpenTofu steps may swap past limits.run_memory", "why", e.SwapOff)
+	}
+	if !e.Seccomp {
+		log.Warn("run limits: OpenTofu processes run without writ's seccomp filter", "why", e.SeccompOff)
 	}
 	return r, func() { r.Close() }, nil
 }
