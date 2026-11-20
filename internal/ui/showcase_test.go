@@ -120,6 +120,10 @@ func showcaseSites(t *testing.T) []showSite {
 	return sites
 }
 
+// quiet is second planned again after its apply: it changes nothing, so
+// it is never applied.
+var quiet = tofuRecording{plan: "quiet-plan.json"}
+
 // showTofu stands in for OpenTofu: each plan and apply answers with a
 // recording of testdata/tofu. A plan of the stack queue and an apply of
 // the stack slow wait until the showcase ends, so a plan stays planning
