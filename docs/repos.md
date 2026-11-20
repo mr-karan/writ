@@ -40,7 +40,7 @@ Here's which token to create:
 
 Don't use a deploy token. GitLab's API refuses it.
 
-To set how often each default branch is polled, use `poll_every`. It's 60 seconds by default and at least 1 second. For local work, `writ serve --dev --config FILE` reads `forge` and `repo` blocks and `poll_every`, and `tofu` and `policy` blocks, from an HCL file that has only those.
+To set how often each default branch is polled, use `poll_every`. It's 60 seconds by default and at least 1 second. A repository with a [webhook](webhooks.md) is polled every `poll_every_with_hook` instead, 5 minutes by default. For local work, `writ serve --dev --config FILE` reads `forge` and `repo` blocks, `poll_every` and `poll_every_with_hook`, and `tofu` and `policy` blocks, from an HCL file that has only those.
 
 **Limits.** Nobody has verified yet that `read_api` covers the tree and raw blob endpoints. The [test plan](development.md#test-plan-for-a-real-gitlab-forge) checks it.
 
@@ -76,10 +76,11 @@ Writ checks the sizes of stored files before it loads any. An OpenTofu stack's o
 
 ## How the control plane learns about commits
 
-You don't need an inbound webhook. The control plane learns about a commit in one of two ways:
+You don't need an inbound webhook. The control plane learns about a commit in one of three ways:
 
 1. **A CI job calls in.** Your merge request job sends its commit, and the control plane fetches it for the plan.
 2. **The control plane polls.** Every `poll_every`, for each repository, it asks the Git host for the head of the default branch: one call. When the head moved, it reads the new commit and runs discovery. If a poll fails, it keeps the last head and records why on the row, and you can read that in `writ repo show` or on the Repository page.
+3. **A webhook tells it.** For a pinned repository with `webhook_secret_file`, GitLab's push event makes the control plane run that same read within seconds, and the poll of that repository slows to `poll_every_with_hook`, 5 minutes by default. The delivery only says when to read: the head still comes from the Git host's API. See [Get changes in seconds with a webhook](webhooks.md).
 
 ## How Writ finds your stacks
 

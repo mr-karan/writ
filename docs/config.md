@@ -163,8 +163,9 @@ env "prod" {
 | `approval` | Optional. How many approvals a plan needs, one block for each rule, by `stacks`, `envs`, and `risks`, with `need` from 1 to 10. Without one, no plan needs an approval. See below and [Approvals](approvals.md#set-how-many-approvals-a-plan-needs). |
 | `env "NAME"` | An environment, one block each: its state `key` file, and optionally `plan_role`, `apply_role`, `s3_endpoints`, `provider_env`, and `egress`. See below. |
 | `forge "NAME"` | Optional. Where [repositories](repos.md#forges-and-their-tokens) are read from, one block each: `kind = "gitlab"`, `url`, `read_token_file` (a token with `read_api`), and optional `write_token_file` and `ca_file`. See below. |
-| `repo` | Optional. Pins the list of repositories, one block each, with `name`, `forge`, `project`, and optional `path` and `prefix`. Without one, an admin adds them with `writ repo add`. See below. |
+| `repo` | Optional. Pins the list of repositories, one block each, with `name`, `forge`, `project`, and optional `path`, `prefix`, and `webhook_secret_file`. Without one, an admin adds them with `writ repo add`. See below. |
 | `poll_every` | How often each repository's default branch is polled (`>= 5s`). Default `60s`. |
+| `poll_every_with_hook` | How often the default branch of a repository with a [webhook](webhooks.md) is polled, as a backstop. At least `poll_every`. Default `5m`, or `poll_every` when that's longer. |
 | `tofu` | Optional. A block: how `writ serve` runs OpenTofu for [stacks of `.tf` files](serve.md#opentofu-stacks). See below. |
 | `drift` | Optional. A block: `every`, how often `writ serve` runs a [drift check](serve.md#drift-checks) of each OpenTofu `stack@env` it keeps state for, at least `1m`. It needs the `tofu` block and `limits.plans` of at least 2. Without it, `writ serve` runs no drift checks. |
 | `egress_mode` | Optional. `"off"`, `"report"`, or `"enforce"`. Under `report` and `enforce`, each OpenTofu run gets a network namespace of its own, whose one way out is Writ's egress proxy: `enforce` refuses a destination its env's `egress` doesn't list, and `report` lets it through and records it. Default `"off"`: runs share the host's network, as they always have. `report` and `enforce` need the `tofu` block. See [Run isolation and egress](run-isolation.md#egress) to set it up and roll it out, and [Egress](serve.md#egress) for how it works. |
@@ -225,6 +226,7 @@ env "prod" {
   - `project`: `namespace/project` path on the forge.
   - `path`: optional subdirectory inside the repository under which stacks are discovered.
   - `prefix`: optional prefix prepended to every discovered stack name (such as `"payments/"`).
+  - `webhook_secret_file`: optional path to a file that has the secret of the project's GitLab webhook: its secret token, or a signing token starting with `whsec_` on GitLab 19.1 and later. `writ serve` reads it for each delivery, so you can rotate it without a restart, and never shows or logs it. Not for a `dir` repository. See [Get changes in seconds with a webhook](webhooks.md).
 
 ### tofu
 
