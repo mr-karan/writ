@@ -474,6 +474,9 @@ func (a *App) printRemoteRun(asJSON bool, doc []byte) error {
 	if err := json.Unmarshal(doc, &run); err != nil {
 		return fmt.Errorf("writ serve sent a run that is not %s", server.FormatRemoteRun)
 	}
+	if _, refused := refusalDiags(doc); !refused && (run.Format != server.FormatRemoteRun || run.Run == nil) {
+		return a.unusable("a body that is not " + server.FormatRemoteRun + " with a run" + formatWords(doc))
+	}
 	if asJSON {
 		if _, err := a.opts.Stdout.Write(doc); err != nil {
 			return err

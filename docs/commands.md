@@ -105,6 +105,18 @@ Without `--json`, `writ plan --remote` and `writ apply --remote` print the plan 
 
 With `--json`, stdout has one JSON document on exit codes 0, 1, and 2.
 
+## Version skew
+
+Every answer of `writ serve` names its version in the `X-Writ-Version` header. When the server is a newer release than `writ`, a remote command warns once on stderr and carries on:
+
+```
+writ: warning: writ serve is v0.1.7 and this writ is v0.1.5: a newer writ serve can answer in ways an older writ cannot read; install writ v0.1.7, the version of writ serve
+```
+
+A newer release is a newer major or minor version, or, before 1.0, any newer version, because a 0.y release adds features in its patch number. A development build, whose version is `dev`, never warns. An older server doesn't warn either: `writ` reads what older servers send.
+
+When a remote command gets an answer it can't use, such as a status it doesn't expect or a document without the fields it needs, it fails with an error that says so and names both versions, never with exit 1 and nothing printed. With `--json`, stdout has the command's failure document. Install the `writ` of the server's version, and pin it in CI, as [Set up GitLab CI](set-up-gitlab-ci.md#pin-the-cli-to-the-servers-version) shows.
+
 ## Environment variables
 
 | Variable | Meaning |

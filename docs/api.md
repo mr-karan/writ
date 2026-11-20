@@ -1,6 +1,6 @@
 # API
 
-`writ serve` serves a REST API. The CLI, the control UI, and CI jobs all use it, so anything you can do there you can also do with `curl` and a token. Request bodies may be sent uncompressed or with `Content-Encoding: gzip` (bounded by `limits.body` after decompression). Every `/v1/` response is a Writ document with `format`, `ok`, and `diagnostics`. A refusal is the route's own document with `ok: false` and one diagnostic (except pre-handler refusals on `/v1/policy`, which use `writ.error/v0`). [JSON output](json-output.md#documents-of-writ-serve) lists the fields of each document.
+`writ serve` serves a REST API. The CLI, the control UI, and CI jobs all use it, so anything you can do there you can also do with `curl` and a token. Request bodies may be sent uncompressed or with `Content-Encoding: gzip` (bounded by `limits.body` after decompression). Every `/v1/` response is a Writ document with `format`, `ok`, and `diagnostics`. A refusal is the route's own document with `ok: false` and one diagnostic (except pre-handler refusals on `/v1/policy`, which use `writ.error/v0`). [JSON output](json-output.md#documents-of-writ-serve) lists the fields of each document. Every answer carries `X-Writ-Version`, the version of `writ serve`, so a client can tell it's older than the server; `writ` warns when it is. See [Version skew](commands.md#version-skew).
 
 ## Routes
 
