@@ -99,6 +99,12 @@ export const pages: Page[] = [
     parts: whole('docs/approvals.md'),
   },
   {
+    slug: 'notifications',
+    title: 'Get notified',
+    description: 'Send drift, failed plans and applies, applies, writes outside Writ, and plans waiting for approval to Slack or a signed webhook.',
+    parts: whole('docs/notifications.md'),
+  },
+  {
     slug: 'write-a-policy',
     title: 'Write and test policies',
     description: 'Write a Rego policy, test it locally with conftest, wire it into writ serve, and start from the examples.',
@@ -305,6 +311,7 @@ export const nav: NavEntry[] = [
   'migrate-from-terraform',
   'secrets',
   'drift-checks',
+  'notifications',
   'audit-log',
   'import-bulk',
   'agents',
@@ -352,6 +359,7 @@ export const fileRoutes: Record<string, string> = {
   'docs/migrate-from-terraform.md': '/docs/migrate-from-terraform',
   'docs/secrets.md': '/docs/secrets',
   'docs/drift-checks.md': '/docs/drift-checks',
+  'docs/notifications.md': '/docs/notifications',
   'docs/audit-log.md': '/docs/audit-log',
   'docs/import-bulk.md': '/docs/import-bulk',
   'docs/agents.md': '/docs/agents',

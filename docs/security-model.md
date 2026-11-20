@@ -65,6 +65,11 @@ See [Run isolation and egress](run-isolation.md) for setup and verification.
 
 See [Secrets and the mask](secrets.md) for the differential verification suite (`just verify-mask`) and known mask limits.
 
+## Notifications
+
+- [Notifications](notifications.md) carry only Writ's own words, names, counts, and diagnostic classes: never a secret, a plan body, a diagnostic's text, or a policy's message. The URL and signing key stay in files that the isolation check holds out of a provider uid's reach, and no API, page, log line, or error shows them.
+- Delivery sends only to the configured `https://` URL, follows no redirect, and runs on bounded queues apart from plans and applies.
+
 ## Policy isolation
 
 - Rego policy sets run in a separate child process with no environment, closed inherited file descriptors, strict memory (`memory`, default 1 GiB) and wall-clock (`timeout`, default 10s) limits, and an explicit allow-list of pure Rego built-ins (no network, no filesystem, no clock/randomness, no `print`).
