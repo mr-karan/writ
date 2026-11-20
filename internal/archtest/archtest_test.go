@@ -1,6 +1,7 @@
 package archtest
 
 import (
+	"fmt"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -59,6 +60,15 @@ var pure = []string{
 // rule of its own.
 var thin = []string{module + "/internal/control", "github.com/jackc/pgx"}
 
+// serveOnly lists what internal/runner may not import: the keys and the
+// sealing, the database, the forge, people's sign-in, grants, policy, and
+// the mask stay in writ serve, so code on a runner's path can't reach
+// them, even by mistake.
+var serveOnly = []string{
+	"internal/control", "internal/tfstate", "internal/mask", "internal/oidc",
+	"internal/authz", "internal/sqldb", "internal/policy", "internal/forge",
+}
+
 var impure = []string{
 	"os", "os/exec", "os/signal", "net", "net/http", "io/fs", "path/filepath",
 	"syscall", "time", "math/rand", "math/rand/v2", "crypto/rand",
@@ -103,7 +113,13 @@ func TestImportBoundaries(t *testing.T) {
 	}
 }
 
-func check(t *testing.T, file, pkg, imp string) {
+// reporter is what check reports a broken boundary to: a *testing.T.
+type reporter interface {
+	Helper()
+	Errorf(format string, args ...any)
+}
+
+func check(t reporter, file, pkg, imp string) {
 	t.Helper()
 	for _, o := range owned {
 		switch {
@@ -135,6 +151,9 @@ func check(t *testing.T, file, pkg, imp string) {
 	if pkg == "internal/runas" && strings.Contains(strings.SplitN(imp, "/", 2)[0], ".") {
 		t.Errorf("%s imports %s; internal/runas imports only the standard library, so both packages that start processes may share it", file, imp)
 	}
+	if pkg == "internal/runner" && slices.ContainsFunc(serveOnly, func(p string) bool { return imp == module+"/"+p || strings.HasPrefix(imp, module+"/"+p+"/") }) {
+		t.Errorf("%s imports %s; internal/runner imports nothing that holds a key, the database, the forge, or the mask, so code on a runner's path can't reach them", file, imp)
+	}
 	if pkg == "cmd/writ" && strings.HasPrefix(imp, module+"/internal/") && imp != module+"/internal/cli" {
 		t.Errorf("%s imports %s; cmd/writ may call only internal/cli", file, imp)
 	}
@@ -147,4 +166,30 @@ func contains(xs []string, x string) bool {
 		}
 	}
 	return false
+}
+
+// reports records what check reports.
+type reports []string
+
+func (*reports) Helper() {}
+func (r *reports) Errorf(format string, args ...any) {
+	*r = append(*r, fmt.Sprintf(format, args...))
+}
+
+// internal/runner may import what runs a job, and none of serveOnly.
+func TestRunnerBoundary(t *testing.T) {
+	for _, p := range serveOnly {
+		var r reports
+		check(&r, "internal/runner/local.go", "internal/runner", module+"/"+p)
+		if len(r) != 1 {
+			t.Errorf("internal/runner importing %s: %q, want one report", p, r)
+		}
+	}
+	for _, imp := range []string{module + "/internal/tofu", module + "/internal/egress", module + "/internal/runas", "net/http"} {
+		var r reports
+		check(&r, "internal/runner/local.go", "internal/runner", imp)
+		if len(r) != 0 {
+			t.Errorf("internal/runner importing %s: %q, want none", imp, r)
+		}
+	}
 }
