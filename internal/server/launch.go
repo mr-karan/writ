@@ -133,7 +133,7 @@ type tofuRun struct {
 	// proxy is the run's egress proxy, and install the proxy of its
 	// provider install, both nil under egress_mode off.
 	proxy, install *egress.Proxy
-	undo  []func()
+	undo           []func()
 }
 
 // startRun prepares the run spec describes: it writes the commit's files,

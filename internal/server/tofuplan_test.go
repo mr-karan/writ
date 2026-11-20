@@ -96,16 +96,16 @@ type fakeTofu struct {
 	mu sync.Mutex
 	// gate, when set, holds each plan until it is closed or its context
 	// ends.
-	gate   chan struct{}
-	base   string
-	fills  [][]byte
+	gate  chan struct{}
+	base  string
+	fills [][]byte
 	// fillNets and fillEnvs are the network and the environment of each
 	// Fill, and fill, when set, stands for what tofu init does in it.
 	fillNets []*tofu.Net
 	fillEnvs [][]string
 	fill     func(*tofu.Net) error
-	stacks []tofu.Stack
-	files  [][]string
+	stacks   []tofu.Stack
+	files    [][]string
 	// during is the status the state backend answered inside the plan.
 	during []int
 	tokens []stateCall
