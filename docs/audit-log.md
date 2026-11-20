@@ -43,7 +43,7 @@ writ audit --remote --person gitlab/user/1001
 writ audit --remote --op apply --since 2026-11-19T00:00:00Z --until 2026-11-19T23:59:59Z
 ```
 
-Valid `--op` values are `read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`, `state-read`, `state-write`, `state-lock`, and `state-unlock`.
+Valid `--op` values are `read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`, `state-read`, `state-write`, `state-lock`, `state-unlock`, and `hook`, a Git host's [webhook delivery](webhooks.md#what-writ-serve-answers).
 
 ### 3. Page through older rows
 

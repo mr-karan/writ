@@ -20,6 +20,7 @@ New to Writ? Run it locally in five minutes with no cloud account, then see how 
 Task-focused guides with prerequisites, numbered steps, expected output, and troubleshooting.
 
 - [Add a repository](add-repository.md): connect a local Git repository or a GitLab project.
+- [Get changes in seconds with a webhook](webhooks.md): let GitLab tell the control plane about each push.
 - [Set up GitLab CI](set-up-gitlab-ci.md): run plan, blocking approve, and post-merge apply jobs with OIDC and no cloud keys.
 - [Plan and apply](apply.md): plan a commit, approve it, apply by ID or after merge, recover from lost answers, and use overrides.
 - [Configure approvals](approvals.md): write approval rules by stack, environment, and risk class, and see who can approve.

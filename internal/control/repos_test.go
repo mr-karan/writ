@@ -86,6 +86,20 @@ func testRepos(t *testing.T, s *control.Store, loc string) {
 		t.Fatalf("after a new head %+v", got)
 	}
 
+	// A webhook delivery's time is kept, and changes nothing else.
+	if !got.HookAt.IsZero() {
+		t.Fatalf("a repository no hook reached has a hook time %v", got.HookAt)
+	}
+	if err := s.RecordHook(ctx, "infra", t0.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.Repo(ctx, "infra"); !got.HookAt.Equal(t0.Add(3*time.Minute)) || got.Head != next.SHA || !got.PolledAt.Equal(t0.Add(2*time.Minute)) {
+		t.Fatalf("after a hook %+v", got)
+	}
+	if err := s.RecordHook(ctx, "nope", t0); !errors.Is(err, control.ErrNotFound) {
+		t.Fatalf("a hook of no repository: %v", err)
+	}
+
 	// Blobs are stored once by id.
 	if err := s.PutBlob(ctx, "b1", []byte("resource"), t0); err != nil {
 		t.Fatal(err)

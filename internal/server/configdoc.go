@@ -31,6 +31,9 @@ type ConfigDoc struct {
 	// PollEvery is how often each repository's default branch is polled,
 	// a Go duration.
 	PollEvery string `json:"poll_every"`
+	// PollEveryWithHook is how often the default branch of a repository
+	// with a webhook is polled, a Go duration.
+	PollEveryWithHook string `json:"poll_every_with_hook"`
 	// PlanTTL and SessionTTL are Go durations, such as "24h0m0s".
 	PlanTTL    string `json:"plan_ttl"`
 	SessionTTL string `json:"session_ttl"`
@@ -124,7 +127,7 @@ func (s *Server) configDoc(w http.ResponseWriter, r *http.Request) {
 	cfg := s.cfg
 	doc := ConfigDoc{
 		Format: FormatConfig, OK: true, URL: cfg.URL, Issuers: []IssuerInfo{}, Teams: []TeamInfo{}, Grants: []GrantInfo{},
-		Envs: []EnvInfo{}, Forges: []ForgeInfo{}, PollEvery: cfg.PollEvery.String(),
+		Envs: []EnvInfo{}, Forges: []ForgeInfo{}, PollEvery: cfg.PollEvery.String(), PollEveryWithHook: cfg.PollEveryWithHook.String(),
 		PlanTTL: cfg.PlanTTL.String(), SessionTTL: cfg.SessionTTL.String(), UI: cfg.UI, Diagnostics: []Diagnostic{},
 	}
 	for _, f := range cfg.Forges {

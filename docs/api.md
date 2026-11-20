@@ -25,6 +25,7 @@
 | `GET /v1/policy` | `read` or `admin` on any `stack@env` | `writ.policy/v0`: the [policy sets](policy.md#read-the-policy-the-server-runs) and the text of their `.rego` files. It has no path. |
 | `POST /v1/repos` | `admin` on every stack in `*`, as [Repositories](add-repository.md#rules-for-adding-a-repository) says | 201 and `writ.repo/v0`: a [repository](#repository-routes) and the stacks found |
 | `GET /v1/repos`, `GET /v1/repos/{name}` | `read` on any `stack@env` | `writ.repos/v0` and `writ.repo/v0` |
+| `POST /v1/hooks/{forge}/{repo}` | none: the repository's webhook secret | `writ.hook/v0`: a Git host's [webhook delivery](#webhook-route), which queues a read of the repository's default branch |
 | `POST /v1/dev/ui-link` | the dev token | `writ.ui-link/v0`: a control UI sign-in link, under `writ serve --dev` only |
 | `GET /v1/drift?env=&stack=&limit=` | `read` | `writ.drift/v0`: each OpenTofu `stack@env` that [drift checks](serve.md#drift-checks) plan and the token can read, by env and stack, at most `limit`, 50 by default and 200 at most: its backend, the resource count and version of its state index, the S3 `outside_write` mark, whether a check runs now, and its newest check that ended. Stacks the token can't read are left out before the limit counts, and `more` says others were left out. |
 | `GET /v1/index?env=&stack=` | `read` | `writ.state-index/v0`: the [state index](serve.md#the-state-index) of one OpenTofu `stack@env`. 404 when it has nothing for it. |
@@ -217,6 +218,14 @@ The body of `POST /v1/repos` is `writ.repo-request/v0`. An unknown field, such a
 
 No answer, log line, audit row, or page contains a Git host token. `TestRepoAdd` and `TestForgeTextNeverLeaks` search every answer, the log, the audit rows, and the repository's poll error for the token, and fail when they find it.
 
+## Webhook route
+
+`POST /v1/hooks/{forge}/{repo}` takes a GitLab project webhook's delivery for a pinned repository whose `repo` block has `webhook_secret_file`. `{forge}` is the `forge` block's name and `{repo}` the `repo` block's. It takes no token: the delivery proves itself with the secret, in `X-Gitlab-Token`, or with a `webhook-signature` under a `whsec_` signing token. [Get changes in seconds with a webhook](webhooks.md) sets one up.
+
+A delivery that passes its check and is a push event (`X-Gitlab-Event: Push Hook`) queues a read of the repository's default branch, which the poll runs at once, and returns 202 with `writ.hook/v0`, `queued: true`. The body is read, at most 1 MiB, but never parsed, stored, or logged, so no commit, branch, project, or URL in it reaches the read. A delivery whose `webhook-id`, or `Idempotency-Key`, was acted on already returns 200 with `duplicate: true`. Another event returns 200 with `queued: false`.
+
+Every other delivery returns 401 with class `auth` and the message `the delivery failed verification`, whatever the reason: no such repository, no webhook, no secret, or the wrong one. Its audit row's `check` says which. A body over 1 MiB returns 413. More than 10 deliveries a second from one client address, counted before anything else, or 5 for one repository, return 429 with `Retry-After: 1`. Each delivery writes an audit row of op `hook` and no environment.
+
 ## Token checks
 
 `writ serve` accepts one token form, a compact JWS signed with RS256 or ES256, and checks it in this order. The first failure ends the request with an `auth` diagnostic that says which check failed.
@@ -297,7 +306,7 @@ A plan, an approval or its withdrawal, an apply, an adoption, a new repository, 
 | `run` | Of the run |
 | `env`, and `stack` with it | Of the environment, and of the stack there. A row that lists several stacks matches each of them. `env` must be one `writ serve` plans in, as on `GET /v1/plans`. |
 | `person` | Of the person, by the id `writ whoami` prints, such as `gitlab/user/1001` |
-| `op` | Of the operation: `read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`, `state-read`, `state-write`, `state-lock`, or `state-unlock`. Any other value returns 400. |
+| `op` | Of the operation: `read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`, `state-read`, `state-write`, `state-lock`, `state-unlock`, or `hook`. Any other value returns 400. |
 | `since`, `until` | At or after `since`, and before `until`, both RFC 3339 times |
 | `limit` | At most this many, from 1 to 200, 50 by default |
 | `cursor` | After the last row of the page whose `next` this is. A cursor works until `writ serve` restarts, and then returns 400: read the first page again. |
@@ -347,6 +356,8 @@ Output under `writ serve --dev` run as root of a user namespace with only loopba
 
 1. **Each client address**, `limits.requests_per_address`, 20 by default. Every request counts, before the route, the token, or the body is read. Past it, `writ serve` returns 429 with `Retry-After: 1` and the route's own document. The request writes no audit row, so a client that sends bad tokens fast can't fill the audit log. `writ serve` counts these requests and logs them at most once in 10 seconds, with the address of the last one, the count since the last line, and the count since the start. An IPv6 address counts by its /64, because one host often has a whole /64.
 2. **Each principal**, `limits.requests_per_second`, 10 by default, once the token is checked. A request past it gets 429 and has its audit row.
+
+A [webhook delivery](#webhook-route) counts against two more limits of its own: 10 a second from one client address, and 5 a second for one repository once it passes its check.
 
 Each limit keeps at most 10,000 buckets. A bucket idle for a second is full again, so `writ serve` drops those first. When every bucket was used in the last second, it drops one more to make room, and that key starts again with a full bucket.
 

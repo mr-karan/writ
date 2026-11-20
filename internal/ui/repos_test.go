@@ -2,6 +2,7 @@ package ui_test
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -217,3 +218,37 @@ func TestDevPlansBeforeStatePreparation(t *testing.T) {
 // tagless is body with its tags dropped, so a check reads the words a
 // reader reads.
 func tagless(body string) string { return regexp.MustCompile(`<[^>]*>`).ReplaceAllString(body, "") }
+
+// TestRepoWebhook checks that the Repositories page and a repository's
+// page show that the repository has a webhook, and when its last delivery
+// came, and never the webhook's secret.
+func TestRepoWebhook(t *testing.T) {
+	f := newFixture(t)
+	b := f.browser()
+	b.signIn("/ui/repos")
+	if p := b.get("/ui/repos"); p.status != 200 || !strings.Contains(text(p.doc), "webhook") || strings.Contains(text(p.doc), "webhook last") {
+		t.Fatalf("before a delivery: %d %s", p.status, text(p.doc))
+	}
+	req, _ := http.NewRequest("POST", f.url+"/v1/hooks/gitlab/infra", strings.NewReader(`{"object_kind":"push"}`))
+	req.Header.Set("X-Gitlab-Token", hookSecret)
+	req.Header.Set("X-Gitlab-Event", "Push Hook")
+	c := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: f.roots}}}
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("delivery: %d", resp.StatusCode)
+	}
+	for _, pg := range []struct{ path, want string }{
+		{"/ui/repos", "webhook last"},
+		{"/ui/repos/infra", "Webhookset last delivery"},
+	} {
+		p := b.get(pg.path)
+		if p.status != 200 || !strings.Contains(strings.Join(strings.Fields(text(p.doc)), " "), pg.want) || strings.Contains(p.body, hookSecret) {
+			t.Fatalf("%s: %d, the page lacks %q: %s", pg.path, p.status, pg.want, text(p.doc))
+		}
+		checkPage(t, p, "")
+	}
+}

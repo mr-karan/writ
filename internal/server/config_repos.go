@@ -11,8 +11,9 @@ import (
 	"github.com/mr-karan/writ/internal/control"
 )
 
-// repoParts reads forge and repo blocks and poll_every. Under --dev a repository
-// may also be a local directory.
+// repoParts reads forge and repo blocks, poll_every, and
+// poll_every_with_hook. Under --dev a repository may also be a local
+// directory.
 func (d *decoder) repoParts(top map[string]field, many map[string][]*hclsyntax.Block, cfg *Config, dev bool) {
 	d.forges(many["forge"], cfg)
 	if f, ok := top["poll_every"]; ok {
@@ -21,13 +22,20 @@ func (d *decoder) repoParts(top map[string]field, many map[string][]*hclsyntax.B
 			d.errorf(f.value, "poll_every must be at least 1s")
 		}
 	}
+	cfg.PollEveryWithHook = max(DefaultPollEveryWithHook, cfg.PollEvery)
+	if f, ok := top["poll_every_with_hook"]; ok {
+		cfg.PollEveryWithHook = d.duration(f.value, "poll_every_with_hook")
+		if cfg.PollEveryWithHook < cfg.PollEvery {
+			d.errorf(f.value, "poll_every_with_hook must be at least poll_every, %s: a webhook only makes the poll rarer", cfg.PollEvery)
+		}
+	}
 	if len(many["repo"]) == 0 {
 		return
 	}
 	cfg.PinRepos = true
 	seen := map[string]bool{}
 	for i, re := range many["repo"] {
-		r := d.attrs(re, fmt.Sprintf("repo %d", i+1), "name", "forge", "project", "path", "prefix")
+		r := d.attrs(re, fmt.Sprintf("repo %d", i+1), "name", "forge", "project", "path", "prefix", "webhook_secret_file")
 		var spec RepoSpec
 		for _, k := range []string{"name", "forge", "project"} {
 			if _, ok := r[k]; !ok {
@@ -41,6 +49,12 @@ func (d *decoder) repoParts(top map[string]field, many map[string][]*hclsyntax.B
 			return ""
 		}
 		spec.Name, spec.Forge, spec.Project, spec.Path, spec.Prefix = get("name"), get("forge"), get("project"), get("path"), get("prefix")
+		if x, ok := r["webhook_secret_file"]; ok {
+			spec.WebhookSecretFile = d.path(x.value, "webhook_secret_file")
+			if spec.Forge == string(control.Dir) {
+				d.errorf(x.key, "repo %s: a local directory has no webhook; webhook_secret_file is for a repository at a forge", spec.Name)
+			}
+		}
 		if spec.Name != "" && seen[spec.Name] {
 			d.errorf(r["name"].value, "repos names %s twice", spec.Name)
 		}

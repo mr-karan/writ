@@ -180,6 +180,7 @@ func newFixtureOn(t *testing.T, e controltest.Engine, extra string, issuer ...fu
 	secret := write("client_secret", clientSec+"\n")
 	envFile := write("api_token", envSecret+"\n")
 	readToken := write("gitlab_read", forgeToken+"\n")
+	hookFile := write("infra_hook", hookSecret+"\n")
 	store, loc, db := controltest.ForConfigOn(t, e)
 	text := fmt.Sprintf(`url      = %q
 listen   = "127.0.0.1:1"
@@ -275,11 +276,12 @@ forge "gitlab" {
 }
 
 repo {
-  name    = "infra"
-  forge   = "gitlab"
-  project = "acme/infra"
+  name                = "infra"
+  forge               = "gitlab"
+  project             = "acme/infra"
+  webhook_secret_file = %q
 }
-`, ts.URL, db, dir, is.URL, ca, is.URL, ca, secret, envFile, is.URL, readToken, ca) + extra
+`, ts.URL, db, dir, is.URL, ca, is.URL, ca, secret, envFile, is.URL, readToken, ca, hookFile) + extra
 	cfg, diags := server.ParseConfig(filepath.Join(dir, "serve"), []byte(text))
 	if diags.HasErrors() {
 		t.Fatal(diags)
@@ -324,6 +326,9 @@ repo {
 
 // forgeToken is the forge's read token.
 const forgeToken = "glpat-ui-read-token"
+
+// hookSecret is the secret token of infra's webhook.
+const hookSecret = "hook-ui-secret-token-0123456789"
 
 // stackFiles is acme/infra with the OpenTofu stack network, whose code
 // holds note.

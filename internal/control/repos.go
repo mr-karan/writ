@@ -57,6 +57,9 @@ type Repo struct {
 	// Error says why the last poll or read failed, "" after one that worked.
 	Error   string
 	ErrorAt time.Time
+	// HookAt is when the last webhook delivery that passed its check
+	// arrived, zero before the first.
+	HookAt time.Time
 }
 
 // TreeEntry is one regular file of a commit, named from the repository's
@@ -98,15 +101,15 @@ func (e *RepoConflict) Error() string {
 }
 
 const repoColumns = `name, forge, kind, forge_url, project, project_id, path, prefix, default_branch, web_url, origin, added_by, added_at,
-	head, head_read_at, polled_at, error, error_at`
+	head, head_read_at, polled_at, error, error_at, hook_at`
 
 func scanRepo(r scanner) (Repo, error) {
 	var rp Repo
 	var kind string
 	var added int64
-	var headAt, polled, errAt sqldb.NullInt64
+	var headAt, polled, errAt, hookAt sqldb.NullInt64
 	err := r.Scan(&rp.Name, &rp.Forge, &kind, &rp.ForgeURL, &rp.Project, &rp.ProjectID, &rp.Path, &rp.Prefix, &rp.DefaultBranch, &rp.WebURL,
-		&rp.Origin, &rp.AddedBy, &added, &rp.Head, &headAt, &polled, &rp.Error, &errAt)
+		&rp.Origin, &rp.AddedBy, &added, &rp.Head, &headAt, &polled, &rp.Error, &errAt, &hookAt)
 	if err != nil {
 		return Repo{}, err
 	}
@@ -114,7 +117,7 @@ func scanRepo(r scanner) (Repo, error) {
 	for _, t := range []struct {
 		v  sqldb.NullInt64
 		to *time.Time
-	}{{headAt, &rp.HeadReadAt}, {polled, &rp.PolledAt}, {errAt, &rp.ErrorAt}} {
+	}{{headAt, &rp.HeadReadAt}, {polled, &rp.PolledAt}, {errAt, &rp.ErrorAt}, {hookAt, &rp.HookAt}} {
 		if t.v.Valid {
 			*t.to = fromMS(t.v.Int64)
 		}
@@ -315,6 +318,19 @@ func (s *Store) RecordPoll(ctx context.Context, name string, now time.Time, msg 
 	}
 	_, err := s.db.ExecContext(ctx, q, args...)
 	return err
+}
+
+// RecordHook records that a webhook delivery for the repository named name
+// passed its check at now. A repository with no row is ErrNotFound.
+func (s *Store) RecordHook(ctx context.Context, name string, now time.Time) error {
+	res, err := s.db.ExecContext(ctx, "UPDATE repos SET hook_at = ? WHERE name = ?", now.UnixMilli(), name)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n == 0 {
+		return cmpErr(err, ErrNotFound)
+	}
+	return nil
 }
 
 // PutCommit stores a commit read for a plan, unless it is stored already.

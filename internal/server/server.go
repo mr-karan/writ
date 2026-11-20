@@ -109,6 +109,8 @@ type Server struct {
 	reap func(uid uint32) error
 	// forges are the config's forges with their clients, by name.
 	forges map[string]forgeClient
+	// hooks is what the webhook route keeps between deliveries.
+	hooks *hookState
 	// tfstate is the http state backend of the OpenTofu stacks, which
 	// keyMu guards the keys of.
 	tfstate *tfstate.Backend
@@ -185,6 +187,7 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 		clients: newLimiter(cfg.Limits.RequestsPerAddress, maxBuckets, opts.Now),
 		running: map[string]int{}, done: map[string]chan struct{}{}, runDone: map[string]chan struct{}{}, devCodes: map[string]time.Time{}, logins: map[[32]byte]*login{}, browserLogins: map[[32]byte]*browserLogin{},
 		pending: map[string]struct{}{}, boot: newID(), settleEvery: settleEvery, settleFor: settleFor,
+		hooks: newHookState(opts.Now),
 	}
 	s.closeKey = s.store.CloseKey
 	var err error
@@ -245,9 +248,7 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 		http.Error(w, d.Message, status)
 	}, false)
 	s.initEgress()
-	if s.cfg.PollEvery > 0 {
-		s.wg.Go(func() { s.poll(s.ctx) })
-	}
+	s.wg.Go(func() { s.poll(s.ctx) })
 	s.wg.Go(func() { s.sweepRuns(s.ctx) })
 	if s.tofuRunner != nil {
 		s.wg.Go(func() { s.refreshIndexes(s.ctx) })
@@ -535,6 +536,7 @@ func (s *Server) routeTable() []apiRoute {
 		{outcomeRoute, true, map[string]http.HandlerFunc{"POST": s.applyOutcome}},
 		{"/v1/repos", true, map[string]http.HandlerFunc{"GET": s.listRepos, "POST": s.createRepo}},
 		{"/v1/repos/{name}", true, map[string]http.HandlerFunc{"GET": s.getRepo}},
+		{"/v1/hooks/{forge}/{repo}", false, map[string]http.HandlerFunc{"POST": s.receiveHook}},
 		{"/v1/dev/ui-link", true, map[string]http.HandlerFunc{"POST": s.uiLink}},
 		{"/v1/drift", true, map[string]http.HandlerFunc{"GET": s.listDrift}},
 		{"/v1/index", true, map[string]http.HandlerFunc{"GET": s.stateIndex}},
@@ -837,6 +839,8 @@ func formatOf(route, method string) string {
 		return FormatRepos
 	case strings.HasPrefix(route, "/v1/repos"):
 		return FormatRepo
+	case strings.HasPrefix(route, "/v1/hooks/"):
+		return FormatHook
 	}
 	return FormatError
 }

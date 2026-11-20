@@ -34,6 +34,7 @@ Because an OpenTofu plan on an unmerged branch executes provider and module code
 - **Strict OIDC verification**: `internal/oidc` accepts only compact JWS tokens signed with `RS256` or `ES256`, requires `kid`, rejects embedded key headers (`jku`, `jwk`, `x5c`, etc.) and duplicate JSON keys, requires exact `iss` and single-element `aud` matching `writ serve`'s `url`, checks `exp`/`iat`/`nbf`, and records `jti` on writes to prevent replay.
 - **No identity provider text leaks**: `internal/oidc` never returns raw error strings from an identity provider or token. Failures are typed integer refusals (`oidc.Refusal`), enforced by `internal/archtest`, so a misbehaving proxy or IdP cannot reflect tokens or secrets into logs or API responses.
 - **Stable cross-issuer person IDs**: Issuers for the same Git host share a config-defined `identity` name (not a URL, preventing URL-spelling tricks). A person's CI job and CLI/UI session share one `IDENTITY/user/ID`, preventing self-approval across channels.
+- **Verified webhooks**: `POST /v1/hooks/{forge}/{repo}` takes no token. A delivery proves itself with the pinned repository's webhook secret, compared in constant time, or a GitLab signing token's signature with a 5-minute timestamp window. A delivery that fails gets 401 with the same words whatever the reason. One that passes only makes the poll read the default branch's head now, through the forge's read token: its body is never parsed, so no commit, branch, or URL in it is trusted, and it never plans or applies. See [Webhooks](webhooks.md#security-notes).
 - **Carrier separation**: Browser cookies are ignored on `/v1/` API routes, and CLI bearer tokens cannot open `/ui/` pages. All `/ui/` responses send a strict Content Security Policy (`default-src 'none'; script-src 'self'; ...`) and CSRF protection via `http.CrossOriginProtection`.
 
 ## Authorization and approval integrity
@@ -80,6 +81,7 @@ See [Secrets and the mask](secrets.md) for the differential verification suite (
 
 - **Per-address rate limit**: `limits.requests_per_address` (default 20 requests/second per client IP, or `/64` for IPv6) counted before the route, token, or body is read.
 - **Per-principal rate limit**: `limits.requests_per_second` (default 10 requests/second) per authenticated person or CI job.
+- **Webhook bounds**: 10 deliveries a second from one client address, counted first, 5 a second for one repository, a 1 MiB body, and the newest 4,096 delivery ids remembered to drop a resend.
 - **Sign-in queue bounds**: At most 10 pending `writ login` sign-ins per client IP and 1,000 across the server, expiring after 10 minutes.
 - **Run concurrency and deadlines**: Bounded by `limits.plans_per_principal` (default 4), `limits.plans` (default 8), `limits.applies` (default 4), `limits.plan_timeout` (default `30m`), `limits.apply_start_timeout` (default `10m`), and `limits.apply_timeout` (default `4h`).
 

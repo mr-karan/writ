@@ -42,7 +42,7 @@ There's no output here yet. Only the tests' stand-in of GitLab has served one, a
 
 ## Add one from the control UI
 
-If you prefer the browser, open Repositories at `/ui/repos`. It lists each repository with its last commit read and its last poll.
+If you prefer the browser, open Repositories at `/ui/repos`. It lists each repository with its last commit read and its last poll, and marks a repository with a webhook, with the time of its last delivery.
 
 Add repository, at `/ui/repos/new`, is a form with the same fields, sent to `POST /v1/repos` by the server in process. It takes no token. If Writ refuses the form, it comes back with the refusal and what you typed.
 
@@ -77,6 +77,8 @@ Writ checks a repository against the others inside the transaction that stores i
   }
   ```
 
+A pinned repository can also have a webhook, so a push reaches the control plane in seconds instead of at the next poll. See [Get changes in seconds with a webhook](webhooks.md).
+
 ## Troubleshooting
 
 - **`409 usage: the config pins the repositories with repos`**: Your server config defines `repo` blocks, which disables `POST /v1/repos`. Add the repository in your server config file instead and restart `writ serve`.
@@ -87,6 +89,7 @@ Writ checks a repository against the others inside the transaction that stores i
 
 ## Next steps
 
+- [Get changes in seconds with a webhook](webhooks.md): GitLab tells the control plane about each push.
 - [Set up GitLab CI](set-up-gitlab-ci.md): `writ ci gitlab --repo NAME` prints the jobs to include.
 - [Plan and apply](apply.md): plan a commit and apply an approved plan.
 - [Repository routes](api.md#repository-routes): the API behind `writ repo add`.

@@ -167,6 +167,16 @@ func printServeCheck(w io.Writer, file string, cfg *server.Config) error {
 		}
 		fmt.Fprintf(w, "egress: providers install only from %s\n", registries)
 	}
+	for _, r := range cfg.Repos {
+		if r.WebhookSecretFile == "" {
+			continue
+		}
+		if err := server.CheckHookSecret(r.WebhookSecretFile); err != nil {
+			fmt.Fprintf(w, "webhook: repo %s: %v\n", r.Name, err)
+			continue
+		}
+		fmt.Fprintf(w, "webhook: repo %s: secret file readable\n", r.Name)
+	}
 	if a := cfg.AWS; a != nil {
 		sts := a.STSEndpoint
 		if sts == "" {

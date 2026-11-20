@@ -36,7 +36,7 @@
 <td data-label="Branch">{{.DefaultBranch}}</td>
 <td data-label="Commit">{{if .Head}}<code class="id">{{short .Head}}</code> <span class="muted">{{template "when" .HeadReadAt}}</span>{{end}}</td>
 <td class="num" data-label="Stacks">{{with .Stacks}}{{template "n" (exact (deref .))}}{{else}}<span class="muted">not read</span>{{end}}</td>
-<td class="end" data-label="Polled">{{if .Error}}{{template "status" "failed"}} <span class="under msg" data-record="{{record "name" .Name}}" data-field="error">{{.Error}}</span>{{else}}{{template "when" .PolledAt}}{{end}}</td>
+<td class="end" data-label="Polled">{{if .Error}}{{template "status" "failed"}} <span class="under msg" data-record="{{record "name" .Name}}" data-field="error">{{.Error}}</span>{{else}}{{template "when" .PolledAt}}{{end}}{{if .Hook}} <span class="under"><span class="chip">webhook</span>{{with .HookAt}} <span class="muted">last {{template "when" .}}</span>{{end}}</span>{{end}}</td>
 </tr>
 {{- end}}
 </tbody>
@@ -88,6 +88,7 @@
 <div><dt>Path</dt><dd>{{if .Repo.Path}}<code>{{.Repo.Path}}/</code>{{else}}<span class="muted">root</span>{{end}}</dd></div>
 {{if .Repo.Prefix}}<div><dt>Prefix</dt><dd><code>{{.Repo.Prefix}}</code></dd></div>{{end}}
 <div><dt>Branch</dt><dd>{{.Repo.DefaultBranch}}{{with .Repo.PolledAt}} <span class="muted">polled {{template "when" .}}</span>{{end}}</dd></div>
+{{if .Repo.Hook}}<div><dt>Webhook</dt><dd><span class="chip">set</span>{{with .Repo.HookAt}} <span class="muted">last delivery {{template "when" .}}</span>{{end}}</dd></div>{{end}}
 <div><dt>Commit read</dt><dd>{{with .Commit}}<code class="id">{{short .SHA}}</code> <span class="muted">{{template "when" .ReadAt}} · {{template "counted" (of (exact .Files) "file" "files")}}</span>{{end}}</dd></div>
 <div><dt>Added</dt><dd>{{template "time" .Repo.AddedAt}} <span class="muted">by {{.Repo.AddedBy}}</span>{{if eq .Repo.Origin "config"}} <span class="chip">config</span>{{end}}</dd></div>
 </dl>

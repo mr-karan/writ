@@ -159,7 +159,7 @@ func TestNoScriptWalk(t *testing.T) {
 	}
 	f.traffic.covered(t)
 	for i, body := range f.traffic.bodies() {
-		for _, secret := range []string{paramSecret, envSecret, clientSec, forgeToken, cookieValue, "writs_"} {
+		for _, secret := range []string{paramSecret, envSecret, clientSec, forgeToken, hookSecret, cookieValue, "writs_"} {
 			if strings.Contains(body, secret) {
 				t.Errorf("answer %d holds the secret %q: %s", i, secret, excerpt(body, secret))
 			}

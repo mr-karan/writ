@@ -29,7 +29,20 @@ const (
 	FormatBrowser     = "writ.browser/v0"
 	FormatSession     = "writ.session/v0"
 	FormatSessions    = "writ.sessions/v0"
+	FormatHook        = "writ.hook/v0"
 )
+
+// HookDoc is writ.hook/v0, the answer to a forge's webhook delivery that
+// passed its check: whether a read of the repository's default branch was
+// queued, or the delivery's id was acted on already.
+type HookDoc struct {
+	Format      string       `json:"format"`
+	OK          bool         `json:"ok"`
+	Repo        string       `json:"repo"`
+	Queued      bool         `json:"queued"`
+	Duplicate   bool         `json:"duplicate,omitempty"`
+	Diagnostics []Diagnostic `json:"diagnostics"`
+}
 
 // Diagnostic is a diagnostic of the API's own documents, in the fields
 // every Writ document's diagnostics have.
@@ -440,6 +453,11 @@ type RepoInfo struct {
 	// Error says why the last poll failed, "" when it worked.
 	Error   string `json:"error"`
 	ErrorAt string `json:"error_at,omitempty"`
+	// Hook is true when the config gives the repository a webhook secret
+	// file, and HookAt is when the last delivery that passed its check
+	// arrived.
+	Hook   bool   `json:"hook"`
+	HookAt string `json:"hook_at,omitempty"`
 	// Stacks counts the stacks found at the head, in writ.repos/v0 only.
 	Stacks *int `json:"stacks,omitempty"`
 }

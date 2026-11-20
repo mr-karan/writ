@@ -229,15 +229,15 @@ func (s *Server) auditVisible(teams []string, every bool, e control.Entry) bool 
 }
 
 // auditOps are the operations an audit row can record: those of the
-// grants, and those of the state backend's rows, which internal/tfstate
-// writes. GET /v1/audit takes only these, so no op filter reads the whole
+// grants, those of the state backend's rows, which internal/tfstate
+// writes, and hook, a forge's webhook delivery. GET /v1/audit takes only these, so no op filter reads the whole
 // log for a value no row holds.
 func auditOps() []string {
 	var ops []string
 	for _, op := range authz.Ops {
 		ops = append(ops, string(op))
 	}
-	return append(ops, "state-read", "state-write", "state-lock", "state-unlock")
+	return append(ops, "state-read", "state-write", "state-lock", "state-unlock", "hook")
 }
 
 func auditRow(e control.Entry) AuditRow {

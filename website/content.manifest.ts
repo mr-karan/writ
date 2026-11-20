@@ -81,6 +81,12 @@ export const pages: Page[] = [
     parts: whole('docs/add-repository.md'),
   },
   {
+    slug: 'webhooks',
+    title: 'Get changes in seconds with a webhook',
+    description: 'Add a verified GitLab webhook so a push or merge reaches writ serve in seconds, with the poll as a backstop.',
+    parts: whole('docs/webhooks.md'),
+  },
+  {
     slug: 'set-up-gitlab-ci',
     title: 'Set up GitLab CI',
     description: 'Plan, approve, and apply from GitLab CI jobs with no checkout and no cloud credential.',
@@ -296,6 +302,7 @@ export const nav: NavEntry[] = [
   'compare',
   { separator: 'Guides' },
   'add-repository',
+  'webhooks',
   'set-up-gitlab-ci',
   'apply',
   'approvals',
@@ -343,6 +350,7 @@ export const fileRoutes: Record<string, string> = {
   'docs/compare-gitlab-ci.md': '/docs/compare-gitlab-ci',
   'docs/compare.md': '/docs/compare',
   'docs/add-repository.md': '/docs/add-repository',
+  'docs/webhooks.md': '/docs/webhooks',
   'docs/set-up-gitlab-ci.md': '/docs/set-up-gitlab-ci',
   'docs/apply.md': '/docs/apply',
   'docs/approvals.md': '/docs/approvals',

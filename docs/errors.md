@@ -71,6 +71,7 @@ Common causes:
 - `plan ID is of env ENV, which this config no longer serves`
 - `the config pins the repositories with repos, so they are added there and reviewed with the config`
 - `more than N requests a second from PRINCIPAL`
+- `more than 10 webhook deliveries a second from ADDRESS`, `more than 5 webhook deliveries a second for repository NAME`, and `the body is over 1048576 bytes`: a [webhook](webhooks.md#what-writ-serve-answers) sent too fast or too much
 - `writ serve is running N applies; try again when one ends`
 - `the apply ran past limits.apply_timeout, DURATION: OpenTofu was interrupted, started no more changes, and wrote the state it reached; plan again`
 
@@ -92,6 +93,7 @@ Common causes:
 - `the session ended, ran out, or is not one writ login gave: sign in again with writ login URL`
 - `the sign-in is unknown, finished, or ran out: run writ login again`
 - `this token already applied; each CI token applies once`
+- `the delivery failed verification`: a [webhook delivery](webhooks.md#what-writ-serve-answers) didn't prove it holds the repository's secret. The audit row's `check` says why.
 
 What to do: run `writ login` again. A CI job sends a new `WRIT_ID_TOKEN` for each request that spends one: a plan, an approval, or an apply. [Token checks](api.md#token-checks) lists each check.
 
