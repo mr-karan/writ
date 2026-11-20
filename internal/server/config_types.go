@@ -91,8 +91,8 @@ var defaultProviderRegistries = []string{"registry.opentofu.org", "registry.terr
 // resource of the stack through its providers, with the plan role.
 const minDriftEvery = time.Minute
 
-// The bounds of the run limits: OpenTofu alone needs about 100 MiB, and
-// a few providers' threads pass 64.
+// The bounds of the run limits. Threads count against run_pids, and a few
+// providers' pass 64.
 const (
 	minRunMemory  = 128 << 20
 	minRunScratch = 64 << 20

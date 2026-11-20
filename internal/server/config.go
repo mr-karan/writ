@@ -138,7 +138,7 @@ func (d *decoder) config(b *hclsyntax.Body) *Config {
 				cfg.Limits.RunMemory = d.sizeWithin(lf.value, "limits."+name, minRunMemory, maxRunSize)
 			case "run_pids":
 				if cfg.Limits.RunPids = d.integer(lf.value, "limits."+name); cfg.Limits.RunPids > 0 && cfg.Limits.RunPids < minRunPids {
-					d.errorf(lf.value, "limits.run_pids must be at least %d: it counts every thread, and OpenTofu and each provider start a dozen or more", minRunPids)
+					d.errorf(lf.value, "limits.run_pids must be at least %d: it counts every thread, and OpenTofu and each provider run several", minRunPids)
 				}
 			case "run_cpus":
 				cfg.Limits.RunCPUs = d.cpus(lf.value, "limits."+name)
