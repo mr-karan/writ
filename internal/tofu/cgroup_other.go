@@ -16,8 +16,9 @@ func seccompReady() error                { return errors.New("the seccomp filter
 // stepCgroup is a step's cgroup, which only Linux makes.
 type stepCgroup struct{}
 
-func newStepCgroup(string, Limits) (*stepCgroup, error)         { return nil, errNoCgroups }
+func newStepCgroup(cgroupSetup, Limits) (*stepCgroup, error)    { return nil, errNoCgroups }
 func (*stepCgroup) kill() error                                 { return nil }
 func (*stepCgroup) hit() string                                 { return "" }
+func (*stepCgroup) sharedHit() string                           { return "" }
 func (*stepCgroup) remove() error                               { return nil }
 func (*stepCgroup) heldRemoved(*User, time.Time) (int64, error) { return 0, nil }

@@ -409,7 +409,9 @@ func TestRunLimitsUnderTheShippedUnit(t *testing.T) {
 // processes until the kernel refuses one, in a delegated scope whose unit
 // allows 200 processes and threads, fewer than the four steps' run_pids
 // together. writ serve shares the unit's limits with every step, so the
-// steps together must leave it room to start processes and threads.
+// steps together must leave it room to start processes and threads. Each
+// step names the limit it reached, its own run_pids or the unit's
+// TasksMax, which the steps share.
 func TestRunLimitsLeaveRoomForServe(t *testing.T) {
 	if os.Getenv(limitsStageEnv) != "tasks" {
 		inDelegatedScope(t, "TestRunLimitsLeaveRoomForServe", []string{"TasksMax=200"}, limitsStageEnv+"=tasks")
@@ -427,10 +429,28 @@ func TestRunLimitsLeaveRoomForServe(t *testing.T) {
 		t.Errorf("the steps share pids.max %q (%v), and Enforcement says %d, not 72", text, err, e.StepsPids)
 	}
 	var wg sync.WaitGroup
-	for range 4 {
-		wg.Go(func() { _, _ = r.Plan(context.Background(), fakeStack()) })
+	errs := make([]error, 4)
+	for i := range errs {
+		wg.Go(func() { _, errs[i] = r.Plan(context.Background(), fakeStack()) })
 	}
-	defer wg.Wait()
+	defer func() {
+		wg.Wait()
+		shared := 0
+		for _, err := range errs {
+			se, ok := errors.AsType[*StepError](err)
+			if !ok || se.Limit == "" {
+				t.Errorf("a step returned %v, which names no limit", err)
+				continue
+			}
+			if strings.Contains(se.Limit, "TasksMax") {
+				shared++
+			}
+			t.Log(se.Limit)
+		}
+		if shared == 0 {
+			t.Error("no step named the limit the steps share")
+		}
+	}()
 	// The fakes hold their processes for six seconds.
 	time.Sleep(3 * time.Second)
 	self, err := os.Executable()
@@ -451,6 +471,25 @@ func TestRunLimitsLeaveRoomForServe(t *testing.T) {
 		})
 	}
 	threads.Wait()
+}
+
+// TestRunLimitsNameTheSharedMemory runs a step that allocates 256MiB,
+// within its run_memory of 1GiB, in a delegated scope whose unit allows
+// 640MiB: 128MiB once writ serve keeps its 512MiB. The kernel kills the
+// step for the memory every step shares, and the step names that limit,
+// not its own.
+func TestRunLimitsNameTheSharedMemory(t *testing.T) {
+	if os.Getenv(limitsStageEnv) != "memory" {
+		inDelegatedScope(t, "TestRunLimitsNameTheSharedMemory", []string{"MemoryMax=640M", "MemorySwapMax=0"}, limitsStageEnv+"=memory")
+		return
+	}
+	l := testLimits
+	l.Memory = 1 << 30
+	r := fakeRunnerLimits(t, "alloc", l)
+	if e := r.Enforcement(); e.StepsMemory != 128<<20 {
+		t.Fatalf("the steps share %d bytes of memory (%s), not 128MiB", e.StepsMemory, e.CgroupOff)
+	}
+	requireLimit(t, r, "MemoryMax")
 }
 
 // writ serve --check runs the checks that writ serve's start does: that

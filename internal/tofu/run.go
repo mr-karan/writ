@@ -78,7 +78,7 @@ func (r *Runner) step(ctx context.Context, sc *scratch, creds bool, name string,
 	}
 	var cg *stepCgroup
 	if r.cgroups.base != "" {
-		if cg, err = newStepCgroup(r.cgroups.base, r.opts.Limits); err != nil {
+		if cg, err = newStepCgroup(r.cgroups, r.opts.Limits); err != nil {
 			return nil, fmt.Errorf("tofu %s: make the step's cgroup: %w", name, err)
 		}
 		defer cg.remove()
@@ -103,6 +103,9 @@ func (r *Runner) step(ctx context.Context, sc *scratch, creds bool, name string,
 	}
 	if over := scratchHit(); limit == "" {
 		limit = over
+	}
+	if limit == "" && err != nil && cg != nil {
+		limit = cg.sharedHit()
 	}
 	exit, exited := errors.AsType[*exec.ExitError](err)
 	code := -1

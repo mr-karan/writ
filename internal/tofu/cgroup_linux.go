@@ -358,13 +358,43 @@ func writeCgroup(dir, file, value string) error {
 type stepCgroup struct {
 	dir    string
 	limits Limits
+	// runs is runsCgroup, which every step shares, and before what its
+	// own limits had counted when the step began.
+	runs   cgroupSetup
+	before runsEvents
 }
 
-// newStepCgroup makes a cgroup for a step under base with l's limits:
+// runsEvents is what the limits of runsCgroup itself have counted: the
+// times its memory.max brought the OOM killer, and the times its pids.max
+// refused a process. They count for every step, so a step compares them
+// at its end with what they were at its start.
+type runsEvents struct{ oom, pidsMax int64 }
+
+func readRunsEvents(dir string) runsEvents {
+	var e runsEvents
+	if ev, err := localKeys(dir, "memory.events"); err == nil {
+		e.oom = ev["oom"]
+	}
+	if ev, err := localKeys(dir, "pids.events"); err == nil {
+		e.pidsMax = ev["max"]
+	}
+	return e
+}
+
+// localKeys reads file.local of the cgroup dir, which counts only dir's
+// own limits, not its children's, or file where the kernel has none.
+func localKeys(dir, file string) (map[string]int64, error) {
+	if ev, err := cgroupKeys(dir, file+".local"); err == nil {
+		return ev, nil
+	}
+	return cgroupKeys(dir, file)
+}
+
+// newStepCgroup makes a cgroup for a step under runs.base with l's limits:
 // memory.max with no swap, and the whole cgroup killed when one of its
 // processes is, pids.max, and cpu.max.
-func newStepCgroup(base string, l Limits) (*stepCgroup, error) {
-	c := &stepCgroup{dir: filepath.Join(base, "run-"+strings.ToLower(rand.Text())), limits: l}
+func newStepCgroup(runs cgroupSetup, l Limits) (*stepCgroup, error) {
+	c := &stepCgroup{dir: filepath.Join(runs.base, "run-"+strings.ToLower(rand.Text())), limits: l, runs: runs, before: readRunsEvents(runs.base)}
 	if err := os.Mkdir(c.dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -415,13 +445,28 @@ func (c *stepCgroup) kill() error {
 	}
 }
 
-// hit is which limit the step reached, in writ's words, or "".
+// hit is which limit the step reached, in writ's words, or "": its own,
+// or the memory of runsCgroup, which every step shares, when the kernel
+// killed the step for it.
 func (c *stepCgroup) hit() string {
 	if ev, err := cgroupKeys(c.dir, "memory.events"); err == nil && (ev["oom_kill"] > 0 || ev["oom_group_kill"] > 0) {
+		if ev["oom"] == 0 && readRunsEvents(c.runs.base).oom > c.before.oom {
+			return fmt.Sprintf("the steps running at once used all of the %s of memory that writ's cgroup leaves them together, and the kernel killed the run; raise the unit's MemoryMax, or lower limits.run_memory, plans, or applies", formatSize(c.runs.memory))
+		}
 		return fmt.Sprintf("the run used all of limits.run_memory, %s, and the kernel killed it", formatSize(c.limits.Memory))
 	}
 	if ev, err := cgroupKeys(c.dir, "pids.events"); err == nil && ev["max"] > 0 {
 		return fmt.Sprintf("the run reached limits.run_pids, %d processes and threads, and could start no more", c.limits.Pids)
+	}
+	return ""
+}
+
+// sharedHit is, for a step that failed and reached no limit of its own,
+// the limit of runsCgroup that refused a process while it ran, or "".
+// Another step may have been the one refused.
+func (c *stepCgroup) sharedHit() string {
+	if readRunsEvents(c.runs.base).pidsMax > c.before.pidsMax {
+		return fmt.Sprintf("while the run ran, the steps running at once reached the %d processes and threads that writ's cgroup leaves them together, and the kernel refused them more; raise the unit's TasksMax, or lower limits.run_pids, plans, or applies", c.runs.pids)
 	}
 	return ""
 }
