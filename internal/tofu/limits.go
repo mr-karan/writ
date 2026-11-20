@@ -98,8 +98,13 @@ func seccompStatus() (bool, string) {
 }
 
 // scratchEvery is how often writ measures the run's directory while a
-// step runs.
-const scratchEvery = 500 * time.Millisecond
+// step runs, at most: it waits at least scratchSpacing times as long as
+// the last measure took, so a directory slow to measure costs writ no
+// more than a fraction of a CPU.
+const (
+	scratchEvery   = 500 * time.Millisecond
+	scratchSpacing = 4
+)
 
 // scratchWithin bounds one measure of the run's directory. A measure that
 // takes longer stops the step, as a directory over the limit does: a run
@@ -122,22 +127,23 @@ type errScratch struct{ msg string }
 
 func (e *errScratch) Error() string { return e.msg }
 
-// watchScratch measures sc's directory every scratchEvery while the step
-// runs, and ends the step through the context it returns once the
+// watchScratch measures sc's directory every scratchEvery, or
+// scratchSpacing times the last measure's length if longer, while the
+// step runs, and ends the step through the context it returns once the
 // directory holds more than r's Limits.Scratch. The function it returns
 // stops the watch and returns what the step reached, if anything: the
 // watch's finding, or a last measure, exact once no process of the step
 // is left.
 func (r *Runner) watchScratch(ctx context.Context, sc *scratch, cg *stepCgroup) (context.Context, func() string) {
-	max := r.opts.Limits.Scratch
-	if max <= 0 {
+	limit := r.opts.Limits.Scratch
+	if limit <= 0 {
 		return ctx, func() string { return "" }
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	stop, done := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(done)
-		t := time.NewTicker(scratchEvery)
+		t := time.NewTimer(scratchEvery)
 		defer t.Stop()
 		for {
 			select {
@@ -147,10 +153,12 @@ func (r *Runner) watchScratch(ctx context.Context, sc *scratch, cg *stepCgroup) 
 				return
 			case <-t.C:
 			}
-			if msg := sc.overScratch(max, cg); msg != "" {
+			start := time.Now()
+			if msg := sc.overScratch(limit, cg); msg != "" {
 				cancel(&errScratch{msg})
 				return
 			}
+			t.Reset(max(scratchEvery, scratchSpacing*time.Since(start)))
 		}
 	}()
 	return ctx, func() string {
@@ -166,7 +174,7 @@ func (r *Runner) watchScratch(ctx context.Context, sc *scratch, cg *stepCgroup) 
 		if e, ok := errors.AsType[*errScratch](context.Cause(ctx)); ok {
 			return e.msg
 		}
-		return sc.overScratch(max, cg)
+		return sc.overScratch(limit, cg)
 	}
 }
 
@@ -203,8 +211,8 @@ func (sc *scratch) overScratch(max int64, cg *stepCgroup) string {
 }
 
 // usage returns the bytes on disk of sc's directory, read as the run's
-// user, counting each file with hard links once and each file and
-// directory as at least scratchInode. With cg, it adds the files that no
+// user, counting each file and directory as at least scratchInode, a
+// file with several links once in all, as scratchWalk.charge does. With cg, it adds the files that no
 // directory names any longer but cg's threads hold open or mapped: a run
 // could write into such a file for as long as the step runs. It stops
 // once the count passes max, and fails with errScratchSlow past deadline,
@@ -250,24 +258,20 @@ type scratchWalk struct {
 	max      int64
 	deadline time.Time
 	total    int64
-	// seen holds the files with more than one link already charged.
-	seen map[[2]uint64]bool
 }
 
-// charge adds st's blocks, at least scratchInode, to the count, once for
-// a file with several links, and fails once the count passes max.
+// charge adds st's blocks, at least scratchInode, to the count, and fails
+// once the count passes max. A file with n links costs a nth of that,
+// rounded up, at each, so it costs at least the whole once the walk has
+// met every link, and the walk keeps no record of the files it met. A
+// link outside the run's directory, of a file the run's user owns
+// elsewhere on the filesystem, is a share the measure doesn't count.
 func (w *scratchWalk) charge(st *unix.Stat_t) error {
-	if st.Nlink > 1 && st.Mode&unix.S_IFMT != unix.S_IFDIR {
-		id := [2]uint64{uint64(st.Dev), st.Ino}
-		if w.seen[id] {
-			return nil
-		}
-		if w.seen == nil {
-			w.seen = map[[2]uint64]bool{}
-		}
-		w.seen[id] = true
+	n := max(int64(st.Blocks)*512, scratchInode)
+	if links := int64(st.Nlink); links > 1 && st.Mode&unix.S_IFMT != unix.S_IFDIR {
+		n = (n + links - 1) / links
 	}
-	w.total += max(int64(st.Blocks)*512, scratchInode)
+	w.total += n
 	if w.total > w.max {
 		return errScratchOver
 	}

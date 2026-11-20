@@ -590,3 +590,48 @@ func TestScratchHeldMeasureIsBounded(t *testing.T) {
 		t.Fatalf("a measure with 100ms to run took %v", d)
 	}
 }
+
+// A file with several links in the run's directory costs its blocks once
+// in all, and at least scratchInode: the measure charges each link a
+// share, with no record of the files it met.
+func TestScratchChargesLinksAShare(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		size, links int
+		want        int64
+	}{
+		{"a file of 1MiB with 4 links", 1 << 20, 4, 1 << 20},
+		{"an empty file with 3 links", 0, 3, scratchInode},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			first := filepath.Join(dir, "0")
+			if err := os.WriteFile(first, make([]byte, c.size), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for i := 1; i < c.links; i++ {
+				if err := os.Link(first, filepath.Join(dir, strconv.Itoa(i))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			root, err := os.OpenRoot(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+			var st syscall.Stat_t
+			if err := syscall.Stat(dir, &st); err != nil {
+				t.Fatal(err)
+			}
+			dirCost := max(st.Blocks*512, scratchInode)
+			n, err := (&scratch{run: root}).usage(1<<40, nil, time.Now().Add(scratchWithin))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Each share rounds up by less than a byte per link.
+			if got := n - dirCost; got < c.want || got > c.want+int64(c.links) {
+				t.Fatalf("the file counted %d bytes, not %d", got, c.want)
+			}
+		})
+	}
+}
