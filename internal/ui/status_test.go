@@ -43,6 +43,7 @@ func TestPlanSteps(t *testing.T) {
 		{"the same as an earlier plan", server.PlanInfo{Status: "superseded", SupersededBy: "q"}, "Plan done made, Approve void , Apply void superseded"},
 		{"expired unapproved", server.PlanInfo{ID: "p", Status: "expired", Approvals: one}, "Plan done made, Approve void 0 of 1, Apply void expired"},
 		{"expired approved", server.PlanInfo{ID: "p", Status: "expired", Approvals: given}, "Plan done made, Approve done 1 of 1, Apply void expired"},
+		{"no changes", server.PlanInfo{ID: "p", Status: "no-changes"}, "Plan done made, Approve void not needed, Apply void not needed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var got []string
@@ -99,6 +100,7 @@ func TestPlanDecision(t *testing.T) {
 		{"superseded", server.PlanInfo{ID: id, Status: "superseded", Approvals: given}, []string{needsOne, "Apply void superseded"}, nil},
 		{"the same as an earlier plan", server.PlanInfo{Status: "superseded", SupersededBy: id}, []string{notAsked}, []string{noRule, "none needed"}},
 		{"expired", server.PlanInfo{ID: id, Status: "expired", Approvals: one}, []string{needsOne, "Approve void 0 of 1", "Apply void expired"}, nil},
+		{"no changes", server.PlanInfo{ID: id, Status: "no-changes"}, []string{notAsked, "Approve void not needed", "Apply void not needed"}, []string{noRule, "none needed"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := tc.plan
@@ -179,6 +181,7 @@ func TestStatusStamps(t *testing.T) {
 		"approved": "ok", "applied": "ok", "clean": "ok", "ok": "ok", "passed": "ok",
 		"refused": "bad", "failed": "bad", "failing": "bad", "denied": "bad",
 		"expired": "void", "superseded": "void",
+		"no-changes": "none",
 		"unheard-of": "",
 	}
 	for _, s := range server.PlanStatuses {
@@ -236,6 +239,8 @@ func TestPlanOffer(t *testing.T) {
 		{"failed", "commit", other, nil},
 		{"expired", "commit", other, nil},
 		{"superseded", "commit", other, nil},
+		{"no-changes", "commit", other, nil},
+		{"no-changes", "commit", me, nil},
 	} {
 		t.Run(tc.status+" "+tc.kind+" "+tc.author, func(t *testing.T) {
 			p := server.PlanInfo{ID: strings.Repeat("a", 32), Ref: "ref1", Env: "prod", Status: tc.status, Stacks: []server.PlanStack{{Stack: "app"}}, Origin: json.RawMessage(`{}`),

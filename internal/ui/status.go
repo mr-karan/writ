@@ -5,15 +5,17 @@ import (
 	"github.com/mr-karan/writ/internal/server"
 )
 
-// tones sorts every status a page shows into the five looks a stamp has:
+// tones sorts every status a page shows into the six looks a stamp has:
 // run while something works, wait while it waits for a person, ok when it
-// ended well, bad when it failed, and void when it no longer applies.
+// ended well, bad when it failed, void when it no longer applies, and
+// none when it ended with nothing to do.
 var tones = map[string]string{
 	server.PlanPlanning: "run", server.PlanApplying: "run",
 	server.PlanPending: "wait", server.DriftDrifted: "wait", "warned": "wait",
 	server.PlanApproved: "ok", server.PlanApplied: "ok", server.DriftClean: "ok", "ok": "ok", "passed": "ok",
 	server.PlanRefused: "bad", server.PlanFailed: "bad", "failing": "bad", "denied": "bad",
 	server.PlanSuperseded: "void", server.PlanExpired: "void",
+	server.PlanNoChanges: "none",
 }
 
 // tone is the look of a status, "" for one the table does not know.
@@ -79,6 +81,9 @@ func planSteps(p *server.PlanInfo) []step {
 			approve.State = "void"
 		}
 		apply.State, apply.Note = "void", p.Status
+	case server.PlanNoChanges:
+		approve.State, approve.Note = "void", "not needed"
+		apply.State, apply.Note = "void", "not needed"
 	}
 	return []step{plan, approve, apply}
 }
@@ -107,13 +112,14 @@ func offerOf(p *server.PlanInfo, s *server.Session) offer {
 }
 
 // rulesAsked reports whether writ serve asked the approval rules of a
-// plan. It asks them when it saves a plan, so not while the plan plans,
-// nor of one refused or failed before it was saved, nor of a request that
-// turned out the same as an earlier plan: that request has no id of its
-// own, and the earlier plan takes the approvals.
+// plan. It asks them when it saves a plan that changes something, so not
+// while the plan plans, nor of one refused or failed before it was saved,
+// nor of one that changes nothing, nor of a request that turned out the
+// same as an earlier plan: that request has no id of its own, and the
+// earlier plan takes the approvals.
 func rulesAsked(p *server.PlanInfo) bool {
 	switch {
-	case p.ID == "", p.Status == server.PlanPlanning, p.Status == server.PlanRefused:
+	case p.ID == "", p.Status == server.PlanPlanning, p.Status == server.PlanRefused, p.Status == server.PlanNoChanges:
 		return false
 	case p.Status == server.PlanFailed:
 		return p.Run != ""

@@ -47,6 +47,9 @@ var (
 	second = tofuRecording{plan: "second-plan.json", apply: "second-apply.jsonl"}
 	// third creates a file that cannot be written, so its apply fails.
 	third = tofuRecording{plan: "third-plan.json", apply: "third-apply.jsonl", failed: true}
+	// quiet is second planned again after its apply: it changes nothing,
+	// so it is never applied.
+	quiet = tofuRecording{plan: "quiet-plan.json"}
 )
 
 // recordedTofu stands in for OpenTofu at writ serve's boundary: it answers

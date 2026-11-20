@@ -244,6 +244,7 @@ h2 .count, .card-head .count { margin: 0; font-size: var(--fs-2); }
 .stamp-bad .dot { background: var(--del); border-radius: 1px; }
 .stamp-void { color: var(--muted-foreground); background: transparent; box-shadow: inset 0 0 0 1px var(--border); text-decoration: line-through; }
 .stamp-void .dot { background: transparent; border: 1.5px solid var(--rule-strong); }
+.stamp-none .dot { background: transparent; border: 1.5px solid var(--rule-strong); }
 .chip { display: inline-flex; align-items: center; height: 1.25rem; padding: 0 0.4375rem; border-radius: 999px; background: var(--muted); color: var(--muted-foreground); font-size: 0.6875rem; font-weight: 500; white-space: nowrap; vertical-align: middle; }
 .chips { display: inline-flex; flex-wrap: wrap; gap: var(--space-1); vertical-align: middle; }
 .risk-create { color: var(--add); background: var(--add-bg); }
