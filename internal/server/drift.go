@@ -114,7 +114,7 @@ func (s *Server) runDrift(c control.DriftCheck) {
 	c.MadeAt = s.now()
 	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer rcancel()
-	stored, ferr := s.store.FinishDrift(rctx, c)
+	stored, prev, ferr := s.store.FinishDrift(rctx, c)
 	switch {
 	case ferr != nil:
 		log.Error("record the end of a drift check", "err", ferr)
@@ -122,10 +122,12 @@ func (s *Server) runDrift(c control.DriftCheck) {
 		log.Info("an apply ran while the drift check planned, so it keeps nothing; the next look checks again")
 	case c.Status == control.DriftDrifted:
 		log.Warn("drift found", "plan", c.PlanID, "commit", c.Commit, "outside", c.Outside, "code", c.Code)
+		s.notifyDrift(c, prev)
 	case c.Status == control.DriftFailed:
 		log.Warn("drift check failed", "err", c.Error)
 	default:
 		log.Info("drift check found no drift", "plan", c.PlanID, "commit", c.Commit)
+		s.notifyDrift(c, prev)
 	}
 }
 

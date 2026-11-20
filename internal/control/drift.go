@@ -144,15 +144,11 @@ func (s *Store) BeginDrift(ctx context.Context, ref, env, stack string, at time.
 // checks of its stack@env. It ends the check's state tokens. A check
 // during which an apply of the stack@env ran may have read a state that
 // apply was changing, so it is deleted instead, and FinishDrift reports
-// false: DriftDue finds the stack@env due again.
-func (s *Store) FinishDrift(ctx context.Context, c DriftCheck) (bool, error) {
-	stored, _, err := s.FinishDriftStatus(ctx, c)
-	return stored, err
-}
-
-// FinishDriftStatus is FinishDrift and also returns the status of the
-// stack@env's previous ended drift check, "" when none existed.
-func (s *Store) FinishDriftStatus(ctx context.Context, c DriftCheck) (bool, DriftStatus, error) {
+// false: DriftDue finds the stack@env due again. It also returns the
+// status of the stack@env's newest earlier check that ended clean or
+// drifted, "" for none: a failed check says nothing about drift, so
+// drifted, failed, drifted is no change.
+func (s *Store) FinishDrift(ctx context.Context, c DriftCheck) (bool, DriftStatus, error) {
 	switch c.Status {
 	case DriftClean, DriftDrifted, DriftFailed:
 	default:
@@ -187,17 +183,23 @@ func (s *Store) FinishDriftStatus(ctx context.Context, c DriftCheck) (bool, Drif
 			_, err := tx.ExecContext(ctx, "DELETE FROM drift_checks WHERE ref = ?", c.Ref)
 			return err
 		}
-		var prevSince int64
-		err = tx.QueryRowContext(ctx, `SELECT status, drifted_since FROM drift_checks WHERE env = ? AND stack = ? AND status <> 'planning' AND ref <> ?
-			ORDER BY started_at DESC, ref DESC LIMIT 1`, env, stack, c.Ref).Scan(&prevStatus, &prevSince)
+		err = tx.QueryRowContext(ctx, `SELECT status FROM drift_checks WHERE env = ? AND stack = ? AND status IN ('clean', 'drifted') AND ref <> ?
+			ORDER BY started_at DESC, ref DESC LIMIT 1`, env, stack, c.Ref).Scan(&prevStatus)
 		if err != nil && !errors.Is(err, sqldb.ErrNoRows) {
 			return err
 		}
 		var since int64
 		if c.Status == DriftDrifted {
 			since = c.MadeAt.UnixMilli()
-			if prevStatus == DriftDrifted && prevSince > 0 {
-				since = prevSince
+			var last DriftStatus
+			var lastSince int64
+			err := tx.QueryRowContext(ctx, `SELECT status, drifted_since FROM drift_checks WHERE env = ? AND stack = ? AND status <> 'planning' AND ref <> ?
+				ORDER BY started_at DESC, ref DESC LIMIT 1`, env, stack, c.Ref).Scan(&last, &lastSince)
+			switch {
+			case err == nil && last == DriftDrifted && lastSince > 0:
+				since = lastSince
+			case err != nil && !errors.Is(err, sqldb.ErrNoRows):
+				return err
 			}
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE drift_checks SET status = ?, made_at = ?, plan_id = ?, repo = ?, source_commit = ?, outside = ?, code = ?,

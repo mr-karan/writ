@@ -9,6 +9,7 @@ import (
 	"github.com/mr-karan/writ/internal/authz"
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
+	"github.com/mr-karan/writ/internal/notify"
 )
 
 // FormatConfig is GET /v1/config.
@@ -28,6 +29,10 @@ type ConfigDoc struct {
 	// Forges are where repositories are read from. Their token files stay
 	// out of the document.
 	Forges []ForgeInfo `json:"forges"`
+	// Notifiers are the notification targets with their delivery counts and
+	// last outcome. Their URL and signing secret files stay out of the
+	// document.
+	Notifiers []NotifierInfo `json:"notifiers"`
 	// PollEvery is how often each repository's default branch is polled,
 	// a Go duration.
 	PollEvery string `json:"poll_every"`
@@ -46,6 +51,23 @@ type ForgeInfo struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
 	URL  string `json:"url"`
+}
+
+// NotifierInfo is one configured notifier and its delivery status. It holds
+// no webhook URL, signing secret, or file path.
+type NotifierInfo struct {
+	Name        string   `json:"name"`
+	Kind        string   `json:"kind"`
+	Events      []string `json:"events"`
+	Envs        []string `json:"envs,omitempty"`
+	Stacks      []string `json:"stacks,omitempty"`
+	DriftMode   string   `json:"drift_mode,omitempty"`
+	Delivered   int      `json:"delivered"`
+	Failed      int      `json:"failed"`
+	LastEvent   string   `json:"last_event"`
+	LastOKAt    string   `json:"last_ok_at"`
+	LastErrorAt string   `json:"last_error_at"`
+	Error       string   `json:"error"`
 }
 
 // TeamInfo is one team and its rule.
@@ -124,11 +146,37 @@ func (s *Server) configDoc(w http.ResponseWriter, r *http.Request) {
 	cfg := s.cfg
 	doc := ConfigDoc{
 		Format: FormatConfig, OK: true, URL: cfg.URL, Issuers: []IssuerInfo{}, Teams: []TeamInfo{}, Grants: []GrantInfo{},
-		Envs: []EnvInfo{}, Forges: []ForgeInfo{}, PollEvery: cfg.PollEvery.String(),
+		Envs: []EnvInfo{}, Forges: []ForgeInfo{}, Notifiers: []NotifierInfo{}, PollEvery: cfg.PollEvery.String(),
 		PlanTTL: cfg.PlanTTL.String(), SessionTTL: cfg.SessionTTL.String(), UI: cfg.UI, Diagnostics: []Diagnostic{},
 	}
 	for _, f := range cfg.Forges {
 		doc.Forges = append(doc.Forges, ForgeInfo{Name: f.Name, Kind: string(f.Kind), URL: f.URL})
+	}
+	if len(cfg.Notifiers) > 0 {
+		statuses, err := s.store.NotificationStatuses(r.Context())
+		if err != nil {
+			s.dbFailed(w, r, FormatConfig, err)
+			return
+		}
+		for _, n := range cfg.Notifiers {
+			evs := make([]string, len(n.Events))
+			for i, ev := range n.Events {
+				evs[i] = string(ev)
+			}
+			ni := NotifierInfo{Name: n.Name, Kind: string(n.Kind), Events: evs, Envs: n.Envs, Stacks: n.Stacks}
+			if slices.Contains(n.Events, notify.EventDrift) {
+				ni.DriftMode = string(n.DriftMode)
+			}
+			if st, ok := statuses[n.Name]; ok {
+				ni.Delivered = int(st.Delivered)
+				ni.Failed = int(st.Failed)
+				ni.LastEvent = st.LastEvent
+				ni.LastOKAt = stamp(st.LastOKAt)
+				ni.LastErrorAt = stamp(st.LastErrorAt)
+				ni.Error = st.LastError
+			}
+			doc.Notifiers = append(doc.Notifiers, ni)
+		}
 	}
 	for _, is := range cfg.Issuers {
 		doc.Issuers = append(doc.Issuers, IssuerInfo{Name: is.Name, Kind: string(is.Kind), URL: is.URL, Identity: is.Identity})

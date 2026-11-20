@@ -2,7 +2,6 @@ package control_test
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,13 +23,13 @@ func TestNotificationStatus(t *testing.T) {
 		t2 := t1.Add(5 * time.Minute)
 		t3 := t2.Add(5 * time.Minute)
 
-		if err := s.RecordNotification(ctx, "ops-slack", "drift", true, "", t1); err != nil {
+		if err := s.RecordNotification(ctx, control.NotificationResult{Name: "ops-slack", Event: "drift", OK: true, At: t1}); err != nil {
 			t.Fatalf("record ok: %v", err)
 		}
-		if err := s.RecordNotification(ctx, "ops-slack", "apply-failed", false, "http status 502", t2); err != nil {
+		if err := s.RecordNotification(ctx, control.NotificationResult{Name: "ops-slack", Event: "apply-failed", Failed: 1, Err: "http status 502", At: t2}); err != nil {
 			t.Fatalf("record fail: %v", err)
 		}
-		if err := s.RecordNotification(ctx, "pager", "outside-write", false, "request timed out", t2); err != nil {
+		if err := s.RecordNotification(ctx, control.NotificationResult{Name: "pager", Event: "outside-write", Failed: 1, Err: "request timed out", At: t2}); err != nil {
 			t.Fatalf("record pager fail: %v", err)
 		}
 
@@ -49,7 +48,10 @@ func TestNotificationStatus(t *testing.T) {
 		}
 
 		// Subsequent success clears last_error while preserving counts.
-		if err := s.RecordNotification(ctx, "ops-slack", "applied", true, "", t3); err != nil {
+		if err := s.RecordNotification(ctx, control.NotificationResult{Name: "pager", Event: "drift", Failed: 3, Err: "queue full: dropped 3 events", At: t3}); err != nil {
+			t.Fatalf("record drops: %v", err)
+		}
+		if err := s.RecordNotification(ctx, control.NotificationResult{Name: "ops-slack", Event: "applied", OK: true, At: t3}); err != nil {
 			t.Fatalf("record recovery: %v", err)
 		}
 		got, err = s.NotificationStatuses(ctx)
@@ -60,25 +62,27 @@ func TestNotificationStatus(t *testing.T) {
 		if st.Delivered != 2 || st.Failed != 1 || st.LastEvent != "applied" || !st.LastOKAt.Equal(t3) || !st.LastErrorAt.IsZero() || st.LastError != "" {
 			t.Fatalf("ops-slack after recovery = %+v", st)
 		}
+		if pg := got["pager"]; pg.Failed != 4 || pg.LastError != "queue full: dropped 3 events" {
+			t.Fatalf("pager after drops = %+v", pg)
+		}
 
-		// PeekNotificationStatuses reads persisted status without migrating.
-		peeked := control.PeekNotificationStatuses(ctx, loc)
+		if e.Name != "postgres" {
+			return
+		}
+		peeked, err := control.PeekNotificationStatuses(ctx, loc)
+		if err != nil {
+			t.Fatalf("peek: %v", err)
+		}
 		if p := peeked["ops-slack"]; p.Delivered != 2 || p.Failed != 1 || !p.LastOKAt.Equal(t3) {
 			t.Fatalf("peeked ops-slack = %+v", p)
 		}
-		if p := peeked["pager"]; p.Failed != 1 || p.LastError != "request timed out" {
+		if p := peeked["pager"]; p.Failed != 4 || p.LastError != "queue full: dropped 3 events" {
 			t.Fatalf("peeked pager = %+v", p)
 		}
 	})
-
-	// Missing SQLite file returns nil cleanly and does not create it.
-	missing := filepath.Join(t.TempDir(), "does-not-exist.db")
-	if got := control.PeekNotificationStatuses(context.Background(), missing); len(got) != 0 {
-		t.Fatalf("peek missing db = %+v, want empty", got)
-	}
 }
 
-func TestFinishDriftStatusTracksTransitions(t *testing.T) {
+func TestFinishDriftReturnsPreviousDriftStatus(t *testing.T) {
 	controltest.Each(t, func(t *testing.T, e controltest.Engine) {
 		ctx := context.Background()
 		s, err := control.Open(ctx, control.Options{Location: e.New(t)})
@@ -93,18 +97,21 @@ func TestFinishDriftStatusTracksTransitions(t *testing.T) {
 			status   control.DriftStatus
 			wantPrev control.DriftStatus
 		}{
-			{"DRIFT1", control.DriftClean, ""},
-			{"DRIFT2", control.DriftDrifted, control.DriftClean},
-			{"DRIFT3", control.DriftDrifted, control.DriftDrifted},
-			{"DRIFT4", control.DriftClean, control.DriftDrifted},
-			{"DRIFT5", control.DriftClean, control.DriftClean},
+			{"DRIFT1", control.DriftFailed, ""},
+			{"DRIFT2", control.DriftClean, ""},
+			{"DRIFT3", control.DriftDrifted, control.DriftClean},
+			{"DRIFT4", control.DriftFailed, control.DriftDrifted},
+			{"DRIFT5", control.DriftDrifted, control.DriftDrifted},
+			{"DRIFT6", control.DriftClean, control.DriftDrifted},
+			{"DRIFT7", control.DriftFailed, control.DriftClean},
+			{"DRIFT8", control.DriftClean, control.DriftClean},
 		}
 		for i, st := range steps {
 			at := t0.Add(time.Duration(i) * time.Minute)
 			if err := s.BeginDrift(ctx, st.ref, "prod", "network", at); err != nil {
 				t.Fatalf("BeginDrift %s: %v", st.ref, err)
 			}
-			stored, prev, err := s.FinishDriftStatus(ctx, control.DriftCheck{
+			stored, prev, err := s.FinishDrift(ctx, control.DriftCheck{
 				Ref:    st.ref,
 				Env:    "prod",
 				Stack:  "network",
@@ -112,7 +119,7 @@ func TestFinishDriftStatusTracksTransitions(t *testing.T) {
 				MadeAt: at.Add(10 * time.Second),
 			})
 			if err != nil {
-				t.Fatalf("FinishDriftStatus %s: %v", st.ref, err)
+				t.Fatalf("FinishDrift %s: %v", st.ref, err)
 			}
 			if !stored {
 				t.Fatalf("step %s not stored", st.ref)

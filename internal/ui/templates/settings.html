@@ -47,6 +47,27 @@
 {{- end}}
 </dl>
 </section>
+{{if .Notifiers}}
+<section class="card" aria-labelledby="h-notify">
+<div class="card-head"><h2 id="h-notify">Notifications</h2></div>
+<table class="list">
+<caption class="sr-only">Each notifier, the events it hears, and how its deliveries went</caption>
+<thead><tr><th scope="col">Notifier</th><th scope="col">Events</th><th scope="col" class="num">Delivered</th><th scope="col" class="num">Failed</th><th scope="col">Last delivery</th><th scope="col" class="end">Last error</th></tr></thead>
+<tbody>
+{{- range .Notifiers}}
+<tr>
+<th scope="row" class="c-main">{{.Name}} <span class="under muted">{{.Kind}}</span></th>
+<td data-label="Events"><span class="chips">{{range $i, $e := .Events}}{{if $i}} {{end}}<span class="chip">{{$e}}</span>{{end}}</span>{{if .DriftMode}} <span class="muted">drift {{.DriftMode}}</span>{{end}}</td>
+<td class="num" data-label="Delivered">{{template "n" (exact .Delivered)}}</td>
+<td class="num" data-label="Failed">{{template "n" (exact .Failed)}}</td>
+<td data-label="Last delivery">{{if .LastOKAt}}{{template "when" .LastOKAt}}{{else}}<span class="muted">not yet</span>{{end}}</td>
+<td class="end" data-label="Last error">{{if .Error}}{{template "status" "failed"}} <span class="under msg" data-record="{{record "name" .Name "error" .Error}}" data-field="error">{{.Error}}</span> {{template "when" .LastErrorAt}}{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</section>
+{{end}}
 {{end}}
 <p class="meta">Built with <a href="{{.License}}">Oat 1.0.0</a> by Kailash Nadh, MIT license</p>
 {{end}}

@@ -180,10 +180,13 @@ func (s *Server) runPlan(ref, env, stack string, in planInput, p *principal, don
 		defer cancelFail()
 		if err := s.store.FinishPlan(failCtx, ref, failed, e); err != nil {
 			s.log.Error("record the failure of a plan", "plan", ref, "err", err)
+		} else {
+			s.notifyPlan(ref, env, stack, failed, p)
 		}
 		return
 	}
 	s.log.Info("plan saved", "plan", ref, "id", res.ID, "status", res.Status, "env", env, "stack", stack, "author", p.info.Person, "changes", res.Changes, "risks", res.Risks)
+	s.notifyPlan(ref, env, stack, res, p)
 }
 
 // plan reads the commit of the plan and plans the OpenTofu stack in it.

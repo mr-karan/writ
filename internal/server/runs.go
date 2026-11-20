@@ -526,6 +526,7 @@ func (s *Server) runApply(run control.Run, plan control.Plan, env Env, p *princi
 		return
 	}
 	s.log.Info("apply ended", "run", run.ID, "plan", plan.ID, "status", res.Status, "elapsed", res.EndedAt.Sub(run.StartedAt).String(), "superseded", voided)
+	s.notifyRun(run, plan, res, p)
 }
 
 // applyRefusal is writ.apply/v0 for an apply that could not start.

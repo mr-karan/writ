@@ -2,7 +2,6 @@ package control
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"github.com/mr-karan/writ/internal/sqldb"
@@ -21,14 +20,27 @@ type NotificationStatus struct {
 	LastError   string
 }
 
-// RecordNotification records the outcome of one notification delivery attempt
-// for the notifier named name. On success it increments delivered, updates
-// last_ok_at, and clears last_error; on failure it increments failed and
-// records errText and last_error_at.
-func (s *Store) RecordNotification(ctx context.Context, name, event string, ok bool, errText string, at time.Time) error {
-	ms := at.UnixMilli()
+// NotificationResult is how one delivery to a notifier ended, or how many
+// events it dropped. Err is writ's own short text, never what the receiver
+// answered.
+type NotificationResult struct {
+	Name, Event string
+	OK          bool
+	// Failed counts the events that did not arrive: 1 for a delivery that
+	// gave up, more for events dropped from a full queue.
+	Failed int64
+	Err    string
+	At     time.Time
+}
+
+// RecordNotification records how a delivery to a notifier ended. One that
+// arrived adds to delivered, sets last_ok_at, and clears last_error; one
+// that did not adds r.Failed to failed and sets last_error and
+// last_error_at.
+func (s *Store) RecordNotification(ctx context.Context, r NotificationResult) error {
+	name, event, errText, ms := r.Name, r.Event, r.Err, r.At.UnixMilli()
 	return s.db.Write(ctx, func(tx *sqldb.Tx) error {
-		if ok {
+		if r.OK {
 			_, err := tx.ExecContext(ctx, `INSERT INTO notification_status (name, delivered, failed, last_event, last_ok_at, last_error_at, last_error)
 				VALUES (?, 1, 0, ?, ?, 0, '')
 				ON CONFLICT (name) DO UPDATE SET
@@ -41,13 +53,13 @@ func (s *Store) RecordNotification(ctx context.Context, name, event string, ok b
 			return err
 		}
 		_, err := tx.ExecContext(ctx, `INSERT INTO notification_status (name, delivered, failed, last_event, last_ok_at, last_error_at, last_error)
-			VALUES (?, 0, 1, ?, 0, ?, ?)
+			VALUES (?, 0, ?, ?, 0, ?, ?)
 			ON CONFLICT (name) DO UPDATE SET
-				failed = notification_status.failed + 1,
+				failed = notification_status.failed + excluded.failed,
 				last_event = excluded.last_event,
 				last_error_at = excluded.last_error_at,
 				last_error = excluded.last_error`,
-			name, event, ms, errText)
+			name, r.Failed, event, ms, errText)
 		return err
 	})
 }
@@ -58,38 +70,20 @@ func (s *Store) NotificationStatuses(ctx context.Context) (map[string]Notificati
 	return queryNotificationStatuses(ctx, s.db)
 }
 
-// PeekNotificationStatuses reads persisted delivery statuses from location
-// without creating files or running migrations, for writ serve --check. It
-// returns nil if the database is unreachable or has no notification_status
-// table yet.
-func PeekNotificationStatuses(ctx context.Context, location string) map[string]NotificationStatus {
-	if location == "" {
-		return nil
+// PeekNotificationStatuses reads the delivery statuses in the Postgres
+// database at location without migrating it, for writ serve --check.
+func PeekNotificationStatuses(ctx context.Context, location string) (map[string]NotificationStatus, error) {
+	if err := CheckURL(location); err != nil {
+		return nil, err
 	}
-	pctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var db *sqldb.DB
-	var err error
-	if sqldb.IsPostgres(location) {
-		if CheckURL(location) != nil {
-			return nil
-		}
-		db, err = sqldb.OpenPostgres(location, sqldb.PostgresOptions{SearchPath: Schema, AppName: "writ check", MaxConns: 2, What: what, ConnectTimeout: time.Second})
-	} else {
-		if _, statErr := os.Stat(location); statErr != nil {
-			return nil
-		}
-		db, err = sqldb.OpenSQLite(location, sqldb.ReadOnly, what)
-	}
+	db, err := sqldb.OpenPostgres(location, sqldb.PostgresOptions{SearchPath: Schema, AppName: "writ serve --check", MaxConns: 1, What: what, ConnectTimeout: 2 * time.Second})
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer db.Close()
-	out, err := queryNotificationStatuses(pctx, db)
-	if err != nil {
-		return nil
-	}
-	return out
+	return queryNotificationStatuses(ctx, db)
 }
 
 func queryNotificationStatuses(ctx context.Context, db *sqldb.DB) (map[string]NotificationStatus, error) {
