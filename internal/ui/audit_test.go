@@ -155,10 +155,10 @@ func TestAuditPageAuthorization(t *testing.T) {
 }
 
 // Mirror of TestAuditReadNeverShowsWhatARequestSent for /ui/audit: a secret
-// sent in a token, path, query, body, or method never appears on /ui/audit
-// (even for an admin), refused rows show "reason withheld" distinctly from
-// empty reasons, state-write hashes are stripped, and client addresses never
-// appear.
+// sent in a token, path, query, body, or method, or in a filter of the page
+// itself, never appears on /ui/audit, even for an admin. Refused rows show
+// "reason withheld" apart from empty reasons, state-write hashes are
+// stripped, and client addresses never appear.
 func TestAuditPageNeverLeaksRequestSecrets(t *testing.T) {
 	f := auditUIFixture(t)
 	secret := "audit~ui~canary~" + rand.Text()
@@ -173,6 +173,7 @@ func TestAuditPageNeverLeaksRequestSecrets(t *testing.T) {
 		{"GET", "/v1/applies?env=" + secret, ciTok, ""},
 		{"GET", "/v1/applies?env=prod&stack=" + secret, ciTok, ""},
 		{"POST", "/v1/plans", ciTok, `{"format":"` + secret + `"}`},
+		{"POST", "/v1/runs", ciTok, `{"format":"writ.run-request/v1","plan":"` + secret + `"}`},
 		{secret, "/v1/whoami", ciTok, ""},
 	} {
 		r, err := http.NewRequest(req.method, f.url+req.path, strings.NewReader(req.body))
@@ -197,43 +198,75 @@ func TestAuditPageNeverLeaksRequestSecrets(t *testing.T) {
 	sum := sha256.Sum256([]byte("secret-state-payload"))
 	hashHex := hex.EncodeToString(sum[:])
 	now := f.clock.Now().Add(-time.Minute).Truncate(time.Second)
-	for i, e := range []control.Entry{
+	for _, e := range []control.Entry{
 		{At: now, Request: "STATEWR0000000000000000001", Kind: "request", Method: "POST", Route: "/v1/tfstate/{stack}", Status: 200, Remote: "198.51.100.42", Env: "prod", Stacks: []string{"network"}, Op: "state-write", Decision: control.Allowed, Reason: "state version 1, serial 1, lineage lin-1, sha256 " + hashHex},
 		{At: now.Add(time.Second), Request: "EMPTYRS0000000000000000002", Kind: "request", Method: "GET", Route: "/v1/applies", Status: 200, Remote: "198.51.100.43", Env: "prod", Stacks: []string{"network"}, Op: "read", Principal: "nora", PrincipalKind: "person", Person: "gitlab/user/7001", Decision: control.Allowed, Reason: ""},
 	} {
-		_ = i
 		if err := f.store.Audit(context.Background(), e); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	root := signInGroup(f, "7003", "root", "acme/admins")
-	p := root.get("/ui/audit")
-	if p.status != http.StatusOK {
-		t.Fatalf("GET /ui/audit: %d %s", p.status, text(p.doc))
+	for _, q := range []string{"plan=", "env=prod&stack=", "person=", "env=", "op=", "cursor=", "since=", "until="} {
+		root.get("/ui/audit?" + q + url.QueryEscape(secret))
 	}
-	checkPage(t, p, "")
-
+	// The control database holds the secret, so the page must hold it back.
+	held := false
+	for _, e := range controltest.Audit(t, f.loc, controltest.AuditFilter{Limit: 1000}) {
+		held = held || strings.Contains(e.Reason, secret)
+	}
+	if !held {
+		t.Fatal("no audit row quotes the secret; the test no longer proves the page holds it back")
+	}
+	// Read every page, so no row the secret's requests left is past the
+	// first.
+	var body strings.Builder
+	for next, pages := "/ui/audit", 0; next != ""; pages++ {
+		if pages == 20 {
+			t.Fatal("/ui/audit has over 20 pages")
+		}
+		p := root.get(next)
+		if p.status != http.StatusOK {
+			t.Fatalf("GET %s: %d %s", next, p.status, text(p.doc))
+		}
+		checkPage(t, p, "")
+		body.WriteString(p.body)
+		next = ""
+		each(p.doc, func(n *html.Node) {
+			if n.Data == "a" && strings.TrimSpace(text(n)) == "Older entries" {
+				next, _ = attr(n, "href")
+			}
+		})
+	}
+	all := body.String()
 	for _, forbidden := range []string{secret, hashHex, "sha256", "198.51.100.42", "198.51.100.43"} {
-		if strings.Contains(p.body, forbidden) {
+		if strings.Contains(all, forbidden) {
 			t.Errorf("/ui/audit leaks %q", forbidden)
 		}
 	}
-	if !strings.Contains(p.body, "reason withheld") {
+	if !strings.Contains(all, "reason withheld") {
 		t.Error("/ui/audit does not mark refused rows as reason withheld")
 	}
-	if !strings.Contains(p.body, "state version 1, serial 1, lineage lin-1") {
+	if !strings.Contains(all, "state version 1, serial 1, lineage lin-1") {
 		t.Error("/ui/audit missing state-write reason (with hash stripped)")
 	}
-	if !strings.Contains(p.body, "OTHER /v1/whoami") {
+	if !strings.Contains(all, "OTHER /v1/whoami") {
 		t.Error("/ui/audit does not show nonstandard method as OTHER")
 	}
-	// The allowed row with empty reason must NOT say "reason withheld".
-	for _, tr := range strings.Split(p.body, "<tr")[1:] {
+	// The allowed row with an empty reason does not say "reason withheld".
+	emptyRow := false
+	for _, tr := range strings.Split(all, "<tr")[1:] {
 		tr, _, _ = strings.Cut(tr, "</tr>")
-		if strings.Contains(tr, "EMPTYRS0000000000000000002") && strings.Contains(tr, "reason withheld") {
-			t.Errorf("allowed row with empty reason shows reason withheld: %s", tr)
+		if strings.Contains(tr, "EMPTYRS0000000000000000002") {
+			emptyRow = true
+			if strings.Contains(tr, "reason withheld") {
+				t.Errorf("allowed row with empty reason shows reason withheld: %s", tr)
+			}
 		}
+	}
+	if !emptyRow {
+		t.Error("/ui/audit lacks the allowed row with an empty reason")
 	}
 }
 

@@ -14,11 +14,11 @@ import (
 	"github.com/mr-karan/writ/internal/server"
 )
 
-// Drift check detail pages show the check's head (drift timer, interval,
-// stack@env, commit, when, outcome), changes (outside OpenTofu vs in the
-// code), and diagnostics on failure; are linked from the Drift tab and
-// overview alerts; redirect from /ui/plans/{drift id}; and enforce read
-// grants.
+// A drift check's page shows its head (drift timer, interval, stack@env,
+// commit, when, outcome), its changes (outside OpenTofu and in the code),
+// or its error and adopt command when it failed. The Drift tab's kept
+// checks and the overview's alerts link it, and /ui/plans/{its plan id}
+// redirects to it.
 func TestDriftCheckDetailPage(t *testing.T) {
 	x := newTofuUI(t, func(cfg *server.Config) { cfg.DriftEvery = 6 * time.Hour })
 	x.driftCheck(second)
@@ -34,10 +34,13 @@ func TestDriftCheckDetailPage(t *testing.T) {
 	}
 
 	// Drift tab and overview alerts both link to /ui/drift/{ref}.
-	driftTabHTML, _ := x.page("/ui/stack?stack=app&env=dev&view=drift")
+	driftTabHTML, driftTab := x.page("/ui/stack?stack=app&env=dev&view=drift")
 	wantHref := `href="/ui/drift/` + c.Ref + `"`
 	if !strings.Contains(driftTabHTML, wantHref) {
 		t.Errorf("stack Drift tab lacks %s", wantHref)
+	}
+	if want := "Kept checks 1 The drift checks writ serve keeps of app in dev, newest first Check Status Commit Changes Checked " + c.Ref[:8] + " drifted " + x.commit[:8] + " 1 outside, 5 in code"; !strings.Contains(words(driftTab), want) {
+		t.Errorf("stack Drift tab lacks %q:\n%s", want, words(driftTab))
 	}
 	overviewHTML, _ := x.page("/ui/")
 	if !strings.Contains(overviewHTML, wantHref) {
@@ -88,7 +91,6 @@ func TestDriftCheckDetailPage(t *testing.T) {
 	ftext := words(fparsed)
 	for _, want := range []string{
 		"Drift check " + fc.Ref[:8] + " failed",
-		"Diagnostics 1",
 		"drift unknown: no secret set for state version 1 of app@staging",
 		"writ state adopt app --env staging --version 1 --reason REASON",
 	} {

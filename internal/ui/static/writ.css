@@ -335,6 +335,7 @@ table a { font-weight: 500; }
 .kv dd { min-width: 0; overflow-wrap: anywhere; }
 @media (min-width: 60rem) {
   .kv-2 { grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr); }
+  .kv-2 > .wide > dt { grid-column: 1; }
   .kv-2 > .wide > dd { grid-column: span 3; }
 }
 
@@ -521,6 +522,7 @@ td.notes .chip { margin-bottom: 0.125rem; }
 .audit-form label { font-size: var(--fs-1); color: var(--muted-foreground); }
 .audit-actions { align-self: end; }
 .audit-actions button { width: 100%; }
+.audit-op { white-space: nowrap; }
 .theme { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--inset); }
 .theme legend { float: left; padding: 0; font-size: var(--fs-2); color: var(--muted-foreground); width: 9rem; line-height: var(--ctl); }
 fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: contents; }

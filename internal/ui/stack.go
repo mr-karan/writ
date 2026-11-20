@@ -20,6 +20,8 @@ type stackData struct {
 	// DriftEvery is how often writ serve checks the stack for drift, as
 	// GET /v1/drift says it; blank when it runs no drift checks.
 	DriftEvery span
+	// DriftChecks are the stack@env's kept drift checks, newest first.
+	DriftChecks []server.DriftCheckSummary
 	// Adopt is the command that adopts the stack's state, when its drift
 	// check says the state has no secret set.
 	Adopt string
@@ -35,8 +37,9 @@ type stackData struct {
 // driftBox is the drift view of a stack: its drift and how often writ
 // serve checks it.
 type driftBox struct {
-	Drift *server.DriftStack
-	Every span
+	Drift  *server.DriftStack
+	Every  span
+	Checks []server.DriftCheckSummary
 }
 
 // stack shows one stack@env: its resources, its drift, its runs, or its
@@ -78,7 +81,7 @@ func (u *UI) stack(w http.ResponseWriter, r *http.Request, s *server.Session) {
 		d.DriftEvery = span{drift.Every, fmt.Sprintf("PT%dS", int(every.Seconds()))}
 	}
 	if len(drift.Stacks) == 1 {
-		d.Drift = &drift.Stacks[0]
+		d.Drift, d.DriftChecks = &drift.Stacks[0], drift.Checks
 		if c := d.Drift.Check; c != nil {
 			d.Adopt, _ = server.AdoptCommand(c.Error, d.Stack, d.Env, d.Drift.Backend)
 			if c.Status == server.DriftDrifted {

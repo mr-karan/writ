@@ -25,60 +25,25 @@
 {{define "drift-check"}}{{template "head" .}}
 {{with .Data}}{{$c := .Check}}
 <div class="page-head">
-<h1>Drift check <code class="id">{{short .ID}}</code> {{template "status" $c.Status}}</h1>
+<h1>Drift check <code class="id">{{short $c.Ref}}</code> {{template "status" $c.Status}}</h1>
 </div>
-<p class="meta"><a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}">{{.Stack}}</a> in {{.Env}} · <span class="by">{{template "icon" "timer"}}drift timer{{with .Every}}{{if .Text}}, every <time datetime="{{.ISO}}">{{.Text}}</time>{{end}}{{end}}</span>{{if $c.Commit}} · commit <code>{{short $c.Commit}}</code>{{if $c.Repo}} of {{$c.Repo}}{{end}}{{end}}</p>
+<p class="meta"><a href="{{link "/ui/stack" "stack" .Stack "env" .Env "view" "drift"}}">{{.Stack}}</a> in {{.Env}}{{if $c.Commit}} · commit <code>{{short $c.Commit}}</code> of {{$c.Repo}}{{end}}</p>
 {{with .Adopt}}{{template "adopt-hint" .}}{{end}}
-{{with .DocError}}<div class="note note-error" role="alert">{{template "icon" "fail"}}<div>Writ could not read this drift check's network record: <span class="msg">{{.}}</span></div></div>{{end}}
-
+{{if eq $c.Status "failed"}}<div class="note note-error" role="alert">{{template "icon" "fail"}}<div><span class="msg" data-record="{{record "format" "writ.drift-check/v0" "check.ref" $c.Ref}}" data-field="check.error">{{$c.Error}}</span></div></div>{{end}}
 <section class="card" aria-labelledby="h-check">
-<div class="card-head"><h2 id="h-check" class="by">{{template "icon" "timer"}}<span>Drift check{{with .Every}}{{if .Text}}, every <time datetime="{{.ISO}}">{{.Text}}</time>{{end}}{{end}}</span></h2></div>
+<div class="card-head"><h2 id="h-check" class="by">{{template "icon" "timer"}}<span>Drift check{{with .Every.Text}}, every <time datetime="{{$.Data.Every.ISO}}">{{.}}</time>{{end}}</span></h2></div>
 <dl class="kv kv-2" id="drift-facts">
-<div><dt>Outcome</dt><dd>{{template "status" $c.Status}}</dd></div>
-<div><dt>Started by</dt><dd>drift timer{{with .Every}}{{if .Text}}, every <time datetime="{{.ISO}}">{{.Text}}</time>{{end}}{{end}}</dd></div>
-<div><dt>Stack</dt><dd><a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}">{{.Stack}}</a> in {{.Env}}</dd></div>
+<div><dt>Started by</dt><dd>the drift timer</dd></div>
 <div><dt>Started</dt><dd>{{template "time" $c.StartedAt}}</dd></div>
-{{if $c.CheckedAt}}<div><dt>Checked</dt><dd>{{template "time" $c.CheckedAt}}{{with .Took}}{{if .Text}} <span class="muted">after <time datetime="{{.ISO}}">{{.Text}}</time></span>{{end}}{{end}}</dd></div>{{end}}
+{{if $c.CheckedAt}}<div><dt>Checked</dt><dd>{{template "time" $c.CheckedAt}}{{with .Took.Text}} <span class="muted">after <time datetime="{{$.Data.Took.ISO}}">{{.}}</time></span>{{end}}</dd></div>{{end}}
 {{if $c.DriftedSince}}<div><dt>Drifted since</dt><dd>{{template "time" $c.DriftedSince}}</dd></div>{{end}}
-{{if $c.Commit}}<div><dt>Commit</dt><dd><code>{{short $c.Commit}}</code>{{if $c.Repo}} of {{$c.Repo}}{{end}}</dd></div>{{end}}
-{{if and (ne $c.Status "failed") (ne $c.Status "planning")}}<div><dt>Changes</dt><dd>{{template "n" (exact $c.Outside)}} outside OpenTofu, {{template "n" (exact $c.Code)}} in the code</dd></div>{{end}}
-{{if $c.Ref}}<div class="wide"><dt>Check</dt><dd><code class="id-full">{{$c.Ref}}</code></dd></div>{{end}}
+{{if $c.Commit}}<div><dt>Commit</dt><dd><code>{{short $c.Commit}}</code> of {{$c.Repo}}</dd></div>{{end}}
+<div class="wide"><dt>Check</dt><dd><code class="id-full">{{$c.Ref}}</code></dd></div>
 {{if $c.Plan}}<div class="wide"><dt>Plan</dt><dd><code class="id-full">{{$c.Plan}}</code>, never applied</dd></div>{{end}}
 </dl>
 </section>
-
-{{if .Diagnostics}}
-<section class="card" aria-labelledby="h-diags" data-record="format=writ.drift-check/v0">
-<div class="card-head"><h2 id="h-diags">Diagnostics <span class="count">{{template "n" (exact (len .Diagnostics))}}</span></h2></div>
-{{template "diags" .Diagnostics}}
-</section>
-{{end}}
-
-{{if $c.Changes}}
-{{template "drift-changes" $c}}
-{{else if eq $c.Status "clean"}}
-<section class="card"><p class="calm"><span class="dot dot-ok" aria-hidden="true"></span>No drift and no unapplied changes in the default branch.</p></section>
-{{else if eq $c.Status "planning"}}
-<section class="card"><p class="empty">This drift check is running.</p></section>
-{{end}}
-
-{{with .Network}}
-<section class="card">
-<details class="fold"{{if .Refused}} open{{end}}><summary><span>Network <span class="count">{{template "n" (exact (len .Rows))}}</span></span> <span class="muted">egress {{.Mode}}</span></summary>
-{{if .Rows}}<div class="scroll">
-<table class="list">
-<caption class="sr-only">Each host and port the drift check asked writ's egress proxy for</caption>
-<thead><tr><th scope="col">Destination</th><th scope="col">Verdict</th><th scope="col" class="end">Requests</th></tr></thead>
-<tbody>
-{{- range .Rows}}
-<tr><th scope="row" class="c-main"><code>{{.Dest}}</code>{{with .Step}} <span class="muted">provider {{.}}</span>{{end}}</th><td data-label="Verdict"><span class="chip{{if eq .Verdict "refused"}} chip-bad{{else if eq .Verdict "unlisted"}} chip-warn{{end}}">{{.Verdict}}</span>{{with .Reason}} <span class="muted">{{.}}</span>{{end}}</td><td class="end" data-label="Requests">{{template "n" (exact .Count)}}</td></tr>
-{{- end}}
-</tbody>
-</table>
-</div>{{end}}
-<div class="card-foot"><span>The env's egress list{{if .Egress}}: {{range $i, $e := .Egress}}{{if $i}}, {{end}}<code>{{$e}}</code>{{end}}{{else}} is empty{{end}}.{{with .Unrecorded}} {{template "n" (exact .)}} more requests went to destinations past what the record names.{{end}}</span></div>
-</details>
-</section>
+{{if $c.Changes}}{{template "drift-changes" $c}}
+{{else if eq $c.Status "clean"}}<section class="card"><p class="calm"><span class="dot dot-ok" aria-hidden="true"></span>No drift, and the code at this commit changes nothing.</p></section>
 {{end}}
 {{end}}
 {{template "foot" .}}{{end}}
