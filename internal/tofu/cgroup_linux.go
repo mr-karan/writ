@@ -33,22 +33,37 @@ const cgroupMount = "/sys/fs/cgroup"
 // children only while it holds no process.
 const serveCgroup = "serve"
 
-// setUpCgroups makes this process's cgroup the base of every step's
-// cgroup, once for the process: it moves the process into the base's
-// serveCgroup and enables cgroupControllers for the base's children.
-var setUpCgroups = sync.OnceValues(func() (string, error) { return cgroupBase(true) })
+// runsCgroup is the cgroup, beside serveCgroup, that holds every step's
+// cgroup, so that the steps together stay within the limits it sets.
+const runsCgroup = "runs"
 
-// cgroupBase finds the cgroup under which each step gets a cgroup of its
-// own, the cgroup this process runs in, and checks that this process may
-// make children of it with cgroupControllers: that the cgroup is
-// delegated to writ's uid, offers the controllers, and holds no other
-// process, as systemd's Delegate=yes gives a unit. With apply, it moves
-// this process into serveCgroup and enables the controllers. Without, it
-// changes nothing but, as root, the mount of an absent cgroup filesystem.
-func cgroupBase(apply bool) (string, error) {
+// What writ serve keeps for itself of the processes and memory of the
+// cgroup it started in, which it shares with every step: runsCgroup gets
+// the rest, so steps that use all of theirs leave writ serve room for Go's
+// runtime threads, its heap, and the processes it starts outside a step,
+// such as git and each step's helper before it moves into its cgroup.
+const (
+	servePids   = 128
+	serveMemory = 512 << 20
+)
+
+// setUpCgroups makes runsCgroup the base of every step's cgroup, once for
+// the process.
+var setUpCgroups = sync.OnceValues(func() (cgroupSetup, error) { return cgroupBase(true) })
+
+// cgroupBase finds the cgroup this process runs in and checks that this
+// process may make children of it with cgroupControllers: that the cgroup
+// is delegated to writ's uid, offers the controllers, and holds no other
+// process, as systemd's Delegate=yes gives a unit. It works out the limits
+// of runsCgroup from the cgroup's. With apply, it moves this process into
+// serveCgroup, enables the controllers, and makes runsCgroup with those
+// limits. Without, it changes nothing but, as root, the mount of an absent
+// cgroup filesystem.
+func cgroupBase(apply bool) (cgroupSetup, error) {
+	var none cgroupSetup
 	own, err := ownCgroup()
 	if err != nil {
-		return "", err
+		return none, err
 	}
 	if !apply && filepath.Base(own) == ".control" {
 		// systemd runs a delegated unit's ExecStartPre, which runs writ
@@ -59,67 +74,122 @@ func cgroupBase(apply bool) (string, error) {
 	euid := os.Geteuid()
 	for _, p := range []string{own, filepath.Join(own, "cgroup.procs"), filepath.Join(own, "cgroup.subtree_control")} {
 		if err := unix.Faccessat(unix.AT_FDCWD, p, unix.W_OK, unix.AT_EACCESS); err != nil {
-			return "", fmt.Errorf("writ's cgroup %s is not delegated to uid %d, which must write %s (%v); run writ serve under systemd with Delegate=yes", own, euid, filepath.Base(p), err)
+			return none, fmt.Errorf("writ's cgroup %s is not delegated to uid %d, which must write %s (%v); run writ serve under systemd with Delegate=yes", own, euid, filepath.Base(p), err)
 		}
 	}
 	text, err := os.ReadFile(filepath.Join(own, "cgroup.controllers"))
 	if err != nil {
-		return "", fmt.Errorf("read the controllers of writ's cgroup %s: %w", own, err)
+		return none, fmt.Errorf("read the controllers of writ's cgroup %s: %w", own, err)
 	}
 	offered := strings.Fields(string(text))
 	for _, c := range cgroupControllers {
 		if !slices.Contains(offered, c) {
-			return "", fmt.Errorf("writ's cgroup %s offers no %s controller, only %q: its parent's cgroup.subtree_control must enable %s", own, c, strings.Join(offered, " "), strings.Join(cgroupControllers, ", "))
+			return none, fmt.Errorf("writ's cgroup %s offers no %s controller, only %q: its parent's cgroup.subtree_control must enable %s", own, c, strings.Join(offered, " "), strings.Join(cgroupControllers, ", "))
 		}
 	}
 	pids, err := cgroupProcs(own)
 	if err != nil {
-		return "", err
+		return none, err
 	}
 	// A process of another pid namespace reads as 0.
 	if others := slices.DeleteFunc(pids, func(p int) bool { return p == os.Getpid() }); len(others) > 0 {
-		return "", fmt.Errorf("writ's cgroup %s holds processes other than writ serve, %v, and a cgroup whose children have limits may hold none; run writ serve alone in its cgroup, as a systemd unit with Delegate=yes or a Nomad task does", own, others)
+		return none, fmt.Errorf("writ's cgroup %s holds processes other than writ serve, %v, and a cgroup whose children have limits may hold none; run writ serve alone in its cgroup, as a systemd unit with Delegate=yes or a Nomad task does", own, others)
+	}
+	set := cgroupSetup{base: filepath.Join(own, runsCgroup)}
+	if set.pids, err = runsLimit(own, "pids.max", servePids, "processes and threads", "TasksMax"); err != nil {
+		return none, err
+	}
+	if set.memory, err = runsLimit(own, "memory.max", serveMemory, "bytes of memory", "MemoryMax"); err != nil {
+		return none, err
 	}
 	if !apply {
-		return own, nil
+		return set, nil
 	}
 	leaf := filepath.Join(own, serveCgroup)
 	if err := os.Mkdir(leaf, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
-		return "", fmt.Errorf("make the cgroup %s for writ serve: %w", leaf, err)
+		return none, fmt.Errorf("make the cgroup %s for writ serve: %w", leaf, err)
 	}
 	if _, err := os.Stat(filepath.Join(leaf, "cgroup.kill")); err != nil {
 		_ = os.Remove(leaf)
-		return "", fmt.Errorf("the kernel has no cgroup.kill, which ends every process of a cgroup at once and needs Linux 5.14: %w", err)
+		return none, fmt.Errorf("the kernel has no cgroup.kill, which ends every process of a cgroup at once and needs Linux 5.14: %w", err)
 	}
 	if err := writeCgroup(leaf, "cgroup.procs", strconv.Itoa(os.Getpid())); err != nil {
-		return "", fmt.Errorf("move writ serve into %s: %w", leaf, err)
+		return none, fmt.Errorf("move writ serve into %s: %w", leaf, err)
 	}
 	enable := "+" + strings.Join(cgroupControllers, " +")
 	if err := writeCgroup(own, "cgroup.subtree_control", enable); err != nil {
-		return "", fmt.Errorf("enable %s for the children of %s: %w", strings.Join(cgroupControllers, ", "), own, err)
+		return none, fmt.Errorf("enable %s for the children of %s: %w", strings.Join(cgroupControllers, ", "), own, err)
 	}
-	return own, nil
+	if err := os.Mkdir(set.base, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+		return none, fmt.Errorf("make the cgroup %s for the steps: %w", set.base, err)
+	}
+	for file, n := range map[string]int64{"pids.max": set.pids, "memory.max": set.memory} {
+		if n > 0 {
+			if err := writeCgroup(set.base, file, strconv.FormatInt(n, 10)); err != nil {
+				return none, fmt.Errorf("set %s of %s: %w", file, set.base, err)
+			}
+		}
+	}
+	if err := writeCgroup(set.base, "cgroup.subtree_control", enable); err != nil {
+		return none, fmt.Errorf("enable %s for the children of %s: %w", strings.Join(cgroupControllers, ", "), set.base, err)
+	}
+	return set, nil
 }
 
-// checkCgroups reports, for writ serve --check, the cgroup under which
-// each step would get a cgroup of its own, or why none: cgroupBase's
-// checks, and then a probe that starts a process as each step's first
-// process starts, into a cgroup of the probe's own under the base, which
-// it removes. The checks alone can pass where the start then fails.
-func checkCgroups() (string, error) {
-	own, err := cgroupBase(false)
-	if err != nil {
-		return "", err
+// runsLimit returns what runsCgroup may have of the limit file under own:
+// the least that own and each cgroup above it allow, less keep for writ
+// serve, or 0 when none of them sets one. what and unit name the limit in
+// a refusal, and the systemd setting that raises it.
+func runsLimit(own, file string, keep int64, what, unit string) (int64, error) {
+	var least int64
+	for dir := own; ; dir = filepath.Dir(dir) {
+		text, err := os.ReadFile(filepath.Join(dir, file))
+		if err != nil {
+			// The root cgroup, and what lies above the mount, have none.
+			break
+		}
+		if v := strings.TrimSpace(string(text)); v != "max" {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return 0, fmt.Errorf("the cgroup %s has %s %q", dir, file, v)
+			}
+			if least == 0 || n < least {
+				least = n
+			}
+		}
+		if dir == "/" {
+			break
+		}
 	}
+	if least == 0 {
+		return 0, nil
+	}
+	if least <= keep {
+		return 0, fmt.Errorf("writ's cgroup %s allows %d %s, no more than the %d that writ serve keeps for itself; raise the unit's %s", own, least, what, keep, unit)
+	}
+	return least - keep, nil
+}
+
+// checkCgroups reports, for writ serve --check, what cgroupBase would set
+// up, or why it can't: cgroupBase's checks, and then a probe that starts
+// a process as each step's first process starts, into a cgroup of the
+// probe's own beside where runsCgroup would be, which it removes. The
+// checks alone can pass where the start then fails.
+func checkCgroups() (cgroupSetup, error) {
+	set, err := cgroupBase(false)
+	if err != nil {
+		return set, err
+	}
+	own := filepath.Dir(set.base)
 	probe := filepath.Join(own, "check-"+strings.ToLower(rand.Text()))
 	if err := os.Mkdir(probe, 0o755); err != nil {
-		return "", fmt.Errorf("make a cgroup under %s for a probe: %w", own, err)
+		return cgroupSetup{}, fmt.Errorf("make a cgroup under %s for a probe: %w", own, err)
 	}
 	defer os.Remove(probe)
 	if err := probeHelper(probe); err != nil {
-		return "", fmt.Errorf("writ could not start a step's first process in a cgroup of its own under %s: %w", own, err)
+		return cgroupSetup{}, fmt.Errorf("writ could not start a step's first process in a cgroup of its own under %s: %w", own, err)
 	}
-	return own, nil
+	return set, nil
 }
 
 // ownCgroup returns the directory of this process's cgroup in the cgroup

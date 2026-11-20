@@ -40,15 +40,29 @@ type Enforcement struct {
 	// not enforced, and CgroupOff says why.
 	Cgroup    string
 	CgroupOff string
+	// StepsPids and StepsMemory bound the processes and threads, and the
+	// bytes of memory, of every step together: the limits of the cgroup
+	// writ serve runs in, less what it keeps for itself. 0 bounds
+	// nothing.
+	StepsPids, StepsMemory int64
 	// Seccomp reports whether each tofu process runs under writ's seccomp
 	// filter. SeccompOff says why not.
 	Seccomp    bool
 	SeccompOff string
 }
 
+// cgroupSetup is what writ found of the cgroups, or made of them.
+type cgroupSetup struct {
+	// base is the cgroup under which each step gets a cgroup of its own.
+	base string
+	// pids and memory are base's pids.max and memory.max, which every
+	// step shares, or 0 for no bound.
+	pids, memory int64
+}
+
 // Enforcement reports what r enforces.
 func (r *Runner) Enforcement() Enforcement {
-	e := Enforcement{Cgroup: r.cgroups, CgroupOff: r.cgroupOff}
+	e := Enforcement{Cgroup: r.cgroups.base, CgroupOff: r.cgroupOff, StepsPids: r.cgroups.pids, StepsMemory: r.cgroups.memory}
 	e.Seccomp, e.SeccompOff = seccompStatus()
 	return e
 }
@@ -60,10 +74,10 @@ func (r *Runner) Enforcement() Enforcement {
 func CheckLimits(l Limits) Enforcement {
 	var e Enforcement
 	if l.cgroup() {
-		if base, err := checkCgroups(); err != nil {
+		if set, err := checkCgroups(); err != nil {
 			e.CgroupOff = err.Error()
 		} else {
-			e.Cgroup = base
+			e.Cgroup, e.StepsPids, e.StepsMemory = set.base, set.pids, set.memory
 		}
 	}
 	e.Seccomp, e.SeccompOff = seccompStatus()

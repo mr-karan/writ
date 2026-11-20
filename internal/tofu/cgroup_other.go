@@ -6,9 +6,9 @@ import "errors"
 
 var errNoCgroups = errors.New("cgroup limits need Linux")
 
-func setUpCgroups() (string, error)   { return "", errNoCgroups }
-func checkCgroups() (string, error)   { return "", errNoCgroups }
-func seccompReady() error             { return errors.New("the seccomp filter needs Linux") }
+func setUpCgroups() (cgroupSetup, error) { return cgroupSetup{}, errNoCgroups }
+func checkCgroups() (cgroupSetup, error) { return cgroupSetup{}, errNoCgroups }
+func seccompReady() error                { return errors.New("the seccomp filter needs Linux") }
 
 // stepCgroup is a step's cgroup, which only Linux makes.
 type stepCgroup struct{}

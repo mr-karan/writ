@@ -86,10 +86,11 @@ type Runner struct {
 	opts Options
 	root *os.Root
 	git  *gitTools
-	// cgroups is the cgroup under which each step gets one of its own, ""
-	// when Options.Limits sets none or this process cannot make them,
-	// and cgroupOff is why it cannot.
-	cgroups   string
+	// cgroups is what writ made of the cgroups, with base the cgroup
+	// under which each step gets one of its own, "" when Options.Limits
+	// sets none or this process cannot make them, and cgroupOff is why
+	// it cannot.
+	cgroups   cgroupSetup
 	cgroupOff string
 	// cache is held by Fill to write the plugin cache, and by each run's
 	// init to read it.

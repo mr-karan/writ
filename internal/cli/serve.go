@@ -273,6 +273,9 @@ func (a *App) checkLimits(cfg *server.Config) error {
 	var warn diag.List
 	if e.Cgroup != "" {
 		fmt.Fprintf(w, "limits: each OpenTofu step runs in a cgroup of its own under %s: memory %s with no swap, %d processes and threads, %v CPUs\n", e.Cgroup, sizeWords(l.Memory), l.Pids, l.CPUs)
+		for _, msg := range sharedLimitWarnings(l, cfg.Limits.Plans+cfg.Limits.Applies, e) {
+			warn.Warnf(diag.Usage, diag.Span{}, "%s", msg)
+		}
 	} else {
 		warn.Warnf(diag.Usage, diag.Span{}, "limits not enforced: %s; writ serve runs each OpenTofu step without limits.run_memory, run_pids, and run_cpus", e.CgroupOff)
 	}
@@ -284,6 +287,22 @@ func (a *App) checkLimits(cfg *server.Config) error {
 	}
 	printDiags(w, warn)
 	return nil
+}
+
+// sharedLimitWarnings says where slots steps at once, each at l's limits,
+// can need more processes or memory than e leaves every step together:
+// the limits of writ serve's cgroup less what writ serve keeps. Steps then
+// fail to start processes, or the kernel kills one, before any reaches
+// its own limit.
+func sharedLimitWarnings(l tofu.Limits, slots int, e tofu.Enforcement) []string {
+	var out []string
+	if need := int64(l.Pids) * int64(slots); e.StepsPids > 0 && need > e.StepsPids {
+		out = append(out, fmt.Sprintf("limits.run_pids, %d, times %d plans and applies at once is %d, more than the %d processes and threads that writ's cgroup leaves every step together, its pids.max less what writ serve keeps; raise the unit's TasksMax, or lower limits.run_pids, plans, or applies", l.Pids, slots, need, e.StepsPids))
+	}
+	if need := l.Memory * int64(slots); e.StepsMemory > 0 && need > e.StepsMemory {
+		out = append(out, fmt.Sprintf("limits.run_memory, %s, times %d plans and applies at once is %s, more than the %s that writ's cgroup leaves every step together, its memory.max less what writ serve keeps; raise the unit's MemoryMax, or lower limits.run_memory, plans, or applies", sizeWords(l.Memory), slots, sizeWords(need), sizeWords(e.StepsMemory)))
+	}
+	return out
 }
 
 // sizeWords writes a size as the config does.

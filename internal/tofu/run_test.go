@@ -121,6 +121,13 @@ func fakeTofuMain(behaviour string, args []string) int {
 		for err == nil {
 			err = startSleeper()
 		}
+	case "hold":
+		// Processes until the kernel refuses one, held for six seconds.
+		for err == nil {
+			err = startSleeper()
+		}
+		time.Sleep(6 * time.Second)
+		return 1
 	case "spin":
 		// Four threads busy for two seconds, then the CPU time they took.
 		start := time.Now()

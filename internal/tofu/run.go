@@ -77,8 +77,8 @@ func (r *Runner) step(ctx context.Context, sc *scratch, creds bool, name string,
 		env = append(env, r.git.path(sc.env))
 	}
 	var cg *stepCgroup
-	if r.cgroups != "" {
-		if cg, err = newStepCgroup(r.cgroups, r.opts.Limits); err != nil {
+	if r.cgroups.base != "" {
+		if cg, err = newStepCgroup(r.cgroups.base, r.opts.Limits); err != nil {
 			return nil, fmt.Errorf("tofu %s: make the step's cgroup: %w", name, err)
 		}
 		defer cg.remove()

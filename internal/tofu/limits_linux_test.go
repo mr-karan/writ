@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -204,8 +206,10 @@ func runLimits(t *testing.T) {
 		t.Logf("four busy threads took %.2fs of CPU in %.2fs under %v CPUs", cpu, wall, testLimits.CPUs)
 	})
 	t.Run("--check in systemd's .control reports the unit's cgroup", func(t *testing.T) {
-		// systemd runs a delegated unit's ExecStartPre there.
-		control := filepath.Join(e.Cgroup, ".control")
+		// systemd runs a delegated unit's ExecStartPre there. e.Cgroup is
+		// runsCgroup, in the unit's cgroup.
+		unit := filepath.Dir(e.Cgroup)
+		control := filepath.Join(unit, ".control")
 		if err := os.Mkdir(control, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -213,9 +217,12 @@ func runLimits(t *testing.T) {
 		if err := writeCgroup(control, "cgroup.procs", "0"); err != nil {
 			t.Fatal(err)
 		}
-		defer writeCgroup(filepath.Join(e.Cgroup, serveCgroup), "cgroup.procs", "0")
+		defer writeCgroup(filepath.Join(unit, serveCgroup), "cgroup.procs", "0")
 		if got := CheckLimits(testLimits); got.Cgroup != e.Cgroup {
 			t.Fatalf("--check reports the cgroup %q (%s), not the unit's %s", got.Cgroup, got.CgroupOff, e.Cgroup)
+		}
+		if got := CheckLimits(testLimits); got.StepsPids != e.StepsPids || got.StepsMemory != e.StepsMemory {
+			t.Fatalf("--check reports the steps' limits %d and %d, not writ serve's %d and %d", got.StepsPids, got.StepsMemory, e.StepsPids, e.StepsMemory)
 		}
 	})
 }
@@ -394,4 +401,52 @@ func TestRunLimitsUnderTheShippedUnit(t *testing.T) {
 		return
 	}
 	inDelegatedService(t, "TestRunLimitsUnderTheShippedUnit", []string{"RestrictNamespaces=user mnt pid", "NoNewPrivileges=yes"}, limitsStageEnv+"=restricted")
+}
+
+// TestRunLimitsLeaveRoomForServe runs four steps at once that each start
+// processes until the kernel refuses one, in a delegated scope whose unit
+// allows 200 processes and threads, fewer than the four steps' run_pids
+// together. writ serve shares the unit's limits with every step, so the
+// steps together must leave it room to start processes and threads.
+func TestRunLimitsLeaveRoomForServe(t *testing.T) {
+	if os.Getenv(limitsStageEnv) != "tasks" {
+		inDelegatedScope(t, "TestRunLimitsLeaveRoomForServe", []string{"TasksMax=200"}, limitsStageEnv+"=tasks")
+		return
+	}
+	l := testLimits
+	l.Memory = 1 << 30
+	r := fakeRunnerLimits(t, "hold", l)
+	e := r.Enforcement()
+	if e.Cgroup == "" {
+		t.Fatalf("in a delegated cgroup, limits are off: %s", e.CgroupOff)
+	}
+	// The unit's 200, less the 128 that writ serve keeps.
+	if text, err := os.ReadFile(filepath.Join(e.Cgroup, "pids.max")); err != nil || strings.TrimSpace(string(text)) != "72" || e.StepsPids != 72 {
+		t.Errorf("the steps share pids.max %q (%v), and Enforcement says %d, not 72", text, err, e.StepsPids)
+	}
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() { _, _ = r.Plan(context.Background(), fakeStack()) })
+	}
+	defer wg.Wait()
+	// The fakes hold their processes for six seconds.
+	time.Sleep(3 * time.Second)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(self, "-test.run=^$").CombinedOutput(); err != nil {
+		t.Errorf("writ could not start a process while the steps held theirs: %v %s", err, out)
+	}
+	// Threads of writ's own, each blocked in a system call, as a busy
+	// writ serve has; Go dies when it can't start one.
+	var threads sync.WaitGroup
+	for range 32 {
+		threads.Go(func() {
+			runtime.LockOSThread()
+			time.Sleep(100 * time.Millisecond)
+			_ = syscall.Nanosleep(&syscall.Timespec{Nsec: 100e6}, nil)
+		})
+	}
+	threads.Wait()
 }
