@@ -591,6 +591,46 @@ func (s *Store) LastApplied(ctx context.Context, env, stack string, now time.Tim
 	return plans[0], nil
 }
 
+// NewestRunApplied returns the plan of the newest run on stack@env, and
+// that run's id, when the run applied it. It returns ErrNotFound when no
+// run started there, or the newest did not apply: it failed, or it still
+// applies. moved says why the state may have changed since the run, ""
+// when it did not: the newest version of the state on writ serve's http
+// backend is one the run did not write.
+func (s *Store) NewestRunApplied(ctx context.Context, env, stack string, now time.Time) (p Plan, run, moved string, err error) {
+	var planID string
+	var status RunStatus
+	err = s.db.QueryRowContext(ctx, `SELECT id, plan_id, status FROM runs WHERE env = ? AND stack = ? ORDER BY started_at DESC LIMIT 1`, env, stack).
+		Scan(&run, &planID, &status)
+	switch {
+	case errors.Is(err, sqldb.ErrNoRows):
+		return Plan{}, "", "", ErrNotFound
+	case err != nil:
+		return Plan{}, "", "", err
+	case status != RunApplied:
+		return Plan{}, "", "", ErrNotFound
+	}
+	plans, err := s.scanPlans(ctx, `SELECT `+planColumns+` FROM plans WHERE id = ?`, now.UnixMilli(), planID)
+	if err != nil {
+		return Plan{}, "", "", err
+	}
+	if len(plans) == 0 {
+		return Plan{}, "", "", ErrNotFound
+	}
+	var version int64
+	var wrote string
+	err = s.db.QueryRowContext(ctx, `SELECT version, run_id FROM tfstate_versions WHERE env = ? AND stack = ? ORDER BY version DESC LIMIT 1`, env, stack).
+		Scan(&version, &wrote)
+	switch {
+	case errors.Is(err, sqldb.ErrNoRows):
+	case err != nil:
+		return Plan{}, "", "", err
+	case wrote != run:
+		moved = fmt.Sprintf("the state of %s@%s is at version %d, which run %s did not write", stack, env, version, run)
+	}
+	return plans[0], run, moved, nil
+}
+
 // Supersede moves the live plan with id to superseded, for a check outside
 // the store that found what it would change is no longer what it showed,
 // such as its ref moving. A plan no longer live is left as it is.

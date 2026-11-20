@@ -406,6 +406,25 @@ func TestStalePlans(t *testing.T) {
 		if last, err := s.LastApplied(ctx, "prod", "cache", t0); err != nil || last.ID != a {
 			t.Fatalf("last applied %+v, %v", last, err)
 		}
+		// The newest run on cache applied a, and no state moved since.
+		if p, run, moved, err := s.NewestRunApplied(ctx, "prod", "cache", t0); err != nil || p.ID != a || run != "RUN4" || moved != "" {
+			t.Fatalf("newest run applied %s %s %q, %v", p.ID, run, moved, err)
+		}
+		// A newer run that failed can have changed the state, so no plan
+		// is the newest run's applied one.
+		c := l.plan("cache", t0.Add(15*time.Second), control.Approved, 0)
+		if _, err := l.begin(c, "RUN6", "", t0.Add(16*time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.FinishRun(ctx, "RUN6", control.RunResult{Status: control.RunFailed, EndedAt: t0.Add(17 * time.Second)}, l.entry("apply")); err != nil {
+			t.Fatal(err)
+		}
+		if p, run, _, err := s.NewestRunApplied(ctx, "prod", "cache", t0); !errors.Is(err, control.ErrNotFound) {
+			t.Fatalf("after a failed run: %s %s, %v", p.ID, run, err)
+		}
+		if _, _, _, err := s.NewestRunApplied(ctx, "prod", "nothing-ran", t0); !errors.Is(err, control.ErrNotFound) {
+			t.Fatalf("a stack with no run: %v", err)
+		}
 	})
 }
 

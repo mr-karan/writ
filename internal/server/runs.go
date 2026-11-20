@@ -59,7 +59,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var plan control.Plan
-	var merged string
+	var merged, appliedBy string
 	switch {
 	case body.Plan != "" && body.Merged != nil:
 		s.refuse(w, r, FormatRemoteRun, diag.Usage, http.StatusBadRequest, "a run names a plan by its id, plan, or by a merged commit, merged, not both")
@@ -79,7 +79,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var ok bool
-		if plan, merged, ok = s.byMerged(w, r, body); !ok {
+		if plan, merged, appliedBy, ok = s.byMerged(w, r, body); !ok {
 			return
 		}
 	default:
@@ -109,8 +109,8 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	grants := oneBased(d.Grants)
-	if plan.Status == control.NoChanges {
-		s.nothingToApply(w, r, plan, merged, grants)
+	if plan.Status == control.NoChanges || appliedBy != "" {
+		s.nothingToApply(w, r, plan, merged, appliedBy, grants)
 		return
 	}
 	if body.Override != "" {
@@ -289,34 +289,34 @@ func (s *Server) refMoved(ctx context.Context, p control.Plan) (string, error) {
 // merged commit's. The merged commit must be on the default branch. From
 // a CI job, the repository and commit are the token's own, and the job
 // must run on the default branch.
-func (s *Server) byMerged(w http.ResponseWriter, r *http.Request, body RunRequest) (control.Plan, string, bool) {
+func (s *Server) byMerged(w http.ResponseWriter, r *http.Request, body RunRequest) (plan control.Plan, merged, appliedBy string, ok bool) {
 	ctx := r.Context()
 	pr := reqOf(r).principal
 	if len(body.Stacks) != 1 {
 		s.refuse(w, r, FormatRemoteRun, diag.Usage, http.StatusBadRequest, "an apply after a merge names exactly one stack")
-		return control.Plan{}, "", false
+		return control.Plan{}, "", "", false
 	}
 	stack := body.Stacks[0]
 	e, ok := s.target(w, r, FormatRemoteRun, body.Env, stack)
 	if !ok {
-		return control.Plan{}, "", false
+		return control.Plan{}, "", "", false
 	}
 	env := e.Name
 	in, rerr := s.mergedSource(ctx, pr, body.Merged)
 	if rerr != nil {
 		s.refuse(w, r, FormatRemoteRun, rerr.class, rerr.status, "%s", rerr.msg)
-		return control.Plan{}, "", false
+		return control.Plan{}, "", "", false
 	}
 	rp, c, commit := in.repo, in.client, in.source.Commit
 	if _, ok := stackDir(rp, stack); !ok {
 		s.refuse(w, r, FormatRemoteRun, diag.Usage, http.StatusBadRequest, "stack %s is not a stack name of repository %s", stack, rp.Name)
-		return control.Plan{}, "", false
+		return control.Plan{}, "", "", false
 	}
 	digest, err := s.commitDigest(ctx, rp, c, commit, stack)
 	if err != nil {
 		rerr := forgeRefusal(err)
 		s.refuse(w, r, FormatRemoteRun, rerr.class, rerr.status, "read %s at %s: %s", rp.Name, forge.Short(commit), rerr.msg)
-		return control.Plan{}, "", false
+		return control.Plan{}, "", "", false
 	}
 	p, t, err := s.store.MergedPlan(ctx, rp.Name, env, stack, digest, s.rules(), s.now())
 	switch {
@@ -325,42 +325,50 @@ func (s *Server) byMerged(w http.ResponseWriter, r *http.Request, body RunReques
 		why, err := s.store.StateMoved(ctx, p)
 		if err != nil {
 			s.dbFailed(w, r, FormatRemoteRun, err)
-			return control.Plan{}, "", false
+			return control.Plan{}, "", "", false
 		}
 		if why != "" {
 			s.refuse(w, r, FormatRemoteRun, diag.State, http.StatusConflict, "plan %s of %s@%s matches the sources at %s and changes no resource, but %s: plan again",
 				p.ID, stack, env, forge.Short(commit), why)
-			return control.Plan{}, "", false
+			return control.Plan{}, "", "", false
 		}
 		p.Source.Repo = rp.Name
-		return p, commit, true
+		return p, commit, "", true
 	case err == nil && t.Status == control.Approved:
 		// A request of rp at the plan's commit made this plan, though the
 		// plan may name a repository since removed, so the run reads the
 		// commit through rp. The run checks the sources' digest again.
 		p.Source.Repo = rp.Name
-		return p, commit, true
+		return p, commit, "", true
 	case err == nil:
 		reqOf(r).entry.Plan = p.ID
 		s.refuse(w, r, FormatRemoteRun, diag.Denied, http.StatusForbidden, "plan %s of %s@%s matches the sources at %s and needs %s; approve it with writ approve --remote %s",
 			p.ID, stack, env, forge.Short(commit), approvalWords(t.Need), p.ID)
-		return control.Plan{}, "", false
+		return control.Plan{}, "", "", false
 	case !errors.Is(err, control.ErrNotFound):
 		s.dbFailed(w, r, FormatRemoteRun, err)
-		return control.Plan{}, "", false
+		return control.Plan{}, "", "", false
 	}
-	last, err := s.store.LastApplied(ctx, env, stack, s.now())
-	if err == nil && last.SourceDigest == digest {
-		s.refuse(w, r, FormatRemoteRun, diag.SavedPlan, http.StatusConflict, "nothing to apply: plan %s, applied last to %s@%s, has the sources of %s at %s", last.ID, stack, env, rp.Name, forge.Short(commit))
-		return control.Plan{}, "", false
-	}
-	if err != nil && !errors.Is(err, control.ErrNotFound) {
+	// A retried apply job after a run that applied these sources finds
+	// nothing to apply, so it passes, while the state is still what that
+	// run left.
+	last, run, moved, err := s.store.NewestRunApplied(ctx, env, stack, s.now())
+	switch {
+	case err == nil && last.SourceDigest == digest && moved != "":
+		reqOf(r).entry.Plan = last.ID
+		s.refuse(w, r, FormatRemoteRun, diag.State, http.StatusConflict, "run %s applied plan %s of %s@%s, which has the sources of %s at %s, but %s: plan again",
+			run, last.ID, stack, env, rp.Name, forge.Short(commit), moved)
+		return control.Plan{}, "", "", false
+	case err == nil && last.SourceDigest == digest:
+		last.Source.Repo = rp.Name
+		return last, commit, run, true
+	case err != nil && !errors.Is(err, control.ErrNotFound):
 		s.dbFailed(w, r, FormatRemoteRun, err)
-		return control.Plan{}, "", false
+		return control.Plan{}, "", "", false
 	}
 	s.refuse(w, r, FormatRemoteRun, diag.SavedPlan, http.StatusConflict, "no approved plan of %s@%s matches the sources of %s at %s: plan the merge request again after a rebase, and approve the new plan",
 		stack, env, rp.Name, forge.Short(commit))
-	return control.Plan{}, "", false
+	return control.Plan{}, "", "", false
 }
 
 // mergedSource finds the repository and commit of an apply after a merge,
@@ -430,10 +438,11 @@ func (s *Server) mergedSource(ctx context.Context, pr *principal, m *MergedReque
 	return in, nil
 }
 
-// nothingToApply answers an apply of plan p, which changes no resource.
-// By id it is a refusal. After a merge, whose job runs on every merge,
-// it is a 200 that names the plan and starts no run.
-func (s *Server) nothingToApply(w http.ResponseWriter, r *http.Request, p control.Plan, merged string, grants []int) {
+// nothingToApply answers an apply of plan p, which changes no resource,
+// or which run appliedBy applied already. By id it is a refusal. After a
+// merge, whose job runs on every merge and can be retried, it is a 200
+// that names the plan and starts no run.
+func (s *Server) nothingToApply(w http.ResponseWriter, r *http.Request, p control.Plan, merged, appliedBy string, grants []int) {
 	if merged == "" {
 		s.refuse(w, r, FormatRemoteRun, diag.State, http.StatusConflict, "plan %s changes no resource; there is nothing to apply", p.ID)
 		return
@@ -441,9 +450,15 @@ func (s *Server) nothingToApply(w http.ResponseWriter, r *http.Request, p contro
 	e := &reqOf(r).entry
 	e.Decision, e.Grants = control.Allowed, grants
 	e.Reason = fmt.Sprintf("nothing to apply: plan %s changes no resource", p.ID)
-	s.log.Info("nothing to apply", "request", reqOf(r).id, "plan", p.ID, "env", p.Env, "stack", p.Stack, "merged", merged)
-	s.reply(w, http.StatusOK, RemoteRun{Format: FormatRemoteRun, OK: true, Plan: p.ID, Diagnostics: []Diagnostic{},
-		Text: fmt.Sprintf("Plan %s of %s@%s has the sources of %s at %s and changes no resource: there is nothing to apply.\n", p.ID, p.Stack, p.Env, p.Source.Repo, forge.Short(merged))})
+	text := fmt.Sprintf("Plan %s of %s@%s has the sources of %s at %s and changes no resource: there is nothing to apply.\n", p.ID, p.Stack, p.Env, p.Source.Repo, forge.Short(merged))
+	if appliedBy != "" {
+		e.Run = appliedBy
+		e.Reason = fmt.Sprintf("nothing to apply: run %s applied plan %s, of the same sources, and the state has not moved since", appliedBy, p.ID)
+		text = fmt.Sprintf("Run %s applied plan %s of %s@%s, which has the sources of %s at %s, and the state has not moved since: there is nothing to apply.\n",
+			appliedBy, p.ID, p.Stack, p.Env, p.Source.Repo, forge.Short(merged))
+	}
+	s.log.Info("nothing to apply", "request", reqOf(r).id, "plan", p.ID, "env", p.Env, "stack", p.Stack, "merged", merged, "applied_by", appliedBy)
+	s.reply(w, http.StatusOK, RemoteRun{Format: FormatRemoteRun, OK: true, Plan: p.ID, Diagnostics: []Diagnostic{}, Text: text})
 }
 
 // refuseApply answers a BeginApply that did not begin.

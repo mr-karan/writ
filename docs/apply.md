@@ -98,17 +98,15 @@ Run T5QKSTXGRYE66SZBECBPGUV7QV of plan f38f9206b30b2f7ffbcaca647a9b8190 for dev 
 
 Output of a real run, 2026-11-16.
 
-If no approved plan matches, and the newest plan of the sources isn't `no-changes`, the job fails and nothing changes:
+If no approved plan matches, and the newest plan of the sources isn't `no-changes`:
 
-- If a plan with the same sources lacks approvals, Writ refuses it as `denied`, with its id.
-- If the sources equal the last applied plan's, Writ refuses it as `saved-plan`, `nothing to apply`.
-- Any other sources, including the code of a stack it reads, are refused as `saved-plan`.
+- If the newest run on the `stack@env` applied a plan of the same sources, there is nothing to apply, as when a retried apply job sends the same commit again. Writ answers 200 with `run` `null` and that plan's id, and the job prints `Run RUN applied plan ID of STACK@ENV, which has the sources of REPO at COMMIT, and the state has not moved since: there is nothing to apply.`, starts no run, and exits 0. If the state moved since, because the newest version of the state on Writ's `http` backend is one that run didn't write, Writ refuses it as `state` and asks you to plan again. After a newer run that failed or still applies, this rule doesn't hold, and the job fails as below.
+- If a plan with the same sources lacks approvals, Writ refuses it as `denied`, with its id, and nothing changes.
+- Any other sources, including the code of a stack it reads, are refused as `saved-plan`, and nothing changes.
 
-Here's the same commit again, and then a later commit that no plan was created for, on the same control plane:
+Here's a commit that no plan was created for:
 
 ```
-$ writ apply --remote --merged --stack app --repo demo --commit d9a4b37495d9d1c581d07a7895d9ef3a3401f4c2
-error: saved-plan: nothing to apply: plan f38f9206b30b2f7ffbcaca647a9b8190, applied last to app@dev, has the sources of demo at d9a4b374
 $ writ apply --remote --merged --stack app --repo demo --commit de72518e5a53e44a1fd8ed6389cb663a844dd929
 error: saved-plan: no approved plan of app@dev matches the sources of demo at de72518e: plan the merge request again after a rebase, and approve the new plan
 ```
