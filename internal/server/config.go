@@ -48,7 +48,8 @@ func (d *decoder) config(b *hclsyntax.Body) *Config {
 	cfg := &Config{
 		PlanTTL: DefaultPlanTTL, SessionTTL: DefaultSessionTTL, PollEvery: DefaultPollEvery,
 		Limits: Limits{RequestsPerSecond: DefaultRequestsPerSecond, RequestsPerAddress: DefaultRequestsPerAddress, PlansPerPrincipal: DefaultPlansPerPrincipal, Plans: DefaultPlans, Applies: DefaultApplies, Body: DefaultBody,
-			PlanTimeout: DefaultPlanTimeout, ApplyStartTimeout: DefaultApplyStartTimeout, ApplyTimeout: DefaultApplyTimeout},
+			PlanTimeout: DefaultPlanTimeout, ApplyStartTimeout: DefaultApplyStartTimeout, ApplyTimeout: DefaultApplyTimeout,
+			RunMemory: DefaultRunMemory, RunPids: DefaultRunPids, RunCPUs: DefaultRunCPUs, RunScratch: DefaultRunScratch},
 		Envs: map[string]Env{},
 	}
 	s := shape{
@@ -110,7 +111,7 @@ func (d *decoder) config(b *hclsyntax.Body) *Config {
 	}
 	if f, ok := top["limits"]; ok {
 		r, _ := d.body(f.block().Body, "limits", shape{
-			attrs:   []string{"requests_per_second", "requests_per_address", "plans_per_principal", "plans", "applies", "body", "plan_timeout", "apply_start_timeout", "apply_timeout"},
+			attrs:   []string{"requests_per_second", "requests_per_address", "plans_per_principal", "plans", "applies", "body", "plan_timeout", "apply_start_timeout", "apply_timeout", "run_memory", "run_pids", "run_cpus", "run_scratch"},
 			removed: map[string]string{"files": "it bounded the source files of a bundle of the Writ language, which writ serve no longer reads"},
 		})
 		for name, lf := range r {
@@ -133,6 +134,16 @@ func (d *decoder) config(b *hclsyntax.Body) *Config {
 				cfg.Limits.ApplyStartTimeout = d.duration(lf.value, "limits."+name)
 			case "apply_timeout":
 				cfg.Limits.ApplyTimeout = d.duration(lf.value, "limits."+name)
+			case "run_memory":
+				cfg.Limits.RunMemory = d.sizeWithin(lf.value, "limits."+name, minRunMemory, maxRunSize)
+			case "run_pids":
+				if cfg.Limits.RunPids = d.integer(lf.value, "limits."+name); cfg.Limits.RunPids > 0 && cfg.Limits.RunPids < minRunPids {
+					d.errorf(lf.value, "limits.run_pids must be at least %d: it counts every thread, and OpenTofu and each provider start a dozen or more", minRunPids)
+				}
+			case "run_cpus":
+				cfg.Limits.RunCPUs = d.cpus(lf.value, "limits."+name)
+			case "run_scratch":
+				cfg.Limits.RunScratch = d.sizeWithin(lf.value, "limits."+name, minRunScratch, maxRunSize)
 			}
 		}
 	}

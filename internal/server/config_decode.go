@@ -304,6 +304,37 @@ func (d *decoder) size(e hclsyntax.Node, what string) int64 {
 	return 0
 }
 
+// sizeWithin reads a size from lo to hi bytes, written in GiB, MiB, or
+// KiB, such as "4GiB".
+func (d *decoder) sizeWithin(e hclsyntax.Node, what string, lo, hi int64) int64 {
+	s := d.str(e, what)
+	for _, u := range []struct {
+		suffix string
+		mult   int64
+	}{{"GiB", 1 << 30}, {"MiB", 1 << 20}, {"KiB", 1 << 10}} {
+		if n, ok := strings.CutSuffix(s, u.suffix); ok {
+			v, err := strconv.ParseInt(n, 10, 64)
+			if err == nil && v > 0 && v <= hi/u.mult && v*u.mult >= lo {
+				return v * u.mult
+			}
+			break
+		}
+	}
+	d.errorf(e, "%s must be a size from %dMiB to %dGiB, such as \"4GiB\", got %q", what, lo>>20, hi>>30, s)
+	return 0
+}
+
+// cpus reads a number of CPUs, such as 2 or 0.5, from minRunCPUs to
+// maxRunCPUs.
+func (d *decoder) cpus(e hclsyntax.Node, what string) float64 {
+	v, err := strconv.ParseFloat(d.literal(e), 64)
+	if err != nil || v < minRunCPUs || v > maxRunCPUs {
+		d.errorf(e, "%s must be a number of CPUs from %v to %v, such as 2 or 0.5", what, minRunCPUs, maxRunCPUs)
+		return 0
+	}
+	return v
+}
+
 // path reads a file or directory path. A relative one is relative to the
 // config file's directory.
 func (d *decoder) path(e hclsyntax.Node, what string) string {

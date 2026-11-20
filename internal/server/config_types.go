@@ -91,6 +91,17 @@ var defaultProviderRegistries = []string{"registry.opentofu.org", "registry.terr
 // resource of the stack through its providers, with the plan role.
 const minDriftEvery = time.Minute
 
+// The bounds of the run limits: OpenTofu alone needs about 100 MiB, and
+// a few providers' threads pass 64.
+const (
+	minRunMemory  = 128 << 20
+	minRunScratch = 64 << 20
+	maxRunSize    = 1024 << 30
+	minRunPids    = 64
+	minRunCPUs    = 0.1
+	maxRunCPUs    = 1024
+)
+
 // Tofu is the OpenTofu that writ serve runs, and the directories its runs
 // share.
 type Tofu struct {
@@ -192,6 +203,15 @@ type Limits struct {
 	// ApplyTimeout is when a running apply stops starting changes. The
 	// changes already running finish.
 	ApplyTimeout time.Duration
+	// RunMemory, RunPids, and RunCPUs bound each OpenTofu step: the
+	// memory of its processes together, with no swap, its processes and
+	// threads, and its CPU time, in CPUs. writ serve holds them with a
+	// cgroup of each step's own where it can make one.
+	RunMemory int64
+	RunPids   int
+	RunCPUs   float64
+	// RunScratch bounds the bytes on disk of a run's directory.
+	RunScratch int64
 }
 
 // Issuer is one issuer writ serve trusts.
@@ -264,6 +284,10 @@ const (
 	DefaultPlanTimeout        = 30 * time.Minute
 	DefaultApplyStartTimeout  = 10 * time.Minute
 	DefaultApplyTimeout       = 4 * time.Hour
+	DefaultRunMemory          = 4 << 30
+	DefaultRunPids            = 1024
+	DefaultRunCPUs            = 2
+	DefaultRunScratch         = 8 << 30
 	DefaultPollEvery          = time.Minute
 	DefaultPollEveryWithHook  = 5 * time.Minute
 )

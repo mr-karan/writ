@@ -222,6 +222,15 @@ func TestParseConfigErrors(t *testing.T) {
 		{"address limit of a negative number", "", `limits { requests_per_address = -1 }`, "limits.requests_per_address must be a whole number"},
 		{"plan timeout not a duration", "", `limits { plan_timeout = "soon" }`, "limits.plan_timeout must be a duration"},
 		{"apply timeout not a duration", "", `limits { apply_timeout = 4 }`, "limits.apply_timeout must be a plain string"},
+		{"run memory not a size", "", `limits { run_memory = "4GB" }`, `limits.run_memory must be a size from 128MiB to 1024GiB, such as "4GiB", got "4GB"`},
+		{"run memory too small", "", `limits { run_memory = "64MiB" }`, "limits.run_memory must be a size from 128MiB"},
+		{"run memory too large", "", `limits { run_memory = "2048GiB" }`, "limits.run_memory must be a size from 128MiB to 1024GiB"},
+		{"run memory a number", "", `limits { run_memory = 4294967296 }`, "limits.run_memory must be a plain string"},
+		{"run scratch too small", "", `limits { run_scratch = "1MiB" }`, "limits.run_scratch must be a size from 64MiB to 1024GiB"},
+		{"run pids too few", "", `limits { run_pids = 16 }`, "limits.run_pids must be at least 64: it counts every thread"},
+		{"run pids zero", "", `limits { run_pids = 0 }`, "limits.run_pids must be a whole number"},
+		{"run cpus zero", "", `limits { run_cpus = 0 }`, "limits.run_cpus must be a number of CPUs from 0.1 to 1024, such as 2 or 0.5"},
+		{"run cpus a string", "", `limits { run_cpus = "2" }`, "limits.run_cpus must be a number of CPUs"},
 		{"approve to a team of job claims", `can = ["plan"]`, `can = ["plan", "approve"]`, "matches only claims of the job"},
 		{"a repo with no forge", "", "repo {\n  name = \"infra\"\n  forge = \"gitlab\"\n  project = \"acme/infra\"\n}", "the config names no forge"},
 		{"tofu without a binary", "", "tofu {\n  plugin_cache = \"/var/lib/writ-tofu/plugins\"\n  scratch_dir = \"/var/lib/writ-tofu/runs\"\n}", "tofu needs binary"},
@@ -328,6 +337,16 @@ func TestParseConfigWarnings(t *testing.T) {
 	}
 	if l := cfg2.Limits; l.PlanTimeout != 30*time.Minute || l.ApplyStartTimeout != 10*time.Minute || l.ApplyTimeout != 4*time.Hour {
 		t.Errorf("time limits %s %s %s, want 30m 10m 4h by default", l.PlanTimeout, l.ApplyStartTimeout, l.ApplyTimeout)
+	}
+	if l := cfg2.Limits; l.RunMemory != 4<<30 || l.RunPids != 1024 || l.RunCPUs != 2 || l.RunScratch != 8<<30 {
+		t.Errorf("run limits %d %d %v %d, want 4GiB, 1024, 2, and 8GiB by default", l.RunMemory, l.RunPids, l.RunCPUs, l.RunScratch)
+	}
+	cfg3, diags := ParseConfig("/etc/writ/serve", []byte(minimal+"limits {\n  run_memory = \"2GiB\"\n  run_pids = 512\n  run_cpus = 0.5\n  run_scratch = \"512MiB\"\n}\n"))
+	if diags.HasErrors() {
+		t.Fatal(diags)
+	}
+	if l := cfg3.Limits; l.RunMemory != 2<<30 || l.RunPids != 512 || l.RunCPUs != 0.5 || l.RunScratch != 512<<20 {
+		t.Errorf("run limits %d %d %v %d, want 2GiB, 512, 0.5, and 512MiB", l.RunMemory, l.RunPids, l.RunCPUs, l.RunScratch)
 	}
 	if cfg.Envs["prod"].Key != "/etc/writ/keys/prod.key" {
 		t.Errorf("a relative key path is %s, want it under the config's directory", cfg.Envs["prod"].Key)
