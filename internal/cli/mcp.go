@@ -433,6 +433,23 @@ func keepAddresses(doc json.RawMessage, keep []string) (json.RawMessage, error) 
 	return bytes.TrimSpace(b.Bytes()), nil
 }
 
+func (t *mcpTools) ListPlans(ctx context.Context, in mcp.ListPlansInput) (mcp.Result, error) {
+	r, env, err := t.remote(ctx, in.Env, true)
+	if err != nil {
+		return mcp.Result{}, err
+	}
+	q := url.Values{"env": {env}}
+	for k, v := range map[string]string{"stack": in.Stack, "status": in.Status, "started_by": in.StartedBy, "cursor": in.Cursor} {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	if in.Limit > 0 {
+		q.Set("limit", strconv.Itoa(in.Limit))
+	}
+	return served(ctx, r, "/v1/plans?"+q.Encode())
+}
+
 func (t *mcpTools) Runs(ctx context.Context, in mcp.RunsInput) (mcp.Result, error) {
 	if in.ID != "" {
 		if !runIDRE.MatchString(in.ID) {

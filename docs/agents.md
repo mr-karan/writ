@@ -75,6 +75,7 @@ Your agent talks to Writ through `writ mcp`, a Model Context Protocol server on 
 | --- | --- |
 | `plan` | Asks the control plane to plan one stack at a commit, and waits for the plan. Its text starts with the policy verdict |
 | `get_plan` | Reads a plan, as text with the policy verdict first or as `writ.remote-plan/v0`, optionally with only some addresses |
+| `list_plans` | Lists the plans of an environment, newest first, as `writ.remote-plans/v0`, with filters for `stack`, `status`, `started_by`, `limit`, and `cursor` |
 | `policy` | Returns the control plane's policy sets and their `.rego` text, as `writ.policy/v0`, or one set, or one file of a set |
 | `runs` | Lists the applies of an environment, or returns one with its masked apply document |
 | `drift` | Lists the OpenTofu stacks with their index version, outside writes, and newest drift check |
