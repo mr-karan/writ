@@ -196,6 +196,9 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 		res.Tofu = &control.TofuPlan{StateVersion: version}
 	}
 	s.judgeTofuPlan(ctx, &res, body, m, env, stack, p)
+	if res.Status == control.Pending && !tofuApplyable(doc) {
+		res.Status, res.Saved = control.NoChanges, nil
+	}
 	return res, nil
 }
 
@@ -645,6 +648,25 @@ func tofuChanges(p *mask.Plan) (int, []string, error) {
 		}
 	}
 	return n, risks, nil
+}
+
+// tofuApplyable reports whether applying a plan would change anything,
+// as OpenTofu decides that a saved plan has something to apply: an action
+// other than no-op, a move, or an import of a resource, an output that
+// changes, or an object that changed outside OpenTofu, whose new values
+// the apply writes to state.
+func tofuApplyable(p *mask.Plan) bool {
+	for _, c := range p.ResourceChanges {
+		if strings.Join(c.Change.Actions, ",") != "no-op" || c.PreviousAddress != "" || c.Change.Importing != nil {
+			return true
+		}
+	}
+	for _, c := range p.OutputChanges {
+		if strings.Join(c.Actions, ",") != "no-op" {
+			return true
+		}
+	}
+	return len(p.ResourceDrift) > 0
 }
 
 var changeMarks = map[string]string{"create": "+", "update": "~", "delete": "-", "replace": "-/+", "forget": "~", "import": "<-"}

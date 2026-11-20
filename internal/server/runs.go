@@ -109,6 +109,10 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	grants := oneBased(d.Grants)
+	if plan.Status == control.NoChanges {
+		s.nothingToApply(w, r, plan, merged, grants)
+		return
+	}
 	if body.Override != "" {
 		o := s.cfg.Policy.Decide(pr.teams, authz.Override, []string{plan.Stack}, plan.Env, nil)
 		if !o.Allowed {
@@ -316,6 +320,20 @@ func (s *Server) byMerged(w http.ResponseWriter, r *http.Request, body RunReques
 	}
 	p, t, err := s.store.MergedPlan(ctx, rp.Name, env, stack, digest, s.rules(), s.now())
 	switch {
+	case err == nil && t.Status == control.NoChanges:
+		reqOf(r).entry.Plan = p.ID
+		why, err := s.store.StateMoved(ctx, p)
+		if err != nil {
+			s.dbFailed(w, r, FormatRemoteRun, err)
+			return control.Plan{}, "", false
+		}
+		if why != "" {
+			s.refuse(w, r, FormatRemoteRun, diag.State, http.StatusConflict, "plan %s of %s@%s matches the sources at %s and changes no resource, but %s: plan again",
+				p.ID, stack, env, forge.Short(commit), why)
+			return control.Plan{}, "", false
+		}
+		p.Source.Repo = rp.Name
+		return p, commit, true
 	case err == nil && t.Status == control.Approved:
 		// A request of rp at the plan's commit made this plan, though the
 		// plan may name a repository since removed, so the run reads the
@@ -410,6 +428,22 @@ func (s *Server) mergedSource(ctx context.Context, pr *principal, m *MergedReque
 	in.client = c
 	in.source = control.PlanSource{Repo: in.repo.Name, Ref: ref, Commit: full}
 	return in, nil
+}
+
+// nothingToApply answers an apply of plan p, which changes no resource.
+// By id it is a refusal. After a merge, whose job runs on every merge,
+// it is a 200 that names the plan and starts no run.
+func (s *Server) nothingToApply(w http.ResponseWriter, r *http.Request, p control.Plan, merged string, grants []int) {
+	if merged == "" {
+		s.refuse(w, r, FormatRemoteRun, diag.State, http.StatusConflict, "plan %s changes no resource; there is nothing to apply", p.ID)
+		return
+	}
+	e := &reqOf(r).entry
+	e.Decision, e.Grants = control.Allowed, grants
+	e.Reason = fmt.Sprintf("nothing to apply: plan %s changes no resource", p.ID)
+	s.log.Info("nothing to apply", "request", reqOf(r).id, "plan", p.ID, "env", p.Env, "stack", p.Stack, "merged", merged)
+	s.reply(w, http.StatusOK, RemoteRun{Format: FormatRemoteRun, OK: true, Plan: p.ID, Diagnostics: []Diagnostic{},
+		Text: fmt.Sprintf("Plan %s of %s@%s has the sources of %s at %s and changes no resource: there is nothing to apply.\n", p.ID, p.Stack, p.Env, p.Source.Repo, forge.Short(merged))})
 }
 
 // refuseApply answers a BeginApply that did not begin.

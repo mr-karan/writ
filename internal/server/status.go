@@ -10,6 +10,7 @@ const (
 	PlanApproved   = string(control.Approved)
 	PlanApplying   = string(control.Applying)
 	PlanApplied    = string(control.Applied)
+	PlanNoChanges  = string(control.NoChanges)
 	PlanRefused    = string(control.RefusedPlan)
 	PlanFailed     = string(control.Failed)
 	PlanExpired    = string(control.Expired)
@@ -38,7 +39,7 @@ const (
 var PlanStartedBy = []string{StartedByPerson, StartedByCI}
 
 // PlanStatuses are the statuses of a plan in the order of its lifecycle.
-var PlanStatuses = []string{PlanPlanning, PlanPending, PlanApproved, PlanApplying, PlanApplied, PlanRefused, PlanFailed, PlanExpired, PlanSuperseded}
+var PlanStatuses = []string{PlanPlanning, PlanPending, PlanApproved, PlanApplying, PlanApplied, PlanNoChanges, PlanRefused, PlanFailed, PlanExpired, PlanSuperseded}
 
 // PlanLive reports whether a plan of status may still be approved and
 // applied.
