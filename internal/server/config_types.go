@@ -60,6 +60,10 @@ type Config struct {
 	PinRepos bool
 	// PollEvery is how often each repository's default branch is polled.
 	PollEvery time.Duration
+	// PollEveryWithHook is how often the default branch of a repository
+	// with a webhook is polled, as a backstop for a delivery the forge
+	// never sent. It is never shorter than PollEvery.
+	PollEveryWithHook time.Duration
 	// Tofu is how writ serve runs OpenTofu for the stacks of .tf files.
 	// Nil refuses them.
 	Tofu *Tofu
@@ -129,6 +133,10 @@ type RepoSpec struct {
 	Path string
 	// Prefix is put before each stack's directory to make its name.
 	Prefix string
+	// WebhookSecretFile, set only on a repository the config pins, holds
+	// the secret its forge's webhook deliveries prove themselves with.
+	// writ serve reads it for each delivery and never shows or logs it.
+	WebhookSecretFile string
 }
 
 // AWS is how writ serve assumes the environments' roles.
@@ -257,4 +265,5 @@ const (
 	DefaultApplyStartTimeout  = 10 * time.Minute
 	DefaultApplyTimeout       = 4 * time.Hour
 	DefaultPollEvery          = time.Minute
+	DefaultPollEveryWithHook  = 5 * time.Minute
 )

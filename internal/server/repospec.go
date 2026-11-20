@@ -75,7 +75,7 @@ func findForge(forges []Forge, ref string) (Forge, error) {
 }
 
 // ParseDevConfig reads the HCL config writ serve --dev --config takes:
-// forge and repo blocks, and poll_every, which add to the dev identity,
+// forge and repo blocks, poll_every, and poll_every_with_hook, which add to the dev identity,
 // and a tofu and a policy block. The rest of a team's config does not
 // apply under --dev yet.
 func ParseDevConfig(file string, src []byte) (*Config, diag.List) {
@@ -85,7 +85,7 @@ func ParseDevConfig(file string, src []byte) (*Config, diag.List) {
 	}
 	d := &decoder{dir: filepath.Dir(file), src: src, diags: diags}
 	cfg := &Config{PollEvery: DefaultPollEvery}
-	top, many := d.body(b, "the dev config", shape{attrs: []string{"poll_every"}, blocks: []string{"tofu", "policy"}, lists: []string{"repo"}, named: []string{"forge"}})
+	top, many := d.body(b, "the dev config", shape{attrs: []string{"poll_every", "poll_every_with_hook"}, blocks: []string{"tofu", "policy"}, lists: []string{"repo"}, named: []string{"forge"}})
 	d.repoParts(top, many, cfg, true)
 	if f, ok := top["tofu"]; ok {
 		cfg.Tofu = d.tofu(f.block())

@@ -44,7 +44,7 @@ type DevOptions struct {
 	// Data holds control.db, state/, keys/, and each plan's work files.
 	Data string
 	// Extra is the config writ serve --dev --config read: forge and repo
-	// blocks, poll_every, a tofu block, and a policy block. Nil for none.
+	// blocks, poll_every and poll_every_with_hook, a tofu block, and a policy block. Nil for none.
 	Extra *Config
 }
 
@@ -66,10 +66,10 @@ func DevConfig(o DevOptions) *Config {
 		},
 	}
 	cfg.Text = fmt.Sprintf("dev  = true\nurl  = %q\ndata = %q\n", o.URL, o.Data)
-	cfg.PollEvery, cfg.UI = DefaultPollEvery, true
+	cfg.PollEvery, cfg.PollEveryWithHook, cfg.UI = DefaultPollEvery, DefaultPollEveryWithHook, true
 	cfg.Tofu = &Tofu{Binary: "tofu", PluginCache: filepath.Join(o.Data, "tofu", "plugins"), ScratchDir: filepath.Join(o.Data, "tofu", "runs")}
 	if x := o.Extra; x != nil {
-		cfg.Forges, cfg.Repos, cfg.PinRepos, cfg.PollEvery = x.Forges, x.Repos, x.PinRepos, x.PollEvery
+		cfg.Forges, cfg.Repos, cfg.PinRepos, cfg.PollEvery, cfg.PollEveryWithHook = x.Forges, x.Repos, x.PinRepos, x.PollEvery, x.PollEveryWithHook
 		if x.Tofu != nil {
 			cfg.Tofu = x.Tofu
 		}

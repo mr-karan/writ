@@ -391,6 +391,71 @@ poll_every = "2m"
 	}
 }
 
+// A pinned repository may name a webhook secret file, and a repository
+// with a hook is polled every poll_every_with_hook: 5m by default, never
+// more often than poll_every.
+func TestParseConfigWebhooks(t *testing.T) {
+	forge := `forge "gitlab" {
+  kind = "gitlab"
+  url = "https://gitlab.com"
+  read_token_file = "secrets/gitlab_read"
+}
+repo {
+  name = "infra"
+  forge = "gitlab"
+  project = "acme/infra"
+  webhook_secret_file = "secrets/infra_hook"
+}
+repo {
+  name = "apps"
+  forge = "gitlab"
+  project = "acme/apps"
+}
+`
+	for _, tt := range []struct {
+		name, extra string
+		want        time.Duration
+	}{
+		{"default", "", 5 * time.Minute},
+		{"set", `poll_every_with_hook = "15m"`, 15 * time.Minute},
+		{"poll_every longer than the default", `poll_every = "10m"`, 10 * time.Minute},
+		{"equal to poll_every", "poll_every = \"2m\"\npoll_every_with_hook = \"2m\"", 2 * time.Minute},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, diags := ParseConfig("/etc/writ/serve", []byte(minimal+forge+tt.extra+"\n"))
+			if diags.HasErrors() {
+				t.Fatal(diags)
+			}
+			if cfg.Repos[0].WebhookSecretFile != "/etc/writ/secrets/infra_hook" || cfg.Repos[1].WebhookSecretFile != "" || cfg.PollEveryWithHook != tt.want {
+				t.Fatalf("repos %+v, poll_every_with_hook %s, want %s", cfg.Repos, cfg.PollEveryWithHook, tt.want)
+			}
+		})
+	}
+	if _, diags := ParseConfig("/etc/writ/serve", []byte(minimal+forge+"poll_every_with_hook = \"30s\"\n")); !strings.Contains(diagText(diags), "poll_every_with_hook must be at least poll_every") {
+		t.Errorf("poll_every_with_hook below poll_every: %v", diags)
+	}
+	if _, diags := ParseConfig("/etc/writ/serve", []byte(minimal+strings.Replace(forge, `"secrets/infra_hook"`, `""`, 1))); !strings.Contains(diagText(diags), "webhook_secret_file must not be empty") {
+		t.Errorf("an empty webhook_secret_file: %v", diags)
+	}
+	// The dev config takes both, and a local directory has no forge to
+	// send a hook.
+	dev := forge + "poll_every_with_hook = \"10m\"\n"
+	cfg, diags := ParseDevConfig("/home/u/.config/writ/dev", []byte(dev))
+	if diags.HasErrors() {
+		t.Fatal(diags)
+	}
+	if cfg.Repos[0].WebhookSecretFile != "/home/u/.config/writ/secrets/infra_hook" || cfg.PollEveryWithHook != 10*time.Minute {
+		t.Fatalf("dev config %+v, %s", cfg.Repos, cfg.PollEveryWithHook)
+	}
+	if got := DevConfig(DevOptions{URL: "http://127.0.0.1:7340", Data: "/var/lib/writ", Extra: cfg}); got.PollEveryWithHook != 10*time.Minute || got.Repos[0].WebhookSecretFile == "" {
+		t.Fatalf("the dev control plane's config %+v, %s", got.Repos, got.PollEveryWithHook)
+	}
+	local := "repo {\n  name = \"x\"\n  forge = \"dir\"\n  project = \"/srv/git/x\"\n  webhook_secret_file = \"hook\"\n}\n"
+	if _, diags := ParseDevConfig("/home/u/.config/writ/dev", []byte(local)); !strings.Contains(diagText(diags), "a local directory has no webhook") {
+		t.Errorf("a hook on a local directory: %v", diags)
+	}
+}
+
 // The dev config takes forge and repo blocks, which may name a local
 // directory, poll_every, and a tofu block, and nothing else.
 func TestParseDevConfig(t *testing.T) {

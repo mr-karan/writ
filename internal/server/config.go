@@ -52,7 +52,7 @@ func (d *decoder) config(b *hclsyntax.Body) *Config {
 		Envs: map[string]Env{},
 	}
 	s := shape{
-		attrs:  []string{"url", "listen", "database", "data", "provider_uids", "plan_ttl", "session_ttl", "poll_every", "trusted_proxies", "egress_mode", "provider_registries"},
+		attrs:  []string{"url", "listen", "database", "data", "provider_uids", "plan_ttl", "session_ttl", "poll_every", "poll_every_with_hook", "trusted_proxies", "egress_mode", "provider_registries"},
 		blocks: []string{"tls", "limits", "retention", "ui", "aws", "tofu", "drift", "policy"},
 		lists:  []string{"grant", "approval", "repo"},
 		named:  []string{"issuer", "team", "env", "forge"},
