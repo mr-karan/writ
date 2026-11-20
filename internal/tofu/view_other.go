@@ -3,6 +3,7 @@
 package tofu
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -12,14 +13,18 @@ import (
 
 // startConfined starts cmd as it is: only Linux gives tofu a private view
 // of the filesystem. writ serve --dev runs tofu so elsewhere, and a team's
-// writ serve, which runs tofu only as a run's own user, cannot.
-func startConfined(cmd *exec.Cmd, c command) error {
+// writ serve, which runs tofu only as a run's own user, cannot. Nor does
+// a run get a network of its own.
+func startConfined(cmd *exec.Cmd, c command) (func(), error) {
+	if c.net != nil {
+		return nil, errors.New("tofu: a run's own network namespace needs Linux")
+	}
 	if c.view.run != nil {
 		cmd.Dir = filepath.Join(c.view.dir, c.view.work)
 	}
 	cmd.SysProcAttr = runas.SysProcAttr(c.user)
 	cmd.SysProcAttr.Setpgid = true
-	return runas.Start(cmd)
+	return func() {}, runas.Start(cmd)
 }
 
 // maxSocketPath is the size of sun_path on macOS and the BSDs, which holds

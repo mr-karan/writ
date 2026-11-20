@@ -250,6 +250,7 @@ func (s *Server) refreshIndex(ctx context.Context, st control.StaleIndex) error 
 	if err != nil {
 		return err
 	}
+	defer tr.network(m)
 	state, err := s.tofuRunner.Show(ctx, stk, raw)
 	if err != nil {
 		return fmt.Errorf("%w%s", err, stepLines(m, err))

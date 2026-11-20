@@ -7,6 +7,7 @@ import (
 
 	"github.com/mr-karan/writ/internal/authz"
 	"github.com/mr-karan/writ/internal/control"
+	"github.com/mr-karan/writ/internal/egress"
 	"github.com/mr-karan/writ/internal/oidc"
 )
 
@@ -67,7 +68,20 @@ type Config struct {
 	// DriftEvery is how often writ serve plans each OpenTofu stack@env it
 	// keeps state for, to find drift. 0 makes no drift check.
 	DriftEvery time.Duration
+	// EgressMode is egress_mode: off leaves each OpenTofu run on the
+	// host's network; report and enforce give it a network namespace of
+	// its own whose one way out is the egress proxy, which enforce holds
+	// to its environment's egress list.
+	EgressMode egress.Mode
+	// ProviderRegistries are the registry hosts a provider install may
+	// ask under egress_mode report or enforce: a lock file's provider
+	// address starts with its registry, which the stack chooses.
+	ProviderRegistries []string
 }
+
+// defaultProviderRegistries is provider_registries when the config sets
+// none: OpenTofu's registry, and the one Terraform's lock files name.
+var defaultProviderRegistries = []string{"registry.opentofu.org", "registry.terraform.io"}
 
 // minDriftEvery is the shortest drift.every: each check reads every
 // resource of the stack through its providers, with the plan role.
@@ -223,6 +237,10 @@ type Env struct {
 	// ProviderEnv maps each variable a provider gets to the file that
 	// holds its value.
 	ProviderEnv map[string]string
+	// Egress is the env's egress list as the config writes it, and
+	// egress the same parsed.
+	Egress []string
+	egress egress.List
 }
 
 // Defaults the design sets.

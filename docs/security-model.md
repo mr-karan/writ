@@ -37,6 +37,7 @@ Because OpenTofu plans execute code from unmerged branches, a team's `writ serve
 - **Source hygiene**: Stack commits are verified against Git SHA-1 blob IDs. Symlinks, `.terraform` directories, `.tf.json`/`.tofu.json`, `file://` module sources, and dangerous `go-getter` query parameters are rejected before OpenTofu runs.
 - **Per-run credentials**: AWS credentials are served over loopback behind a per-run random token rather than copied from the host environment.
 - **Not dumpable**: With `provider_uids`, `writ serve` marks itself not dumpable at start, so no process of its own uid can trace it or read its memory, and it writes no core dump of its keys and secrets.
+- **Egress proxy (opt-in)**: Under `egress_mode` `report` or `enforce`, each run gets a network namespace with only loopback, and reaches the network only through Writ's egress proxy, which checks every host and port against the env's `egress` list before it connects. It never connects to loopback, link-local, or metadata addresses, connects only to an address it resolved and checked, and keeps a wildcard out of private addresses. `enforce` refuses what the list lacks. The provider install runs in a namespace of its own behind a proxy that refuses every private address, and installs only from the registries `provider_registries` lists. Every plan and run records the destinations it asked for. The default, `off`, leaves runs and the provider install on the host's network.
 
 See [Run isolation and egress](run-isolation.md) for setup and verification.
 
@@ -67,13 +68,13 @@ Review these boundaries before deploying Writ:
 - **Host root and server operator are trusted**: Anyone with root on the `writ serve` host or read access to `env.*.key` and Postgres can decrypt states and assume configured AWS roles.
 - **Plan role permissions are your responsibility**: Writ assumes whatever `plan_role` you configure. Make sure its IAM policy is strictly read-only.
 - **S3 state isolation**: On `backend "s3"`, IAM role permissions (not Writ grants) prevent stacks in the same environment from referencing each other's S3 state keys.
-- **Network egress**: Aside from the EC2 metadata firewall rule, runs share the host network so providers can reach registries and cloud APIs. Enforce stricter egress allow-lists at your host or VPC firewall if required.
+- **Network egress is off by default**: Under the default `egress_mode = "off"`, runs share the host's network, apart from the metadata firewall rule, so code a commit chose can reach anything the host reaches. Under `enforce`, an allowed host can still carry data out: `*.amazonaws.com` allows any S3 bucket, and the proxy decides by host and port, not by URL or content. `report` records but doesn't restrict. See [What egress doesn't cover](run-isolation.md#what-egress-doesnt-cover).
 - **Mask limits**: The mask is an output filter, not information-flow tracking. Unmarked secrets in unmarked attributes, hashed secrets passed to `nonsensitive()`, and multi-line base64 without sensitive marks are not caught. See [What the mask can't do](secrets.md#what-the-mask-cant-do).
 - **Version 0 maturity**: Writ has been tested extensively against real OpenTofu 1.13.9 and real providers using local stand-ins, but has not been proven against a live cloud account or real GitLab instance. See [Status and limits](status.md).
 
 ## Next steps
 
-- [Run isolation and egress](run-isolation.md): configure `provider_uids` and the `nftables` firewall rule.
+- [Run isolation and egress](run-isolation.md): configure `provider_uids`, the `nftables` firewall rule, and the egress proxy.
 - [Secrets and the mask](secrets.md): test the mask with `just verify-mask`.
 - [API: What the API refuses](api.md#what-the-api-refuses): threat-by-threat breakdown of API defenses.
 - [SECURITY.md](../SECURITY.md): how to report a security issue privately.

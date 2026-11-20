@@ -137,7 +137,7 @@ If you use an `ssh://` or `git@host:path` source, it fails, because the view has
 
 After each clone, `tofu init` runs `git submodule update --init --recursive`, and git 2.56's `git submodule` is a shell script. So the environment aliases `submodule` to `submodule--helper`, the builtin the script runs. Git reads that alias only when it finds no `git-submodule` program, and the view never has one. Writ fetches a module's submodules over https.
 
-Writ leaves the network unchanged in the view, so `init` reaches the registry and module hosts. Because the run's processes live in their own pid namespace, they all die when `tofu` exits. If Writ can't create the view, the step fails with the reason, and `tofu` doesn't run.
+Under `egress_mode = "off"`, the default, Writ leaves the network unchanged in the view, so `init` reaches module hosts and a provider reaches whatever the host can. Under `report` and `enforce`, each step also gets a network namespace of its own, whose one way out is Writ's egress proxy: see [Egress](#egress). Because the run's processes live in their own pid namespace, they all die when `tofu` exits. If Writ can't create the view, or the run's network, the step fails with the reason, and `tofu` doesn't run.
 
 When a step fails, it ends before the mask has read a plan. At that point the mask knows the environment's values, the token, and the secret set of the state the plan read, but none of the stack's other sensitive values. Yet a diagnostic's detail can show one of those, as `nonsensitive()` in a validation's `error_message` does.
 
@@ -473,7 +473,7 @@ So you can trace each session in CloudTrail. CloudTrail records the session name
 
 Your role's trust policy must allow `sts:AssumeRole` and `sts:SetSourceIdentity` to the control plane's identity. If an environment has no `plan_role`, its providers get no AWS credential.
 
-Writ doesn't hand the credentials to the providers directly. Instead, `writ serve` serves them on a loopback endpoint in the AWS SDKs' container credentials protocol. Your providers get `AWS_CONTAINER_CREDENTIALS_FULL_URI` and `AWS_CONTAINER_AUTHORIZATION_TOKEN`, a random token for the run. That endpoint assumes the role again 15 minutes before the credentials expire, and refuses the token once the plan ends. Ending the token doesn't revoke credentials a provider already fetched, so the run's mask knows the secret key and session token of each set it served, and sweeps them from everything the run keeps, as [Secrets and the mask](secrets.md#how-the-mask-works) explains. If STS refuses the role, the plan fails before any provider starts, with a `denied` diagnostic that names the role.
+Writ doesn't hand the credentials to the providers directly. Instead, `writ serve` serves them on a loopback endpoint in the AWS SDKs' container credentials protocol. Your providers get `AWS_CONTAINER_CREDENTIALS_FULL_URI` and `AWS_CONTAINER_AUTHORIZATION_TOKEN`, a random token for the run. Under `egress_mode` `report` or `enforce`, the run reaches the same endpoint, with the same token, at `http://127.0.0.1:3129/v1/credentials` of its own network namespace, as [Egress](#egress) explains. That endpoint assumes the role again 15 minutes before the credentials expire, and refuses the token once the plan ends. Ending the token doesn't revoke credentials a provider already fetched, so the run's mask knows the secret key and session token of each set it served, and sweeps them from everything the run keeps, as [Secrets and the mask](secrets.md#how-the-mask-works) explains. If STS refuses the role, the plan fails before any provider starts, with a `denied` diagnostic that names the role.
 
 In a provider's environment you'll find the endpoint and its token, the environment's `provider_env` files, `PATH=/usr/local/bin:/usr/bin:/bin` (with Git's directory first when the `tofu` block sets `git`), `AWS_EC2_METADATA_DISABLED=true`, `HOME` and `TMPDIR` set to the provider's own directory, and the plugin settings. Nothing comes from the environment of `writ serve`.
 
@@ -523,6 +523,8 @@ table inet writ {
 }
 ```
 
+The rule applies under every `egress_mode`. Under `report` and `enforce`, a run also has no route to the metadata service, and the egress proxy refuses it.
+
 For an OpenTofu stack, `tofu` and its providers run as the provider uid inside the [private filesystem view](#what-a-run-can-see), so they can't read a world-readable file of the host either. For the view, Writ needs user, mount, and pid namespaces, which an unprivileged user can create. Writ's `CAP_SETUID` and `CAP_SETGID` let it map the provider uid into the view's user namespace. A `writ serve` with `provider_uids` marks itself not dumpable at start, because it holds the state keys, the `provider_env` secrets, and each run's credentials: no process of writ's own uid can trace it or read its memory, and a crash writes no core dump, only the Go traceback on stderr. The kernel lets a `writ serve` that isn't root write the view's uid map only while writ is dumpable, so writ is dumpable only for the moment it starts a view, and not dumpable again right after. A provider or the `--check` probe that starts as a provider uid waits until that moment ends, since starting a process as another uid marks writ not dumpable too.
 
 If an environment in your config sets a role, or the config has a `tofu` block, you must set `provider_uids`. Your OpenTofu stack runs arbitrary code from the commit, such as a `local_file` data source that reads a path on the host, so a team's `writ serve` never runs tofu as its own user.
@@ -570,6 +572,117 @@ the provider saw: key "open /tmp/TestProviderIsolation3679868081/001/keys/prod.k
 Outside the provider, the test process reached both addresses, and with the rule moved to other uids the provider reached `169.254.169.254` too.
 
 A third test in `just test-serve` plans as provider uids from the same kind of `writ`, with its capabilities cleared at start as `writ serve` clears them. Each plan makes its scratch directory as the provider uid before tofu starts, and twenty plans run while other goroutines act as other uids on files.
+
+## Egress
+
+A run executes code the commit chose: providers, modules, a `local-exec` provisioner, an external data source. That code holds the role credentials Writ serves the run and the env's `provider_env` values. Under `egress_mode = "off"`, the default, the run shares the host's network, so the code can send those anywhere the host reaches: the internet, the network `writ serve` runs in, and services on the host's loopback, such as `writ serve`'s own Postgres.
+
+Set `egress_mode` to `"enforce"`, and give each env an `egress` list in the [config](config.md#env), and each run reaches the network only through Writ's egress proxy. The proxy checks every connection's host and port against the env's list before it connects. [Run isolation and egress](run-isolation.md#egress) is the setup guide: the config, the modes side by side, what to list, and the rollout.
+
+```hcl
+egress_mode = "enforce"
+
+env "prod" {
+  key    = "/var/lib/writ/keys/prod.key"
+  egress = ["*.amazonaws.com", "nomad.example.internal:80"]
+}
+```
+
+### How a run gets its own network
+
+Each step of a run, `init`, `plan`, `show`, `apply`, and `state pull`, starts in a new network namespace of its own. The namespace holds only loopback: no other interface, no route, and so no DNS server. Before `tofu` starts, the view's helper brings loopback up, listens on three ports of the namespace's `127.0.0.1`, and hands the listening sockets to `writ serve` over a socket pair. `writ serve` accepts connections on them from its own namespace, so no process of the run relays a connection and nothing of Writ's is in the view. The ports are taken before `tofu` starts, so the run can't listen in Writ's place.
+
+| Port of the run's loopback | What `writ serve` serves there | How the run finds it |
+| --- | --- | --- |
+| `127.0.0.1:3128` | The egress proxy | `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, and `https_proxy` |
+| `127.0.0.1:3129` | The [credential endpoint](#roles-and-credentials), with the run's token, as on the host | `AWS_CONTAINER_CREDENTIALS_FULL_URI` |
+| `127.0.0.1:3130` | The [http state backend](#opentofu-stacks), `/v1/tfstate/` and no other route, with its audit rows and a limit of the run's own | `TF_HTTP_ADDRESS` |
+
+`NO_PROXY` and `no_proxy` are `127.0.0.1,localhost,::1`, so the credential endpoint and the state backend are reached directly. The state port drops the `X-Forwarded-For` of a run's request, because a run is no trusted proxy. Every run reaches the state port from `127.0.0.1`, so it counts a run's requests against `limits.requests_per_address` in a bucket keyed by the run, apart from `writ serve`'s own listener and from every other run.
+
+The provider install gets a namespace of its own too, behind a proxy of its own: see [The provider install](#the-provider-install). The `tofu version` check keeps `writ serve`'s network, because it reads no file of a stack.
+
+The proxy is the security boundary, and it identifies the run by the listener its connection came in on, not by anything the run sends. The firewall rule for the metadata service still applies. Each port of a step holds at most 256 connections open and closes one that waits 10 seconds for a request. Each step's network ends with the step: `writ serve` closes its listeners and every connection when the step's processes are gone.
+
+### What the proxy allows
+
+The proxy takes `CONNECT HOST:PORT`, for TLS or any protocol on any port, and a plain HTTP request for an absolute `http://` URL. It decides on the host and port, before it connects:
+
+- It never connects to a loopback, link-local, multicast, broadcast, or unspecified address, or to `fd00:ec2::254`, in any mode. `169.254.169.254`, the instance metadata service, is link-local.
+- A NAT64 address counts as the IPv4 address it embeds, because a translator on the network connects there: `64:ff9b::a9fe:a9fe` is the metadata service. Every address of the local-use prefix `64:ff9b:1::/48` is private.
+- An IP address is allowed only when the list has it.
+- Under `enforce`, a name the list lacks is refused before any lookup, so a lookup can't carry data out through DNS.
+- `writ serve` resolves a listed name with its own resolver, and connects only to an address it checked. A second lookup, as a rebinding name would answer, can't move the connection. A name whose lookup fails is recorded `unresolved`, and the proxy connects nowhere.
+- A name that resolves to a private address, of RFC 1918, unique local IPv6, or `100.64.0.0/10`, is allowed only when the list has that exact name. A wildcard doesn't allow it, so a public domain can't lead a run into the network `writ serve` runs in.
+
+With VPC interface endpoints and their private DNS, AWS names such as `sts.eu-west-1.amazonaws.com` resolve to private addresses in your VPC. `*.amazonaws.com` doesn't allow those, so list each endpoint's exact name under `enforce`.
+
+An item is `HOST`, `*.DOMAIN`, or an IP address, with an optional `:PORT`. `*.amazonaws.com` matches `sts.amazonaws.com` and not `amazonaws.com`. An item with no port allows 443 only, and `HOST:80` allows plain HTTP. A run has at most 128 connections open through the proxy. A connection ends after 10 minutes with no byte either way, after an hour, or with its step. The proxy keeps only the host and port of each request, never a path, a header, or a body.
+
+### Report and enforce
+
+Under `report`, the proxy lets a destination the list lacks through, and records it as `unlisted`. It still refuses what it never connects to: loopback, link-local, and the rest of the list above. Under `enforce`, it refuses every destination the list lacks.
+
+Under both, every run records what it asked for: each `host:port`, its verdict, `allowed`, `unlisted`, `refused`, or `unresolved`, the reason, and how many requests got it. A plan and a run keep it as `network`, in the [API](api.md) and on their pages in the control UI, and `writ serve` logs one `run egress` line for each run, the runs that read state for the index or an adoption included. Each host is swept by the run's [mask](secrets.md), after the mask learns the plan's sensitive values, because a run chooses its hosts and can spell a secret in one. When the mask can't read the plan, the run keeps its record and logs its line with each host shown as `(withheld)`.
+
+When the proxy refuses a `CONNECT`, the reason is in its answer's status line, so a provider's error says `writ egress refused HOST:PORT: REASON`. When a step fails, its diagnostics also name each destination the proxy refused, with the env's egress list:
+
+```
+writ: tofu init exited with code 1
+error: writ's egress proxy refused 192.0.2.11:8080 (an IP address the list does not have); env prod's egress is [192.0.2.10:8080], under egress_mode enforce: add what the stack needs to the env's egress list
+```
+
+And here's the line `writ serve` logged for that run:
+
+```
+{"time":"2026-11-20T00:09:35.982321904+05:30","level":"WARN","msg":"run egress","run":"RXZIGH4YTSA4XR3RJPNCH5D2XE","env":"prod","mode":"enforce","destinations":"192.0.2.11:8080 refused x2","unrecorded":0}
+```
+
+Output of `TestTofuEgress`, 2026-11-20.
+
+### What a run fetches
+
+Providers come from the plugin cache. Fill installs them as `writ` before the run starts, and the run's `init` reads them from the cache and asks no registry. So an env's list doesn't need the providers' registry.
+
+Modules are another matter: the run's first `init` fetches each remote module, inside its own namespace. If your stacks use registry modules or modules from a Git host, list those hosts, such as `registry.opentofu.org`, the host its download URLs point to, and your Git host. A stack whose state is on S3 needs its endpoint in the list, such as `*.amazonaws.com`, because the backend reaches it through the proxy.
+
+### The provider install
+
+Fill writes the configuration `tofu init` runs, but the stack's `.terraform.lock.hcl` chooses each provider's registry, and the registry chooses the hosts the install downloads from. So under `egress_mode = "off"`, a stack can send the install, which runs as `writ`'s own uid, to any host `writ serve` reaches. No firewall rule of the provider uids holds `writ`'s uid, so that includes the metadata service, and the error text of a request it sends ends up in the plan's diagnostics.
+
+Under `report` and `enforce`, two rules hold the install:
+
+- A provider whose registry `provider_registries` doesn't list fails the plan before the install starts. Its diagnostic names the registry and `provider_registries`. The default list is `registry.opentofu.org` and `registry.terraform.io`. See [the config](config.md#settings-and-blocks).
+- Fill runs `tofu init` in a network namespace of its own, as a run's steps do, and its one port, `127.0.0.1:3128`, is a proxy of its own. A registry sends downloads to hosts of its choice, such as a CDN, so this proxy has no list. It connects to any public address on any port, in both modes. It refuses a private address, and everything the run's proxy never connects to.
+
+The run's record lists the install's destinations first, with `step` set to `install`, and its Network card marks them `provider install`. A plan whose install fails keeps them. The env's `egress` list has no say over the install, so a failed step's diagnostics leave the install's refusals out. Fill still writes the plugin cache, and a later install of the same providers reads it.
+
+A registry, or a download host, on a private address can't serve the install under `report` or `enforce`. Fill the plugin cache with those providers another way, or run under `off`.
+
+### Connections around the proxy
+
+A client that ignores `HTTPS_PROXY`, or connects to an IP address by itself, finds no route and no DNS, under `report` and `enforce` alike. Its connection fails with `network is unreachable` or a failed lookup. When a failed step's output shows such an error, its diagnostics add that a process of the run connected without Writ's egress proxy.
+
+### What egress doesn't cover
+
+- Data can leave through a host the list allows. `*.amazonaws.com` allows any S3 bucket, an attacker's own among them, and any AWS API that takes the run's credentials. The proxy decides by host and port, not by the URL, the account, or what's sent, and a `CONNECT`'s TLS passes through untouched.
+- A provider whose client ignores proxy settings can't reach the network at all under `report` or `enforce`. One that connects only to IP addresses needs each listed.
+- `report` isn't a boundary. It lets a run reach what the list lacks, private addresses and the host's own addresses included, as `off` does, and resolves every name it's asked, so a lookup can carry data out.
+- A listed name is resolved by `writ serve`'s resolver, so the run can make it look up any name the list allows.
+- The proxy connects directly. It doesn't use a proxy of `writ serve`'s own.
+- `writ serve --dev` has no `egress_mode`, and `writ import bulk` runs providers on the host's network.
+
+### Roll it out
+
+1. Set `egress_mode = "report"`, and restart `writ serve`. Runs behave as before, through the proxy.
+2. Let a few days of plans, applies, and drift checks run.
+3. Read what they reached: the Network card of each plan and run, `network` in `GET /v1/plans/{id}` and `GET /v1/runs/{id}`, or the `run egress` lines of the log. Each `unlisted` destination is one the env's list lacks.
+4. Add each host your stacks need to its env's `egress`, as narrow as it can be: a name before a wildcard, a port when it isn't 443.
+5. Set `egress_mode = "enforce"`, and restart. A destination you missed fails its plan with a diagnostic that names it.
+
+### How egress is tested
+
+`just test-serve` runs `TestRunEgressIsolation`. A probe in `tofu`'s place, as provider uid 61000, in namespaces with test servers on loopback addresses and behind the firewall rule, reaches a listed server through the egress proxy under `enforce`. It's refused an unlisted server, the host's loopback, and the metadata address, reaches none of them around the proxy, and gets credentials from the endpoint with its token. Under `off`, it reaches the host's network as before, and the rule still keeps it from the metadata address. `just e2e` runs `TestTofuEgress`: a team's `writ serve` under `enforce`, with real OpenTofu, fetches a module from a listed host through the proxy, and refuses one from an unlisted host with the diagnostic above.
 
 ## Next steps
 

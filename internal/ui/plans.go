@@ -87,6 +87,10 @@ func (u *UI) plan(w http.ResponseWriter, r *http.Request, s *server.Session) {
 			v.DocError = fmt.Sprintf("read the plan's policy decision: %v", err)
 		}
 	}
+	var netErr error
+	if v.Network, netErr = readNetwork(doc.Network); netErr != nil {
+		v.DocError = netErr.Error()
+	}
 	if len(doc.Plan.Stacks) == 1 {
 		v.Adopt = f.adoptHint(v.Diagnostics, doc.Plan.Stacks[0].Stack, doc.Plan.Env)
 	}

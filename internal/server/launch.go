@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/mr-karan/writ/internal/awsrole"
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
+	"github.com/mr-karan/writ/internal/egress"
 	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/repo"
 	"github.com/mr-karan/writ/internal/runas"
@@ -128,7 +130,10 @@ type tofuRun struct {
 	// run with no role. The environment holds only the token that fetches
 	// them, and a refresh adds to them while the run goes on.
 	served func() []string
-	undo   []func()
+	// proxy is the run's egress proxy, and install the proxy of its
+	// provider install, both nil under egress_mode off.
+	proxy, install *egress.Proxy
+	undo           []func()
 }
 
 // startRun prepares the run spec describes: it writes the commit's files,
@@ -152,13 +157,19 @@ func (s *Server) startRun(ctx context.Context, spec runSpec) (_ *tofuRun, err er
 	}
 	r.secrets = values(vars)
 	r.env = baseProviderEnv
+	if r.proxy, err = s.newProxy(spec.env); err != nil {
+		return nil, err
+	}
+	if r.proxy != nil {
+		r.env = append(slices.Clone(r.env), egressEnv...)
+	}
 	switch {
 	case spec.role == "":
 	case s.cfg.Dev:
 		// The dev control plane assumes no role and takes no uid. Its
 		// runs get the shell's TF_VAR_ variables, which set the stack's
 		// variables.
-		r.env = append(slices.Clone(baseProviderEnv), vars...)
+		r.env = append(slices.Clone(r.env), vars...)
 		return r, nil
 	default:
 		r.creds = vars
@@ -173,8 +184,12 @@ func (s *Server) startRun(ctx context.Context, spec runSpec) (_ *tofuRun, err er
 				return nil, &classedError{diag.Denied, fmt.Errorf("the %s role of env %s: %w", spec.role, spec.env, err)}
 			}
 			r.undo = append(r.undo, sess.End)
-			r.creds = append(slices.Clone(r.creds), sess.Env()...)
-			r.secrets = append(r.secrets, values(sess.Env())...)
+			env := sess.Env()
+			if r.proxy != nil {
+				env = sess.EnvAt(credsURL)
+			}
+			r.creds = append(slices.Clone(r.creds), env...)
+			r.secrets = append(r.secrets, values(env)...)
 			r.served = sess.Secrets
 		}
 	}
@@ -222,7 +237,7 @@ func (r *tofuRun) stateToken(ctx context.Context, stack string, scope control.St
 		return err
 	}
 	r.undo = append(r.undo, func() { s.endState(r.spec.id) })
-	r.env = append(slices.Clone(r.env), tfstate.ClientEnv(s.cfg.URL, stack, token)...)
+	r.env = append(slices.Clone(r.env), tfstate.ClientEnv(s.stateBase(), stack, token)...)
 	r.secrets = append(r.secrets, token)
 	return nil
 }
@@ -231,11 +246,39 @@ func (r *tofuRun) stateToken(ctx context.Context, stack string, scope control.St
 // file and returns how tofu runs the stack. m sweeps the output of a
 // failed fill.
 func (r *tofuRun) stack(ctx context.Context, m *mask.Mask) (tofu.Stack, error) {
-	lock, err := r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock)
+	lock, err := r.fill(ctx)
 	if err != nil {
 		return tofu.Stack{}, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
 	}
-	return tofu.Stack{Files: os.DirFS(r.work), Dir: r.spec.dir, Lock: lock, Env: r.env, Creds: r.creds, StateCreds: r.spec.stateCreds, User: r.user}, nil
+	return tofu.Stack{Files: os.DirFS(r.work), Dir: r.spec.dir, Lock: lock, Env: r.env, Creds: r.creds, StateCreds: r.spec.stateCreds, User: r.user, Net: r.net()}, nil
+}
+
+// fill installs the providers of the stack's lock file and returns the
+// lock file the run's init reads. The lock file is the stack's, and each
+// provider's address starts with the registry the install asks, which
+// chooses the hosts it downloads from. So under egress_mode report or
+// enforce a provider from a registry that provider_registries does not
+// list is refused, and the install runs in a network namespace of its
+// own behind a proxy of its own, which allows only public addresses.
+func (r *tofuRun) fill(ctx context.Context) ([]byte, error) {
+	if !r.s.cfg.EgressMode.On() {
+		return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, nil, nil)
+	}
+	providers, err := tofu.LockedProviders(r.spec.ts.Lock)
+	if err != nil {
+		return nil, err
+	}
+	allowed := r.s.cfg.ProviderRegistries
+	for _, p := range providers {
+		if host, _, _ := strings.Cut(p.Source, "/"); !slices.Contains(allowed, host) {
+			return nil, tofuRefused("provider %s is from registry %s, which provider_registries does not list: under egress_mode %s, writ serve installs providers only from %s; add %s to provider_registries to install from it",
+				p.Source, host, r.s.cfg.EgressMode, strings.Join(allowed, ", "), host)
+		}
+	}
+	if r.install, err = egress.New(egress.Options{Mode: r.s.cfg.EgressMode, Install: true}); err != nil {
+		return nil, err
+	}
+	return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, &tofu.Net{Ports: map[int]http.Handler{egressPort: r.install}}, egressEnv)
 }
 
 // takeUID takes a provider uid no other run has, nil when the config sets

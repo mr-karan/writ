@@ -83,7 +83,7 @@ func TestGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	filled, err := r.Fill(context.Background(), moved)
+	filled, err := r.Fill(context.Background(), moved, nil, nil)
 	if err != nil {
 		t.Fatalf("fill the plugin cache from a lock that Terraform wrote: %v", stepText(err))
 	}
@@ -145,7 +145,7 @@ func gateBothRegistries(t *testing.T, r *Runner) {
 	if want := []Moved{{From: "registry.terraform.io/carlpett/sops", To: "registry.opentofu.org/carlpett/sops", Kept: true}}; !slices.Equal(moved, want) {
 		t.Fatalf("moved %+v, want %+v", moved, want)
 	}
-	if s.Lock, err = r.Fill(ctx, lock); err != nil {
+	if s.Lock, err = r.Fill(ctx, lock, nil, nil); err != nil {
 		t.Fatalf("fill the plugin cache with carlpett/sops at both addresses: %v", stepText(err))
 	}
 	if !bytes.Equal(s.Lock, lock) {
@@ -424,7 +424,7 @@ func gateChild(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := fr.Fill(ctx, lock); err != nil {
+		if _, err := fr.Fill(ctx, lock, nil, nil); err != nil {
 			t.Fatalf("fill: %v", stepText(err))
 		}
 		if _, err := fr.Plan(ctx, s); err != nil {

@@ -14,6 +14,7 @@ One package, `internal/mask`, produces every document that leaves a run:
 - the text of a plan and of an apply, and the events of an apply,
 - the rows of the [state index](serve.md#the-state-index),
 - the diagnostics of a plan or an apply that failed.
+- the hosts of a run's network record under [egress](serve.md#egress), which the run chose and could spell a secret in.
 
 Your runs each get their own mask. At first, it knows the values of the environment that `writ serve` gave the run, such as your `provider_env` and the `TF_VAR_` variables, and learns more from each document it reads. Then it applies four rules.
 

@@ -135,6 +135,23 @@ func fakeTofuMain(behaviour string, args []string) int {
 		case "show":
 			fmt.Println("{}")
 		}
+	case "fds":
+		// What of the host the step's descriptors and network reach, for
+		// TestRunNetworkHidesTheHost.
+		fmt.Print(fdProbe())
+		if cmd == "plan" {
+			err = os.WriteFile(planFile, []byte("saved"), 0o600)
+		}
+	case "net":
+		// What the step's network lets it reach, for TestRunNetwork. An
+		// init with PROBE_INIT_FAIL set fails, so Fill returns what it saw.
+		fmt.Print(netProbe())
+		switch {
+		case cmd == "plan":
+			err = os.WriteFile(planFile, []byte("saved"), 0o600)
+		case cmd == "init" && os.Getenv("PROBE_INIT_FAIL") != "":
+			return 1
+		}
 	case "creds":
 		// init fails if it sees the run's credential or lacks the
 		// backend's address; the other steps print what they saw.

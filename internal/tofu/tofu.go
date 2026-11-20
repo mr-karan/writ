@@ -2,8 +2,11 @@
 // and the apply of a saved plan, each run in a scratch directory of its
 // own, with bounded time and output, and as the run's own uid when it has
 // one. On Linux every tofu process sees a private view of the filesystem
-// that holds the run's directory and none of the host's other files. It is the only package that starts tofu. Fill installs a lock
-// file's providers into the plugin cache that every run shares.
+// that holds the run's directory and none of the host's other files, and
+// a run with Stack.Net has a network namespace of its own that reaches
+// only the ports writ serves in it. It is the only package that starts
+// tofu. Fill installs a lock file's providers into the plugin cache that
+// every run shares, on writ's own network.
 //
 // What a run returns is raw: the saved plan, the plan's JSON, and tofu's
 // output hold every secret the stack uses. Only the mask may turn them into
@@ -187,6 +190,9 @@ type Stack struct {
 	// User, when set, is the uid every process of the run runs as. It
 	// may not be uid 0 or one of writ's own uids.
 	User *User
+	// Net, when set, gives every step of the run a network namespace of
+	// its own. Without it, every step shares writ's network.
+	Net *Net
 }
 
 // Plan is a plan's raw result.

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"maps"
 	"net"
 	"net/netip"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"github.com/mr-karan/writ/internal/awsrole"
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
+	"github.com/mr-karan/writ/internal/egress"
 	"github.com/mr-karan/writ/internal/oidc"
 	"github.com/mr-karan/writ/internal/policy"
 )
@@ -50,7 +52,7 @@ func (d *decoder) config(b *hclsyntax.Body) *Config {
 		Envs: map[string]Env{},
 	}
 	s := shape{
-		attrs:  []string{"url", "listen", "database", "data", "provider_uids", "plan_ttl", "session_ttl", "poll_every", "trusted_proxies"},
+		attrs:  []string{"url", "listen", "database", "data", "provider_uids", "plan_ttl", "session_ttl", "poll_every", "trusted_proxies", "egress_mode", "provider_registries"},
 		blocks: []string{"tls", "limits", "retention", "ui", "aws", "tofu", "drift", "policy"},
 		lists:  []string{"grant", "approval", "repo"},
 		named:  []string{"issuer", "team", "env", "forge"},
@@ -207,6 +209,7 @@ func (d *decoder) config(b *hclsyntax.Body) *Config {
 			d.errorf(f.key, "drift checks need limits.plans of at least 2, and it is %d: a drift check never takes the last free plan slot, which stays for people's plans", cfg.Limits.Plans)
 		}
 	}
+	d.egress(top, cfg)
 	d.roles(b, top, cfg)
 	d.checkPeopleOps(many["grant"], cfg)
 	d.repoParts(top, many, cfg, false)
@@ -294,7 +297,7 @@ func (d *decoder) envs(top *hclsyntax.Body, bs []*hclsyntax.Block, cfg *Config) 
 			d.errorf(key, "environment name %q must be lowercase letters, digits, _ and -", name)
 		}
 		r, _ := d.body(blk.Body, "env "+name, shape{
-			attrs: []string{"key", "plan_role", "apply_role", "s3_endpoints", "provider_env"},
+			attrs: []string{"key", "plan_role", "apply_role", "s3_endpoints", "provider_env", "egress"},
 			removed: map[string]string{
 				"secret_env": "it gave values to secret_env() of the Writ language; give a provider a secret with provider_env",
 				"state":      "a stack's backend block says where its state is",
@@ -337,10 +340,62 @@ func (d *decoder) envs(top *hclsyntax.Body, bs []*hclsyntax.Block, cfg *Config) 
 				env.ProviderEnv[v] = d.path(vf.value, "provider_env."+v)
 			}
 		}
+		if x, ok := r["egress"]; ok {
+			env.Egress = d.strs(x.value, "egress of env "+name)
+			var err error
+			if env.egress, err = egress.ParseList(env.Egress); err != nil {
+				d.errorf(x.value, "env %s: %v", name, err)
+			}
+		}
 		cfg.Envs[name] = env
 	}
 	if len(cfg.Envs) == 0 {
 		d.errorf(top, "the config names no env, so nothing can be planned: add an env \"NAME\" { ... } block")
+	}
+}
+
+// registryRE is a registry's host name as a lock file's provider address
+// may start with it.
+var registryRE = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
+
+// egress reads egress_mode, off by default, which only a config that runs
+// OpenTofu may turn on, and provider_registries, and checks that each
+// env's runs can reach their state from their own network namespace.
+func (d *decoder) egress(top map[string]field, cfg *Config) {
+	cfg.EgressMode = egress.Off
+	cfg.ProviderRegistries = defaultProviderRegistries
+	if r, ok := top["provider_registries"]; ok {
+		cfg.ProviderRegistries = d.strs(r.value, "provider_registries")
+		for _, h := range cfg.ProviderRegistries {
+			if !registryRE.MatchString(h) {
+				d.errorf(r.value, "provider_registries item %q: it is not a registry's host name, such as registry.opentofu.org, as a lock file's provider address starts with", h)
+			}
+		}
+	}
+	f, ok := top["egress_mode"]
+	if ok {
+		m, err := egress.ParseMode(d.str(f.value, "egress_mode"))
+		if err != nil {
+			d.errorf(f.value, "%v", err)
+			return
+		}
+		cfg.EgressMode = m
+	}
+	if !cfg.EgressMode.On() {
+		if r, ok := top["provider_registries"]; ok {
+			d.warnf(r.value, "provider_registries is set, and egress_mode is off, so a provider install asks any registry a lock file names; set egress_mode to report or enforce")
+		}
+		return
+	}
+	if _, ok := top["tofu"]; !ok {
+		d.errorf(f.value, "egress_mode applies to the OpenTofu runs, and the config has no tofu block")
+	}
+	for _, name := range slices.Sorted(maps.Keys(cfg.Envs)) {
+		for _, e := range cfg.Envs[name].S3Endpoints {
+			if u, err := url.Parse(e); err == nil && u.Scheme == "http" {
+				d.errorf(f.value, "env %s: s3_endpoints lists %s, a loopback address, which a run cannot reach from its own network namespace under egress_mode %s; list an https endpoint the env's egress allows", name, e, cfg.EgressMode)
+			}
+		}
 	}
 }
 
@@ -544,5 +599,12 @@ func (d *decoder) lint(cfg *Config) {
 	}
 	if cfg.ProviderUIDs == nil {
 		d.warnf(span, "providers run as writ's own user, so they can read the state keys and reach the host's own identity; set provider_uids")
+	}
+	if !cfg.EgressMode.On() {
+		for _, name := range slices.Sorted(maps.Keys(cfg.Envs)) {
+			if cfg.Envs[name].Egress != nil {
+				d.warnf(span, "env %s sets egress, and egress_mode is off, so its runs keep the host's network; set egress_mode to report or enforce", name)
+			}
+		}
 	}
 }

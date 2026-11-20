@@ -243,6 +243,7 @@ func (s *Server) refreshS3(ctx context.Context, st control.S3Stack) error {
 	if err != nil {
 		return err
 	}
+	defer tr.network(m)
 	state, err := s.tofuRunner.Pull(ctx, stk)
 	if err != nil {
 		return fmt.Errorf("%w%s", err, stepLines(m, err))

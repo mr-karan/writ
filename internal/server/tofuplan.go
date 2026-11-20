@@ -34,8 +34,10 @@ import (
 type TofuRunner interface {
 	// Fill installs the providers a lock file pins into the plugin cache
 	// that every run reads, and returns the lock file a run's init reads,
-	// which a tofu.Stack's Lock takes.
-	Fill(ctx context.Context, lock []byte) ([]byte, error)
+	// which a tofu.Stack's Lock takes. With net, tofu init runs in a
+	// network namespace of its own whose ports net serves, with env; a
+	// nil net keeps writ serve's own network.
+	Fill(ctx context.Context, lock []byte, net *tofu.Net, env []string) ([]byte, error)
 	// Plan runs init, plan, and show of one stack and returns the raw
 	// result, which only the mask may read.
 	Plan(ctx context.Context, s tofu.Stack) (tofu.Plan, error)
@@ -148,8 +150,12 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 			return res, err
 		}
 	}
-	stk, err := run.stack(ctx, run.mask())
+	// The record of a failed install keeps what it asked for, which is
+	// the lock file's and its registry's choice, not the stack's code.
+	fillMask := run.mask()
+	stk, err := run.stack(ctx, fillMask)
 	if err != nil {
+		res.Network = run.network(fillMask).raw()
 		return res, err
 	}
 	raw, err := s.tofuRunner.Plan(ctx, stk)
@@ -161,13 +167,19 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 	if err != nil {
 		return res, err
 	}
+	// The hosts the run asked for are its output too, so the record of
+	// them waits for the mask that sweeps the rest.
 	if refused {
-		return refusedTofu(res, se, m, onS3), nil
+		net := run.network(m)
+		res.Network = net.raw()
+		return refusedTofu(res, se, m, onS3, egressDiagnostics(net, env, se.Stdout, se.Stderr)), nil
 	}
 	doc, err := m.Plan(raw.JSON)
 	if err != nil {
+		res.Network = run.network(nil).raw()
 		return res, fmt.Errorf("the mask refused the plan, so writ serve keeps nothing of it: %w", err)
 	}
+	res.Network = run.network(m).raw()
 	body, err := json.Marshal(doc)
 	if err != nil {
 		return res, err
@@ -375,11 +387,12 @@ func (s *Server) endState(run string) {
 // plan failed, as an AccessDenied names the action the role lacks. So a
 // past secret such a state keeps in an attribute through nonsensitive()
 // shows where a summary quotes that attribute; docs/serve.md states the
-// limit.
-func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask, unread bool) control.PlanResult {
+// limit. extra follows the step's diagnostics: writ's own words on why it
+// failed, such as the egress proxy's refusals.
+func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask, unread bool, extra []Diagnostic) control.PlanResult {
 	diags := []Diagnostic{{"error", string(diag.Usage), se.Error()}}
 	res.Text = "writ: " + se.Error() + "\n"
-	for _, d := range stepDiagnostics(m, se.Stdout, unread) {
+	for _, d := range append(stepDiagnostics(m, se.Stdout, unread), extra...) {
 		diags = append(diags, d)
 		res.Text += d.Severity + ": " + d.Message + "\n"
 	}

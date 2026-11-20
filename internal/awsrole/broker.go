@@ -70,7 +70,7 @@ func NewBroker(o BrokerOptions) (*Broker, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen for the credential endpoint: %w", err)
 	}
-	b := &Broker{opts: o, runs: map[[32]byte]*Run{}, url: "http://" + ln.Addr().String() + "/v1/credentials"}
+	b := &Broker{opts: o, runs: map[[32]byte]*Run{}, url: "http://" + ln.Addr().String() + CredentialsPath}
 	b.srv = &http.Server{
 		Handler:           http.HandlerFunc(b.serve),
 		ReadHeaderTimeout: 5 * time.Second,
@@ -81,8 +81,16 @@ func NewBroker(o BrokerOptions) (*Broker, error) {
 	return b, nil
 }
 
+// CredentialsPath is the endpoint's path.
+const CredentialsPath = "/v1/credentials"
+
 // URL is the endpoint providers fetch credentials from.
 func (b *Broker) URL() string { return b.url }
+
+// Handler serves the endpoint as its listener does, with the same tokens,
+// for a run that reaches it on a listener of its own, as one in its own
+// network namespace does.
+func (b *Broker) Handler() http.Handler { return http.HandlerFunc(b.serve) }
 
 // Close stops the endpoint.
 func (b *Broker) Close() error { return b.srv.Close() }
@@ -156,9 +164,12 @@ func (b *Broker) assumed(ctx context.Context, s Session, c Credentials) error {
 
 // Env is what a provider needs to fetch the run's credentials. The AWS
 // SDKs read these two variables.
-func (r *Run) Env() []string {
+func (r *Run) Env() []string { return r.EnvAt(r.b.url) }
+
+// EnvAt is Env with the endpoint at url, where Handler serves it.
+func (r *Run) EnvAt(url string) []string {
 	return []string{
-		"AWS_CONTAINER_CREDENTIALS_FULL_URI=" + r.b.url,
+		"AWS_CONTAINER_CREDENTIALS_FULL_URI=" + url,
 		"AWS_CONTAINER_AUTHORIZATION_TOKEN=" + r.token,
 	}
 }

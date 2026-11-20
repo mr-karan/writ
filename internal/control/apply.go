@@ -635,6 +635,9 @@ type Run struct {
 	// Policy is the decision of the apply point, nil when no policy
 	// judged the run.
 	Policy json.RawMessage
+	// Network is the writ.network/v1 of the run, nil while it applies or
+	// when it had no egress proxy.
+	Network json.RawMessage
 }
 
 // ApplyRequest is a run to begin.
@@ -967,6 +970,9 @@ type RunResult struct {
 	EndedAt  time.Time
 	Document json.RawMessage
 	Text     string
+	// Network is the writ.network/v1 of the run, nil when it had no
+	// egress proxy.
+	Network json.RawMessage
 }
 
 // FinishRun records how a run ended, in one transaction: the run's row,
@@ -1007,8 +1013,8 @@ func finishRun(ctx context.Context, tx *sqldb.Tx, id string, r RunResult) ([]str
 	if len(r.Document) > 0 {
 		doc = string(r.Document)
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE runs SET status = ?, ended_at = ?, document = ?, text = ? WHERE id = ?",
-		string(r.Status), r.EndedAt.UnixMilli(), doc, r.Text, id); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE runs SET status = ?, ended_at = ?, document = ?, text = ?, network = ? WHERE id = ?",
+		string(r.Status), r.EndedAt.UnixMilli(), doc, r.Text, rawOrNil(r.Network), id); err != nil {
 		return nil, err
 	}
 	var ref string
@@ -1126,15 +1132,15 @@ func (s *Store) FailApplying(ctx context.Context, now time.Time, owner string, h
 const runFacts = `id, plan_id, env, stack, status, actor_issuer, actor_subject, actor_person, actor_display, actor, via, approvals, override,
 	named_by, merged_commit, role_session, started_at, ended_at`
 
-const runColumns = runFacts + `, coalesce(document, 'null'), coalesce(text, ''), coalesce(policy, 'null')`
+const runColumns = runFacts + `, coalesce(document, 'null'), coalesce(text, ''), coalesce(policy, 'null'), coalesce(network, 'null')`
 
 func scanRun(r scanner) (Run, error) {
 	var run Run
-	var actor, approvals, doc, policy string
+	var actor, approvals, doc, policy, network string
 	var started int64
 	var ended sqldb.NullInt64
 	err := r.Scan(&run.ID, &run.PlanID, &run.Env, &run.Stack, &run.Status, &run.Actor.Issuer, &run.Actor.Subject, &run.Actor.Person,
-		&run.Actor.Display, &actor, &run.Via, &approvals, &run.Override, &run.NamedBy, &run.MergedCommit, &run.RoleSession, &started, &ended, &doc, &run.Text, &policy)
+		&run.Actor.Display, &actor, &run.Via, &approvals, &run.Override, &run.NamedBy, &run.MergedCommit, &run.RoleSession, &started, &ended, &doc, &run.Text, &policy, &network)
 	if err != nil {
 		return Run{}, err
 	}
@@ -1155,6 +1161,9 @@ func scanRun(r scanner) (Run, error) {
 	}
 	if policy != "null" {
 		run.Policy = json.RawMessage(policy)
+	}
+	if network != "null" {
+		run.Network = json.RawMessage(network)
 	}
 	return run, nil
 }
@@ -1181,7 +1190,7 @@ type ListedRun struct {
 // takes a place in the limit nor shows in more. more reports whether
 // older runs that keep accepts were left out.
 func (s *Store) Runs(ctx context.Context, env, stack string, limit int, keep func(Run) bool) (runs []ListedRun, more bool, err error) {
-	query := "SELECT " + runFacts + `, 'null', '', 'null', coalesce((SELECT source_digest FROM plans WHERE plans.id = runs.plan_id), '')
+	query := "SELECT " + runFacts + `, 'null', '', 'null', 'null', coalesce((SELECT source_digest FROM plans WHERE plans.id = runs.plan_id), '')
 		FROM runs WHERE env = ?`
 	args := []any{env}
 	if stack != "" {
@@ -1214,7 +1223,7 @@ func (s *Store) Runs(ctx context.Context, env, stack string, limit int, keep fun
 // newest first, at most limit of them, without their documents and
 // texts, and how many of them keep accepts in all.
 func (s *Store) FailedRuns(ctx context.Context, env string, since time.Time, limit int, keep func(Run) bool) (runs []Run, total int, err error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT "+runFacts+`, 'null', '', 'null' FROM runs
+	rows, err := s.db.QueryContext(ctx, "SELECT "+runFacts+`, 'null', '', 'null', 'null' FROM runs
 		WHERE env = ? AND status = ? AND ended_at > ? ORDER BY ended_at DESC, id DESC`, env, string(RunFailed), since.UnixMilli())
 	if err != nil {
 		return nil, 0, err
@@ -1247,7 +1256,7 @@ func (s *Store) PlanRuns(ctx context.Context, ids []string) (map[string]Run, err
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT "+runFacts+`, 'null', '', 'null' FROM runs WHERE plan_id IN (?`+strings.Repeat(", ?", len(ids)-1)+")", args...)
+	rows, err := s.db.QueryContext(ctx, "SELECT "+runFacts+`, 'null', '', 'null', 'null' FROM runs WHERE plan_id IN (?`+strings.Repeat(", ?", len(ids)-1)+")", args...)
 	if err != nil {
 		return nil, err
 	}

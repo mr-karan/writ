@@ -129,6 +129,14 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 	// only the plan marks, as a for_each key of nonsensitive() does.
 	_, merr := m.Plan(res.Plan)
 	withheld := len(res.Plan) > 0 && merr != nil
+	// The network document is made once the mask learned the plan's
+	// secrets, before the run's output is read, with every host withheld
+	// when it could not.
+	swept := m
+	if withheld {
+		swept = nil
+	}
+	net := tr.network(swept)
 	switch {
 	case len(res.Plan) == 0:
 	case withheld:
@@ -146,6 +154,7 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 		if !withheld {
 			doc.Diagnostics = append(doc.Diagnostics, stepDiagnostics(m, se.Stdout, false)...)
 		}
+		doc.Diagnostics = append(doc.Diagnostics, egressDiagnostics(net, plan.Env, se.Stdout, se.Stderr)...)
 	case err != nil:
 		doc.Diagnostics = append(doc.Diagnostics, Diagnostic{"error", string(diag.Usage), err.Error()})
 	default:
@@ -161,7 +170,7 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 		if err != nil {
 			return ApplyOutput{}, err
 		}
-		return ApplyOutput{Document: body, Text: tofuApplyText(plan, doc)}, nil
+		return ApplyOutput{Document: body, Text: tofuApplyText(plan, doc), Network: net.raw()}, nil
 	}
 	// Each version the run wrote, whether the apply succeeded or failed,
 	// carries the set on before anything else can end the run.
@@ -182,7 +191,7 @@ func (s *Server) applyTofu(startCtx, ctx context.Context, run control.Run, plan 
 	if err != nil {
 		return ApplyOutput{}, err
 	}
-	return ApplyOutput{Document: body, Text: tofuApplyText(plan, doc)}, nil
+	return ApplyOutput{Document: body, Text: tofuApplyText(plan, doc), Network: net.raw()}, nil
 }
 
 // planSecrets opens the secret set sealed with the state that plan read:

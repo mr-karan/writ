@@ -96,11 +96,16 @@ type fakeTofu struct {
 	mu sync.Mutex
 	// gate, when set, holds each plan until it is closed or its context
 	// ends.
-	gate   chan struct{}
-	base   string
-	fills  [][]byte
-	stacks []tofu.Stack
-	files  [][]string
+	gate  chan struct{}
+	base  string
+	fills [][]byte
+	// fillNets and fillEnvs are the network and the environment of each
+	// Fill, and fill, when set, stands for what tofu init does in it.
+	fillNets []*tofu.Net
+	fillEnvs [][]string
+	fill     func(*tofu.Net) error
+	stacks   []tofu.Stack
+	files    [][]string
 	// during is the status the state backend answered inside the plan.
 	during []int
 	tokens []stateCall
@@ -109,6 +114,9 @@ type fakeTofu struct {
 	// stands for tofu in each: nil writes one state version.
 	applied []appliedPlan
 	apply   func(ctx context.Context, c stateCall) ([]byte, error)
+	// applyShow, when set, is the show -json of the saved plan that each
+	// apply through apply returns, in place of tofuPlanJSON.
+	applyShow []byte
 	// state is show -json of the state each apply leaves, tofuStateJSON
 	// when "", and showErr the error of that show.
 	state   string
@@ -170,14 +178,17 @@ func (f *fakeTofu) Apply(ctx context.Context, s tofu.Stack, plan []byte) (tofu.A
 	c := stateCall{addr: envValue(s.Env, "TF_HTTP_ADDRESS"), token: envValue(s.Env, "TF_HTTP_PASSWORD")}
 	f.mu.Lock()
 	f.applied = append(f.applied, appliedPlan{stack: s, saved: plan, token: c})
-	apply, applyS3 := f.apply, f.applyS3
+	apply, applyS3, show := f.apply, f.applyS3, f.applyShow
 	f.mu.Unlock()
+	if show == nil {
+		show = []byte(tofuPlanJSON)
+	}
 	if s.StateCreds && applyS3 != nil {
 		return applyS3()
 	}
 	if apply != nil {
 		log, err := apply(ctx, c)
-		return tofu.Applied{Plan: []byte(tofuPlanJSON), Log: log}, err
+		return tofu.Applied{Plan: show, Log: log}, err
 	}
 	for _, step := range []struct{ method, path, body string }{
 		{"LOCK", "/lock", `{"ID":"lock-1","Operation":"OperationTypeApply"}`},
@@ -247,10 +258,16 @@ func (f *fakeTofu) call(c stateCall, method, suffix, body string) int {
 
 type stateCall struct{ addr, token string }
 
-func (f *fakeTofu) Fill(_ context.Context, lock []byte) ([]byte, error) {
+func (f *fakeTofu) Fill(_ context.Context, lock []byte, n *tofu.Net, env []string) ([]byte, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.fills = append(f.fills, lock)
+	f.fills, f.fillNets, f.fillEnvs = append(f.fills, lock), append(f.fillNets, n), append(f.fillEnvs, env)
+	fill := f.fill
+	f.mu.Unlock()
+	if fill != nil {
+		if err := fill(n); err != nil {
+			return nil, err
+		}
+	}
 	return append(slices.Clone(lock), filledMark...), nil
 }
 

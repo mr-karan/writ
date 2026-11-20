@@ -82,6 +82,7 @@ func (r *Runner) step(ctx context.Context, sc *scratch, creds bool, name string,
 		view:   v,
 		env:    env,
 		user:   sc.user,
+		net:    sc.net,
 		max:    r.opts.MaxOutput,
 		stop:   sc.stop,
 	}.run(ctx)
@@ -102,7 +103,10 @@ type command struct {
 	view   view
 	env    []string
 	user   *User
-	max    int
+	// net, when set, is the run's own network, which needs a run's
+	// directory in the view.
+	net *Net
+	max int
 	// stop, when set, is how long the process has to end after SIGINT
 	// when its context's deadline passes, before it is killed.
 	stop time.Duration
@@ -150,9 +154,13 @@ func (c command) run(ctx context.Context) (stdout, stderr []byte, err error) {
 		return killGroup(cmd.Process.Pid)
 	}
 	cmd.WaitDelay = max(time.Second, c.stop)
-	if err := startConfined(cmd, c); err != nil {
+	stopNet, err := startConfined(cmd, c)
+	if err != nil {
 		return nil, nil, err
 	}
+	// The run's network ends after the deferred kill below, once no
+	// process of the run is left to use it.
+	defer stopNet()
 	defer func() {
 		// A live member keeps the group's id from being reused after Wait
 		// reaps tofu, so this kills only what tofu left behind.
@@ -229,6 +237,7 @@ type scratch struct {
 	creds      []string
 	stateCreds bool
 	user       *User
+	net        *Net
 	// fill marks Fill's run, the one that may write the plugin cache.
 	fill bool
 	stop time.Duration
@@ -348,7 +357,7 @@ func (r *Runner) newScratch(s Stack) (*scratch, error) {
 	if err != nil {
 		return nil, err
 	}
-	sc.creds, sc.stateCreds = s.Creds, s.StateCreds
+	sc.creds, sc.stateCreds, sc.net = s.Creds, s.StateCreds, s.Net
 	return sc, nil
 }
 

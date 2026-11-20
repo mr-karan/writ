@@ -147,7 +147,7 @@ func (s *Server) runPlan(ref, env, stack string, in planInput, p *principal, don
 		}
 		res.Document, _ = json.Marshal(refusal{Format: "writ.plan.json/v2", Diagnostics: []Diagnostic{{"error", string(class), err.Error()}}})
 		res.Text = "writ: " + err.Error() + "\n"
-		res.SourceDigest = text.SourceDigest
+		res.SourceDigest, res.Network = text.SourceDigest, text.Network
 	} else {
 		res = text
 	}
@@ -201,12 +201,15 @@ func (s *Server) remotePlan(p control.Plan, approvals []control.Approval, diags 
 	if diags == nil {
 		diags = []Diagnostic{}
 	}
-	doc := RemotePlan{Format: FormatRemotePlan, OK: ok, Plan: s.planInfo(p, approvals), Document: p.Document, Text: p.Text, Policy: p.Policy, Diagnostics: diags}
+	doc := RemotePlan{Format: FormatRemotePlan, OK: ok, Plan: s.planInfo(p, approvals), Document: p.Document, Text: p.Text, Policy: p.Policy, Network: p.Network, Diagnostics: diags}
 	if doc.Document == nil {
 		doc.Document = json.RawMessage("null")
 	}
 	if doc.Policy == nil {
 		doc.Policy = json.RawMessage("null")
+	}
+	if doc.Network == nil {
+		doc.Network = json.RawMessage("null")
 	}
 	return doc
 }

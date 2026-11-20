@@ -46,6 +46,9 @@ type planView struct {
 	RulesAsked bool
 	// RunLine says what the plan's run did, "" when no run began.
 	RunLine string
+	// Network is what the plan's run asked writ's egress proxy for, nil
+	// when it had none.
+	Network *networkView
 }
 
 // newPlanView is the plan page of p before its document is read.

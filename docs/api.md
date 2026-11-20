@@ -69,7 +69,7 @@ Content-Length: 695
 {"format":"writ.remote-plan/v0","ok":true,"plan":{"ref":"A37QLN5SAWRF4BPAFWTECPCBY2","id":"","status":"planning","env":"dev","stacks":[{"stack":"app","changes":0,"source_digest":""}],"author":{"kind":"dev","issuer":"dev","subject":"alice","display":"alice (dev)","person":"dev/alice","expires_at":""},"requested_at":"2026-11-16T03:29:55Z","risks":[],"teams_that_may_apply":[],"origin":{"kind":"dev"},"superseded_by":"","source":{"kind":"commit","repo":"demo","ref":"refs/heads/main","commit":"552091ed387347e8948abc28dd127d91513415e2","ref_check":"on-ref"},"approvals":{"need":0,"rules":[],"approved_by":[],"teams_that_may_approve":[]}},"document":null,"text":"","policy":null,"diagnostics":[]}
 ```
 
-Output under `writ serve --dev`, 2026-11-16.
+Output under `writ serve --dev`, 2026-11-16. A plan's document now also has `network`, `null` here, the record of its run's [egress](serve.md#egress), which [JSON output](json-output.md) describes.
 
 The body is now `writ.plan-request/v1`: `env`, `stacks` with one stack, `hints`, and `source`, the commit of a repository to fetch, which [Repository routes](#repository-routes) describes. A request with any other field is refused. Here's a plan after it ended, of a stack that gives a sensitive variable to `random_pet`'s `keepers`, trimmed with `jq` to part of the plan and four fields of its document:
 

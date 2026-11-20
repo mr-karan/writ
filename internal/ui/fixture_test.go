@@ -92,7 +92,9 @@ var uiDriftJSON = strings.Replace(uiPlanJSON, `"resource_changes":[`, `"resource
  ],
  "resource_changes":[`, 1)
 
-func (r *uiTofu) Fill(_ context.Context, lock []byte) ([]byte, error) { return lock, nil }
+func (r *uiTofu) Fill(_ context.Context, lock []byte, _ *tofu.Net, _ []string) ([]byte, error) {
+	return lock, nil
+}
 
 func (r *uiTofu) Plan(context.Context, tofu.Stack) (tofu.Plan, error) {
 	r.mu.Lock()

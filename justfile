@@ -49,13 +49,16 @@ proto:
 # key, which the state keeps in an address keyed by nonsensitive(). Each
 # then scans the control database and the data directory for the canary
 # the stacks take through a sensitive variable, and for both keys.
-# TestTofuMCP drives writ mcp against writ serve --dev. OpenTofu, which
+# TestTofuMCP drives writ mcp against writ serve --dev. TestTofuEgress
+# runs a team's writ serve under egress_mode enforce: a module from the
+# listed host comes through writ's egress proxy, one from an unlisted
+# host is refused with a diagnostic that names it. OpenTofu, which
 # must be 1.13.9, and Postgres come from the flake's nixpkgs. Fills
 # TF_PLUGIN_CACHE_DIR with hashicorp/random, local, and tls on first run,
 # then runs in user, network, mount, and pid namespaces with only
 # loopback. Needs unshare with subordinate uids, and ip.
 e2e:
-	nix shell --inputs-from . nixpkgs#opentofu nixpkgs#postgresql_18 -c go test -tags e2e,e2e_tofu -count=1 -v -timeout 20m -run '^(TestTofuPlanByCommit|TestTofuApproveApply|TestTofuMCP)$' ./e2e
+	nix shell --inputs-from . nixpkgs#opentofu nixpkgs#postgresql_18 -c go test -tags e2e,e2e_tofu -count=1 -v -timeout 20m -run '^(TestTofuPlanByCommit|TestTofuApproveApply|TestTofuMCP|TestTofuEgress)$' ./e2e
 
 # The test of stacks on S3:
 # TestTofuS3 runs a team's writ serve on an OpenTofu stack whose state is
@@ -193,15 +196,18 @@ fuzz-oidc time="2m":
 # stand-in, and the showcase behind the uishowcase tag, which must serve
 # every page it lists. Then prove provider isolation in user and network namespaces:
 # providers as other uids behind the metadata firewall rule, the AWS
-# provider refreshing its credentials, and plans as a run's uid from a
-# writ that is not root and holds only the capabilities its unit gives
-# it. Needs unshare with subordinate uids. Postgres and nftables come
-# from nixpkgs. The isolation tests run without cgo, as writ ships, so no
-# -race there. just e2e runs writ serve end to end.
+# provider refreshing its credentials, plans as a run's uid from a writ
+# that is not root and holds only the capabilities its unit gives it,
+# and a run under egress_mode enforce, in its own network namespace,
+# reaching only what writ's egress proxy allows and still getting its
+# credentials. Needs unshare with subordinate uids. Postgres and
+# nftables come from nixpkgs. The isolation tests run without cgo, as
+# writ ships, so no -race there. just e2e runs writ serve end to end.
 test-serve:
 	nix shell nixpkgs#postgresql_18 -c go test -race -count=1 -timeout 20m ./internal/control/... ./internal/tfstate/... ./internal/server/... ./internal/ui/... ./internal/awsrole/...
 	go test -race -count=1 -tags uishowcase -run '^TestShowcaseServes$' ./internal/ui
 	CGO_ENABLED=0 nix shell nixpkgs#nftables -c go test -count=1 -run 'TestProviderIsolation|TestAWSProviderRefreshesCredentials|TestPlanAsRunUserWithoutRoot' ./internal/provider ./internal/tofu
+	CGO_ENABLED=0 nix shell nixpkgs#nftables -c go test -count=1 -run '^TestRunEgressIsolation$' ./internal/tofu
 
 # Run the flake's OpenTofu, which must be 1.13.9, against the http state
 # backend of internal/tfstate: plan, apply, and plan again, a plan's token

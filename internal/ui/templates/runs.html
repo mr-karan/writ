@@ -66,6 +66,24 @@
 {{end}}
 </section>
 {{end}}
+{{with .Network}}
+<section class="card">
+<details class="fold"{{if .Refused}} open{{end}}><summary><span>Network <span class="count">{{template "n" (exact (len .Rows))}}</span></span> <span class="muted">egress {{.Mode}}</span></summary>
+{{if .Rows}}<div class="scroll">
+<table class="list">
+<caption class="sr-only">Each host and port the run asked writ's egress proxy for</caption>
+<thead><tr><th scope="col">Destination</th><th scope="col">Verdict</th><th scope="col" class="end">Requests</th></tr></thead>
+<tbody>
+{{- range .Rows}}
+<tr><th scope="row" class="c-main"><code>{{.Dest}}</code>{{with .Step}} <span class="muted">provider {{.}}</span>{{end}}</th><td data-label="Verdict"><span class="chip{{if eq .Verdict "refused"}} chip-bad{{else if eq .Verdict "unlisted"}} chip-warn{{end}}">{{.Verdict}}</span>{{with .Reason}} <span class="muted">{{.}}</span>{{end}}</td><td class="end" data-label="Requests">{{template "n" (exact .Count)}}</td></tr>
+{{- end}}
+</tbody>
+</table>
+</div>{{end}}
+<div class="card-foot"><span>The env's egress list{{if .Egress}}: {{range $i, $e := .Egress}}{{if $i}}, {{end}}<code>{{$e}}</code>{{end}}{{else}} is empty{{end}}.{{with .Unrecorded}} {{template "n" (exact .)}} more requests went to destinations past what the record names.{{end}}</span></div>
+</details>
+</section>
+{{end}}
 {{if .Text}}
 <section class="card">
 <details class="fold"><summary><span>Run as text</span></summary>
