@@ -1,0 +1,344 @@
+package server
+
+import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/mr-karan/writ/internal/control"
+	"github.com/mr-karan/writ/internal/diag"
+)
+
+// A webhook delivery only makes the poll read a repository's default
+// branch sooner, through the forge's client and read token. Nothing in
+// its body is trusted or parsed: the repository is the one the path
+// names, and the head is what the forge's API says.
+const (
+	// hookBody bounds a delivery's body, which is read only to bound it
+	// and to check a signature over it.
+	hookBody = 1 << 20
+	// hookPerAddress and hookPerRepo bound the deliveries a second from
+	// one client address, checked first, and for one repository, checked
+	// once a delivery passed its check, each with bursts of as many.
+	hookPerAddress = 10
+	hookPerRepo    = 5
+	// hookDeliveries is how many delivery ids writ serve remembers to
+	// drop a forge's retry of a delivery it acted on.
+	hookDeliveries = 4096
+	// hookSkew is how far a signed delivery's timestamp may be from now.
+	hookSkew = 5 * time.Minute
+	// signingPrefix starts a GitLab signing token, as GitLab shows it.
+	signingPrefix = "whsec_"
+)
+
+// hookForge is how one kind of forge proves a webhook delivery. GitLab is
+// the one kind. A GitHub forge adds an entry whose verify checks
+// X-Hub-Signature-256, an HMAC-SHA256 of the raw body under the secret,
+// and whose delivery reads X-GitHub-Delivery.
+type hookForge struct {
+	// verify reports whether a delivery with header h and raw body proves
+	// that its sender holds secret, and when not, the audit row's check.
+	verify func(h http.Header, body, secret []byte, now time.Time) (ok bool, check string)
+	// delivery is the delivery's id, the same on each retry, or "".
+	delivery func(h http.Header) string
+	// moves reports whether the delivery's event can move a branch.
+	moves func(h http.Header) bool
+}
+
+var hookForges = map[control.RepoKind]hookForge{
+	control.GitLab: {verify: verifyGitLab, delivery: gitlabDelivery, moves: gitlabMoves},
+}
+
+// verifyGitLab checks a GitLab delivery against the repository's secret:
+// a signing token, which starts with whsec_, against the webhook-signature
+// header, as GitLab 19.1 and later sign; any other secret against the
+// X-Gitlab-Token header, GitLab's secret token.
+func verifyGitLab(h http.Header, body, secret []byte, now time.Time) (bool, string) {
+	if key, ok := bytes.CutPrefix(secret, []byte(signingPrefix)); ok {
+		return verifySigned(h, body, key, now)
+	}
+	got := h.Get("X-Gitlab-Token")
+	if got == "" {
+		return false, "hook-no-token"
+	}
+	if !secretEqual([]byte(got), secret) {
+		return false, "hook-token"
+	}
+	return true, ""
+}
+
+// verifySigned checks a delivery signed as the Standard Webhooks
+// specification says, which GitLab follows: webhook-signature holds
+// v1,BASE64 of the HMAC-SHA256 of "ID.TIMESTAMP.BODY" under the key the
+// signing token encodes in base64 after whsec_. The timestamp must be
+// within hookSkew of now.
+func verifySigned(h http.Header, body, b64key []byte, now time.Time) (bool, string) {
+	key, err := base64.StdEncoding.DecodeString(string(b64key))
+	if err != nil || len(key) == 0 {
+		return false, "hook-secret-file"
+	}
+	id, ts, sigs := h.Get("webhook-id"), h.Get("webhook-timestamp"), h.Get("webhook-signature")
+	if id == "" || ts == "" || sigs == "" {
+		return false, "hook-no-signature"
+	}
+	sec, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil || now.Sub(time.Unix(sec, 0)).Abs() > hookSkew {
+		return false, "hook-timestamp"
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(id + "." + ts + "."))
+	mac.Write(body)
+	want := []byte("v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil)))
+	ok := false
+	for i, sig := range strings.Fields(sigs) {
+		if i == 8 {
+			break
+		}
+		ok = secretEqual([]byte(sig), want) || ok
+	}
+	if !ok {
+		return false, "hook-signature"
+	}
+	return true, ""
+}
+
+// secretEqual compares a proof a request sent with the one writ serve
+// holds in time that depends on neither: it compares their SHA-256
+// digests, which have one length, with subtle.ConstantTimeCompare.
+func secretEqual(got, want []byte) bool {
+	a, b := sha256.Sum256(got), sha256.Sum256(want)
+	return subtle.ConstantTimeCompare(a[:], b[:]) == 1
+}
+
+// deliveryRE is what a delivery id may look like. Another id is treated
+// as none.
+var deliveryRE = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+// gitlabDelivery is webhook-id, or Idempotency-Key before GitLab 19.0:
+// GitLab keeps each the same across the retries of a delivery.
+func gitlabDelivery(h http.Header) string {
+	for _, k := range []string{"webhook-id", "Idempotency-Key"} {
+		if v := h.Get(k); deliveryRE.MatchString(v) {
+			return v
+		}
+	}
+	return ""
+}
+
+// gitlabMoves reports whether a GitLab delivery is a push event, which
+// GitLab sends for each push and merge to a branch.
+func gitlabMoves(h http.Header) bool { return h.Get("X-Gitlab-Event") == "Push Hook" }
+
+// hookState is what the webhook route keeps between deliveries: its rate
+// limits, the delivery ids it acted on, and the repositories it asked the
+// poll to read.
+type hookState struct {
+	addrs, repos *limiter
+
+	mu sync.Mutex
+	// seen maps a repository and a delivery id to its place in ring, the
+	// last hookDeliveries ids acted on; next is the place the next one
+	// takes.
+	seen map[string]uint64
+	ring []string
+	next uint64
+	// pending are the repositories the poll reads at its next wake.
+	pending map[string]bool
+	// wake tells the poll that pending has a repository.
+	wake chan struct{}
+}
+
+func newHookState(now func() time.Time) *hookState {
+	return &hookState{
+		addrs: newLimiter(hookPerAddress, maxBuckets, now), repos: newLimiter(hookPerRepo, maxBuckets, now),
+		seen: map[string]uint64{}, ring: make([]string, hookDeliveries), pending: map[string]bool{}, wake: make(chan struct{}, 1),
+	}
+}
+
+// first records key and reports whether it is new. The oldest key goes
+// when hookDeliveries are kept.
+func (h *hookState) first(key string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, ok := h.seen[key]; ok {
+		return false
+	}
+	slot := h.next % uint64(len(h.ring))
+	if old := h.ring[slot]; old != "" && h.seen[old] == h.next-uint64(len(h.ring)) {
+		delete(h.seen, old)
+	}
+	h.ring[slot], h.seen[key] = key, h.next
+	h.next++
+	return true
+}
+
+// forget drops key, for a delivery that first took and writ serve then
+// did not act on, so the forge's retry of it is acted on.
+func (h *hookState) forget(key string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.seen, key)
+}
+
+// queue asks the poll to read the repository named name.
+func (h *hookState) queue(name string) {
+	h.mu.Lock()
+	h.pending[name] = true
+	h.mu.Unlock()
+	select {
+	case h.wake <- struct{}{}:
+	default:
+	}
+}
+
+// take returns the repositories queued since the last take.
+func (h *hookState) take() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []string
+	for name := range h.pending {
+		out = append(out, name)
+	}
+	clear(h.pending)
+	return out
+}
+
+// hookSpec is the pinned repository named name when it has a webhook
+// secret file, with its forge and the forge's way of proving a delivery.
+// forgeName must be the name of the repository's forge.
+func (s *Server) hookSpec(forgeName, name string) (RepoSpec, Forge, hookForge, bool) {
+	if !s.cfg.PinRepos {
+		return RepoSpec{}, Forge{}, hookForge{}, false
+	}
+	for _, spec := range s.cfg.Repos {
+		if spec.Name != name || spec.WebhookSecretFile == "" {
+			continue
+		}
+		f, err := findForge(s.cfg.Forges, spec.Forge)
+		if err != nil || f.Name != forgeName {
+			break
+		}
+		hf, ok := hookForges[f.Kind]
+		return spec, f, hf, ok
+	}
+	return RepoSpec{}, Forge{}, hookForge{}, false
+}
+
+// hasHook reports whether a repository row has a webhook: the config pins
+// it with a webhook secret file.
+func (s *Server) hasHook(r control.Repo) bool {
+	if r.Origin != control.FromConfig {
+		return false
+	}
+	_, _, _, ok := s.hookSpec(r.Forge, r.Name)
+	return ok
+}
+
+// readHookSecret reads a webhook secret file. The error names the file,
+// never what it holds.
+func readHookSecret(file string) ([]byte, error) {
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return nil, fmt.Errorf("read webhook_secret_file: %w", err)
+	}
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 {
+		return nil, fmt.Errorf("webhook_secret_file %s is empty", file)
+	}
+	return b, nil
+}
+
+// receiveHook is POST /v1/hooks/{forge}/{repo}: a forge's webhook
+// delivery for a pinned repository. A delivery that passes its check asks
+// the poll to read the repository's default branch now. It never plans or
+// applies, and nothing of its body is kept, logged, or believed.
+func (s *Server) receiveHook(w http.ResponseWriter, r *http.Request) {
+	req := reqOf(r)
+	e := &req.entry
+	e.Op = "hook"
+	if !s.hooks.addrs.allow(s.clientKey(r)) {
+		w.Header().Set("Retry-After", "1")
+		s.refuse(w, r, FormatHook, diag.Usage, http.StatusTooManyRequests, "more than %d webhook deliveries a second from %s", hookPerAddress, e.Remote)
+		return
+	}
+	forgeName, name := r.PathValue("forge"), r.PathValue("repo")
+	spec, f, hf, ok := s.hookSpec(forgeName, name)
+	if !ok {
+		s.hookRefused(w, r, "hook-unknown")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, hookBody))
+	if errors.As(err, new(*http.MaxBytesError)) {
+		s.refuse(w, r, FormatHook, diag.Usage, http.StatusRequestEntityTooLarge, "the body is over %d bytes", hookBody)
+		return
+	}
+	if err != nil {
+		s.refuse(w, r, FormatHook, diag.Usage, http.StatusBadRequest, "the body could not be read")
+		return
+	}
+	secret, err := readHookSecret(spec.WebhookSecretFile)
+	if err != nil {
+		s.log.Error("a webhook delivery is refused: its secret is unreadable", "request", req.id, "repo", name, "err", err)
+		s.hookRefused(w, r, "hook-secret-file")
+		return
+	}
+	if ok, check := hf.verify(r.Header, body, secret, s.now()); !ok {
+		s.hookRefused(w, r, check)
+		return
+	}
+	e.Principal = "forge " + f.Name
+	doc := HookDoc{Format: FormatHook, OK: true, Repo: name, Diagnostics: []Diagnostic{}}
+	if !hf.moves(r.Header) {
+		e.Reason = "repository " + name + ": the delivery is not a push event, so nothing is read"
+		s.reply(w, http.StatusOK, doc)
+		return
+	}
+	key := ""
+	if id := hf.delivery(r.Header); id != "" {
+		key = name + "\x00" + id
+		if !s.hooks.first(key) {
+			doc.Duplicate = true
+			e.Reason = "repository " + name + ": a delivery with this id was acted on already"
+			s.reply(w, http.StatusOK, doc)
+			return
+		}
+	}
+	if !s.hooks.repos.allow(name) {
+		s.hooks.forget(key)
+		w.Header().Set("Retry-After", "1")
+		s.refuse(w, r, FormatHook, diag.Usage, http.StatusTooManyRequests, "more than %d webhook deliveries a second for repository %s", hookPerRepo, name)
+		return
+	}
+	if err := s.store.RecordHook(r.Context(), name, s.now()); err != nil && !errors.Is(err, control.ErrNotFound) {
+		s.hooks.forget(key)
+		s.dbFailed(w, r, FormatHook, err)
+		return
+	}
+	s.hooks.queue(name)
+	e.Decision = control.Allowed
+	e.Reason = "repository " + name + ": a read of the default branch's head is queued"
+	doc.Queued = true
+	s.reply(w, http.StatusAccepted, doc)
+}
+
+// hookRefused answers 401 for a delivery that did not prove it came from
+// the repository's forge, with the same words whatever the reason, so the
+// answer tells a sender nothing. The audit row's check says which.
+func (s *Server) hookRefused(w http.ResponseWriter, r *http.Request, check string) {
+	req := reqOf(r)
+	req.entry.Decision, req.entry.Check = control.AuthFailed, check
+	s.log.Warn("webhook delivery refused", "request", req.id, "check", check, "remote", req.entry.Remote)
+	s.refuse(w, r, FormatHook, diag.Auth, http.StatusUnauthorized, "the delivery failed verification")
+}

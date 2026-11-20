@@ -370,19 +370,21 @@ func stacksOf(c control.Commit) []discovered {
 	return slices.DeleteFunc(all, func(d discovered) bool { return !d.Tofu })
 }
 
-// repoInfo is a repository as the API shows it. It holds no credential.
-func repoInfo(r control.Repo) RepoInfo {
+// repoInfo is a repository as the API shows it. It holds no credential,
+// nor the name of its webhook secret file.
+func (s *Server) repoInfo(r control.Repo) RepoInfo {
 	return RepoInfo{
 		Name: r.Name, Forge: r.Forge, Kind: string(r.Kind), ForgeURL: r.ForgeURL, Project: r.Project, ProjectID: r.ProjectID,
 		Path: r.Path, Prefix: r.Prefix, DefaultBranch: r.DefaultBranch, WebURL: r.WebURL, Origin: r.Origin, AddedBy: r.AddedBy,
 		AddedAt: stamp(r.AddedAt), Head: r.Head, HeadReadAt: stamp(r.HeadReadAt), PolledAt: stamp(r.PolledAt), Error: r.Error, ErrorAt: stamp(r.ErrorAt),
+		Hook: s.hasHook(r), HookAt: stamp(r.HookAt),
 	}
 }
 
 // repoDoc is writ.repo/v0: the repository and what discovery found at its
 // head, with what this config serves.
 func (s *Server) repoDoc(r control.Repo, c control.Commit) RepoDoc {
-	doc := RepoDoc{Format: FormatRepo, OK: true, Repo: repoInfo(r), Stacks: []FoundStack{}, Diagnostics: []Diagnostic{}}
+	doc := RepoDoc{Format: FormatRepo, OK: true, Repo: s.repoInfo(r), Stacks: []FoundStack{}, Diagnostics: []Diagnostic{}}
 	if c.SHA == "" {
 		return doc
 	}
@@ -478,7 +480,7 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request) {
 	req.entry.Decision = control.Allowed
 	doc := ReposDoc{Format: FormatRepos, OK: true, Pinned: s.cfg.PinRepos, Repos: []RepoInfo{}, Diagnostics: []Diagnostic{}}
 	for _, rp := range repos {
-		info := repoInfo(rp)
+		info := s.repoInfo(rp)
 		if c, err := s.store.Commit(r.Context(), rp.Name, rp.Head); err == nil {
 			n := len(stacksOf(c))
 			info.Stacks = &n
@@ -520,24 +522,32 @@ func (s *Server) getRepo(w http.ResponseWriter, r *http.Request) {
 	s.reply(w, http.StatusOK, s.repoDoc(rp, c))
 }
 
-// poll polls each repository's default branch every PollEvery until ctx
-// ends. Close waits for it.
+// poll polls each repository's default branch every PollEvery, when it is
+// set, and reads each repository a webhook queued as it is queued, until
+// ctx ends. Close waits for it.
 func (s *Server) poll(ctx context.Context) {
-	t := time.NewTicker(s.cfg.PollEvery)
-	defer t.Stop()
-	for {
+	var tick <-chan time.Time
+	if s.cfg.PollEvery > 0 {
+		t := time.NewTicker(s.cfg.PollEvery)
+		defer t.Stop()
+		tick = t.C
 		s.pollOnce(ctx)
+	}
+	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
+		case <-tick:
+			s.pollOnce(ctx)
+		case <-s.hooks.wake:
+			s.pollHooked(ctx)
 		}
 	}
 }
 
 // pollOnce brings the pinned repositories in line with the config, then
-// asks the forge for the head of each repository's default branch, one
-// call each, and reads the commit when the head moved.
+// asks the forge for the head of each repository's default branch that is
+// due, one call each, and reads the commit when the head moved.
 func (s *Server) pollOnce(ctx context.Context) {
 	if s.cfg.PinRepos {
 		s.syncRepos(ctx)
@@ -552,6 +562,36 @@ func (s *Server) pollOnce(ctx context.Context) {
 	for _, r := range repos {
 		if ctx.Err() != nil {
 			return
+		}
+		if s.pollDue(r) {
+			s.pollRepo(ctx, r)
+		}
+	}
+}
+
+// pollDue reports whether the poll reads r now. A repository without a
+// webhook is read at each poll; one with a webhook only once
+// PollEveryWithHook passed since its last read, within half a poll, so a
+// read the tick runs a moment early is not put off a whole poll.
+func (s *Server) pollDue(r control.Repo) bool {
+	if !s.hasHook(r) || r.PolledAt.IsZero() {
+		return true
+	}
+	return s.now().Sub(r.PolledAt) >= s.cfg.PollEveryWithHook-s.cfg.PollEvery/2
+}
+
+// pollHooked reads the head of each repository a webhook queued.
+func (s *Server) pollHooked(ctx context.Context) {
+	for _, name := range s.hooks.take() {
+		if ctx.Err() != nil {
+			return
+		}
+		r, err := s.store.Repo(ctx, name)
+		if err != nil {
+			if !errors.Is(err, control.ErrNotFound) && ctx.Err() == nil {
+				s.log.Error("read a repository a webhook queued", "repo", name, "err", err)
+			}
+			continue
 		}
 		s.pollRepo(ctx, r)
 	}
