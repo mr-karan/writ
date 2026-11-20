@@ -47,7 +47,7 @@ Writ checks every OpenTofu `stack@env` that has state on the `http` backend, in 
 
 You can read the latest results in two places:
 
-- **Control UI**: Open the Overview (`/ui/`) to see the count of drifted stacks and drift alerts, or open a stack's Drift tab (`/ui/stack?stack=STACK&env=ENV&view=drift`).
+- **Control UI**: Open the Overview (`/ui/`) to see the count of drifted stacks and drift alerts, or open a stack's Drift tab (`/ui/stack?stack=STACK&env=ENV&view=drift`). The tab lists the checks Writ keeps of the stack, and each links its own page.
 - **API**: Query `GET /v1/drift` with a token that has `read` on the stack:
 
 ```sh
@@ -111,7 +111,17 @@ Values are never stored in drift results, only resource addresses, actions, and 
 
 Output of `just e2e`, 2026-11-15, indented with `python3 -m json.tool`.
 
-When a later check finds no changes, Writ clears the drifted mark. Writ keeps the newest 20 checks per `stack@env`.
+When a later check finds no changes, Writ clears the drifted mark. Writ keeps the newest 20 checks per `stack@env`. Each check has a `ref`, and `GET /v1/drift?env=ENV&stack=STACK` lists the kept ones under `checks`.
+
+### Open one drift check
+
+A drift check's page, `/ui/drift/REF`, has a URL that works as long as Writ keeps the check. The Drift tab and the Overview's drift alerts link it, and `/ui/plans/PLAN` of the plan a check made redirects to it. It shows:
+
+- The check's head: started by the drift timer, every `every`, the `stack@env`, the commit of the default branch it planned, when it started and ended, and its status.
+- Its changes, split into changed outside OpenTofu and in the code, as the Drift tab lists them.
+- Its error when it failed, with the `writ state adopt` command when the state has no secret set.
+
+The page needs `read` on the stack, as `GET /v1/drift/REF` does, which returns the same check as `writ.drift-check/v0`.
 
 ## Troubleshooting
 
@@ -126,6 +136,7 @@ When a later check finds no changes, Writ clears the drifted mark. Writ keeps th
 - Writ does not send alerts or notifications (Slack, email, webhooks) when drift is found. Read drift in the control UI, `GET /v1/drift`, or the server's JSON log (`drift found` at `WARN` level).
 - No [policy](policy.md) evaluates drift checks.
 - Drift checks run against the head of the default branch as Writ last polled it (`poll_every`).
+- A drift check keeps no record of its network requests, so its page has no Network section.
 
 ## Next steps
 

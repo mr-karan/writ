@@ -1,6 +1,6 @@
 # Read the audit log
 
-Query Writ's [audit log](glossary.md) from the CLI or HTTP API to trace a change from plan creation through approvals, apply, and state writes, without connecting directly to Postgres.
+Query Writ's [audit log](glossary.md) from the control UI, the CLI, or the HTTP API to trace a change from plan creation through approvals, apply, and state writes, without connecting directly to Postgres.
 
 For the full route specification and grant rules, see [API: Read the audit log](api.md#read-the-audit-log). For the database schema behind it, see [Operate the database](database.md#audit-rows).
 
@@ -54,7 +54,16 @@ writ audit --remote --limit 2
 writ audit --remote --limit 2 --cursor CURSOR_FROM_PREVIOUS_OUTPUT
 ```
 
-### 4. Read the audit log as JSON or over HTTP
+### 4. Read the audit log in the control UI
+
+Open Audit in the control UI's sidebar, `/ui/audit`. It shows the same rows `GET /v1/audit` gives your session, newest first, one row an entry: its decision, the method, route, and status, the operation, the `stack@env`, who sent it, with a person or a CI icon, and when.
+
+- The Env, Op, and Time pickers, and More filters, narrow the page by environment, stack, person, operation, plan, run, and time. Each is a GET parameter of the page (`?env=prod&stack=app`, `?person=gitlab/user/1001`, `?since=2026-11-19T00:00:00Z`), so the page works with scripts off and its URL can be shared.
+- Older entries opens the next page with the API's encrypted cursor.
+- Each plan's and run's page has an Audit trail button, which opens `/ui/audit?plan=ID` or `/ui/audit?run=ID`.
+- A refused row shows a `reason withheld` chip, apart from a row whose reason is empty. The page shows no client address and no state hash, as the API doesn't.
+
+### 5. Read the audit log as JSON or over HTTP
 
 Pass `--json` for machine-readable `writ.audit/v0` output, or call `GET /v1/audit` directly:
 
@@ -113,7 +122,7 @@ For privacy and secret hygiene, `GET /v1/audit` holds back fields that could ech
 
 ## Limits
 
-- The control UI does not have an audit log page yet; use `writ audit --remote` or `GET /v1/audit`.
+- The control UI's audit page shows 50 entries a page; `writ audit --remote --limit 200` reads more at once.
 - Refusal reasons and client addresses are only available by querying the `audit` table in Postgres directly.
 - Set `retention.audit` in your [server config](config.md) if you want old audit rows pruned; by default they are kept forever.
 
