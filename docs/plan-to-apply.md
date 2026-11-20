@@ -44,7 +44,7 @@ A plan starts when you run `writ plan --remote` from a clean Git work tree or wh
 ## 2. Isolated planning and masking
 
 1. `writ serve` installs the providers pinned in `.terraform.lock.hcl` into `tofu.plugin_cache` using a synthetic config, so stack code never runs with write access to the cache.
-2. It allocates a free `provider_uids` UID and creates a private Linux user, mount, and PID namespace with a read-only filesystem view.
+2. It allocates a free `provider_uids` UID and creates a private Linux user, mount, PID, and IPC namespace with a read-only filesystem view.
 3. It runs `tofu init -lockfile=readonly` with **no cloud credentials**.
 4. It assumes the environment's `plan_role` via STS and runs `tofu plan -lock=false` and `tofu show -json`. On the `http` state backend, the run receives a short-lived read-only state token. On S3, `plan_role` has read-only bucket permissions. Writ reads the saved plan as soon as `tofu plan` exits, and `tofu show` reads that copy from a sealed in-memory file that no process can change, so the plan document, the policy input, the plan ID, and the sealed saved plan all come from the same bytes.
 5. `internal/mask` strips secrets from the plan JSON using OpenTofu's sensitive marks, learned values (including encoded forms), secret-like attribute names, `provider_env` values, assumed role credentials, and the prior state's sealed [secret set](glossary.md).
