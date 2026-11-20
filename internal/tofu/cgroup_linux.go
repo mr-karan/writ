@@ -87,7 +87,7 @@ func cgroupBase(apply bool) (cgroupSetup, error) {
 			return none, fmt.Errorf("writ's cgroup %s offers no %s controller, only %q: its parent's cgroup.subtree_control must enable %s", own, c, strings.Join(offered, " "), strings.Join(cgroupControllers, ", "))
 		}
 	}
-	pids, err := cgroupProcs(own)
+	pids, err := cgroupIDs(own, "cgroup.procs")
 	if err != nil {
 		return none, err
 	}
@@ -326,21 +326,22 @@ func mountCgroup2() error {
 	return nil
 }
 
-// cgroupProcs reads the ids of the processes in the cgroup dir.
-func cgroupProcs(dir string) ([]int, error) {
-	text, err := os.ReadFile(filepath.Join(dir, "cgroup.procs"))
+// cgroupIDs reads the ids that the file of the cgroup dir lists:
+// cgroup.procs lists its processes, and cgroup.threads their threads.
+func cgroupIDs(dir, file string) ([]int, error) {
+	text, err := os.ReadFile(filepath.Join(dir, file))
 	if err != nil {
-		return nil, fmt.Errorf("read the processes of the cgroup %s: %w", dir, err)
+		return nil, fmt.Errorf("read %s of the cgroup %s: %w", file, dir, err)
 	}
-	var pids []int
+	var ids []int
 	for f := range strings.FieldsSeq(string(text)) {
-		pid, err := strconv.Atoi(f)
+		id, err := strconv.Atoi(f)
 		if err != nil {
-			return nil, fmt.Errorf("the cgroup %s lists a process %q", dir, f)
+			return nil, fmt.Errorf("the cgroup %s lists %q in %s", dir, f, file)
 		}
-		pids = append(pids, pid)
+		ids = append(ids, id)
 	}
-	return pids, nil
+	return ids, nil
 }
 
 func writeCgroup(dir, file, value string) error {
@@ -431,25 +432,28 @@ func (c *stepCgroup) remove() error {
 }
 
 // heldRemoved returns the bytes on disk of the files on the filesystem dev
-// that no directory names but a process of the cgroup holds open or maps,
+// that no directory names but a thread of the cgroup holds open or maps,
 // each counted once and as at least scratchInode. A mapped file counts as
 // the end of its furthest mapping, since a mapping, unlike a descriptor,
-// gives no way to stat the file. It reads /proc as u, the run's user:
-// /proc/PID/fd belongs to the uid of its process, and the kernel lets no
-// other uid without CAP_DAC_READ_SEARCH list it, though writ made the user
-// namespace the process runs in.
+// gives no way to stat the file. It reads every thread, not only each
+// process: once a process's first thread exits alone, /proc/PID reads that
+// thread's empty tables while the others still hold the file, and a thread
+// cloned without CLONE_FILES has descriptors of its own. It reads /proc as
+// u, the run's user: /proc/TID/fd belongs to the uid of its thread, and
+// the kernel lets no other uid without CAP_DAC_READ_SEARCH list it, though
+// writ made the user namespace the thread runs in.
 func (c *stepCgroup) heldRemoved(u *User, dev uint64) (int64, error) {
-	pids, err := cgroupProcs(c.dir)
+	tids, err := cgroupIDs(c.dir, "cgroup.threads")
 	if err != nil {
 		return 0, err
 	}
 	held := map[uint64]int64{}
 	var denied []int
 	err = asUser(u, func() error {
-		for _, pid := range pids {
-			err := heldByProcess(pid, dev, held)
+		for _, tid := range tids {
+			err := heldByThread(tid, dev, held)
 			if u != nil && errors.Is(err, os.ErrPermission) {
-				denied = append(denied, pid)
+				denied = append(denied, tid)
 				continue
 			}
 			if err != nil {
@@ -461,10 +465,10 @@ func (c *stepCgroup) heldRemoved(u *User, dev uint64) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	// A process that made itself not dumpable gives its /proc/PID/fd to
+	// A process that made itself not dumpable gives its /proc/TID/fd to
 	// root of its user namespace, which is writ's uid.
-	for _, pid := range denied {
-		if err := heldByProcess(pid, dev, held); err != nil {
+	for _, tid := range denied {
+		if err := heldByThread(tid, dev, held); err != nil {
 			return 0, err
 		}
 	}
@@ -475,17 +479,17 @@ func (c *stepCgroup) heldRemoved(u *User, dev uint64) (int64, error) {
 	return total, nil
 }
 
-// heldByProcess adds to held, by inode, the bytes of each removed file on
-// dev that the process pid holds open or maps. A process that exits
+// heldByThread adds to held, by inode, the bytes of each removed file on
+// dev that the thread tid holds open or maps. A thread that exits
 // meanwhile holds nothing.
-func heldByProcess(pid int, dev uint64, held map[uint64]int64) error {
-	proc := "/proc/" + strconv.Itoa(pid)
+func heldByThread(tid int, dev uint64, held map[uint64]int64) error {
+	proc := "/proc/" + strconv.Itoa(tid)
 	f, err := os.Open(proc + "/fd")
 	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("read the descriptors of the step's process %d: %w", pid, err)
+		return fmt.Errorf("read the descriptors of the step's thread %d: %w", tid, err)
 	}
 	defer f.Close()
 	for {
@@ -494,7 +498,7 @@ func heldByProcess(pid int, dev uint64, held map[uint64]int64) error {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("read the descriptors of the step's process %d: %w", pid, err)
+			return fmt.Errorf("read the descriptors of the step's thread %d: %w", tid, err)
 		}
 		for _, n := range names {
 			var st unix.Stat_t
@@ -504,7 +508,7 @@ func heldByProcess(pid int, dev uint64, held map[uint64]int64) error {
 				continue
 			}
 			if err != nil {
-				return fmt.Errorf("read a descriptor of the step's process %d: %w", pid, err)
+				return fmt.Errorf("read a descriptor of the step's thread %d: %w", tid, err)
 			}
 			if st.Mode&unix.S_IFMT == unix.S_IFREG && st.Nlink == 0 && st.Dev == dev {
 				held[st.Ino] = max(held[st.Ino], st.Blocks*512)
@@ -516,7 +520,7 @@ func heldByProcess(pid int, dev uint64, held map[uint64]int64) error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("read the mappings of the step's process %d: %w", pid, err)
+		return fmt.Errorf("read the mappings of the step's thread %d: %w", tid, err)
 	}
 	defer maps.Close()
 	want := fmt.Sprintf("%02x:%02x", unix.Major(dev), unix.Minor(dev))
@@ -542,7 +546,7 @@ func heldByProcess(pid int, dev uint64, held map[uint64]int64) error {
 		held[ino] = max(held[ino], int64(off+hi-lo))
 	}
 	if err := sc.Err(); err != nil && !errors.Is(err, unix.ESRCH) {
-		return fmt.Errorf("read the mappings of the step's process %d: %w", pid, err)
+		return fmt.Errorf("read the mappings of the step's thread %d: %w", tid, err)
 	}
 	return nil
 }

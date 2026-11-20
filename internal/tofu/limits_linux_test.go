@@ -167,11 +167,13 @@ func runLimits(t *testing.T) {
 		}
 	})
 	t.Run("scratch, in a removed file a process holds", func(t *testing.T) {
-		for _, fake := range []string{"scratch-unlinked", "scratch-mapped"} {
+		for _, fake := range []string{"scratch-unlinked", "scratch-mapped", "scratch-zombie"} {
 			l := testLimits
 			l.Memory = 1 << 30
+			r := fakeRunnerLimits(t, fake, l)
+			r.opts.Timeout = 15 * time.Second
 			start := time.Now()
-			requireLimit(t, fakeRunnerLimits(t, fake, l), "limits.run_scratch")
+			requireLimit(t, r, "limits.run_scratch")
 			if d := time.Since(start); d > 10*time.Second {
 				t.Fatalf("the step that filled a removed file ran %v, so writ's measure did not stop it", d)
 			}
@@ -473,3 +475,4 @@ func TestCgroupChecks(t *testing.T) {
 		t.Errorf("a cgroup with memory.swap.max: %q", why)
 	}
 }
+

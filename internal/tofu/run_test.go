@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -209,6 +210,29 @@ func fakeTofuMain(behaviour string, args []string) int {
 		time.Sleep(2 * time.Second)
 		if cmd == "plan" {
 			err = os.WriteFile(planFile, []byte("saved"), 0o600)
+		}
+	case "scratch-zombie":
+		// 64 MiB written into a removed file that a thread holds open, after
+		// the main thread exits alone, as SYS_EXIT ends one thread where
+		// exit_group ends them all. /proc/PID/fd then reads the dead main
+		// thread's descriptors, of which it has none. Fakes run from init,
+		// on the main thread.
+		held := make(chan error)
+		go func() {
+			f, err := os.Create("fill.bin")
+			if err == nil {
+				err = os.Remove("fill.bin")
+			}
+			chunk := bytes.Repeat([]byte{1}, 1<<20)
+			for i := 0; i < 64 && err == nil; i++ {
+				_, err = f.Write(chunk)
+			}
+			held <- err
+			time.Sleep(time.Hour)
+			runtime.KeepAlive(f)
+		}()
+		if err = <-held; err == nil {
+			syscall.RawSyscall(syscall.SYS_EXIT, 0, 0, 0)
 		}
 	case "scratch-unlinked", "scratch-mapped", "scratch-undumpable":
 		// 64 MiB written into a file of the stack's directory that the fake
