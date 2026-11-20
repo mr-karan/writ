@@ -396,13 +396,13 @@ func (s *Server) repoDoc(r control.Repo, c control.Commit) RepoDoc {
 	}
 	for _, st := range stacksOf(c) {
 		f := FoundStack{Stack: r.Prefix + st.Dir, Dir: path.Join(r.Path, st.Dir), Served: []string{}, NotServed: []string{}, Providers: []FoundProvider{}}
-		if s.tofuRunner != nil {
+		if s.exec != nil {
 			f.Served = append(f.Served, envs...)
 		} else {
 			f.NotServed = append(f.NotServed, envs...)
 		}
 		for _, p := range st.Providers {
-			f.Providers = append(f.Providers, FoundProvider{Source: p.Source, Version: p.Version, Runs: s.tofuRunner != nil})
+			f.Providers = append(f.Providers, FoundProvider{Source: p.Source, Version: p.Version, Runs: s.exec != nil})
 		}
 		doc.Stacks = append(doc.Stacks, f)
 	}

@@ -117,6 +117,25 @@ func TestMCPPlansTheCommit(t *testing.T) {
 	if text, isError := call(t, ctx, cs, "get_plan", map[string]any{"id": doc.Plan.Ref}); !isError || !strings.Contains(text, "is failed.") {
 		t.Fatalf("get_plan: isError %v:\n%s", isError, text)
 	}
+	// Make a second plan so list_plans can filter and page across two plans.
+	text2, _ := call(t, ctx, cs, "plan", map[string]any{"dir": "hello", "json": true})
+	var doc2 server.RemotePlan
+	if json.Unmarshal([]byte(text2), &doc2) != nil || doc2.Plan == nil {
+		t.Fatalf("second plan:\n%s", text2)
+	}
+	page1Text, isError := call(t, ctx, cs, "list_plans", map[string]any{"stack": "hello", "status": "failed", "started_by": "person", "limit": 1})
+	var page1 server.RemotePlans
+	if isError || json.Unmarshal([]byte(page1Text), &page1) != nil || page1.Format != server.FormatRemotePlans || len(page1.Plans) != 1 || page1.Plans[0].Ref != doc2.Plan.Ref || page1.Next == "" {
+		t.Fatalf("list_plans page 1: isError %v\n%s", isError, page1Text)
+	}
+	page2Text, isError := call(t, ctx, cs, "list_plans", map[string]any{"stack": "hello", "status": "failed", "started_by": "person", "limit": 1, "cursor": page1.Next})
+	var page2 server.RemotePlans
+	if isError || json.Unmarshal([]byte(page2Text), &page2) != nil || len(page2.Plans) != 1 || page2.Plans[0].Ref != doc.Plan.Ref || page2.Next != "" {
+		t.Fatalf("list_plans page 2: isError %v\n%s", isError, page2Text)
+	}
+	if text, isError := call(t, ctx, cs, "list_plans", map[string]any{"started_by": "drift"}); !isError || !strings.Contains(text, "GET /v1/drift") {
+		t.Fatalf("list_plans started_by=drift: isError %v\n%s", isError, text)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "hello", "main.tf"), []byte("resource \"random_pet\" \"other\" {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +191,11 @@ func TestMCPReadsTheDevControlPlane(t *testing.T) {
 	defer cancel()
 	srv := servetest.Start(t, servetest.Options{})
 	cs := serveMCP(t, ctx, srv, t.TempDir())
-	for tool, want := range map[string]string{"drift": `{"format":"writ.drift/v0","ok":true,"stacks":[]`, "runs": `{"format":"writ.remote-runs/v0","ok":true,"runs":[]`} {
+	for tool, want := range map[string]string{
+		"drift":      `{"format":"writ.drift/v0","ok":true,"stacks":[]`,
+		"runs":       `{"format":"writ.remote-runs/v0","ok":true,"runs":[]`,
+		"list_plans": `{"format":"writ.remote-plans/v0","ok":true,"plans":[]`,
+	} {
 		if text, isError := call(t, ctx, cs, tool, map[string]any{}); isError || !strings.HasPrefix(text, want) {
 			t.Errorf("%s: isError %v: %s", tool, isError, text)
 		}

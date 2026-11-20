@@ -66,7 +66,7 @@ $ writ serve --config /etc/writ/serve --check
 $ writ serve --config /etc/writ/serve
 ```
 
-Here, `--check` parses the config and prints what each team can do. With a `tofu` block, it runs `tofu version`, and prints the [run limits](run-isolation.md#check-that-the-limits-hold) each OpenTofu step would get, or warns why it would get none. With `provider_uids` it also runs `writ` as a provider's uid to check what that uid can read and reach, including the EC2 instance metadata addresses. It doesn't contact Postgres, your Git host, or the issuers.
+Here, `--check` parses the config and prints what each team can do. With a `tofu` block, it runs `tofu version`, and prints the [run limits](run-isolation.md#check-that-the-limits-hold) each OpenTofu step would get, or warns why it would get none. With `provider_uids` it also runs `writ` as a provider's uid to check what that uid can read and reach, including the EC2 instance metadata addresses. With `notify` blocks, it reads each notifier's delivery counts from Postgres, and a database it can't reach doesn't fail it. It doesn't contact your Git host or the issuers, and it sends a notification only with `--notify-test`. See [Get notified](notifications.md#check-the-setup).
 
 Here's what it printed for the NixOS module's sample config. That run was as a user who can't switch users, so the isolation check only warns:
 

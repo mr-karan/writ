@@ -111,8 +111,9 @@ WRIT_ID_TOKEN, else your session from writ login, else the dev token:
                                           and the run's state writes; TIME is RFC 3339
   whoami   [--remote] [--json]            print the control plane, who the token speaks for, its
                                           teams, and its grants
-  serve    --config FILE [--check]        run the control plane; --check prints what the config
-                                          allows
+  serve    --config FILE [--check [--notify-test]]
+                                          run the control plane; --check prints what the config
+                                          allows, --notify-test sends each notifier a test message
   serve    --dev [--data DIR] [--listen 127.0.0.1:PORT] [--database URL] [--config FILE]
                                           run a control plane for this user alone, on loopback;
                                           the remote commands find it with no flag. --config adds
@@ -638,6 +639,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 	case "serve":
 		cfg := fs.String("config", "", "the config `file`, in HCL")
 		check := fs.Bool("check", false, "read the config, print what each team may do, and serve nothing")
+		notifyTest := fs.Bool("notify-test", false, "with --check: send a test message to each notify block's channel")
 		dev := fs.Bool("dev", false, "run a control plane for this user alone, on loopback, with its store in SQLite")
 		data := fs.String("data", "", "with --dev: the data `directory`; default $XDG_DATA_HOME/writ/dev")
 		listen := fs.String("listen", "", "with --dev: the loopback `address` to listen on; default "+cli.DevListen)
@@ -647,15 +649,15 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 				return err
 			}
 			if *dev {
-				if *check {
-					return &cli.UsageError{Msg: "--dev takes no --check"}
+				if *check || *notifyTest {
+					return &cli.UsageError{Msg: "--dev takes no --check or --notify-test"}
 				}
 				return app.ServeDev(ctx, cli.DevServeOptions{Data: *data, Listen: *listen, Database: *database, Config: *cfg, Version: version})
 			}
 			if *data != "" || *listen != "" || *database != "" {
 				return &cli.UsageError{Msg: "--data, --listen, and --database go with --dev; a team's writ serve takes them from its config"}
 			}
-			return app.Serve(ctx, cli.ServeOptions{Config: *cfg, Check: *check, Version: version})
+			return app.Serve(ctx, cli.ServeOptions{Config: *cfg, Check: *check, NotifyTest: *notifyTest, Version: version})
 		}, nil
 	case "repo":
 		j := asJSON()

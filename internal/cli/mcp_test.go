@@ -277,6 +277,7 @@ func TestMCPReadsTheControlPlane(t *testing.T) {
 		t.Fatal(err)
 	}
 	stub := &stubPlane{t: t, docs: map[string]string{
+		"/v1/plans":    `{"format":"writ.remote-plans/v0","ok":true,"plans":[],"next":"cur1","diagnostics":[]}`,
 		"/v1/plans/P1": string(plan),
 		"/v1/index":    string(index),
 		"/v1/drift":    `{"format":"writ.drift/v0","ok":true,"stacks":[],"more":false,"diagnostics":[]}`,
@@ -326,12 +327,15 @@ func TestMCPReadsTheControlPlane(t *testing.T) {
 			t.Fatalf("isError %v: %s", isError, text)
 		}
 	})
-	t.Run("drift and runs pass through", func(t *testing.T) {
+	t.Run("drift, runs, and list_plans pass through", func(t *testing.T) {
 		if text, isError := callTool(t, cs, "drift", map[string]any{"env": "prod", "stack": "app", "limit": 5}); isError || !strings.HasPrefix(text, `{"format":"writ.drift/v0"`) {
 			t.Fatalf("drift: isError %v: %s", isError, text)
 		}
 		if text, isError := callTool(t, cs, "runs", map[string]any{"env": "prod"}); isError || !strings.HasPrefix(text, `{"format":"writ.remote-runs/v0"`) {
 			t.Fatalf("runs: isError %v: %s", isError, text)
+		}
+		if text, isError := callTool(t, cs, "list_plans", map[string]any{"env": "prod", "stack": "app", "status": "pending", "started_by": "ci", "limit": 10, "cursor": "abc"}); isError || !strings.HasPrefix(text, `{"format":"writ.remote-plans/v0"`) || !strings.Contains(text, `"next":"cur1"`) {
+			t.Fatalf("list_plans: isError %v: %s", isError, text)
 		}
 	})
 	t.Run("a refusal carries the control plane's document", func(t *testing.T) {
@@ -344,6 +348,10 @@ func TestMCPReadsTheControlPlane(t *testing.T) {
 		text, isError := callTool(t, cs, "state_index", map[string]any{"stack": "app"})
 		if !isError || !strings.Contains(text, "env is required") {
 			t.Fatalf("isError %v: %s", isError, text)
+		}
+		text, isError = callTool(t, cs, "list_plans", map[string]any{"stack": "app"})
+		if !isError || !strings.Contains(text, "env is required") {
+			t.Fatalf("list_plans without env: isError %v: %s", isError, text)
 		}
 	})
 	t.Run("import_accept passes a plan that only imports the objects", func(t *testing.T) {
@@ -362,7 +370,8 @@ func TestMCPReadsTheControlPlane(t *testing.T) {
 	})
 	want := []string{
 		"/v1/plans/P1", "/v1/plans/P1", "/v1/index?env=prod&stack=app", "/v1/drift?env=prod&limit=5&stack=app",
-		"/v1/applies?env=prod&limit=20", "/v1/runs/AAAAAAAAAAAAAAAAAAAAAAAAAA", "/v1/plans/P1", "/v1/plans/P1",
+		"/v1/applies?env=prod&limit=20", "/v1/plans?cursor=abc&env=prod&limit=10&stack=app&started_by=ci&status=pending",
+		"/v1/runs/AAAAAAAAAAAAAAAAAAAAAAAAAA", "/v1/plans/P1", "/v1/plans/P1",
 	}
 	if !slices.Equal(stub.seen, want) {
 		t.Errorf("requests\n%q\nwant\n%q", stub.seen, want)

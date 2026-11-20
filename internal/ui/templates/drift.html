@@ -1,0 +1,49 @@
+{{define "drift-changes"}}
+{{- if .Changes}}
+<section class="card" aria-labelledby="h-drift">
+<div class="card-head"><h2 id="h-drift">Changes <span class="count">{{template "n" (exact (add .Outside .Code))}}</span></h2><span class="meta">{{template "n" (exact .Outside)}} changed outside OpenTofu, {{template "n" (exact .Code)}} that the code would change{{if lt (len .Changes) (add .Outside .Code)}}, the first {{template "n" (exact (len .Changes))}} shown{{end}}</span></div>
+<div class="scroll">
+<table id="drift-changes" class="list">
+<caption class="sr-only">What the drift check found</caption>
+<thead><tr><th scope="col">Address</th><th scope="col">Found</th><th scope="col">Action</th><th scope="col">Attributes</th></tr></thead>
+<tbody>
+{{- range .Changes}}
+<tr>
+<th scope="row" class="c-main"><code>{{.Address}}</code></th>
+<td data-label="Found">{{if eq .Kind "outside"}}changed outside OpenTofu{{else}}in the code{{end}}</td>
+<td data-label="Action"><span class="sign sign-{{.Action}}">{{sign .Action}}</span> {{.Action}}</td>
+<td data-label="Attributes">{{range $i, $a := .Attributes}}{{if $i}}, {{end}}<code>{{$a}}</code>{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+</section>
+{{- end}}
+{{end}}
+
+{{define "drift-check"}}{{template "head" .}}
+{{with .Data}}{{$c := .Check}}
+<div class="page-head">
+<h1>Drift check <code class="id">{{short $c.Ref}}</code> {{template "status" $c.Status}}</h1>
+</div>
+<p class="meta"><a href="{{link "/ui/stack" "stack" .Stack "env" .Env "view" "drift"}}">{{.Stack}}</a> in {{.Env}}{{if $c.Commit}} · commit <code>{{short $c.Commit}}</code> of {{$c.Repo}}{{end}}</p>
+{{with .Adopt}}{{template "adopt-hint" .}}{{end}}
+{{if eq $c.Status "failed"}}<div class="note note-error" role="alert">{{template "icon" "fail"}}<div><span class="msg" data-record="{{record "format" "writ.drift-check/v0" "check.ref" $c.Ref}}" data-field="check.error">{{$c.Error}}</span></div></div>{{end}}
+<section class="card" aria-labelledby="h-check">
+<div class="card-head"><h2 id="h-check" class="by">{{template "icon" "timer"}}<span>Drift check{{with .Every.Text}}, every <time datetime="{{$.Data.Every.ISO}}">{{.}}</time>{{end}}</span></h2></div>
+<dl class="kv kv-2" id="drift-facts">
+<div><dt>Started by</dt><dd>the drift timer</dd></div>
+<div><dt>Started</dt><dd>{{template "time" $c.StartedAt}}</dd></div>
+{{if $c.CheckedAt}}<div><dt>Checked</dt><dd>{{template "time" $c.CheckedAt}}{{with .Took.Text}} <span class="muted">after <time datetime="{{$.Data.Took.ISO}}">{{.}}</time></span>{{end}}</dd></div>{{end}}
+{{if $c.DriftedSince}}<div><dt>Drifted since</dt><dd>{{template "time" $c.DriftedSince}}</dd></div>{{end}}
+{{if $c.Commit}}<div><dt>Commit</dt><dd><code>{{short $c.Commit}}</code> of {{$c.Repo}}</dd></div>{{end}}
+<div class="wide"><dt>Check</dt><dd><code class="id-full">{{$c.Ref}}</code></dd></div>
+{{if $c.Plan}}<div class="wide"><dt>Plan</dt><dd><code class="id-full">{{$c.Plan}}</code>, never applied</dd></div>{{end}}
+</dl>
+</section>
+{{if $c.Changes}}{{template "drift-changes" $c}}
+{{else if eq $c.Status "clean"}}<section class="card"><p class="calm"><span class="dot dot-ok" aria-hidden="true"></span>No drift, and the code at this commit changes nothing.</p></section>
+{{end}}
+{{end}}
+{{template "foot" .}}{{end}}

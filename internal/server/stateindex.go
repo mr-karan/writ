@@ -11,6 +11,7 @@ import (
 	"github.com/mr-karan/writ/internal/forge"
 	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/repo"
+	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/tfstate"
 	"github.com/mr-karan/writ/internal/tofu"
 )
@@ -246,15 +247,17 @@ func (s *Server) refreshIndex(ctx context.Context, st control.StaleIndex) error 
 	}
 	defer tr.done()
 	m := tr.mask(learned)
-	stk, err := tr.stack(ctx, m)
-	if err != nil {
+	job := tr.job(runner.Show)
+	job.State = raw
+	out, err := tr.run(ctx, ctx, job, m)
+	if notStarted(err) {
 		return err
 	}
 	defer tr.network(m)
-	state, err := s.tofuRunner.Show(ctx, stk, raw)
 	if err != nil {
 		return fmt.Errorf("%w%s", err, stepLines(m, err))
 	}
+	state := out.State
 	if stored, err := s.fillIndex(ctx, st.Env, st.Stack, control.BackendHTTP, tofu.Serial{Serial: v.Version}, 0, m, state); err != nil || !stored {
 		return err
 	}

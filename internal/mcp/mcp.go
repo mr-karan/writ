@@ -54,6 +54,7 @@ const (
 type Tools interface {
 	Plan(context.Context, PlanInput) (Result, error)
 	GetPlan(context.Context, GetPlanInput) (Result, error)
+	ListPlans(context.Context, ListPlansInput) (Result, error)
 	Runs(context.Context, RunsInput) (Result, error)
 	Drift(context.Context, DriftInput) (Result, error)
 	StateIndex(context.Context, StateIndexInput) (Result, error)
@@ -88,6 +89,16 @@ type GetPlanInput struct {
 	ID        string   `json:"id" jsonschema:"the plan's id, or the ref the plan tool printed while it planned"`
 	JSON      bool     `json:"json,omitempty" jsonschema:"return the writ.remote-plan/v0 document, whose document field is the masked plan; default the plan as text"`
 	Addresses []string `json:"addresses,omitempty" jsonschema:"return the document with only the resource changes at these addresses, such as random_pet.name; implies json"`
+}
+
+// ListPlansInput is the input of the list_plans tool.
+type ListPlansInput struct {
+	Env       string `json:"env,omitempty" jsonschema:"the environment whose plans to list; required by a team's control plane, default dev on writ serve --dev"`
+	Stack     string `json:"stack,omitempty" jsonschema:"list only this stack's plans"`
+	Status    string `json:"status,omitempty" jsonschema:"list only plans in this status: planning, pending, approved, applying, applied, refused, failed, superseded, or expired"`
+	StartedBy string `json:"started_by,omitempty" jsonschema:"list only plans started by person or ci; drift is refused because drift checks are listed by the drift tool"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"list the newest this many plans, 1 to 200; default 50"`
+	Cursor    string `json:"cursor,omitempty" jsonschema:"the next cursor from an earlier list_plans call, to read older plans"`
 }
 
 // PolicyInput is the input of the policy tool.
@@ -144,7 +155,7 @@ type ImportAcceptInput struct {
 }
 
 const instructions = `Tools for the OpenTofu stacks under this directory, on Writ's control plane.
-A plan is of a commit: commit your change, then call plan. Read a plan with get_plan; pass addresses to see the before and after of a few resources.
+A plan is of a commit: commit your change, then call plan. List plans with list_plans and read one with get_plan; pass addresses to see the before and after of a few resources.
 Every plan, run, and index you read went through Writ's mask, which shows a secret as "(sensitive)".
 No tool applies or approves. A person approves a plan, and the plan's author cannot approve their own.
 Look up a resource type's attributes with schema before you write it; it reads the providers that .terraform.lock.hcl pins.
@@ -211,6 +222,18 @@ func NewServer(tools Tools, o Options) *sdk.Server {
 			return Result{}, fmt.Errorf("addresses takes at most %d addresses, got %d", MaxAddresses, len(in.Addresses))
 		}
 		return tools.GetPlan(ctx, in)
+	}))
+	sdk.AddTool(s, &sdk.Tool{
+		Name:  "list_plans",
+		Title: "List plans",
+		Description: "List the plans the control plane keeps in an environment, newest first, as the writ.remote-plans/v0 document: each plan's id, ref, status, stacks, author, started_by, approvals, risks, and times, and next when older plans match. " +
+			"Filter by stack, status, or started_by (person or ci), and pass cursor from next to read older pages.",
+		Annotations: read,
+	}, handler(func(ctx context.Context, in ListPlansInput) (Result, error) {
+		if in.Limit < 0 || in.Limit > MaxListed {
+			return Result{}, fmt.Errorf("limit takes 1 to %d, got %d", MaxListed, in.Limit)
+		}
+		return tools.ListPlans(ctx, in)
 	}))
 	sdk.AddTool(s, &sdk.Tool{
 		Name:  "runs",

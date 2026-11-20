@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/server"
 	"github.com/mr-karan/writ/internal/tofu"
 )
@@ -69,7 +70,7 @@ func runLimits(cfg *server.Config) tofu.Limits {
 // serveTofu is the OpenTofu runner writ serve passes to the server, and
 // what closes it. A config without a tofu block has none. The dev control
 // plane runs without one when PATH has no OpenTofu, and logs why.
-func serveTofu(ctx context.Context, cfg *server.Config, log *slog.Logger) (server.TofuRunner, func(), error) {
+func serveTofu(ctx context.Context, cfg *server.Config, log *slog.Logger) (runner.Tofu, func(), error) {
 	if cfg.Tofu == nil {
 		return nil, func() {}, nil
 	}

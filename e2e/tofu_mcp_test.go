@@ -132,6 +132,9 @@ resource "random_pet" "name" {
 		}
 	}
 	first := plan()
+	if text, isError := call("list_plans", map[string]any{"stack": "app", "status": "approved", "started_by": "person", "limit": 5}); isError || !strings.Contains(text, `"format":"writ.remote-plans/v0"`) || !strings.Contains(text, first.Plan.ID) {
+		t.Fatalf("list_plans: isError %v\n%s", isError, text)
+	}
 	text, isError = call("get_plan", map[string]any{"id": first.Plan.ID, "addresses": []string{"random_pet.name"}})
 	var got tofuPlanDoc
 	if isError || json.Unmarshal([]byte(text), &got) != nil || len(got.Document.ResourceChanges) != 1 {

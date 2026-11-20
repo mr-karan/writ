@@ -798,6 +798,11 @@ func TestTofuSensitiveValuesNeverRender(t *testing.T) {
 		t.Fatalf("the plan of a state with no secret set: %+v", unsealed.Plan)
 	}
 	x.driftCheck(second)
+	driftStacks, _, err := x.store.DriftStacks(context.Background(), server.DevEnv, "app", 1, func(string, string) bool { return true })
+	if err != nil || len(driftStacks) != 1 || driftStacks[0].Last == nil {
+		t.Fatalf("stored drift check: %+v %v", driftStacks, err)
+	}
+	driftRef := driftStacks[0].Last.Ref
 	adopt := "writ state adopt app --env staging --version 1 --reason REASON"
 	for _, path := range []string{"/ui/plans/" + unsealed.Plan.Ref, "/ui/stack?stack=app&env=staging"} {
 		if body, _ := x.page(path); !strings.Contains(body, adopt) {
@@ -811,7 +816,7 @@ func TestTofuSensitiveValuesNeverRender(t *testing.T) {
 	for _, path := range []string{
 		"/ui/plans/" + p.Plan.ID + "?risk=replace", "/ui/plans/" + p3.Plan.ID,
 		"/ui/runs/" + run.Run.ID, "/ui/runs/" + failed.Run.ID, "/ui/runs", "/ui/runs?env=dev&stack=app", "/ui/plans?env=dev",
-		"/ui/stack?stack=app&env=dev", "/ui/stack?stack=app&env=dev&view=drift", "/ui/approvals", "/ui/access", "/ui/whoami", "/ui/start", "/ui/repos", "/ui/repos/demo",
+		"/ui/stack?stack=app&env=dev", "/ui/stack?stack=app&env=dev&view=drift", "/ui/drift/" + driftRef, "/ui/approvals", "/ui/access", "/ui/audit", "/ui/whoami", "/ui/start", "/ui/repos", "/ui/repos/demo",
 		"/ui/repos/new", "/ui/settings",
 	} {
 		x.page(path)
@@ -833,7 +838,7 @@ func TestTofuSensitiveValuesNeverRender(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/ui/plans/" + p.Plan.ID + "?as=json", "/ui/runs/" + run.Run.ID + "?as=json", "/ui/runs/" + failed.Run.ID + "?as=json",
-		"/ui/plans/" + p3.Plan.ID + "?as=json", "/ui/plans/" + unsealed.Plan.Ref + "?as=json", "/ui/stack?stack=app&env=dev&as=json", "/ui/?as=json", "/ui/no-such-page", "/",
+		"/ui/plans/" + p3.Plan.ID + "?as=json", "/ui/plans/" + unsealed.Plan.Ref + "?as=json", "/ui/drift/" + driftRef + "?as=json", "/ui/audit?as=json", "/ui/stack?stack=app&env=dev&as=json", "/ui/?as=json", "/ui/no-such-page", "/",
 		"/ui/login/start?issuer=sso", "/ui/callback?state=s&code=c",
 	} {
 		visit(t, x.c, "GET", x.base+path, nil)

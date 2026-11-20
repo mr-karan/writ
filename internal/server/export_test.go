@@ -88,7 +88,7 @@ func (s *Server) FillIndex(env, stack string, version int64, state []byte) error
 // that started at since, as a plan or a refresh records it, with now as
 // the clock the record takes its time from. It returns the read's place.
 func (s *Server) ObserveS3(env, stack string, read tofu.Serial, since time.Time, now func() time.Time) (int64, error) {
-	o := &Server{store: s.store, log: s.log, now: now}
+	o := &Server{cfg: s.cfg, store: s.store, log: s.log, now: now, notifier: s.notifier}
 	_, seq, err := o.observeSerial(context.Background(), env, stack, &repo.Backend{}, read, since)
 	return seq, err
 }

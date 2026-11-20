@@ -72,7 +72,7 @@ func fields(n *html.Node) bool {
 func noneScope(path string) bool {
 	p, _, _ := strings.Cut(path, "?")
 	switch p {
-	case "/ui/", "/ui/approvals", "/ui/plans", "/ui/runs", "/ui/stack", "/ui/repos", "/ui/access", "/ui/whoami", "/ui/settings", "/ui/start":
+	case "/ui/", "/ui/approvals", "/ui/plans", "/ui/runs", "/ui/stack", "/ui/repos", "/ui/access", "/ui/audit", "/ui/whoami", "/ui/settings", "/ui/start":
 		return true
 	}
 	return strings.HasPrefix(p, "/ui/repos/") && p != "/ui/repos/new"
@@ -250,7 +250,7 @@ func (c *wordCheck) stripNames(s string) string {
 // servedFields are the fields an element of servedText may render, by
 // its class: a message or an error for .msg, a display name or a project
 // for .ref.
-var servedFields = map[string][]string{"msg": {"message", "error"}, "ref": {"display", "project", "repository"}}
+var servedFields = map[string][]string{"msg": {"message", "error", "reason"}, "ref": {"display", "project", "repository", "principal"}}
 
 // servedText judges the text of an element of servedText. Its text
 // with a digit is never a number alone, and is a name, or the field its

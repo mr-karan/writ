@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,9 +25,13 @@ import (
 const (
 	// FormatDrift is GET /v1/drift.
 	FormatDrift = "writ.drift/v0"
+	// FormatDriftCheck is GET /v1/drift/{id}.
+	FormatDriftCheck = "writ.drift-check/v0"
 	// FormatStateIndex is GET /v1/index.
 	FormatStateIndex = "writ.state-index/v0"
 )
+
+var driftIDRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 // maxDriftChanges bounds the changes a drift check keeps; its counts are
 // whole.
@@ -114,7 +120,7 @@ func (s *Server) runDrift(c control.DriftCheck) {
 	c.MadeAt = s.now()
 	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer rcancel()
-	stored, ferr := s.store.FinishDrift(rctx, c)
+	stored, prev, ferr := s.store.FinishDrift(rctx, c)
 	switch {
 	case ferr != nil:
 		log.Error("record the end of a drift check", "err", ferr)
@@ -122,10 +128,12 @@ func (s *Server) runDrift(c control.DriftCheck) {
 		log.Info("an apply ran while the drift check planned, so it keeps nothing; the next look checks again")
 	case c.Status == control.DriftDrifted:
 		log.Warn("drift found", "plan", c.PlanID, "commit", c.Commit, "outside", c.Outside, "code", c.Code)
+		s.notifyDrift(c, prev)
 	case c.Status == control.DriftFailed:
 		log.Warn("drift check failed", "err", c.Error)
 	default:
 		log.Info("drift check found no drift", "plan", c.PlanID, "commit", c.Commit)
+		s.notifyDrift(c, prev)
 	}
 }
 
@@ -316,8 +324,11 @@ type DriftDoc struct {
 	More   bool         `json:"more"`
 	// Every is drift.every, how often writ serve checks each stack@env,
 	// such as 6h; "" when the config runs no drift checks.
-	Every       string       `json:"every"`
-	Diagnostics []Diagnostic `json:"diagnostics"`
+	Every string `json:"every"`
+	// Checks lists the kept drift checks of the one stack@env that env
+	// and stack name, newest first, and is left out without both.
+	Checks      []DriftCheckSummary `json:"checks,omitempty"`
+	Diagnostics []Diagnostic        `json:"diagnostics"`
 }
 
 // DriftStack is one stack@env of writ.drift/v0.
@@ -340,6 +351,18 @@ type DriftStack struct {
 	Check *DriftCheckInfo `json:"check"`
 }
 
+// DriftCheckSummary is one of the kept drift checks of a stack@env.
+type DriftCheckSummary struct {
+	Ref       string `json:"ref"`
+	Plan      string `json:"plan"`
+	Status    string `json:"status"`
+	StartedAt string `json:"started_at"`
+	CheckedAt string `json:"checked_at"`
+	Commit    string `json:"commit"`
+	Outside   int    `json:"outside"`
+	Code      int    `json:"code"`
+}
+
 // OutsideWrite is a serial of a state on S3 that writ serve read and no
 // apply of it wrote, and when it read it.
 type OutsideWrite struct {
@@ -347,8 +370,10 @@ type OutsideWrite struct {
 	SeenAt string `json:"seen_at"`
 }
 
-// DriftCheckInfo is a drift check as writ.drift/v0 names it.
+// DriftCheckInfo is a drift check as writ.drift/v0 and writ.drift-check/v0 name it.
 type DriftCheckInfo struct {
+	// Ref is the check's stable identifier.
+	Ref string `json:"ref"`
 	// StartedBy is always StartedByDrift: writ serve's drift timer
 	// started the check.
 	StartedBy string `json:"started_by"`
@@ -364,6 +389,55 @@ type DriftCheckInfo struct {
 	DriftedSince string                `json:"drifted_since"`
 	Changes      []control.DriftChange `json:"changes"`
 	Error        string                `json:"error"`
+}
+
+// DriftCheckDoc is GET /v1/drift/{id}: one drift check of a stack@env.
+type DriftCheckDoc struct {
+	Format  string `json:"format"`
+	OK      bool   `json:"ok"`
+	Env     string `json:"env"`
+	Stack   string `json:"stack"`
+	Backend string `json:"backend"`
+	// Every is drift.every, how often writ serve checks each stack@env,
+	// such as 6h; "" when the config runs no drift checks.
+	Every       string          `json:"every"`
+	Check       *DriftCheckInfo `json:"check"`
+	Diagnostics []Diagnostic    `json:"diagnostics"`
+}
+
+// getDrift is GET /v1/drift/{id}, by ref or by plan id.
+func (s *Server) getDrift(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("id")
+	if !driftIDRE.MatchString(key) {
+		s.refuse(w, r, FormatDriftCheck, diag.Usage, http.StatusNotFound, "%q is not a drift check id", trunc(key))
+		return
+	}
+	c, err := s.store.DriftCheck(r.Context(), key)
+	if errors.Is(err, control.ErrNotFound) {
+		s.refuse(w, r, FormatDriftCheck, diag.Usage, http.StatusNotFound, "no drift check %s", key)
+		return
+	}
+	if err != nil {
+		s.dbFailed(w, r, FormatDriftCheck, err)
+		return
+	}
+	reqOf(r).entry.Plan = cmp.Or(c.PlanID, c.Ref)
+	if !s.decide(w, r, FormatDriftCheck, authz.Read, c.Stack, c.Env) {
+		return
+	}
+	stacks, _, err := s.store.DriftStacks(r.Context(), c.Env, c.Stack, 1, func(string, string) bool { return true })
+	if err != nil {
+		s.dbFailed(w, r, FormatDriftCheck, err)
+		return
+	}
+	doc := DriftCheckDoc{Format: FormatDriftCheck, OK: c.Status != control.DriftFailed, Env: c.Env, Stack: c.Stack, Check: driftCheckInfo(c), Diagnostics: []Diagnostic{}}
+	if len(stacks) == 1 {
+		doc.Backend = stacks[0].Backend
+	}
+	if s.cfg.DriftEvery > 0 {
+		doc.Every = shortDuration(s.cfg.DriftEvery)
+	}
+	s.reply(w, http.StatusOK, doc)
 }
 
 // listDrift is GET /v1/drift?env=&stack=&limit=. It lists only the
@@ -408,9 +482,30 @@ func (s *Server) listDrift(w http.ResponseWriter, r *http.Request) {
 		doc.Stacks = append(doc.Stacks, *driftRow(st))
 		req.entry.Stacks = append(req.entry.Stacks, st.Stack)
 	}
+	if env != "" && stack != "" && len(stacks) == 1 {
+		history, err := s.store.DriftHistory(r.Context(), env, stack)
+		if err != nil {
+			s.dbFailed(w, r, FormatDrift, err)
+			return
+		}
+		doc.Checks = []DriftCheckSummary{}
+		for _, h := range history {
+			doc.Checks = append(doc.Checks, DriftCheckSummary{Ref: h.Ref, Plan: h.PlanID, Status: string(h.Status),
+				StartedAt: stamp(h.StartedAt), CheckedAt: stamp(h.MadeAt), Commit: h.Commit, Outside: h.Outside, Code: h.Code})
+		}
+	}
 	slices.Sort(req.entry.Stacks)
 	req.entry.Stacks = slices.Compact(req.entry.Stacks)
 	s.reply(w, http.StatusOK, doc)
+}
+
+func driftCheckInfo(c control.DriftCheck) *DriftCheckInfo {
+	info := &DriftCheckInfo{Ref: c.Ref, StartedBy: StartedByDrift, Plan: c.PlanID, Status: string(c.Status), StartedAt: stamp(c.StartedAt), CheckedAt: stamp(c.MadeAt), Repo: c.Repo,
+		Commit: c.Commit, Outside: c.Outside, Code: c.Code, DriftedSince: stamp(c.DriftedSince), Changes: c.Changes, Error: c.Error}
+	if info.Changes == nil {
+		info.Changes = []control.DriftChange{}
+	}
+	return info
 }
 
 // driftRow is a stack's row of writ.drift/v0.
@@ -420,11 +515,7 @@ func driftRow(st control.DriftStack) *DriftStack {
 		row.OutsideWrite = &OutsideWrite{Serial: st.OutsideSerial, SeenAt: stamp(st.OutsideAt)}
 	}
 	if c := st.Last; c != nil {
-		row.Check = &DriftCheckInfo{StartedBy: StartedByDrift, Plan: c.PlanID, Status: string(c.Status), StartedAt: stamp(c.StartedAt), CheckedAt: stamp(c.MadeAt), Repo: c.Repo,
-			Commit: c.Commit, Outside: c.Outside, Code: c.Code, DriftedSince: stamp(c.DriftedSince), Changes: c.Changes, Error: c.Error}
-		if row.Check.Changes == nil {
-			row.Check.Changes = []control.DriftChange{}
-		}
+		row.Check = driftCheckInfo(*c)
 	}
 	return row
 }

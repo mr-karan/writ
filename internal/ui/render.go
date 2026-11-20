@@ -48,9 +48,12 @@ func parseTemplates(u *UI) (*template.Template, error) {
 			text, iso := took(start, end)
 			return span{text, iso}
 		},
-		"from":     originOf,
-		"driftBox": func(d *server.DriftStack, every span) driftBox { return driftBox{d, every} },
-		"add":      func(a, b int) int { return a + b },
+		"from": originOf,
+		"driftBox": func(d *server.DriftStack, every span, checks []server.DriftCheckSummary) driftBox {
+			return driftBox{d, every, checks}
+		},
+		"auditRecord": auditRecord,
+		"add":         func(a, b int) int { return a + b },
 		"grants": func(caption string, gs []server.GrantInfo, teams bool) grantTable {
 			t := grantTable{Caption: caption, Teams: teams}
 			for _, g := range gs {
@@ -350,5 +353,6 @@ var sections = []section{
 	{"approvals", "Approvals", "/ui/approvals"},
 	{"repos", "Repositories", "/ui/repos"},
 	{"access", "Access", "/ui/access"},
+	{"audit", "Audit", "/ui/audit"},
 	{"settings", "Settings", "/ui/settings"},
 }

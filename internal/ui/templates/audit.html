@@ -1,0 +1,70 @@
+{{define "audit-by"}}{{if eq . "ci-job"}}{{template "icon" "ci"}}<span class="sr-only">CI job </span>{{else}}{{template "icon" "person"}}<span class="sr-only">Person </span>{{end}}{{end}}
+
+{{define "audit"}}{{template "head" .}}
+{{with .Data}}
+<div class="page-head">
+<h1>Audit log</h1>
+</div>
+<div class="card">
+<div class="bar">
+{{template "pick" .EnvPick}}
+{{template "pick" .OpPick}}
+{{template "pick" .TimePick}}
+{{- if .Filtered}}
+<span class="end"><a class="button small" href="/ui/audit">Clear filters</a></span>
+{{- end}}
+</div>
+{{- if .MoreOpen}}
+<p class="audit-active">
+{{- if .Stack}}<span>stack <code>{{.Stack}}</code></span>{{end -}}
+{{- if .Person}}<span>person <code>{{.Person}}</code></span>{{end -}}
+{{- if .Plan}}<span>plan <code>{{.Plan}}</code></span>{{end -}}
+{{- if .Run}}<span>run <code>{{.Run}}</code></span>{{end -}}
+{{- if .Since}}<span>since <code>{{.Since}}</code></span>{{end -}}
+{{- if .Until}}<span>until <code>{{.Until}}</code></span>{{end -}}
+</p>
+{{- end}}
+<details class="fold audit-filters"{{if .MoreOpen}} open{{end}}>
+<summary><span>More filters</span></summary>
+<form method="get" action="/ui/audit" class="audit-form" role="search">
+<div><label for="af-env">Environment</label><select id="af-env" name="env"><option value="">All environments</option>{{range .Envs}}<option value="{{.}}"{{if eq $.Data.Env .}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+<div><label for="af-stack">Stack</label><input id="af-stack" name="stack" type="search" value="{{.Stack}}" placeholder="Stack name" autocomplete="off"></div>
+<div><label for="af-person">Person</label><input id="af-person" name="person" type="search" value="{{.Person}}" placeholder="Person id" autocomplete="off"></div>
+<div><label for="af-op">Operation</label><select id="af-op" name="op"><option value="">All operations</option>{{range .Ops}}<option value="{{.}}"{{if eq $.Data.Op .}} selected{{end}}>{{.}}</option>{{end}}</select></div>
+<div><label for="af-plan">Plan</label><input id="af-plan" name="plan" type="search" value="{{.Plan}}" placeholder="Plan id or ref" autocomplete="off"></div>
+<div><label for="af-run">Run</label><input id="af-run" name="run" type="search" value="{{.Run}}" placeholder="Run id" autocomplete="off"></div>
+<div><label for="af-since">Since</label><input id="af-since" name="since" type="search" value="{{.Since}}" placeholder="Start time (UTC)" autocomplete="off"></div>
+<div><label for="af-until">Until</label><input id="af-until" name="until" type="search" value="{{.Until}}" placeholder="End time (UTC)" autocomplete="off"></div>
+<div class="audit-actions"><button type="submit" class="primary">Filter entries</button></div>
+</form>
+</details>
+{{if .Rows}}
+<div class="scroll">
+<table class="list" id="audit-rows">
+<caption class="sr-only">Audit log entries, newest first</caption>
+<thead><tr><th scope="col">Decision</th><th scope="col">What</th><th scope="col">Op</th><th scope="col">Target</th><th scope="col">By</th><th scope="col" class="end">When</th></tr></thead>
+<tbody>
+{{- range $i, $r := .Rows}}{{$rec := auditRecord $r}}
+<tr{{if $r.Request}} id="row-{{$i}}-{{$r.Request}}"{{end}}{{if $rec}} data-record="{{$rec}}"{{end}}>
+<td>{{template "status" $r.Decision}}</td>
+<th scope="row" class="c-main">{{if $r.Route}}<code>{{$r.Method}} {{$r.Route}} {{$r.Status}}</code>{{else}}<code>{{$r.Kind}}</code>{{end}}{{if or $r.Plan $r.Run $r.ReasonWithheld $r.Reason}}<span class="under">{{if $r.Plan}}plan <a class="id" href="/ui/plans/{{$r.Plan}}">{{short $r.Plan}}</a>{{if or $r.Run $r.ReasonWithheld $r.Reason}} · {{end}}{{end}}{{if $r.Run}}run <a class="id" href="/ui/runs/{{$r.Run}}">{{short $r.Run}}</a>{{if or $r.ReasonWithheld $r.Reason}} · {{end}}{{end}}{{if $r.ReasonWithheld}}<span class="chip">reason withheld</span>{{else if $r.Reason}}<span class="msg" data-field="reason">{{$r.Reason}}</span>{{end}}</span>{{end}}</th>
+<td data-label="Op" class="audit-op">{{if $r.Op}}<code>{{$r.Op}}</code>{{end}}</td>
+<td data-label="Target">{{if $r.Stacks}}{{range $j, $st := $r.Stacks}}{{if $j}}, {{end}}<a href="{{link "/ui/stack" "stack" $st "env" $r.Env}}">{{$st}}</a>{{end}}{{if $r.Env}}@{{$r.Env}}{{end}}{{else if $r.Env}}{{if eq $r.Env "*"}}<code>*</code>{{else}}{{$r.Env}}{{end}}{{end}}</td>
+<td data-label="By">{{if $r.Principal}}<span class="by">{{template "audit-by" $r.PrincipalKind}}<span class="ref" data-field="principal">{{$r.Principal}}</span></span>{{end}}{{if $r.Person}}<a class="under id" href="{{link "/ui/audit" "person" $r.Person}}">{{$r.Person}}</a>{{end}}</td>
+<td class="end" data-label="When">{{if $r.Request}}<a href="#row-{{$i}}-{{$r.Request}}">{{template "when" $r.At}}</a>{{else}}{{template "when" $r.At}}{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{if .Next}}<p class="card-foot"><span class="muted">{{if not .Cursor}}The newest {{end}}{{template "n" (exact (len .Rows))}} entries that match</span> <a href="{{link "/ui/audit" "env" .Env "stack" .Stack "person" .Person "op" .Op "plan" .Plan "run" .Run "since" .Since "until" .Until "cursor" .Next}}">Older entries</a></p>{{end}}
+{{else if .Next}}
+<p class="empty">Writ scanned recent entries and found only entries outside your grants.<br><a class="button" href="{{link "/ui/audit" "env" .Env "stack" .Stack "person" .Person "op" .Op "plan" .Plan "run" .Run "since" .Since "until" .Until "cursor" .Next}}">Older entries</a></p>
+{{else if .Cursor}}
+<p class="empty">Every older entry that matches is listed before this page.<br><a class="button" href="{{link "/ui/audit" "env" .Env "stack" .Stack "person" .Person "op" .Op "plan" .Plan "run" .Run "since" .Since "until" .Until}}">The newest entries</a></p>
+{{else}}
+<p class="empty">{{none "no-audit" (exact (len .Rows))}}{{if .Filtered}}<br><a class="button" href="/ui/audit">Clear filters</a>{{end}}</p>
+{{end}}
+</div>
+{{end}}
+{{template "foot" .}}{{end}}

@@ -1,6 +1,6 @@
 # Separate runners
 
-Status: proposal, 2026-11-20. Nothing here is built. This page is a design document for contributors and the owner. It isn't on the docs site, and `website/content.manifest.ts` doesn't list it.
+Status: proposal, 2026-11-20. Only phase 0, the executor seam, is built: see [Phase 0 done](#phase-0-done). This page is a design document for contributors and the owner. It isn't on the docs site, and `website/content.manifest.ts` doesn't list it.
 
 ## Summary
 
@@ -192,7 +192,7 @@ A single-host install keeps working with no config change, because an env with n
 
 ### Relay the broker (recommended)
 
-`writ serve` keeps calling `sts:AssumeRole` as its own identity, with the session name and `SourceIdentity` it sets today. `awsrole.Broker` keeps the session and its refresh. The job carries the run's broker token. Under `egress_mode` report or enforce, the step's environment on the runner points `AWS_CONTAINER_CREDENTIALS_FULL_URI` at `http://127.0.0.1:3129/v1/credentials`, as it does on `writ serve` today (`internal/server/launch.go:189`). Under `off`, it points at the runner's own loopback relay, as [section 4](#state-on-the-http-backend) explains. The runner forwards each request to `GET /runner/v1/jobs/{id}/credentials` on its own TLS connection. `writ serve` answers it with `Broker.Handler()` only when both checks pass: the token is the job's, and the job's lease belongs to the calling runner.
+`writ serve` keeps calling `sts:AssumeRole` as its own identity, with the session name and `SourceIdentity` it sets today. `awsrole.Broker` keeps the session and its refresh. The job carries the run's broker token. Under `egress_mode` report or enforce, the step's environment on the runner points `AWS_CONTAINER_CREDENTIALS_FULL_URI` at `http://127.0.0.1:3129/v1/credentials`, as it does on `writ serve` today (`internal/server/launch.go:178`). Under `off`, it points at the runner's own loopback relay, as [section 4](#state-on-the-http-backend) explains. The runner forwards each request to `GET /runner/v1/jobs/{id}/credentials` on its own TLS connection. `writ serve` answers it with `Broker.Handler()` only when both checks pass: the token is the job's, and the job's lease belongs to the calling runner.
 
 - **Refresh.** Unchanged. The broker assumes the role again 15 minutes before the credentials expire (`DefaultRefreshBefore`), and the AWS SDK fetches again.
 - **Revocation at the end of a run.** `Run.End` drops the token, as today, and the lease check refuses any request after the job ends. Credentials a provider already fetched stay valid until they expire, as today.
@@ -247,7 +247,7 @@ An index read on the http backend needs the stored state as a file. `writ serve`
 
 ### Masking
 
-The mask runs on `writ serve`, on the raw result the runner returns, with the same inputs as today: `provider_env` values, the run's tokens, every credential the broker served, and the secret set of the state the run read. `planMask` (`internal/server/tofuplan.go:303`) and `applyTofu` don't change. The runner masks nothing and needs no secret set. That matters, because a secret set holds past secrets that the current state may no longer show anywhere, and a runner has no need to learn them.
+The mask runs on `writ serve`, on the raw result the runner returns, with the same inputs as today: `provider_env` values, the run's tokens, every credential the broker served, and the secret set of the state the run read. `planMask` (`internal/server/tofuplan.go:280`) and `applyTofu` don't change. The runner masks nothing and needs no secret set. That matters, because a secret set holds past secrets that the current state may no longer show anywhere, and a runner has no need to learn them.
 
 The network record comes back raw, and `writ serve` sweeps each host with the run's mask after the mask learns the plan, as it does today.
 
@@ -255,7 +255,7 @@ The network record comes back raw, and `writ serve` sweeps each host with the ru
 
 1. The plan job returns `tfplan` and its `show -json`.
 2. `writ serve` masks the JSON, computes the plan id over the masked plan, the saved plan's SHA-256, the commit, the stack, and the environment (`tofuPlanID`), and seals the saved plan with the env's key (`SealPlan`, `internal/tfstate/seal.go:120`).
-3. At apply, `writ serve` opens the sealed saved plan, checks it against the plan id as `applyTofu` does today (`internal/server/tofuapply.go:77`), and sends the plaintext saved plan in the apply job, with its SHA-256.
+3. At apply, `writ serve` opens the sealed saved plan, checks it against the plan id as `applyTofu` does today (`internal/server/tofuapply.go:78`), and sends the plaintext saved plan in the apply job, with its SHA-256.
 4. The runner checks the SHA-256 and runs `tofu apply` of exactly those bytes.
 
 The sealed copy never leaves `writ serve`, and the key never leaves it either.
@@ -374,7 +374,7 @@ It checks what it can. Everything else a runner sends is untrusted input, as raw
 
 ### Phases
 
-**Phase 0: the seam.** Today `startRun` (`internal/server/launch.go:143`) both prepares a run on `writ serve` and builds how it executes: a provider uid, `tofu.Net` handlers, and calls to `TofuRunner`. Split it into two parts.
+**Phase 0: the seam.** Before phase 0, `startRun` in `internal/server/launch.go` both prepared a run on `writ serve` and built how it executes: a provider uid, `tofu.Net` handlers, and calls to `TofuRunner`. Phase 0 splits it into two parts, as [Phase 0 done](#phase-0-done) records.
 
 - `writ serve` prepares: commit files, the broker session, the state token, and the secrets the mask starts from.
 - An executor runs a job, a plain struct with no `http.Handler` and no `runas.User`, and returns a plain result: the raw tofu output, the filled lock file, and the network record.
@@ -542,4 +542,13 @@ The owner accepted every recommendation above:
 9. The `tfplan` read order is fixed now, apart from runners, once a test confirms the gap.
 10. Only a person with `admin` on every env a pool serves can mint its enrollment tokens.
 
-Next: phase 0, the executor seam inside `writ serve`, with no change in behavior.
+## Phase 0 done
+
+Phase 0 landed on 2026-11-20 with no change in what a run does or answers. Three things moved: the commit's files are written when the job starts, after the run's uid, role session and tokens exist; the work directory goes when the job returns; and the refusal for a team config without `provider_uids` comes just before the slot is reserved. Every OpenTofu run of `writ serve` is now a job of an executor, and the only executor is in-process.
+
+- **`internal/runner/runner.go`** has the job protocol's types. `Job` is plain data: the kind (`Plan`, `Apply`, `Show`, or `Pull`), the run's id, the commit's files and the stack's directory, the lock file, `Env` and `Creds` with the env's `provider_env` values and the run's tokens, `StateCreds`, `Egress` (the mode, the env's list, and `provider_registries`), and the opened saved plan of an apply or the opened state of a show. `Result` has tofu's raw `Plan`, `Applied`, or `State`, and `Network`, the raw record of both proxies. `Executor.Reserve` waits for a `Slot`, and `Slot.Run` runs one job, with the provider install under the run's start context and tofu under its run context. `StartError` is a job that failed before tofu ran, and `Refusal` is one an executor doesn't run, which `writ serve` reports with the class `usage`. `Tofu` is the old `server.TofuRunner`. The ports of a run's own network and its proxy environment live here too.
+- **`internal/runner/local.go`** has `Local`, the in-process executor: today's `takeUID` and `freeUID` as `UIDs`, the work directory, the egress proxy, `fill` with its registry check and the install's proxy, and the ports. The state and credential ports reach `writ serve` through `Relay`, which `Server.relay` implements with the state handler and `Broker.Handler()`. Phase 1's remote executor relays them over its TLS connection.
+- **`internal/server/launch.go`** keeps what `writ serve` prepares in `startRun`: the check of the commit's files, the `provider_env` values, the role session, and the slot, which it reserves where it took a uid, so a run still waits for its uid before its token is issued and its state version read. `tofuRun.job` builds the job and `tofuRun.run` runs it. `planTofu`, `applyTofu`, `refreshIndex`, `refreshS3`, `adoptShow`, and `adoptPull` call them, and mask, seal, compute the plan id, and evaluate policy as before. `server` holds no `Tofu` of its own, so no run reaches tofu but through the executor.
+- **`internal/archtest`** refuses an import of `control`, `tfstate`, `mask`, `oidc`, `authz`, `sqldb`, `policy`, or `forge` from `internal/runner`. `TestJobIsPlainData` fails when `Job` or `Result` gains a function, a channel, a handler, a uid, or a type of a package that holds keys, the database, or the forge, such as a `*tfstate.Key`. `TestJobsCrossTheExecutor` records the jobs of a plan, its apply, an index refresh, and a drift check, and checks that none carries the env's state key or the forge's token.
+
+Next: phase 1, long-lived runners.
