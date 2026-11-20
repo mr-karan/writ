@@ -203,7 +203,7 @@ func TestParseConfigErrors(t *testing.T) {
 		{"more than 65536 uids", "", `provider_uids = "61000-126536"`, "provider_uids must be a range"},
 		{"uids past 2^31", "", `provider_uids = "2147483000-2147483648"`, "provider_uids must be a range"},
 		{"a watch block", key, env("watch {}"), "env prod has no field watch"},
-		{"a notify block", "", `notify { url_file = "/u" }`, "has no field notify"},
+		{"a notify block with no name", "", `notify { url_file = "/u" }`, "notify takes one label, its name"},
 		{"an approval rule with no need", "", approval(`risks = ["create"]`), "needs need"},
 		{"an approval rule that needs none", "", approval("risks = [\"create\"]\n  need = 0"), "need must be a whole number from 1 to 10"},
 		{"an approval rule that needs too many", "", approval("risks = [\"create\"]\n  need = 11"), "need must be a whole number from 1 to 10"},

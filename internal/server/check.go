@@ -136,6 +136,12 @@ func CheckIsolation(ctx context.Context, cfg *Config, exe string) ([]Check, erro
 			secret[p] = "provider_env " + v + " of env " + name
 		}
 	}
+	for _, n := range cfg.Notifiers {
+		secret[n.URLFile] = "url_file of notify " + n.Name
+		if n.SecretFile != "" {
+			secret[n.SecretFile] = "secret_file of notify " + n.Name
+		}
+	}
 	req := probeRequest{Read: slices.Sorted(maps.Keys(secret)), Reach: metadataAddrs}
 	b, _ := json.Marshal(req)
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)

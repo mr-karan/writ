@@ -1,0 +1,601 @@
+package notify_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/mr-karan/writ/internal/notify"
+)
+
+func TestCheckURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		url     string
+		wantErr bool
+	}{
+		{"https hook", "https://hooks.slack.com/services/T00/B00/XXX", false},
+		{"https generic with query", "https://hooks.example.com/writ?channel=ops", false},
+		{"http loopback ipv4", "http://127.0.0.1:8080/hook", false},
+		{"http loopback ipv6", "http://[::1]:8080/hook", false},
+		{"http localhost", "http://localhost:9000/hook", false},
+		{"http non-loopback refused", "http://hooks.example.com/writ", true},
+		{"userinfo refused", "https://user:pass@hooks.example.com/writ", true},
+		{"ftp refused", "ftp://hooks.example.com/writ", true},
+		{"empty refused", "", true},
+		{"no host refused", "https:///path", true},
+		{"fragment refused", "https://hooks.example.com/writ#frag", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := notify.CheckURL(tt.url)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("CheckURL(%q) err = %v, wantErr %v", tt.url, err, tt.wantErr)
+			}
+			if err != nil && strings.Contains(tt.url, "pass") && strings.Contains(err.Error(), "pass") {
+				t.Errorf("error leaked credential: %v", err)
+			}
+		})
+	}
+}
+
+func TestSignatureVerification(t *testing.T) {
+	secret := []byte("test-signing-secret-0123456789")
+	body := []byte(`{"format":"writ.notification/v0","event":"applied"}`)
+	ts := int64(1763620200)
+
+	sig := notify.Sign(secret, ts, body)
+	if !strings.HasPrefix(sig, "sha256=") || len(sig) != len("sha256=")+64 {
+		t.Fatalf("unexpected signature format: %q", sig)
+	}
+	if !notify.Verify(secret, ts, body, sig) {
+		t.Fatal("valid signature failed verification")
+	}
+	if notify.Verify([]byte("wrong-secret"), ts, body, sig) {
+		t.Error("wrong secret verified")
+	}
+	if notify.Verify(secret, ts+1, body, sig) {
+		t.Error("wrong timestamp verified")
+	}
+	if notify.Verify(secret, ts, append(body, ' '), sig) {
+		t.Error("modified body verified")
+	}
+	if notify.Verify(secret, ts, body, "sha256=not-hex") {
+		t.Error("malformed signature verified")
+	}
+	if notify.Verify(secret, ts, body, "md5=deadbeef") {
+		t.Error("wrong prefix verified")
+	}
+}
+
+func TestWebhookPayloadAndSignatureHeader(t *testing.T) {
+	secret := []byte("webhook-hmac-secret-value")
+	var gotBody []byte
+	var gotHeaders http.Header
+	done := make(chan struct{}, 1)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		done <- struct{}{}
+	}))
+	defer srv.Close()
+
+	now := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	d := notify.New(notify.Options{
+		Targets: []notify.Target{{
+			Name:   "ops-hook",
+			Kind:   notify.KindWebhook,
+			URL:    srv.URL + "/receive",
+			Secret: secret,
+			Events: []notify.EventKind{notify.EventApplied},
+		}},
+		Now: func() time.Time { return now },
+	})
+	defer d.Close()
+
+	ev := notify.Event{
+		ID:        "01ABCDEFGHJKLMNPQRSTVWXYZ0",
+		Event:     notify.EventApplied,
+		At:        now,
+		Server:    "https://writ.example.com",
+		Stack:     "network",
+		Env:       "prod",
+		Status:    "applied",
+		Summary:   "applied network@prod: 2 added, 1 changed, 0 destroyed",
+		StartedBy: notify.Actor{Kind: "person", Display: "alice", Person: "gitlab/user/1001"},
+		Plan:      "0123456789abcdef0123456789abcdef",
+		Run:       "01RUN000000000000000000000",
+		Counts:    &notify.Counts{Added: 2, Changed: 1},
+		URL:       "https://writ.example.com/ui/runs/01RUN000000000000000000000",
+	}
+	d.Emit(ev)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for webhook delivery")
+	}
+
+	if ct := gotHeaders.Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	if ge := gotHeaders.Get("X-Writ-Event"); ge != "applied" {
+		t.Errorf("X-Writ-Event = %q, want applied", ge)
+	}
+	if gd := gotHeaders.Get("X-Writ-Delivery"); gd != ev.ID {
+		t.Errorf("X-Writ-Delivery = %q, want %q", gd, ev.ID)
+	}
+	tsStr := gotHeaders.Get("X-Writ-Timestamp")
+	ts, err := strconv.ParseInt(tsStr, 10, 64)
+	if err != nil || ts != now.Unix() {
+		t.Fatalf("X-Writ-Timestamp = %q, want %d", tsStr, now.Unix())
+	}
+	sig := gotHeaders.Get("X-Writ-Signature-256")
+	if !notify.Verify(secret, ts, gotBody, sig) {
+		t.Errorf("signature %q did not verify against body %s", sig, gotBody)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(gotBody, &decoded); err != nil {
+		t.Fatalf("invalid JSON body: %v", err)
+	}
+	if decoded["format"] != notify.FormatNotification {
+		t.Errorf("format = %v, want %s", decoded["format"], notify.FormatNotification)
+	}
+	if decoded["stack"] != "network" || decoded["env"] != "prod" {
+		t.Errorf("unexpected stack/env: %v", decoded)
+	}
+}
+
+func TestSlackPayloadEscapesMrkdwn(t *testing.T) {
+	ev := notify.Event{
+		ID:        "01ABCDEFGHJKLMNPQRSTVWXYZ1",
+		Event:     notify.EventPlanFailed,
+		At:        time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC),
+		Server:    "https://writ.example.com",
+		Stack:     "app",
+		Env:       "prod",
+		Status:    "failed",
+		Summary:   "plan failed: <!channel> <https://evil.example|click> & error",
+		StartedBy: notify.Actor{Kind: "ci", Display: "ci <bot>"},
+		URL:       "https://writ.example.com/ui/plans/abc",
+	}
+	body, err := notify.FormatSlack(ev)
+	if err != nil {
+		t.Fatalf("FormatSlack: %v", err)
+	}
+	var doc struct {
+		Text   string `json:"text"`
+		Blocks []struct {
+			Type string `json:"type"`
+			Text struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"text"`
+		} `json:"blocks"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("invalid slack JSON: %v", err)
+	}
+	if doc.Text == "" || len(doc.Blocks) == 0 {
+		t.Fatalf("expected text and blocks, got %+v", doc)
+	}
+	for _, s := range []string{doc.Text, doc.Blocks[0].Text.Text} {
+		if strings.Contains(s, "<!channel>") {
+			t.Errorf("slack payload did not escape <!channel>: %q", s)
+		}
+		if strings.Contains(s, "<https://evil.example|click>") {
+			t.Errorf("slack payload did not escape injected link: %q", s)
+		}
+	}
+	if !strings.Contains(doc.Blocks[0].Text.Text, "<https://writ.example.com/ui/plans/abc|View in Writ>") {
+		t.Errorf("slack payload missing UI link: %q", doc.Blocks[0].Text.Text)
+	}
+}
+
+func TestBodySizeCap(t *testing.T) {
+	ev := notify.Event{
+		ID:      "BIG1",
+		Event:   notify.EventPlanFailed,
+		Status:  "failed",
+		Summary: strings.Repeat("a", notify.MaxBodyBytes+100),
+	}
+	if _, err := notify.FormatWebhook(ev); err == nil {
+		t.Error("FormatWebhook did not refuse oversized body")
+	}
+	if _, err := notify.FormatSlack(ev); err == nil {
+		t.Error("FormatSlack did not refuse oversized body")
+	}
+}
+
+func TestRetryBackoffAndGiveUp(t *testing.T) {
+	t.Run("succeeds after 5xx retries", func(t *testing.T) {
+		var attempts atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if attempts.Add(1) < 3 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer srv.Close()
+
+		resCh := make(chan notify.Result, 1)
+		d := notify.New(notify.Options{
+			Targets: []notify.Target{{
+				Name:   "flaky",
+				Kind:   notify.KindWebhook,
+				URL:    srv.URL,
+				Events: []notify.EventKind{notify.EventDrift},
+			}},
+			Backoff: []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond},
+			OnResult: func(r notify.Result) {
+				resCh <- r
+			},
+		})
+		defer d.Close()
+
+		d.Emit(notify.Event{ID: "ID1", Event: notify.EventDrift, Stack: "app", Env: "prod", Status: "drifted", DriftStateChanged: true, Summary: "drift"})
+		select {
+		case res := <-resCh:
+			if !res.OK {
+				t.Fatalf("expected OK after retries, got err %q", res.Err)
+			}
+			if got := attempts.Load(); got != 3 {
+				t.Errorf("attempts = %d, want 3", got)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out")
+		}
+	})
+
+	t.Run("gives up after exhausting retries and logs without URL secret", func(t *testing.T) {
+		const secretPath = "/services/SUPER_SECRET_SLACK_TOKEN_999"
+		var attempts atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attempts.Add(1)
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte("UNTRUSTED_UPSTREAM_BODY_TEXT"))
+		}))
+		defer srv.Close()
+
+		var logBuf bytes.Buffer
+		log := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+		resCh := make(chan notify.Result, 1)
+		d := notify.New(notify.Options{
+			Targets: []notify.Target{{
+				Name:   "broken",
+				Kind:   notify.KindSlack,
+				URL:    srv.URL + secretPath,
+				Events: []notify.EventKind{notify.EventApplyFailed},
+			}},
+			Backoff: []time.Duration{time.Millisecond, time.Millisecond},
+			Log:     log,
+			OnResult: func(r notify.Result) {
+				resCh <- r
+			},
+		})
+		defer d.Close()
+
+		d.Emit(notify.Event{ID: "ID2", Event: notify.EventApplyFailed, Stack: "app", Env: "prod", Status: "failed", Summary: "apply failed"})
+		select {
+		case res := <-resCh:
+			if res.OK {
+				t.Fatal("expected failure")
+			}
+			if got := attempts.Load(); got != 3 {
+				t.Errorf("attempts = %d, want 3 (1 initial + 2 retries)", got)
+			}
+			if strings.Contains(res.Err, "SUPER_SECRET_SLACK_TOKEN_999") {
+				t.Errorf("result error leaked webhook URL secret: %q", res.Err)
+			}
+			if strings.Contains(res.Err, "UNTRUSTED_UPSTREAM_BODY_TEXT") {
+				t.Errorf("result error leaked response body: %q", res.Err)
+			}
+			if !strings.Contains(res.Err, "502") {
+				t.Errorf("expected HTTP status 502 in error, got %q", res.Err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out")
+		}
+		if strings.Contains(logBuf.String(), "SUPER_SECRET_SLACK_TOKEN_999") {
+			t.Errorf("log leaked webhook URL secret: %s", logBuf.String())
+		}
+		if strings.Contains(logBuf.String(), "UNTRUSTED_UPSTREAM_BODY_TEXT") {
+			t.Errorf("log leaked response body: %s", logBuf.String())
+		}
+	})
+
+	t.Run("does not retry 4xx", func(t *testing.T) {
+		var attempts atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attempts.Add(1)
+			w.WriteHeader(http.StatusBadRequest)
+		}))
+		defer srv.Close()
+
+		resCh := make(chan notify.Result, 1)
+		d := notify.New(notify.Options{
+			Targets: []notify.Target{{
+				Name:   "client-err",
+				Kind:   notify.KindWebhook,
+				URL:    srv.URL,
+				Events: []notify.EventKind{notify.EventApplied},
+			}},
+			Backoff:  []time.Duration{time.Millisecond, time.Millisecond},
+			OnResult: func(r notify.Result) { resCh <- r },
+		})
+		defer d.Close()
+
+		d.Emit(notify.Event{ID: "ID3", Event: notify.EventApplied, Stack: "app", Env: "prod", Status: "applied", Summary: "ok"})
+		select {
+		case res := <-resCh:
+			if res.OK {
+				t.Fatal("expected failure on 400")
+			}
+			if got := attempts.Load(); got != 1 {
+				t.Errorf("attempts = %d, want 1 (no retry on 400)", got)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out")
+		}
+	})
+
+	t.Run("retries on timeout and gives up without leaking URL", func(t *testing.T) {
+		const secretPath = "/hooks/SECRET_TIMEOUT_TOKEN"
+		var attempts atomic.Int32
+		release := make(chan struct{})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attempts.Add(1)
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+		}))
+		defer func() {
+			close(release)
+			srv.Close()
+		}()
+
+		resCh := make(chan notify.Result, 1)
+		d := notify.New(notify.Options{
+			Targets: []notify.Target{{
+				Name:   "slow",
+				Kind:   notify.KindWebhook,
+				URL:    srv.URL + secretPath,
+				Events: []notify.EventKind{notify.EventDrift},
+			}},
+			Timeout:  30 * time.Millisecond,
+			Backoff:  []time.Duration{time.Millisecond},
+			OnResult: func(r notify.Result) { resCh <- r },
+		})
+		defer d.Close()
+
+		d.Emit(notify.Event{ID: "ID4", Event: notify.EventDrift, Stack: "app", Env: "prod", Status: "drifted", DriftStateChanged: true, Summary: "drift"})
+		select {
+		case res := <-resCh:
+			if res.OK {
+				t.Fatal("expected timeout failure")
+			}
+			if got := attempts.Load(); got != 2 {
+				t.Errorf("attempts = %d, want 2", got)
+			}
+			if strings.Contains(res.Err, "SECRET_TIMEOUT_TOKEN") {
+				t.Errorf("timeout error leaked URL secret: %q", res.Err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out")
+		}
+	})
+}
+
+func TestRedirectRefused(t *testing.T) {
+	var otherHits atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherHits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer other.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/steal", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	err := notify.SendTest(context.Background(), notify.Target{
+		Name:   "redir",
+		Kind:   notify.KindWebhook,
+		URL:    srv.URL + "/SECRET_HOOK_PATH",
+		Secret: []byte("secret"),
+	}, notify.Event{ID: "T1", Event: notify.EventTest, Status: "ok", Summary: "test"}, 2*time.Second)
+	if err == nil {
+		t.Fatal("expected redirect to be refused")
+	}
+	if otherHits.Load() != 0 {
+		t.Fatalf("redirect target received %d requests, want 0", otherHits.Load())
+	}
+	if !strings.Contains(err.Error(), "redirect") {
+		t.Errorf("expected redirect error, got %q", err.Error())
+	}
+	if strings.Contains(err.Error(), "SECRET_HOOK_PATH") {
+		t.Errorf("error leaked webhook URL path: %q", err.Error())
+	}
+}
+
+func TestQueueFullDoesNotBlock(t *testing.T) {
+	block := make(chan struct{})
+	inHandler := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case inHandler <- struct{}{}:
+		default:
+		}
+		<-block
+		w.WriteHeader(http.StatusOK)
+	}))
+	var unblock sync.Once
+	release := func() { unblock.Do(func() { close(block) }) }
+	defer func() {
+		release()
+		srv.Close()
+	}()
+
+	var mu sync.Mutex
+	var results []notify.Result
+	reported := make(chan struct{}, 8)
+	d := notify.New(notify.Options{
+		Targets: []notify.Target{{
+			Name:   "bounded",
+			Kind:   notify.KindWebhook,
+			URL:    srv.URL,
+			Events: []notify.EventKind{notify.EventApplied},
+		}},
+		QueueSize: 1,
+		OnResult: func(r notify.Result) {
+			mu.Lock()
+			results = append(results, r)
+			mu.Unlock()
+			reported <- struct{}{}
+		},
+	})
+	defer d.Close()
+
+	// First event starts delivering and blocks inside handler.
+	d.Emit(notify.Event{ID: "E1", Event: notify.EventApplied, Stack: "app", Env: "prod", Status: "applied", Summary: "1"})
+	select {
+	case <-inHandler:
+	case <-time.After(5 * time.Second):
+		t.Fatal("worker never started first request")
+	}
+
+	// Second fills queue (capacity 1); third and fourth must drop immediately without blocking.
+	start := time.Now()
+	d.Emit(notify.Event{ID: "E2", Event: notify.EventApplied, Stack: "app", Env: "prod", Status: "applied", Summary: "2"})
+	d.Emit(notify.Event{ID: "E3", Event: notify.EventApplied, Stack: "app", Env: "prod", Status: "applied", Summary: "3"})
+	d.Emit(notify.Event{ID: "E4", Event: notify.EventApplied, Stack: "app", Env: "prod", Status: "applied", Summary: "4"})
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("Emit blocked for %v when queue was full", elapsed)
+	}
+
+	mu.Lock()
+	early := len(results)
+	mu.Unlock()
+	if early != 0 {
+		t.Fatalf("OnResult ran %d times inside Emit; the worker reports drops", early)
+	}
+
+	// The worker reports E3 and E4 as one drop after E1's delivery.
+	release()
+	deadline := time.After(5 * time.Second)
+	for {
+		mu.Lock()
+		var dropped int64
+		delivered := 0
+		for _, r := range results {
+			if r.OK {
+				delivered++
+			}
+			dropped += r.Dropped
+		}
+		mu.Unlock()
+		if delivered == 2 && dropped == 2 {
+			break
+		}
+		select {
+		case <-reported:
+		case <-deadline:
+			t.Fatalf("delivered %d, dropped %d; want 2 and 2", delivered, dropped)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, r := range results {
+		if r.Dropped > 0 && (r.OK || r.Err != "queue full: dropped 2 events") {
+			t.Errorf("drop result = %+v", r)
+		}
+	}
+}
+
+func TestDriftDedupeMode(t *testing.T) {
+	var mu sync.Mutex
+	var gotOnChange, gotEveryCheck []notify.Event
+	onChangeDone := make(chan struct{}, 10)
+	everyCheckDone := make(chan struct{}, 10)
+
+	srv1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ev notify.Event
+		_ = json.NewDecoder(r.Body).Decode(&ev)
+		mu.Lock()
+		gotOnChange = append(gotOnChange, ev)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		onChangeDone <- struct{}{}
+	}))
+	defer srv1.Close()
+
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ev notify.Event
+		_ = json.NewDecoder(r.Body).Decode(&ev)
+		mu.Lock()
+		gotEveryCheck = append(gotEveryCheck, ev)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		everyCheckDone <- struct{}{}
+	}))
+	defer srv2.Close()
+
+	d := notify.New(notify.Options{
+		Targets: []notify.Target{
+			{Name: "dedupe", Kind: notify.KindWebhook, URL: srv1.URL, Events: []notify.EventKind{notify.EventDrift}, DriftMode: notify.DriftOnChange},
+			{Name: "every", Kind: notify.KindWebhook, URL: srv2.URL, Events: []notify.EventKind{notify.EventDrift}, DriftMode: notify.DriftEveryCheck},
+		},
+	})
+	defer d.Close()
+
+	// 1. clean -> drifted (state changed)
+	d.Emit(notify.Event{ID: "D1", Event: notify.EventDrift, Stack: "app", Env: "prod", Status: "drifted", DriftStateChanged: true, Summary: "drifted 1"})
+	// 2. drifted -> drifted (no state change)
+	d.Emit(notify.Event{ID: "D2", Event: notify.EventDrift, Stack: "app", Env: "prod", Status: "drifted", DriftStateChanged: false, Summary: "drifted 2"})
+	// 3. drifted -> clean (state changed)
+	d.Emit(notify.Event{ID: "D3", Event: notify.EventDrift, Stack: "app", Env: "prod", Status: "clean", DriftStateChanged: true, Summary: "clean"})
+
+	waitN := func(ch chan struct{}, n int) {
+		for range n {
+			select {
+			case <-ch:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("timed out waiting for %d deliveries", n)
+			}
+		}
+	}
+	waitN(onChangeDone, 2)
+	waitN(everyCheckDone, 3)
+
+	// Give a brief window to ensure no extra delivery arrives on dedupe.
+	select {
+	case <-onChangeDone:
+		t.Fatal("on-change notifier received unexpected third delivery")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(gotOnChange) != 2 || gotOnChange[0].ID != "D1" || gotOnChange[1].ID != "D3" {
+		t.Errorf("on-change received %+v, want [D1, D3]", gotOnChange)
+	}
+	if len(gotEveryCheck) != 3 || gotEveryCheck[0].ID != "D1" || gotEveryCheck[1].ID != "D2" || gotEveryCheck[2].ID != "D3" {
+		t.Errorf("every-check received %+v, want [D1, D2, D3]", gotEveryCheck)
+	}
+}

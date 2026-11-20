@@ -8,6 +8,7 @@ import (
 	"github.com/mr-karan/writ/internal/authz"
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/egress"
+	"github.com/mr-karan/writ/internal/notify"
 	"github.com/mr-karan/writ/internal/oidc"
 )
 
@@ -81,6 +82,21 @@ type Config struct {
 	// ask under egress_mode report or enforce: a lock file's provider
 	// address starts with its registry, which the stack chooses.
 	ProviderRegistries []string
+	// Notifiers are the notification targets writ serve sends events to.
+	Notifiers []Notifier
+}
+
+// Notifier is one notification target writ serve sends events to. Its
+// webhook URL and optional HMAC signing secret stay in files.
+type Notifier struct {
+	Name       string
+	Kind       notify.Kind
+	URLFile    string
+	SecretFile string
+	Events     []notify.EventKind
+	Envs       []string
+	Stacks     []string
+	DriftMode  notify.DriftMode
 }
 
 // defaultProviderRegistries is provider_registries when the config sets

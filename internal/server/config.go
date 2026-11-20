@@ -17,6 +17,7 @@ import (
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
 	"github.com/mr-karan/writ/internal/egress"
+	"github.com/mr-karan/writ/internal/notify"
 	"github.com/mr-karan/writ/internal/oidc"
 	"github.com/mr-karan/writ/internal/policy"
 )
@@ -55,7 +56,7 @@ func (d *decoder) config(b *hclsyntax.Body) *Config {
 		attrs:  []string{"url", "listen", "database", "data", "provider_uids", "plan_ttl", "session_ttl", "poll_every", "poll_every_with_hook", "trusted_proxies", "egress_mode", "provider_registries"},
 		blocks: []string{"tls", "limits", "retention", "ui", "aws", "tofu", "drift", "policy"},
 		lists:  []string{"grant", "approval", "repo"},
-		named:  []string{"issuer", "team", "env", "forge"},
+		named:  []string{"issuer", "team", "env", "forge", "notify"},
 		removed: map[string]string{
 			"providers_dir": "OpenTofu installs the providers each stack's .terraform.lock.hcl pins into tofu.plugin_cache",
 			"provider":      "a stack runs the providers its .terraform.lock.hcl pins, and a policy can restrict them",
@@ -213,6 +214,7 @@ func (d *decoder) config(b *hclsyntax.Body) *Config {
 	d.roles(b, top, cfg)
 	d.checkPeopleOps(many["grant"], cfg)
 	d.repoParts(top, many, cfg, false)
+	d.notifiers(many["notify"], cfg)
 	d.lint(cfg)
 	return cfg
 }
@@ -604,6 +606,13 @@ func (d *decoder) lint(cfg *Config) {
 		for _, name := range slices.Sorted(maps.Keys(cfg.Envs)) {
 			if cfg.Envs[name].Egress != nil {
 				d.warnf(span, "env %s sets egress, and egress_mode is off, so its runs keep the host's network; set egress_mode to report or enforce", name)
+			}
+		}
+	}
+	if cfg.DriftEvery == 0 {
+		for _, n := range cfg.Notifiers {
+			if slices.Contains(n.Events, notify.EventDrift) {
+				d.warnf(span, "notify %s subscribes to drift, and this config has no drift block", n.Name)
 			}
 		}
 	}

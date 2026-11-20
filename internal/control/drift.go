@@ -144,18 +144,22 @@ func (s *Store) BeginDrift(ctx context.Context, ref, env, stack string, at time.
 // checks of its stack@env. It ends the check's state tokens. A check
 // during which an apply of the stack@env ran may have read a state that
 // apply was changing, so it is deleted instead, and FinishDrift reports
-// false: DriftDue finds the stack@env due again.
-func (s *Store) FinishDrift(ctx context.Context, c DriftCheck) (bool, error) {
+// false: DriftDue finds the stack@env due again. It also returns the
+// status of the stack@env's newest earlier check that ended clean or
+// drifted, "" for none: a failed check says nothing about drift, so
+// drifted, failed, drifted is no change.
+func (s *Store) FinishDrift(ctx context.Context, c DriftCheck) (bool, DriftStatus, error) {
 	switch c.Status {
 	case DriftClean, DriftDrifted, DriftFailed:
 	default:
-		return false, fmt.Errorf("a drift check cannot end %s", c.Status)
+		return false, "", fmt.Errorf("a drift check cannot end %s", c.Status)
 	}
 	changes, err := json.Marshal(orNone(c.Changes))
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	stored := false
+	var prevStatus DriftStatus
 	err = s.db.Write(ctx, func(tx *sqldb.Tx) error {
 		var env, stack string
 		var started int64
@@ -179,16 +183,21 @@ func (s *Store) FinishDrift(ctx context.Context, c DriftCheck) (bool, error) {
 			_, err := tx.ExecContext(ctx, "DELETE FROM drift_checks WHERE ref = ?", c.Ref)
 			return err
 		}
+		err = tx.QueryRowContext(ctx, `SELECT status FROM drift_checks WHERE env = ? AND stack = ? AND status IN ('clean', 'drifted') AND ref <> ?
+			ORDER BY started_at DESC, ref DESC LIMIT 1`, env, stack, c.Ref).Scan(&prevStatus)
+		if err != nil && !errors.Is(err, sqldb.ErrNoRows) {
+			return err
+		}
 		var since int64
 		if c.Status == DriftDrifted {
 			since = c.MadeAt.UnixMilli()
-			var prevStatus DriftStatus
-			var prevSince int64
+			var last DriftStatus
+			var lastSince int64
 			err := tx.QueryRowContext(ctx, `SELECT status, drifted_since FROM drift_checks WHERE env = ? AND stack = ? AND status <> 'planning' AND ref <> ?
-				ORDER BY started_at DESC, ref DESC LIMIT 1`, env, stack, c.Ref).Scan(&prevStatus, &prevSince)
+				ORDER BY started_at DESC, ref DESC LIMIT 1`, env, stack, c.Ref).Scan(&last, &lastSince)
 			switch {
-			case err == nil && prevStatus == DriftDrifted && prevSince > 0:
-				since = prevSince
+			case err == nil && last == DriftDrifted && lastSince > 0:
+				since = lastSince
 			case err != nil && !errors.Is(err, sqldb.ErrNoRows):
 				return err
 			}
@@ -205,7 +214,7 @@ func (s *Store) FinishDrift(ctx context.Context, c DriftCheck) (bool, error) {
 		stored = err == nil
 		return err
 	})
-	return stored, err
+	return stored, prevStatus, err
 }
 
 func orNone(cs []DriftChange) []DriftChange {

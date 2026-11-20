@@ -10,11 +10,13 @@ import (
 	"slices"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/mr-karan/writ/internal/awsrole"
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
 	"github.com/mr-karan/writ/internal/egress"
+	"github.com/mr-karan/writ/internal/notify"
 	"github.com/mr-karan/writ/internal/oidc"
 	"github.com/mr-karan/writ/internal/provider"
 	"github.com/mr-karan/writ/internal/server"
@@ -27,6 +29,8 @@ type ServeOptions struct {
 	Config string
 	// Check reads the config, prints what it allows, and serves nothing.
 	Check bool
+	// NotifyTest, with Check, sends a test message to each notifier.
+	NotifyTest bool
 	// Version is writ's own version, which GET /v1/server reports.
 	Version string
 }
@@ -55,12 +59,14 @@ func (a *App) Serve(ctx context.Context, o ServeOptions) error {
 		return ErrFailed
 	}
 	switch {
+	case o.NotifyTest && !o.Check:
+		return usagef("--notify-test goes with --check")
 	case o.Check:
 		printDiags(a.humanOutput(), diags)
 		if err := printServeCheck(a.humanOutput(), o.Config, cfg); err != nil {
 			return err
 		}
-		return errors.Join(a.checkTofu(ctx, cfg), a.checkIsolation(ctx, cfg))
+		return errors.Join(a.checkTofu(ctx, cfg), a.checkIsolation(ctx, cfg), a.checkNotify(ctx, cfg, o.NotifyTest))
 	}
 	log := slog.New(slog.NewJSONHandler(a.opts.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	for _, d := range diags {
@@ -250,6 +256,69 @@ func (a *App) checkTofu(ctx context.Context, cfg *server.Config) error {
 		return ErrFailed
 	}
 	fmt.Fprintf(a.humanOutput(), "tofu: git %s: ok\n", git)
+	return nil
+}
+
+// checkNotify prints writ serve --check's notify part: each notifier,
+// whether its files hold a URL writ serve may send to, and the delivery
+// counts the control database keeps. With test, it sends each a test
+// message. A notifier whose files fail, or whose test fails, fails --check.
+func (a *App) checkNotify(ctx context.Context, cfg *server.Config, test bool) error {
+	if len(cfg.Notifiers) == 0 {
+		return nil
+	}
+	w := a.humanOutput()
+	if _, err := server.LoadNotifiers(cfg); err != nil {
+		fmt.Fprintf(w, "notify: FAILED: %v\n", err)
+		return ErrFailed
+	}
+	statuses, err := control.PeekNotificationStatuses(ctx, cfg.Database)
+	if err != nil {
+		fmt.Fprintf(w, "notify: delivery counts not read: %v\n", err)
+	}
+	for _, n := range cfg.Notifiers {
+		evs := make([]string, len(n.Events))
+		for i, ev := range n.Events {
+			evs[i] = string(ev)
+		}
+		scope := ""
+		if len(n.Envs) > 0 {
+			scope += " in " + strings.Join(n.Envs, ",")
+		}
+		if len(n.Stacks) > 0 {
+			scope += " for " + strings.Join(n.Stacks, ",")
+		}
+		drift := ""
+		if slices.Contains(n.Events, notify.EventDrift) {
+			drift = ", drift " + string(n.DriftMode)
+		}
+		st := statuses[n.Name]
+		fmt.Fprintf(w, "notify: %s (%s) hears %s%s%s; %d delivered, %d failed", n.Name, n.Kind, strings.Join(evs, " "), scope, drift, st.Delivered, st.Failed)
+		if st.LastError != "" {
+			fmt.Fprintf(w, ", last error at %s: %s", st.LastErrorAt.UTC().Format(time.RFC3339), st.LastError)
+		}
+		fmt.Fprintln(w)
+	}
+	if !test {
+		return nil
+	}
+	results, err := server.TestNotifiers(ctx, cfg, a.opts.Now().UTC())
+	if err != nil {
+		fmt.Fprintf(w, "notify: FAILED: %v\n", err)
+		return ErrFailed
+	}
+	failed := false
+	for _, r := range results {
+		if r.Err != nil {
+			fmt.Fprintf(w, "notify: %s: test message FAILED: %v\n", r.Name, r.Err)
+			failed = true
+			continue
+		}
+		fmt.Fprintf(w, "notify: %s: test message sent\n", r.Name)
+	}
+	if failed {
+		return ErrFailed
+	}
 	return nil
 }
 

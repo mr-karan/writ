@@ -137,6 +137,7 @@ func (s *Server) observeSerial(ctx context.Context, env, stack string, be *repo.
 		s.log.Debug("an apply ran while a run read the state; the next read judges its serial", "stack", stack, "env", env, "serial", read.Serial)
 	case j.Writer == control.SerialOutside:
 		s.log.Warn("state written outside writ", "stack", stack, "env", env, "serial", read.Serial, "lineage", read.Lineage, "object", s3Object(stack, be))
+		s.notifyOutsideWrite(env, stack, read.Serial)
 	}
 	return j, seq, nil
 }

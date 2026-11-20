@@ -33,6 +33,7 @@ import (
 	"github.com/mr-karan/writ/internal/awsrole"
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
+	"github.com/mr-karan/writ/internal/notify"
 	"github.com/mr-karan/writ/internal/oidc"
 	"github.com/mr-karan/writ/internal/policy"
 	"github.com/mr-karan/writ/internal/tfstate"
@@ -67,6 +68,11 @@ type Options struct {
 	Now               func() time.Time
 	// WithTimeout creates a deadline context. Nil uses context.WithTimeoutCause.
 	WithTimeout func(context.Context, time.Duration, error) (context.Context, context.CancelFunc)
+	// NotifyQueueSize, NotifyTimeout, and NotifyBackoff override the
+	// notification dispatcher's defaults when set.
+	NotifyQueueSize int
+	NotifyTimeout   time.Duration
+	NotifyBackoff   []time.Duration
 }
 
 // Server serves the API.
@@ -160,6 +166,8 @@ type Server struct {
 	browserLogins map[[32]byte]*browserLogin
 	// policy judges the plans of OpenTofu stacks, nil for no policy.
 	policy *policy.Engine
+	// notifier delivers asynchronous notifications to configured targets.
+	notifier *notify.Dispatcher
 	// cursorKey seals the cursors of GET /v1/audit.
 	cursorKey cipher.AEAD
 }
@@ -241,6 +249,10 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 		s.closeProviders()
 		return nil, err
 	}
+	if err := s.initNotifications(opts); err != nil {
+		s.closeProviders()
+		return nil, err
+	}
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.api = s.routes()
 	s.audited = s.audit(s.api)
@@ -263,6 +275,7 @@ func New(ctx context.Context, opts Options) (*Server, error) {
 func (s *Server) Close() {
 	s.cancel()
 	s.wg.Wait()
+	s.notifier.Close()
 	s.closeProviders()
 }
 

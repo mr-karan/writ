@@ -21,7 +21,7 @@
 | `GET /v1/plans?env=&stack=&status=&started_by=&limit=&cursor=` | `read` | `writ.remote-plans/v0`, newest first, only the plans the token can read. `status` matches the status each plan shows, counted under the current config. `started_by` is `person` or `ci`; `drift` is refused with 400, since drift checks aren't plans and `GET /v1/drift` lists them. |
 | `GET /v1/plans/{id}?wait=60s` | `read` | `writ.remote-plan/v0`, by id or by ref. With `wait`, the request waits for a running plan to end, at most 120 seconds. |
 | `POST /v1/state/adopt` | `adopt`, for a person | `writ.state-adopt/v0`: seals a secret set with the newest state of an OpenTofu `stack@env` that has none, as [Adopt a state](adopt-state.md) says. The body is `writ.state-adopt-request/v0`. |
-| `GET /v1/config` | `read` on any `stack@env` | `writ.config/v0`: issuers, teams, grants, environment names, and lifetimes. `admin` also gets the limits and the retention. It has no path and no secret. |
+| `GET /v1/config` | `read` on any `stack@env` | `writ.config/v0`: issuers, teams, grants, environment names, notifiers with their delivery counts, and lifetimes. `admin` also gets the limits and the retention. It has no path and no secret. |
 | `GET /v1/policy` | `read` or `admin` on any `stack@env` | `writ.policy/v0`: the [policy sets](policy.md#read-the-policy-the-server-runs) and the text of their `.rego` files. It has no path. |
 | `POST /v1/repos` | `admin` on every stack in `*`, as [Repositories](add-repository.md#rules-for-adding-a-repository) says | 201 and `writ.repo/v0`: a [repository](#repository-routes) and the stacks found |
 | `GET /v1/repos`, `GET /v1/repos/{name}` | `read` on any `stack@env` | `writ.repos/v0` and `writ.repo/v0` |

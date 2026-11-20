@@ -170,6 +170,7 @@ env "prod" {
 | `drift` | Optional. A block: `every`, how often `writ serve` runs a [drift check](serve.md#drift-checks) of each OpenTofu `stack@env` it keeps state for, at least `1m`. It needs the `tofu` block and `limits.plans` of at least 2. Without it, `writ serve` runs no drift checks. |
 | `egress_mode` | Optional. `"off"`, `"report"`, or `"enforce"`. Under `report` and `enforce`, each OpenTofu run gets a network namespace of its own, whose one way out is Writ's egress proxy: `enforce` refuses a destination its env's `egress` doesn't list, and `report` lets it through and records it. Default `"off"`: runs share the host's network, as they always have. `report` and `enforce` need the `tofu` block. See [Run isolation and egress](run-isolation.md#egress) to set it up and roll it out, and [Egress](serve.md#egress) for how it works. |
 | `provider_registries` | Optional. A list of the registry hosts a provider install can ask under `egress_mode` `report` or `enforce`, such as `["registry.opentofu.org"]`. A stack's `.terraform.lock.hcl` chooses each provider's registry, so a plan whose lock file has a provider from another registry fails before the install. Each item is a host name as a provider's address starts with it, in lowercase, with no scheme or port. Default `["registry.opentofu.org", "registry.terraform.io"]`. See [The provider install](serve.md#the-provider-install). |
+| `notify "NAME"` | Optional. A destination for [notifications](notifications.md), one block each: `kind`, `url_file`, `events`, and optional `secret_file`, `envs`, `stacks`, and `drift_mode`. See below. |
 | `policy` | Optional. A block of Rego policy sets (`set "NAME" { dir = "..." }`) evaluated at the plan and apply points, with `timeout` and `memory` bounds. See [Policy](#policy) below. |
 
 ### issuer
@@ -227,6 +228,19 @@ env "prod" {
   - `path`: optional subdirectory inside the repository under which stacks are discovered.
   - `prefix`: optional prefix prepended to every discovered stack name (such as `"payments/"`).
   - `webhook_secret_file`: optional path to a file that has the secret of the project's GitLab webhook: its secret token, or a signing token starting with `whsec_` on GitLab 19.1 and later. `writ serve` reads it for each delivery, so you can rotate it without a restart, and never shows or logs it. Not for a `dir` repository. See [Get changes in seconds with a webhook](webhooks.md).
+
+### notify
+
+- **`notify "NAME"`**: a name of lowercase letters, digits, `_`, and `-`.
+  - `kind`: `"slack"` for a Slack incoming webhook, or `"webhook"` for a JSON `POST` in the [`writ.notification/v0` format](notifications.md#the-payload).
+  - `url_file`: path to a file containing the URL. It must be `https://`, or `http://` on a loopback address, with no user name or password.
+  - `secret_file`: optional, for `kind = "webhook"` only. Path to a file containing the key that signs each request with [HMAC-SHA256](notifications.md#verify-the-signature).
+  - `events`: non-empty list from `drift`, `plan-failed`, `apply-failed`, `applied`, `outside-write`, and `approval-needed`. See [Events](notifications.md#events).
+  - `envs`: optional non-empty list of configured `env` names, or `["*"]`. Without it, every environment.
+  - `stacks`: optional non-empty list of [stack patterns](serve.md#stack-patterns). Without it, every stack.
+  - `drift_mode`: optional, only with `drift` in `events`. `"on-change"`, the default, sends `drift` when a stack's drift status changes; `"every-check"` sends it for every check that finds drift too.
+
+`writ serve` reads both files once, when it starts, and fails to start when one can't be read or the URL isn't one it sends to. A config that subscribes to `drift` without a `drift` block gets a warning, because no drift check runs. `writ serve --check --notify-test` sends each notifier a test message.
 
 ### tofu
 

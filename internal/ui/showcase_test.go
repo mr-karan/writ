@@ -647,7 +647,7 @@ func (x *showcase) seedMany(ctx context.Context) {
 	if err := x.store.BeginDrift(ctx, ref, server.DevEnv, "platform", time.Now().Add(-3*time.Hour)); err != nil {
 		x.t.Fatal(err)
 	}
-	if _, err := x.store.FinishDrift(ctx, control.DriftCheck{Ref: ref, Status: control.DriftDrifted, MadeAt: time.Now().Add(-3 * time.Hour), Repo: "demo", Commit: "e81aa0950c4b2d1f", Outside: 1, Code: 2,
+	if _, _, err := x.store.FinishDrift(ctx, control.DriftCheck{Ref: ref, Status: control.DriftDrifted, MadeAt: time.Now().Add(-3 * time.Hour), Repo: "demo", Commit: "e81aa0950c4b2d1f", Outside: 1, Code: 2,
 		Changes: []control.DriftChange{
 			{Address: "aws_lb_listener.https", Kind: control.DriftOutside, Action: "update", Attributes: []string{"ssl_policy"}},
 			{Address: "module.cluster.aws_autoscaling_group.nomad_client", Kind: control.DriftCode, Action: "update", Attributes: []string{"max_size", "desired_capacity"}},
