@@ -226,7 +226,14 @@ A process can also write into a file it removed but holds open or mapped, which 
 
 Each walk opens each directory so that a FIFO or a symbolic link swapped in for it fails at once rather than blocks the walk. A walk that takes more than 10 seconds, its read of `/proc` included, or meets a directory more than 256 levels deep, stops the step, as a full directory does. The read of `/proc` checks the time at each batch of descriptors and each line of mappings, so a process that keeps mapping files ahead of the line `writ serve` reads can't keep the read going.
 
-The walk bounds a runaway or careless run, not a run that tries to hide what it uses on disk. Such a run can hide what it uses only three ways: hold a removed file only in a descriptor in flight on a Unix socket, which no thread's descriptors list, link a file of its user's from outside its directory, which the walk counts a share of, or move its files with `inotify` timing so that each walk misses them. The hard bound is a filesystem quota on the scratch filesystem. Put `tofu.scratch_dir` on a filesystem of its own, so a full scratch can't fill `data` or Postgres, and set ext4 or XFS project quotas on each run's directory, or per-user quotas for `provider_uids`; either also counts the removed files a run keeps. `writ serve` sets no quota itself, and a non-root `writ serve` can't mount a size-limited filesystem where every step of a run sees it.
+The walk bounds a runaway or careless run, not a run that tries to hide what it uses on disk. Such a run can hide what it uses four ways:
+
+- Hold a removed file only in a descriptor in flight on a Unix socket, which no thread's descriptors list.
+- Hold a removed file only in a mapping, which counts as far as its furthest mapping reaches, not its blocks on disk: one mapped page can hide a large file.
+- Link a file of its user's from outside its directory, which the walk counts only a share of.
+- Move its files with `inotify` timing, so that each walk misses them.
+
+The hard bound is a filesystem quota on the scratch filesystem. Put `tofu.scratch_dir` on a filesystem of its own, so a full scratch can't fill `data` or Postgres, and set ext4 or XFS project quotas on each run's directory, or per-user quotas for `provider_uids`; either also counts the removed files a run keeps. `writ serve` sets no quota itself, and a non-root `writ serve` can't mount a size-limited filesystem where every step of a run sees it.
 
 ## Outbound traffic
 
