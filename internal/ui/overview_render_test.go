@@ -61,11 +61,12 @@ var guards = map[string]func(c sayCtx) bool{
 	"no-team":       func(c sayCtx) bool { return c.zero("teams") },
 	"no-grant":      func(c sayCtx) bool { return c.zero("grants") },
 	"no-plan-yet":   func(c sayCtx) bool { return c.zero("plans") },
+	"no-audit":      func(c sayCtx) bool { return c.zero("audit") },
 }
 
 // noneTemplates are the templates of the pages of noneScope and the parts
 // they call.
-var noneTemplates = []string{"overview", "approvals", "plans", "runs", "stack", "repos", "repo", "access", "whoami", "settings", "start"}
+var noneTemplates = []string{"overview", "approvals", "plans", "runs", "stack", "repos", "repo", "access", "audit", "whoami", "settings", "start"}
 
 // TestPagesSayNoneOnlyThroughNone holds the pages of noneScope and the
 // sidebar to saying a thing is absent only through template func none,

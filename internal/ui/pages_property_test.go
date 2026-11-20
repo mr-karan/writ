@@ -383,6 +383,8 @@ func (pc *pageCheck) driftRule(env, stack string) figureRule {
 			return "changes the drift check found", s.driftOut + s.driftCode, true
 		case up(n, isTag("h2")) != nil && up(n, labelledBy("h-drift")) != nil:
 			return "changes the drift check found", s.driftOut + s.driftCode, true
+		case up(n, labelledBy("h-drift-history")) != nil:
+			return "recent drift checks", field, true
 		case up(n, classed("svc-strip")) != nil, up(n, classed("bar")) != nil, up(n, func(n *html.Node) bool { id, _ := attr(n, "id"); return id == "index-rows" }) != nil:
 			return "resources of a category, a group, or the drift check", field, true
 		case up(n, func(n *html.Node) bool { id, _ := attr(n, "id"); return id == "matches" }) != nil:

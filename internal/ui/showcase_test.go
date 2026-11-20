@@ -91,7 +91,7 @@ func showcaseSites(t *testing.T) []showSite {
 	sites := []showSite{
 		{Name: "full", Base: full.base, Pages: pages, srv: full.srv},
 		{Name: "empty", Base: empty.base, srv: empty.srv, Pages: map[string]string{
-			"overview": "/ui/", "start": "/ui/start", "plans": "/ui/plans", "approvals": "/ui/approvals", "runs": "/ui/runs", "repos": "/ui/repos",
+			"overview": "/ui/", "start": "/ui/start", "plans": "/ui/plans", "approvals": "/ui/approvals", "runs": "/ui/runs", "repos": "/ui/repos", "audit": "/ui/audit",
 		}},
 	}
 	for _, s := range sites {
@@ -110,7 +110,12 @@ func showcaseSites(t *testing.T) []showSite {
 				t.Errorf("%s: %s %s: %d, want %d: %.300s", s.Name, name, path, status, want, tagless(body))
 			}
 			// The full site shows each thing that starts a plan or a check.
-			for _, mark := range map[string][]string{"plans": {`href="#i-person"`, `href="#i-ci"`}, "stack-drift": {"Drift check, every <time"}}[name] {
+			for _, mark := range map[string][]string{
+				"plans":          {`href="#i-person"`, `href="#i-ci"`},
+				"stack-drift":    {"Drift check, every <time"},
+				"drift-check":    {"Drift check, every <time"},
+				"audit-filtered": {"reason withheld", `href="#i-ci"`},
+			}[name] {
 				if s.Name == "full" && !strings.Contains(body, mark) {
 					t.Errorf("%s: %s %s lacks %s", s.Name, name, path, mark)
 				}
@@ -457,12 +462,14 @@ func (x *showcase) seed() map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var appDriftRef string
 	for deadline := time.Now().Add(time.Minute); ; time.Sleep(20 * time.Millisecond) {
 		st, _, err := x.store.DriftStacks(ctx, server.DevEnv, "app", 1, func(string, string) bool { return true })
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(st) == 1 && st[0].Last != nil && !st[0].Checking {
+			appDriftRef = st[0].Last.Ref
 			break
 		}
 		if time.Now().After(deadline) {
@@ -471,6 +478,12 @@ func (x *showcase) seed() map[string]string {
 	}
 	checker.Close()
 	x.seedMany(ctx)
+
+	// An apply of the CI job's plan before its approval is refused, so its
+	// audit trail holds a row whose reason the page withholds.
+	if status := x.call(x.srv, http.MethodPost, "/v1/runs", map[string]any{"format": "writ.run-request/v1", "plan": ci}, nil); status != http.StatusForbidden {
+		t.Fatalf("apply the CI job's plan before its approval: %d", status)
+	}
 
 	// Another control plane that starts on the same database ends what it
 	// finds in flight, so these start after the others closed.
@@ -502,6 +515,8 @@ func (x *showcase) seed() map[string]string {
 		"stack-runs":      "/ui/stack?stack=app&env=" + server.DevEnv + "&view=runs",
 		"stack-plans":     "/ui/stack?stack=app&env=" + server.DevEnv + "&view=plans",
 		"stack-drift":     "/ui/stack?stack=app&env=" + server.DevEnv + "&view=drift",
+		"drift-check":     "/ui/drift/" + appDriftRef,
+		"drift-platform":  "/ui/drift/dc-platform",
 		"stack-many":      "/ui/stack?stack=platform&env=" + server.DevEnv,
 		"stack-many-find": "/ui/stack?stack=platform&env=" + server.DevEnv + "&q=module.cluster",
 		"stack-modules":   "/ui/stack?stack=platform&env=" + server.DevEnv + "&group=module",
@@ -511,6 +526,8 @@ func (x *showcase) seed() map[string]string {
 		"repo":            "/ui/repos/demo",
 		"repo-new":        "/ui/repos/new",
 		"access":          "/ui/access",
+		"audit":           "/ui/audit",
+		"audit-filtered":  "/ui/audit?plan=" + ci,
 		"whoami":          "/ui/whoami",
 		"settings":        "/ui/settings",
 		"not-found":       "/ui/plans/" + strings.Repeat("0", 32),
@@ -537,7 +554,9 @@ func (x *showcase) ciPlan(from *server.PlanInfo) string {
 		Teams: []string{"infra_mr"},
 		Origin: json.RawMessage(`{"kind":"gitlab-merge-request","issuer":"https://gitlab.example.com","project_id":"4242","project":"acme/infra",` +
 			`"pipeline":"1849213","job":"9922140","merge_request":42,"sha":"` + src.Source.Commit + `","ref":"refs/merge-requests/42/head"}`)}
-	e := control.Entry{At: now, Request: ref, Kind: "request", Decision: control.Allowed}
+	e := control.Entry{At: now, Request: ref, Kind: "request", Method: http.MethodPost, Route: "/v1/plans", Status: http.StatusAccepted,
+		Principal: p.Author.Display, PrincipalKind: "ci-job", Person: p.Author.Person, Issuer: p.Author.Issuer, Subject: p.Author.Subject,
+		Op: "plan", Env: p.Env, Stacks: []string{p.Stack}, Plan: ref, Decision: control.Allowed}
 	if err := x.store.CreatePlan(ctx, p, control.TokenUse{}, e); err != nil {
 		x.t.Fatal(err)
 	}

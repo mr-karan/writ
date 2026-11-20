@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"net/http"
 	"slices"
@@ -611,5 +612,95 @@ func TestTofuPlanWhileStateMoves(t *testing.T) {
 			}
 			scanForCanaries(t, f, tofuCanary, tofuEnvSecret)
 		})
+	}
+}
+
+// GET /v1/drift/{id} returns one drift check by its ref or plan id, with
+// its changes or its error, and enforces read on the check's stack@env.
+// GET /v1/drift?env=&stack= lists the stack's kept checks, and GET
+// /v1/overview names the check on drift alerts.
+func TestGetDriftCheck(t *testing.T) {
+	runner := &fakeTofu{}
+	runner.plan = driftPlan(true)
+	f := driftFixture(t, runner)
+	f.srv.LookForDrift(time.Hour)
+
+	tok := f.token(nil)
+	listed := f.drift(tok, "?env=prod&stack=app")
+	if len(listed.Stacks) != 1 || listed.Stacks[0].Check == nil {
+		t.Fatalf("GET /v1/drift: %+v", listed)
+	}
+	c := listed.Stacks[0].Check
+	if c.Ref == "" || c.Plan == "" {
+		t.Fatalf("check lacks ref or plan: %+v", c)
+	}
+	if len(listed.Checks) != 1 || listed.Checks[0].Ref != c.Ref || listed.Checks[0].Plan != c.Plan || listed.Checks[0].Code != c.Code {
+		t.Fatalf("kept checks: %+v", listed.Checks)
+	}
+	if all := f.drift(tok, "?env=prod"); all.Checks != nil {
+		t.Fatalf("GET /v1/drift of an env lists kept checks: %+v", all.Checks)
+	}
+
+	for _, id := range []string{c.Ref, c.Plan} {
+		r := f.do("GET", "/v1/drift/"+id, tok, nil)
+		var doc server.DriftCheckDoc
+		if r.status != http.StatusOK || json.Unmarshal(r.body, &doc) != nil {
+			t.Fatalf("GET /v1/drift/%s: %d %s", id, r.status, r.body)
+		}
+		if doc.Format != server.FormatDriftCheck || !doc.OK || doc.Env != "prod" || doc.Stack != "app" || doc.Backend != "http" || doc.Every != "1h" ||
+			doc.Check == nil || doc.Check.Ref != c.Ref || doc.Check.Plan != c.Plan || doc.Check.Status != server.DriftDrifted || doc.Check.StartedBy != server.StartedByDrift || len(doc.Check.Changes) != 3 {
+			t.Fatalf("GET /v1/drift/%s: %+v (check %+v)", id, doc, doc.Check)
+		}
+		for _, secret := range []string{tofuCanary, tofuOutside, tofuEnvSecret} {
+			if strings.Contains(string(r.body), secret) {
+				t.Errorf("GET /v1/drift/%s holds %s", id, secret)
+			}
+		}
+	}
+
+	// web_readers may not read app@prod.
+	webTok := f.token(map[string]any{"project_id": "4343"})
+	if r := f.do("GET", "/v1/drift/"+c.Ref, webTok, nil); r.status != http.StatusForbidden || r.class() != "denied" {
+		t.Fatalf("web_readers reading app's drift check: %d %s", r.status, r.body)
+	}
+	if d := f.drift(webTok, "?env=prod&stack=app"); len(d.Stacks) != 0 || d.Checks != nil {
+		t.Fatalf("web_readers listing app's kept checks: %+v", d)
+	}
+	if r := f.do("GET", "/v1/drift/"+strings.Repeat("0", 32), tok, nil); r.status != http.StatusNotFound {
+		t.Fatalf("unknown drift check: %d %s", r.status, r.body)
+	}
+
+	// Overview alerts name the drift check's ref.
+	ov := f.do("GET", "/v1/overview", tok, nil)
+	var ovDoc server.OverviewDoc
+	if ov.status != http.StatusOK || json.Unmarshal(ov.body, &ovDoc) != nil {
+		t.Fatalf("GET /v1/overview: %d %s", ov.status, ov.body)
+	}
+	if !slices.ContainsFunc(ovDoc.Alerts, func(a server.Alert) bool { return a.Kind == server.AlertDrifted && a.Drift == c.Ref }) {
+		t.Fatalf("overview alerts lack drift ref %s: %+v", c.Ref, ovDoc.Alerts)
+	}
+
+	// A failed check is readable by ref with its diagnostic.
+	runner.mu.Lock()
+	runner.plan = func() (tofu.Plan, error) {
+		return tofu.Plan{}, errors.New("provider timed out")
+	}
+	runner.mu.Unlock()
+	time.Sleep(5 * time.Millisecond)
+	f.srv.LookForDrift(time.Millisecond) // checks web first
+	time.Sleep(5 * time.Millisecond)
+	f.srv.LookForDrift(time.Millisecond) // checks app
+	listed = f.drift(tok, "?env=prod&stack=app")
+	failed := listed.Stacks[0].Check
+	if failed == nil || failed.Status != server.DriftFailed || failed.Ref == "" || failed.Plan != "" {
+		t.Fatalf("failed check: %+v", failed)
+	}
+	if len(listed.Checks) != 2 || listed.Checks[0].Ref != failed.Ref || listed.Checks[1].Ref != c.Ref {
+		t.Fatalf("kept checks after failure: %+v", listed.Checks)
+	}
+	r := f.do("GET", "/v1/drift/"+failed.Ref, tok, nil)
+	var fdoc server.DriftCheckDoc
+	if r.status != http.StatusOK || json.Unmarshal(r.body, &fdoc) != nil || fdoc.OK || fdoc.Check == nil || fdoc.Check.Status != server.DriftFailed || !strings.Contains(fdoc.Check.Error, "provider timed out") {
+		t.Fatalf("failed drift check doc: %d %s", r.status, r.body)
 	}
 }

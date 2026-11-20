@@ -12,6 +12,7 @@ When you work on an OpenTofu repository that Writ plans, you use the tools of `w
 | --- | --- | --- | --- |
 | `plan` | `dir`, or `stack` and `commit` (and `repo`), `env`, `json` | The masked plan as text, its policy verdict first, with its id and approvals, or with `json: true` the `writ.remote-plan/v0` document | Asks the control plane for a plan. One at a time. Applies nothing |
 | `get_plan` | `id`, `json`, `addresses` | The plan as text, its policy verdict first, or `writ.remote-plan/v0`. `addresses` keeps only those changes | Nothing |
+| `list_plans` | `env`, `stack`, `status`, `started_by`, `limit`, `cursor` | `writ.remote-plans/v0`, newest first, with `next` when older plans match | Nothing |
 | `policy` | `set`, `file` | `writ.policy/v0`: the policy sets and their `.rego` text. `set` keeps one set, and `file` one file of it | Nothing |
 | `runs` | `env`, `stack`, `limit`, or `id` | `writ.remote-runs/v0`, or for `id` one run as `writ.remote-run/v0` | Nothing |
 | `drift` | `env`, `stack`, `limit` | `writ.drift/v0` | Nothing |
@@ -49,6 +50,8 @@ Output of `writ serve --dev`, 2026-11-15.
 - `document` keeps OpenTofu's own keys: `format_version`, `terraform_version`, `resource_changes`, `resource_drift`, `output_changes`, `checks`. Each entry of `resource_changes` has `address`, `type`, and `change` with `actions`, `before`, `after`, `replace_paths`, and `importing` for an import. `variables` has only the variables' names.
 - Wherever OpenTofu marks a value sensitive, and wherever a sensitive value appears elsewhere, the value is the string `(sensitive)`.
 - `policy` is the policy's decision on the plan, or `null` when no policy checked it. See [Policy](#policy).
+
+`list_plans` returns `writ.remote-plans/v0`: `plans` (each an entry with the same `plan` fields as `writ.remote-plan/v0`) and `next`, the cursor to pass as `cursor` for older plans. `started_by` accepts `person` or `ci`; `drift` is refused because drift checks aren't plans (`drift` lists them).
 
 ## Policy
 

@@ -19,10 +19,11 @@ type fake struct {
 	err    error
 }
 
-func (f *fake) Plan(context.Context, PlanInput) (Result, error)       { return f.result, f.err }
-func (f *fake) GetPlan(context.Context, GetPlanInput) (Result, error) { return f.result, f.err }
-func (f *fake) Runs(context.Context, RunsInput) (Result, error)       { return f.result, f.err }
-func (f *fake) Drift(context.Context, DriftInput) (Result, error)     { return f.result, f.err }
+func (f *fake) Plan(context.Context, PlanInput) (Result, error)           { return f.result, f.err }
+func (f *fake) GetPlan(context.Context, GetPlanInput) (Result, error)     { return f.result, f.err }
+func (f *fake) ListPlans(context.Context, ListPlansInput) (Result, error) { return f.result, f.err }
+func (f *fake) Runs(context.Context, RunsInput) (Result, error)           { return f.result, f.err }
+func (f *fake) Drift(context.Context, DriftInput) (Result, error)         { return f.result, f.err }
 func (f *fake) StateIndex(context.Context, StateIndexInput) (Result, error) {
 	return f.result, f.err
 }
@@ -89,7 +90,7 @@ func TestToolsSayWhatTheyChange(t *testing.T) {
 		return got
 	}
 	got := annotations(Options{AllowProviders: true})
-	readOnly := []string{"get_plan", "runs", "drift", "state_index", "schema", "import_accept", "policy"}
+	readOnly := []string{"get_plan", "list_plans", "runs", "drift", "state_index", "schema", "import_accept", "policy"}
 	if len(got) != len(readOnly)+2 {
 		t.Fatalf("tools %v, want %v, plan, and import_bulk", slices.Sorted(maps.Keys(got)), readOnly)
 	}
@@ -241,6 +242,29 @@ func TestResults(t *testing.T) {
 			args:    map[string]any{"id": "p", "addresses": strings.Split(strings.Repeat("a.b,", MaxAddresses)+"c.d", ",")},
 			check:   func(t *testing.T, text string) { wantPrefix(t, text, "addresses takes at most 50 addresses, got 51") },
 			isError: true,
+		},
+		{
+			name:    "list_plans lists a bounded number",
+			tool:    "list_plans",
+			args:    map[string]any{"limit": MaxListed + 1},
+			check:   func(t *testing.T, text string) { wantPrefix(t, text, "limit takes 1 to 200, got 201") },
+			isError: true,
+		},
+		{
+			name:    "list_plans rejects negative limit",
+			tool:    "list_plans",
+			args:    map[string]any{"limit": -1},
+			check:   func(t *testing.T, text string) { wantPrefix(t, text, "limit takes 1 to 200, got -1") },
+			isError: true,
+		},
+		{
+			name: "list_plans document passes through compacted",
+			tool: "list_plans",
+			args: map[string]any{"env": "prod"},
+			fake: fake{result: Result{Text: "{\n  \"format\": \"writ.remote-plans/v0\",\n  \"ok\": true,\n  \"plans\": [],\n  \"diagnostics\": []\n}\n"}},
+			check: func(t *testing.T, text string) {
+				wantPrefix(t, text, `{"format":"writ.remote-plans/v0","ok":true,"plans":[],"diagnostics":[]}`)
+			},
 		},
 		{
 			name:    "runs lists a bounded number",
