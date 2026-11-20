@@ -92,3 +92,52 @@ func TestMigrateNow(t *testing.T) {
 		t.Fatalf("{{now}} wrote %d, %v; want %d", got, err, at.UnixMilli())
 	}
 }
+
+// A migration the shared subset cannot say is a pair of files, one an
+// engine: SQLite runs its own and records the pair's name, and a file of
+// a pair without its twin is refused, so no engine skips a migration.
+func TestMigrateEngineFiles(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		err   string
+	}{
+		{name: "each engine runs its own", files: map[string]string{"0001_a.sql": "CREATE TABLE a (x integer)",
+			"0002_b.postgres.sql": "CREATE TABLE pg (x integer)", "0002_b.sqlite.sql": "CREATE TABLE lite (x integer)", "0003_c.sql": "CREATE TABLE c (x integer)"}},
+		{name: "a file of a pair alone", files: map[string]string{"0001_a.sql": "CREATE TABLE a (x integer)", "0002_b.sqlite.sql": "CREATE TABLE lite (x integer)"},
+			err: "migration 0002_b.sqlite.sql has no twin 0002_b.postgres.sql"},
+		{name: "the other engine's file alone", files: map[string]string{"0001_a.sql": "CREATE TABLE a (x integer)", "0002_b.postgres.sql": "CREATE TABLE pg (x integer)"},
+			err: "migration 0002_b.postgres.sql has no twin 0002_b.sqlite.sql"},
+		{name: "a pair beside a shared file of its number", files: map[string]string{"0002_b.sql": "CREATE TABLE b (x integer)",
+			"0002_b.postgres.sql": "CREATE TABLE pg (x integer)", "0002_b.sqlite.sql": "CREATE TABLE lite (x integer)"}, err: "out of sequence"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, err := sqldb.OpenSQLite(filepath.Join(t.TempDir(), "t.db"), sqldb.Durable, "test database")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			err = db.Migrate(ctx, migrations(tc.files))
+			if tc.err == "" && err != nil || tc.err != "" && (err == nil || !strings.Contains(err.Error(), tc.err)) {
+				t.Fatalf("got %v, want %q", err, tc.err)
+			}
+			if tc.err != "" {
+				return
+			}
+			for table, want := range map[string]bool{"a": true, "lite": true, "c": true, "pg": false} {
+				if _, err := db.ExecContext(ctx, "SELECT x FROM "+table); (err == nil) != want {
+					t.Errorf("table %s exists: %v, want %v", table, err == nil, want)
+				}
+			}
+			var name string
+			if err := db.QueryRowContext(ctx, "SELECT name FROM schema_migrations WHERE version = 2").Scan(&name); err != nil || name != "0002_b.sql" {
+				t.Fatalf("migration 2 recorded as %q: %v", name, err)
+			}
+			// The same files again apply nothing and pass the record check.
+			if err := db.Migrate(ctx, migrations(tc.files)); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
