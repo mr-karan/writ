@@ -72,23 +72,23 @@ func (s *localSlot) Run(start, ctx context.Context, job Job) (Result, error) {
 	switch job.Kind {
 	case Plan, Apply, Show, Pull:
 	default:
-		return Result{}, fmt.Errorf("runner: a job of kind %q", job.Kind)
+		return Result{}, &StartError{fmt.Errorf("runner: a job of kind %q", job.Kind)}
 	}
 	work := filepath.Join(s.l.Work, job.ID)
 	defer os.RemoveAll(work)
 	if err := writeFiles(work, job.Files); err != nil {
-		return Result{}, err
+		return Result{}, &StartError{err}
 	}
 	var proxy *egress.Proxy
 	if job.Egress.Mode.On() {
 		var err error
 		if proxy, err = egress.New(egress.Options{Mode: job.Egress.Mode, List: job.Egress.List}); err != nil {
-			return Result{}, err
+			return Result{}, &StartError{err}
 		}
 	}
 	lock, install, err := s.fill(start, job)
 	if err != nil {
-		return Result{Network: record(job.Egress.Mode, install, proxy)}, &FillError{err}
+		return Result{Network: record(job.Egress.Mode, install, proxy)}, &StartError{fmt.Errorf("install the providers of %s into the plugin cache: %w", tofu.LockFile, err)}
 	}
 	stk := tofu.Stack{Files: os.DirFS(work), Dir: job.Dir, Lock: lock, Env: job.Env, Creds: job.Creds, StateCreds: job.StateCreds, User: s.user, Net: s.net(job.ID, proxy)}
 	var res Result

@@ -166,7 +166,7 @@ func TestLocalRunsEachKind(t *testing.T) {
 	}
 }
 
-// A failed install comes back as a FillError before tofu runs.
+// A failed install comes back as a StartError, and tofu does not run.
 func TestLocalFillFails(t *testing.T) {
 	f := &fakeTofu{fillErr: &tofu.StepError{Step: "init", Code: 1}}
 	slot, err := local(t, f).Reserve(context.Background())
@@ -175,9 +175,9 @@ func TestLocalFillFails(t *testing.T) {
 	}
 	defer slot.Release()
 	_, err = slot.Run(context.Background(), context.Background(), job(runner.Plan))
-	fe, ok := errors.AsType[*runner.FillError](err)
+	_, ok := errors.AsType[*runner.StartError](err)
 	if _, step := errors.AsType[*tofu.StepError](err); !ok || !step || err.Error() != "install the providers of .terraform.lock.hcl into the plugin cache: tofu init exited with code 1" {
-		t.Fatalf("err %v (%T %v), want a FillError of the step", err, fe, ok)
+		t.Fatalf("err %v, want a StartError of the step", err)
 	}
 	if len(f.stacks) != 0 {
 		t.Errorf("tofu ran after a failed install")
@@ -252,7 +252,7 @@ func TestLocalRefusesUnlistedRegistry(t *testing.T) {
 	_, refused := errors.AsType[*runner.Refusal](err)
 	want := "install the providers of .terraform.lock.hcl into the plugin cache: provider registry.opentofu.org/hashicorp/random is from registry registry.opentofu.org, which provider_registries does not list: " +
 		"under egress_mode enforce, writ serve installs providers only from registry.example.com, mirror.example.com; add registry.opentofu.org to provider_registries to install from it"
-	if _, fill := errors.AsType[*runner.FillError](err); !refused || !fill || err.Error() != want {
+	if _, start := errors.AsType[*runner.StartError](err); !refused || !start || err.Error() != want {
 		t.Fatalf("err %v, want a refused install:\n%s", err, want)
 	}
 	if len(f.fills) != 0 || len(f.stacks) != 0 {

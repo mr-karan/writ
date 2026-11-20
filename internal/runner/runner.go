@@ -109,8 +109,9 @@ type Executor interface {
 // Slot is room for one job.
 type Slot interface {
 	// Run runs job: it installs the job's providers under start, and runs
-	// tofu under ctx. The result holds the network record even when Run
-	// fails, and what tofu wrote when tofu fails.
+	// tofu under ctx. A job that failed before tofu ran is a *StartError.
+	// The result holds the network record even when Run fails, and what
+	// tofu wrote when tofu fails.
 	Run(start, ctx context.Context, job Job) (Result, error)
 	// Release ends what still runs in the slot and gives it back.
 	Release()
@@ -140,14 +141,12 @@ type Tofu interface {
 	Pull(ctx context.Context, s tofu.Stack) (tofu.State, error)
 }
 
-// FillError is a job whose provider install failed, before tofu ran.
-type FillError struct{ Err error }
+// StartError is a job that failed before tofu ran: its files were not
+// written, or its provider install failed. Err says which.
+type StartError struct{ Err error }
 
-func (e *FillError) Error() string {
-	return "install the providers of " + tofu.LockFile + " into the plugin cache: " + e.Err.Error()
-}
-
-func (e *FillError) Unwrap() error { return e.Err }
+func (e *StartError) Error() string { return e.Err.Error() }
+func (e *StartError) Unwrap() error { return e.Err }
 
 // Refusal is a job that an executor does not run, in writ's own words:
 // what the config or the job must change, or why no slot came before the
