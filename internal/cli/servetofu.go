@@ -86,6 +86,9 @@ func serveTofu(ctx context.Context, cfg *server.Config, log *slog.Logger) (runne
 	if e.CgroupOff != "" {
 		log.Warn("run limits: OpenTofu steps run without limits.run_memory, run_pids, and run_cpus", "why", e.CgroupOff)
 	}
+	if e.SwapOff != "" {
+		log.Warn("run limits: OpenTofu steps may swap past limits.run_memory", "why", e.SwapOff)
+	}
 	if !e.Seccomp {
 		log.Warn("run limits: OpenTofu processes run without writ's seccomp filter", "why", e.SeccompOff)
 	}

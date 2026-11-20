@@ -17,7 +17,8 @@ import (
 // nothing.
 type Limits struct {
 	// Memory bounds the memory of the step's processes together, in
-	// bytes, with no swap. Past it the kernel kills every one of them.
+	// bytes, with no swap where the kernel accounts swap to cgroups.
+	// Past it the kernel kills every one of them.
 	Memory int64
 	// Pids bounds the processes and threads of the step together.
 	Pids int
@@ -45,6 +46,9 @@ type Enforcement struct {
 	// writ serve runs in, less what it keeps for itself. 0 bounds
 	// nothing.
 	StepsPids, StepsMemory int64
+	// SwapOff is why a step may swap past Limits' Memory, "" when the
+	// kernel holds each step to no swap.
+	SwapOff string
 	// Seccomp reports whether each tofu process runs under writ's seccomp
 	// filter. SeccompOff says why not.
 	Seccomp    bool
@@ -58,11 +62,13 @@ type cgroupSetup struct {
 	// pids and memory are base's pids.max and memory.max, which every
 	// step shares, or 0 for no bound.
 	pids, memory int64
+	// swapOff is why a step may swap past its memory limit, or "".
+	swapOff string
 }
 
 // Enforcement reports what r enforces.
 func (r *Runner) Enforcement() Enforcement {
-	e := Enforcement{Cgroup: r.cgroups.base, CgroupOff: r.cgroupOff, StepsPids: r.cgroups.pids, StepsMemory: r.cgroups.memory}
+	e := Enforcement{Cgroup: r.cgroups.base, CgroupOff: r.cgroupOff, StepsPids: r.cgroups.pids, StepsMemory: r.cgroups.memory, SwapOff: r.cgroups.swapOff}
 	e.Seccomp, e.SeccompOff = seccompStatus()
 	return e
 }
@@ -77,7 +83,7 @@ func CheckLimits(l Limits) Enforcement {
 		if set, err := checkCgroups(); err != nil {
 			e.CgroupOff = err.Error()
 		} else {
-			e.Cgroup, e.StepsPids, e.StepsMemory = set.base, set.pids, set.memory
+			e.Cgroup, e.StepsPids, e.StepsMemory, e.SwapOff = set.base, set.pids, set.memory, set.swapOff
 		}
 	}
 	e.Seccomp, e.SeccompOff = seccompStatus()

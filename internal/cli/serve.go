@@ -272,7 +272,10 @@ func (a *App) checkLimits(cfg *server.Config) error {
 	e := tofu.CheckLimits(l)
 	var warn diag.List
 	if e.Cgroup != "" {
-		fmt.Fprintf(w, "limits: each OpenTofu step runs in a cgroup of its own under %s: memory %s with no swap, %d processes and threads, %v CPUs\n", e.Cgroup, sizeWords(l.Memory), l.Pids, l.CPUs)
+		fmt.Fprintln(w, cgroupLimitsLine(l, e))
+		if e.SwapOff != "" {
+			warn.Warnf(diag.Usage, diag.Span{}, "%s", e.SwapOff)
+		}
 		for _, msg := range sharedLimitWarnings(l, cfg.Limits.Plans+cfg.Limits.Applies, e) {
 			warn.Warnf(diag.Usage, diag.Span{}, "%s", msg)
 		}
@@ -287,6 +290,16 @@ func (a *App) checkLimits(cfg *server.Config) error {
 	}
 	printDiags(w, warn)
 	return nil
+}
+
+// cgroupLimitsLine is --check's line of the limits each step's cgroup
+// holds, which says "with no swap" only where the kernel holds it.
+func cgroupLimitsLine(l tofu.Limits, e tofu.Enforcement) string {
+	swap := " with no swap"
+	if e.SwapOff != "" {
+		swap = ""
+	}
+	return fmt.Sprintf("limits: each OpenTofu step runs in a cgroup of its own under %s: memory %s%s, %d processes and threads, %v CPUs", e.Cgroup, sizeWords(l.Memory), swap, l.Pids, l.CPUs)
 }
 
 // sharedLimitWarnings says where slots steps at once, each at l's limits,

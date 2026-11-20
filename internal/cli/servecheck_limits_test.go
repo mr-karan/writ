@@ -33,3 +33,22 @@ func TestSharedLimitWarnings(t *testing.T) {
 		})
 	}
 }
+
+// --check says a step gets no swap only where the kernel holds it to none.
+func TestCgroupLimitsLine(t *testing.T) {
+	l := tofu.Limits{Memory: 2 << 30, Pids: 512, CPUs: 2}
+	for _, c := range []struct {
+		name string
+		e    tofu.Enforcement
+		want string
+	}{
+		{"swap held", tofu.Enforcement{Cgroup: "/u/runs"}, "limits: each OpenTofu step runs in a cgroup of its own under /u/runs: memory 2GiB with no swap, 512 processes and threads, 2 CPUs"},
+		{"swap not held", tofu.Enforcement{Cgroup: "/u/runs", SwapOff: "no memory.swap.max"}, "limits: each OpenTofu step runs in a cgroup of its own under /u/runs: memory 2GiB, 512 processes and threads, 2 CPUs"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := cgroupLimitsLine(l, c.e); got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+		})
+	}
+}

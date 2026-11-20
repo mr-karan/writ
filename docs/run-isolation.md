@@ -117,7 +117,7 @@ A provider that forks or allocates without bound could take the memory, processe
 
 | Limit | Default | When a step reaches it |
 | --- | --- | --- |
-| `run_memory` | `4GiB` | The kernel kills every process of the step. The step gets no swap, and the page cache of the files it writes counts. |
+| `run_memory` | `4GiB` | The kernel kills every process of the step. The step gets no swap where the kernel keeps a swap account for cgroups, and the page cache of the files it writes counts. |
 | `run_pids` | `1024` | The step can't start another process or thread. Threads count too: an idle `hashicorp/random` 3.9.1 provider runs 9 on a 16-CPU host. |
 | `run_cpus` | `2` | The step runs slower. Nothing fails. |
 | `run_scratch` | `8GiB` | `writ serve` stops the step once the run's directory has more than this on disk. Each file and directory counts as at least 4KiB, the inode it costs the filesystem, so many empty files count too. |
@@ -167,12 +167,22 @@ These facts come from the exec driver's source on Nomad's main branch, read 2026
 
 ### Check that the limits hold
 
-`writ serve --check` prints whether each step would get a cgroup, under which cgroup, and with which limits. It starts a probe as a step's first process starts, in a cgroup of its own that it removes after, and reports the limits off, with the reason, if the probe fails. It moves `writ` itself into no cgroup, so run it where `writ serve` runs: in the unit's `ExecStartPre`, or with `systemd-run --scope -p Delegate=yes`. In a delegated cgroup:
+`writ serve --check` prints whether each step would get a cgroup, under which cgroup, and with which limits. In a cgroup of its own that it removes after, it checks `cgroup.kill`, writes `cgroup.subtree_control`, and starts a probe as a step's first process starts, as `writ serve` does at start, and reports the limits off, with the reason, if one fails. Where the kernel keeps no swap account for cgroups, as `cgroup.memory=noswap` makes it, it leaves `with no swap` out and warns that a step may swap past `run_memory`; `writ serve` logs the same at start. It moves `writ` itself into no cgroup, so run it where `writ serve` runs: in the unit's `ExecStartPre`, or with `systemd-run --scope -p Delegate=yes`. In a delegated cgroup:
 
 ```
-limits: each OpenTofu step runs in a cgroup of its own under /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p3713758-i3705479.scope: memory 2GiB with no swap, 512 processes and threads, 2 CPUs
+limits: each OpenTofu step runs in a cgroup of its own under /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p381665-i344032.scope/runs: memory 2GiB with no swap, 512 processes and threads, 2 CPUs
 limits: writ measures each run's directory, and stops a step past 4GiB
 seccomp: each OpenTofu process runs under writ's seccomp filter
+```
+
+In a unit with `TasksMax=2048`, too few for 12 steps at once at `run_pids = 512`:
+
+```
+limits: each OpenTofu step runs in a cgroup of its own under /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p382857-i401466.scope/runs: memory 2GiB with no swap, 512 processes and threads, 2 CPUs
+limits: writ measures each run's directory, and stops a step past 4GiB
+seccomp: each OpenTofu process runs under writ's seccomp filter
+warning[usage]
+  limits.run_pids, 512, times 12 plans and applies at once is 6144, more than the 1920 processes and threads that writ's cgroup leaves every step together, its pids.max less what writ serve keeps; raise the unit's TasksMax, or lower limits.run_pids, plans, or applies
 ```
 
 Where other processes share the cgroup, here the shell that started `writ` and the `tail` it piped the output to:
@@ -184,7 +194,7 @@ warning[usage]
   limits not enforced: writ's cgroup /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p125069-i4334344.scope holds processes other than writ serve, [125069 125106], and a cgroup whose children have limits may hold none; run writ serve alone in its cgroup, as a systemd unit with Delegate=yes or a Nomad task does; writ serve runs each OpenTofu step without limits.run_memory, run_pids, and run_cpus
 ```
 
-Output of `writ serve --check`, 2026-11-20, of a config with `run_memory = "2GiB"`, `run_pids = 512`, `run_cpus = 2`, and `run_scratch = "4GiB"`, run by `systemd-run --user --scope -p Delegate=yes`, first directly and then from a `bash -c` that stayed in the scope.
+Output of `writ serve --check`, 2026-11-20, of a config with `run_memory = "2GiB"`, `run_pids = 512`, `run_cpus = 2`, `run_scratch = "4GiB"`, and the default 8 plans and 4 applies, run by `systemd-run --user --scope -p Delegate=yes`: directly, with `-p TasksMax=2048`, and from a `bash -c` that stayed in the scope.
 
 ### What run limits don't cover
 

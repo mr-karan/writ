@@ -450,3 +450,26 @@ func TestRunLimitsLeaveRoomForServe(t *testing.T) {
 	}
 	threads.Wait()
 }
+
+// writ serve --check runs the checks that writ serve's start does: that
+// a cgroup has cgroup.kill, and whether the kernel holds a step to no
+// swap. A directory stands in for a kernel's cgroup that lacks the file.
+func TestCgroupChecks(t *testing.T) {
+	bare := t.TempDir()
+	if err := checkKill(bare); err == nil || !strings.Contains(err.Error(), "cgroup.kill") {
+		t.Errorf("a cgroup without cgroup.kill passed: %v", err)
+	}
+	if _, err := os.Stat("/proc/swaps"); err != nil {
+		t.Skip("this kernel has no swap")
+	}
+	if why := swapOff(bare); !strings.Contains(why, "memory.swap.max") {
+		t.Errorf("a cgroup without memory.swap.max holds a step to no swap: %q", why)
+	}
+	held := t.TempDir()
+	if err := os.WriteFile(filepath.Join(held, "memory.swap.max"), []byte("max\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if why := swapOff(held); why != "" {
+		t.Errorf("a cgroup with memory.swap.max: %q", why)
+	}
+}

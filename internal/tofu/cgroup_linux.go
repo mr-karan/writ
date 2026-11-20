@@ -102,6 +102,7 @@ func cgroupBase(apply bool) (cgroupSetup, error) {
 	if set.memory, err = runsLimit(own, "memory.max", serveMemory, "bytes of memory", "MemoryMax"); err != nil {
 		return none, err
 	}
+	set.swapOff = swapOff(own)
 	if !apply {
 		return set, nil
 	}
@@ -109,9 +110,9 @@ func cgroupBase(apply bool) (cgroupSetup, error) {
 	if err := os.Mkdir(leaf, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
 		return none, fmt.Errorf("make the cgroup %s for writ serve: %w", leaf, err)
 	}
-	if _, err := os.Stat(filepath.Join(leaf, "cgroup.kill")); err != nil {
+	if err := checkKill(leaf); err != nil {
 		_ = os.Remove(leaf)
-		return none, fmt.Errorf("the kernel has no cgroup.kill, which ends every process of a cgroup at once and needs Linux 5.14: %w", err)
+		return none, err
 	}
 	if err := writeCgroup(leaf, "cgroup.procs", strconv.Itoa(os.Getpid())); err != nil {
 		return none, fmt.Errorf("move writ serve into %s: %w", leaf, err)
@@ -134,6 +135,29 @@ func cgroupBase(apply bool) (cgroupSetup, error) {
 		return none, fmt.Errorf("enable %s for the children of %s: %w", strings.Join(cgroupControllers, ", "), set.base, err)
 	}
 	return set, nil
+}
+
+// checkKill checks that the cgroup dir has cgroup.kill.
+func checkKill(dir string) error {
+	if _, err := os.Stat(filepath.Join(dir, "cgroup.kill")); err != nil {
+		return fmt.Errorf("the kernel has no cgroup.kill, which ends every process of a cgroup at once and needs Linux 5.14: %w", err)
+	}
+	return nil
+}
+
+// swapOff is why a step may swap past its memory.max although writ sets
+// its memory.swap.max to 0, or "": a kernel that keeps no swap account for
+// cgroups, as cgroup.memory=noswap makes it, gives own and each step no
+// memory.swap.max. A kernel built without swap has no /proc/swaps, and no
+// step of it can swap.
+func swapOff(own string) string {
+	if _, err := os.Stat(filepath.Join(own, "memory.swap.max")); err == nil {
+		return ""
+	}
+	if _, err := os.Stat("/proc/swaps"); err != nil {
+		return ""
+	}
+	return fmt.Sprintf("writ's cgroup %s has no memory.swap.max, as when the kernel boots with cgroup.memory=noswap, so writ can't keep a step from swapping past limits.run_memory", own)
 }
 
 // runsLimit returns what runsCgroup may have of the limit file under own:
@@ -171,10 +195,11 @@ func runsLimit(own, file string, keep int64, what, unit string) (int64, error) {
 }
 
 // checkCgroups reports, for writ serve --check, what cgroupBase would set
-// up, or why it can't: cgroupBase's checks, and then a probe that starts
-// a process as each step's first process starts, into a cgroup of the
-// probe's own beside where runsCgroup would be, which it removes. The
-// checks alone can pass where the start then fails.
+// up, or why it can't: cgroupBase's checks, and then, in a cgroup of the
+// probe's own beside where runsCgroup would be, which it removes, what
+// cgroupBase does only with apply: it checks cgroup.kill, writes
+// cgroup.subtree_control, and starts a process as each step's first
+// process starts. The checks alone can pass where those then fail.
 func checkCgroups() (cgroupSetup, error) {
 	set, err := cgroupBase(false)
 	if err != nil {
@@ -186,8 +211,29 @@ func checkCgroups() (cgroupSetup, error) {
 		return cgroupSetup{}, fmt.Errorf("make a cgroup under %s for a probe: %w", own, err)
 	}
 	defer os.Remove(probe)
+	if err := checkKill(probe); err != nil {
+		return cgroupSetup{}, err
+	}
 	if err := probeHelper(probe); err != nil {
 		return cgroupSetup{}, fmt.Errorf("writ could not start a step's first process in a cgroup of its own under %s: %w", own, err)
+	}
+	// After the probe has exited: a cgroup whose children have
+	// controllers may hold no process. The probe's cgroup offers only
+	// what own's cgroup.subtree_control enables, none before writ serve
+	// first starts, and --check must not change own's: systemd could
+	// then start no process in it.
+	text, err := os.ReadFile(filepath.Join(probe, "cgroup.controllers"))
+	if err != nil {
+		return cgroupSetup{}, fmt.Errorf("read the controllers of %s: %w", probe, err)
+	}
+	var enable []string
+	for _, c := range strings.Fields(string(text)) {
+		if slices.Contains(cgroupControllers, c) {
+			enable = append(enable, "+"+c)
+		}
+	}
+	if err := writeCgroup(probe, "cgroup.subtree_control", strings.Join(enable, " ")); err != nil {
+		return cgroupSetup{}, fmt.Errorf("write cgroup.subtree_control of %s: %w", probe, err)
 	}
 	return set, nil
 }

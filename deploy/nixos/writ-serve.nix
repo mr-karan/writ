@@ -167,9 +167,10 @@ in
         ProtectKernelTunables = lib.versionAtLeast config.boot.kernelPackages.kernel.version "7.2";
         ProtectKernelModules = true;
         # With provider uids, writ serve gives each OpenTofu step a cgroup
-        # of its own under the unit's, which it moves itself out of into
-        # the leaf serve, so the step's limits.run_memory, run_pids, and
-        # run_cpus hold. That needs the unit's cgroup delegated to the
+        # of its own in runs, under the unit's, which it moves itself out
+        # of into the leaf serve, so the step's limits.run_memory,
+        # run_pids, and run_cpus hold, and runs leaves writ serve 128
+        # processes and threads and 512MiB of the unit's limits. That needs the unit's cgroup delegated to the
         # writ user and /sys/fs/cgroup writable, which
         # ProtectControlGroups would make read-only. Without provider
         # uids, no OpenTofu runs.
