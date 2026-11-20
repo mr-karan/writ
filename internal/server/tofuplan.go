@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -25,6 +23,7 @@ import (
 	"github.com/mr-karan/writ/internal/forge"
 	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/repo"
+	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/tfstate"
 	"github.com/mr-karan/writ/internal/tofu"
 )
@@ -86,7 +85,7 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 		return res, &classedError{diag.Usage, err}
 	}
 	s.keepBlobs(in.repo.Name, snap)
-	if s.tofuRunner == nil {
+	if s.exec == nil {
 		return res, tofuRefused("stack %s is an OpenTofu stack, and this writ serve runs no OpenTofu: its config needs a tofu { } block, or, under --dev, OpenTofu %s on PATH", stack, tofu.Version)
 	}
 	backend, err := s.stateBackend(env, stack, ts)
@@ -128,12 +127,12 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 	// The record of a failed install keeps what it asked for, which is
 	// the lock file's and its registry's choice, not the stack's code.
 	fillMask := run.mask()
-	stk, err := run.stack(ctx, fillMask)
-	if err != nil {
+	out, err := run.run(ctx, ctx, run.job(runner.Plan), fillMask)
+	if notStarted(err) {
 		res.Network = run.network(fillMask).raw()
 		return res, err
 	}
-	raw, err := s.tofuRunner.Plan(ctx, stk)
+	raw := out.Plan
 	se, refused := errors.AsType[*tofu.StepError](err)
 	if err != nil && !refused {
 		return res, err
@@ -318,18 +317,12 @@ func (s *Server) planMask(ctx context.Context, r planRead, saved []byte, refused
 	return m, v.Serial, nil
 }
 
-func writeTofuFiles(work string, files map[string][]byte, commit string) error {
-	for name, text := range files {
-		// The names come from the forge's tree.
+// checkTofuFiles refuses files of commit with a name that is not a path
+// within the repository. The names come from the forge's tree.
+func checkTofuFiles(files map[string][]byte, commit string) error {
+	for name := range files {
 		if !fs.ValidPath(name) {
 			return tofuRefused("commit %s names a file %q, which is not a path within the repository", forge.Short(commit), name)
-		}
-		f := filepath.Join(work, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(f), 0o700); err != nil {
-			return err
-		}
-		if err := os.WriteFile(f, text, 0o600); err != nil {
-			return err
 		}
 	}
 	return nil

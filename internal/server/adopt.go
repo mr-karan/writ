@@ -14,6 +14,7 @@ import (
 	"github.com/mr-karan/writ/internal/diag"
 	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/repo"
+	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/tfstate"
 	"github.com/mr-karan/writ/internal/tofu"
 )
@@ -105,7 +106,7 @@ func (s *Server) adoptState(w http.ResponseWriter, r *http.Request) {
 	if !s.decide(w, r, FormatStateAdopt, authz.Adopt, stack, env) {
 		return
 	}
-	if s.tofuRunner == nil {
+	if s.exec == nil {
 		s.refuse(w, r, FormatStateAdopt, diag.Usage, http.StatusConflict, "this writ serve runs no OpenTofu, so it cannot read a state to adopt: its config needs a tofu { } block")
 		return
 	}
@@ -287,19 +288,20 @@ func (s *Server) adoptShow(ctx context.Context, a adoption, key *tfstate.Key, sp
 	}
 	defer run.done()
 	m := run.mask()
-	stk, err := run.stack(ctx, m)
-	if err != nil {
+	job := run.job(runner.Show)
+	job.State = raw
+	out, err := run.run(ctx, ctx, job, m)
+	if notStarted(err) {
 		return tofu.State{}, nil, err
 	}
 	defer run.network(m)
 	// The output of a failed show or pull can hold a value of the state
 	// that the mask has not learned yet, so only the step and its exit
 	// code are kept, as for a refused plan on S3.
-	state, err := s.tofuRunner.Show(ctx, stk, raw)
 	if err != nil {
 		return tofu.State{}, nil, err
 	}
-	return state, m, nil
+	return out.State, m, nil
 }
 
 // adoptPull pulls the state of a's stack on S3 with the plan role, as the
@@ -318,15 +320,15 @@ func (s *Server) adoptPull(ctx context.Context, a adoption, spec runSpec) (tofu.
 	}
 	defer run.done()
 	m := run.mask()
-	stk, err := run.stack(ctx, m)
-	if err != nil {
+	out, err := run.run(ctx, ctx, run.job(runner.Pull), m)
+	if notStarted(err) {
 		return tofu.State{}, nil, 0, err
 	}
 	defer run.network(m)
-	state, err := s.tofuRunner.Pull(ctx, stk)
 	if err != nil {
 		return tofu.State{}, nil, 0, err
 	}
+	state := out.State
 	got := state.Serial
 	if got.Serial != a.want.Serial || got.Lineage != a.want.Lineage {
 		return tofu.State{}, nil, 0, &classedError{diag.State, fmt.Errorf("the bucket holds serial %d of lineage %s of the state of %s@%s, not serial %d of lineage %s, so writ serve kept nothing: adopt the newest",

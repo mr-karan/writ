@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,13 +14,10 @@ import (
 	"github.com/mr-karan/writ/internal/awsrole"
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
-	"github.com/mr-karan/writ/internal/egress"
 	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/repo"
-	"github.com/mr-karan/writ/internal/runas"
 	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/tfstate"
-	"github.com/mr-karan/writ/internal/tofu"
 )
 
 // baseProviderEnv is every provider's environment before the run's own
@@ -30,28 +26,23 @@ import (
 // anyway.
 var baseProviderEnv = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "AWS_EC2_METADATA_DISABLED=true"}
 
-// initProviders starts the credential endpoint when an environment names
-// a role, and fills the pool of provider uids after it ends what earlier
-// runs left running as them.
+// initProviders fills the pool of provider uids after it ends what
+// earlier runs left running as them, makes the executor of the runs when
+// writ serve runs OpenTofu, and starts the credential endpoint when an
+// environment names a role.
 func (s *Server) initProviders(opts Options) error {
-	s.reap = opts.Reap
-	if s.reap == nil {
-		s.reap = runas.Reap
-	}
+	var uids *runner.UIDs
 	if r := s.cfg.ProviderUIDs; r != nil {
 		if uid := uint32(os.Getuid()); r.Contains(uid) {
 			return fmt.Errorf("writ serve runs as uid %d, which is in provider_uids %s", uid, r)
 		}
-		s.uids = make(chan uint32, r.Count())
-		for uid := r.First; ; uid++ {
-			if err := s.reap(uid); err != nil {
-				return fmt.Errorf("end the processes of provider uid %d: %w", uid, err)
-			}
-			s.uids <- uid
-			if uid == r.Last {
-				break
-			}
+		var err error
+		if uids, err = runner.NewUIDs(r.First, r.Last, opts.Reap, s.log); err != nil {
+			return err
 		}
+	}
+	if opts.Tofu != nil {
+		s.exec = &runner.Local{Tofu: opts.Tofu, UIDs: uids, Work: filepath.Join(s.cfg.Data, "work"), Relay: s.relay}
 	}
 	roles := false
 	for _, e := range s.cfg.Envs {
@@ -115,14 +106,12 @@ type runSpec struct {
 	what string
 }
 
-// tofuRun is an OpenTofu run that startRun prepared: the commit's files
-// in a work directory, a provider uid no other run has, and an
-// environment built from the run alone.
+// tofuRun is an OpenTofu run that startRun prepared: a slot of the
+// executor, and an environment built from the run alone.
 type tofuRun struct {
 	s          *Server
 	spec       runSpec
-	work       string
-	user       *runas.User
+	slot       runner.Slot
 	env, creds []string
 	// secrets are the run's own: the values writ serve gives it and its
 	// state token.
@@ -131,25 +120,25 @@ type tofuRun struct {
 	// run with no role. The environment holds only the token that fetches
 	// them, and a refresh adds to them while the run goes on.
 	served func() []string
-	// proxy is the run's egress proxy, and install the proxy of its
-	// provider install, both nil under egress_mode off.
-	proxy, install *egress.Proxy
-	undo           []func()
+	// net is the network record of the run's job, nil before it ran and
+	// under egress_mode off.
+	net  *runner.Network
+	undo []func()
 }
 
-// startRun prepares the run spec describes: it writes the commit's files,
-// starts the role session behind a token that dies with the run, and
-// takes a uid. done ends the session and frees the uid once whatever ran
-// as it has ended. When startRun fails, it has undone what it did.
+// startRun prepares the run spec describes: it checks the commit's
+// files, starts the role session behind a token that dies with the run,
+// and reserves a slot of the executor. done ends the session and gives
+// the slot back once whatever ran in it has ended. When startRun fails,
+// it has undone what it did.
 func (s *Server) startRun(ctx context.Context, spec runSpec) (_ *tofuRun, err error) {
-	r := &tofuRun{s: s, spec: spec, work: filepath.Join(s.cfg.Data, "work", spec.id)}
+	r := &tofuRun{s: s, spec: spec}
 	defer func() {
 		if err != nil {
 			r.done()
 		}
 	}()
-	r.undo = append(r.undo, func() { os.RemoveAll(r.work) })
-	if err := writeTofuFiles(r.work, spec.ts.Files, spec.commit); err != nil {
+	if err := checkTofuFiles(spec.ts.Files, spec.commit); err != nil {
 		return nil, err
 	}
 	vars, err := s.runVars(spec.env)
@@ -158,20 +147,16 @@ func (s *Server) startRun(ctx context.Context, spec runSpec) (_ *tofuRun, err er
 	}
 	r.secrets = values(vars)
 	r.env = baseProviderEnv
-	if r.proxy, err = s.newProxy(spec.env); err != nil {
-		return nil, err
-	}
-	if r.proxy != nil {
+	if s.cfg.EgressMode.On() {
 		r.env = append(slices.Clone(r.env), runner.EgressEnv...)
 	}
 	switch {
 	case spec.role == "":
 	case s.cfg.Dev:
-		// The dev control plane assumes no role and takes no uid. Its
-		// runs get the shell's TF_VAR_ variables, which set the stack's
-		// variables.
+		// The dev control plane assumes no role and has no provider
+		// uids. Its runs get the shell's TF_VAR_ variables, which set the
+		// stack's variables.
 		r.env = append(slices.Clone(r.env), vars...)
-		return r, nil
 	default:
 		r.creds = vars
 		if arn := s.cfg.Envs[spec.env].role(spec.role); arn != "" {
@@ -186,7 +171,7 @@ func (s *Server) startRun(ctx context.Context, spec runSpec) (_ *tofuRun, err er
 			}
 			r.undo = append(r.undo, sess.End)
 			env := sess.Env()
-			if r.proxy != nil {
+			if s.cfg.EgressMode.On() {
 				env = sess.EnvAt(credsURL)
 			}
 			r.creds = append(slices.Clone(r.creds), env...)
@@ -194,18 +179,18 @@ func (s *Server) startRun(ctx context.Context, spec runSpec) (_ *tofuRun, err er
 			r.served = sess.Secrets
 		}
 	}
-	user, free, err := s.takeUID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	r.undo = append(r.undo, free)
-	r.user = user
-	if user == nil && !s.cfg.Dev {
+	if s.cfg.ProviderUIDs == nil && !s.cfg.Dev {
 		if spec.what == "" {
 			return nil, tofuRefused("this writ serve has no provider_uids to run OpenTofu as, so it would run as writ's own user: set provider_uids")
 		}
 		return nil, tofuRefused("%s, and this writ serve has no provider_uids to run it as, so it would run as writ's own user: set provider_uids", spec.what)
 	}
+	slot, err := s.exec.Reserve(ctx)
+	if err != nil {
+		return nil, classed(err)
+	}
+	r.undo = append(r.undo, slot.Release)
+	r.slot = slot
 	return r, nil
 }
 
@@ -243,57 +228,41 @@ func (r *tofuRun) stateToken(ctx context.Context, stack string, scope control.St
 	return nil
 }
 
-// stack fills the plugin cache with the providers of the stack's lock
-// file and returns how tofu runs the stack. m sweeps the output of a
-// failed fill.
-func (r *tofuRun) stack(ctx context.Context, m *mask.Mask) (tofu.Stack, error) {
-	lock, err := r.fill(ctx)
-	if err != nil {
-		return tofu.Stack{}, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
-	}
-	return tofu.Stack{Files: os.DirFS(r.work), Dir: r.spec.dir, Lock: lock, Env: r.env, Creds: r.creds, StateCreds: r.spec.stateCreds, User: r.user, Net: r.net()}, nil
+// job is the run's job of kind.
+func (r *tofuRun) job(kind runner.Kind) runner.Job {
+	s := r.s
+	e, _ := s.envOf(r.spec.env)
+	return runner.Job{ID: r.spec.id, Kind: kind, Files: r.spec.ts.Files, Dir: r.spec.dir, Lock: r.spec.ts.Lock,
+		Env: r.env, Creds: r.creds, StateCreds: r.spec.stateCreds,
+		Egress: runner.Egress{Mode: s.cfg.EgressMode, List: e.egress, Registries: s.cfg.ProviderRegistries}}
 }
 
-// fill installs the providers of the stack's lock file and returns the
-// lock file the run's init reads. The lock file is the stack's, and each
-// provider's address starts with the registry the install asks, which
-// chooses the hosts it downloads from. So under egress_mode report or
-// enforce a provider from a registry that provider_registries does not
-// list is refused, and the install runs in a network namespace of its
-// own behind a proxy of its own, which allows only public addresses.
-func (r *tofuRun) fill(ctx context.Context) ([]byte, error) {
-	if !r.s.cfg.EgressMode.On() {
-		return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, nil, nil)
+// run runs job in the run's slot, with its provider install under start
+// and tofu under ctx, and keeps its network record. A job that failed
+// before tofu ran, as a failed install, comes back with the output of the
+// failed step swept by m, and notStarted reports it.
+func (r *tofuRun) run(start, ctx context.Context, job runner.Job, m *mask.Mask) (runner.Result, error) {
+	res, err := r.slot.Run(start, ctx, job)
+	r.net = res.Network
+	if notStarted(err) {
+		err = fmt.Errorf("%w%s", err, stepLines(m, err))
 	}
-	providers, err := tofu.LockedProviders(r.spec.ts.Lock)
-	if err != nil {
-		return nil, err
-	}
-	allowed := r.s.cfg.ProviderRegistries
-	for _, p := range providers {
-		if host, _, _ := strings.Cut(p.Source, "/"); !slices.Contains(allowed, host) {
-			return nil, tofuRefused("provider %s is from registry %s, which provider_registries does not list: under egress_mode %s, writ serve installs providers only from %s; add %s to provider_registries to install from it",
-				p.Source, host, r.s.cfg.EgressMode, strings.Join(allowed, ", "), host)
-		}
-	}
-	if r.install, err = egress.New(egress.Options{Mode: r.s.cfg.EgressMode, Install: true}); err != nil {
-		return nil, err
-	}
-	return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, &tofu.Net{Ports: map[int]http.Handler{runner.EgressPort: r.install}}, runner.EgressEnv)
+	return res, classed(err)
 }
 
-// takeUID takes a provider uid no other run has, nil when the config sets
-// no provider_uids. free ends what still runs as it and returns it.
-func (s *Server) takeUID(ctx context.Context) (user *runas.User, free func(), err error) {
-	if s.uids == nil {
-		return nil, func() {}, nil
+// notStarted reports whether err is of a job that failed before tofu ran.
+func notStarted(err error) bool {
+	_, ok := errors.AsType[*runner.StartError](err)
+	return ok
+}
+
+// classed gives an executor's refusal the class usage, as writ serve's
+// own refusals have.
+func classed(err error) error {
+	if _, ok := errors.AsType[*runner.Refusal](err); ok {
+		return &classedError{diag.Usage, err}
 	}
-	select {
-	case uid := <-s.uids:
-		return &runas.User{UID: uid, GID: uid}, func() { s.freeUID(uid) }, nil
-	case <-ctx.Done():
-		return nil, nil, s.noUID(ctx)
-	}
+	return err
 }
 
 // readProviderEnv reads the provider_env files of e, as NAME=VALUE in the
@@ -360,27 +329,4 @@ func (e Env) role(kind roleKind) string {
 		return e.ApplyRole
 	}
 	return e.PlanRole
-}
-
-// freeUID ends what still runs as uid and returns it to the pool. A uid
-// whose processes will not end stays out of the pool.
-func (s *Server) freeUID(uid uint32) {
-	if err := s.reap(uid); err != nil {
-		s.mu.Lock()
-		s.withheld++
-		withheld := s.withheld
-		s.mu.Unlock()
-		s.log.Error("provider uid withheld: its processes did not end", "uid", uid, "withheld", withheld, "err", err)
-		return
-	}
-	s.uids <- uid
-}
-
-// noUID says why a run got no provider uid before ctx ended.
-func (s *Server) noUID(ctx context.Context) error {
-	s.mu.Lock()
-	withheld := s.withheld
-	s.mu.Unlock()
-	return &classedError{diag.Usage, fmt.Errorf("%w, while it waited for a provider uid: %d of the %d provider_uids are withheld because their processes did not end, and the others serve running plans and applies",
-		context.Cause(ctx), withheld, s.cfg.ProviderUIDs.Count())}
 }

@@ -13,7 +13,6 @@ import (
 	"github.com/mr-karan/writ/internal/egress"
 	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/runner"
-	"github.com/mr-karan/writ/internal/tofu"
 )
 
 // credsURL is the credential endpoint as a run with its own network
@@ -56,27 +55,13 @@ func (s *Server) stateHandler(id string) http.Handler {
 	})
 }
 
-// newProxy is the egress proxy of a run of env, nil under egress_mode
-// off.
-func (s *Server) newProxy(env string) (*egress.Proxy, error) {
-	if !s.cfg.EgressMode.On() {
-		return nil, nil
+// relay is how the own network of run id reaches writ serve: the state
+// port, and the credential endpoint when writ serve has one.
+func (s *Server) relay(id string) (state, creds http.Handler) {
+	if s.broker != nil {
+		creds = s.broker.Handler()
 	}
-	e, _ := s.envOf(env)
-	return egress.New(egress.Options{Mode: s.cfg.EgressMode, List: e.egress})
-}
-
-// net is the run's own network, nil when it has none: the egress proxy,
-// the state backend, and the credential endpoint when writ serve has one.
-func (r *tofuRun) net() *tofu.Net {
-	if r.proxy == nil {
-		return nil
-	}
-	n := &tofu.Net{Ports: map[int]http.Handler{runner.EgressPort: r.proxy, runner.StatePort: r.s.stateHandler(r.spec.id)}}
-	if r.s.broker != nil {
-		n.Ports[runner.CredsPort] = r.s.broker.Handler()
-	}
-	return n
+	return s.stateHandler(id), creds
 }
 
 // FormatNetwork is the document of the destinations an OpenTofu run asked
@@ -118,24 +103,20 @@ const withheldHost = "(withheld)"
 // installStep marks a destination of a run's provider install.
 const installStep = "install"
 
-// network returns the run's NetworkDoc, nil for a run with no egress
-// proxy, and logs one line of it. m sweeps each host. A nil m, of a run
-// whose mask could not read its plan, withholds every host, since only
-// the plan's marks could sweep one.
+// network returns the NetworkDoc of the run's job, nil for a job with no
+// egress proxy, and logs one line of it. m sweeps each host. A nil m, of
+// a run whose mask could not read its plan, withholds every host, since
+// only the plan's marks could sweep one.
 func (r *tofuRun) network(m *mask.Mask) *NetworkDoc {
-	if r.proxy == nil {
+	n := r.net
+	if n == nil {
 		return nil
 	}
 	e, _ := r.s.envOf(r.spec.env)
-	doc := &NetworkDoc{Format: FormatNetwork, Mode: string(r.proxy.Mode()), Egress: append([]string{}, e.Egress...), Destinations: []NetworkDestination{}}
+	doc := &NetworkDoc{Format: FormatNetwork, Mode: string(n.Mode), Egress: append([]string{}, e.Egress...), Destinations: []NetworkDestination{}, Unrecorded: n.Unrecorded}
 	var line []string
 	refused := false
-	record := func(p *egress.Proxy, step string) {
-		if p == nil {
-			return
-		}
-		dests, unrecorded := p.Destinations()
-		doc.Unrecorded += unrecorded
+	record := func(dests []egress.Destination, step string) {
 		for _, d := range dests {
 			host := withheldHost
 			if m != nil {
@@ -147,8 +128,8 @@ func (r *tofuRun) network(m *mask.Mask) *NetworkDoc {
 		}
 	}
 	// The install runs before every step of the run.
-	record(r.install, installStep)
-	record(r.proxy, "")
+	record(n.Install, installStep)
+	record(n.Run, "")
 	log := r.s.log.Info
 	if refused {
 		log = r.s.log.Warn
