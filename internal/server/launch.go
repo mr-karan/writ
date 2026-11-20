@@ -244,11 +244,34 @@ func (r *tofuRun) stateToken(ctx context.Context, stack string, scope control.St
 // file and returns how tofu runs the stack. m sweeps the output of a
 // failed fill.
 func (r *tofuRun) stack(ctx context.Context, m *mask.Mask) (tofu.Stack, error) {
-	lock, err := r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, nil, nil)
+	lock, err := r.fill(ctx)
 	if err != nil {
 		return tofu.Stack{}, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
 	}
 	return tofu.Stack{Files: os.DirFS(r.work), Dir: r.spec.dir, Lock: lock, Env: r.env, Creds: r.creds, StateCreds: r.spec.stateCreds, User: r.user, Net: r.net()}, nil
+}
+
+// fill installs the providers of the stack's lock file and returns the
+// lock file the run's init reads. The lock file is the stack's, and each
+// provider's address starts with the registry the install asks, so under
+// egress_mode report or enforce a provider from a registry that
+// provider_registries does not list is refused.
+func (r *tofuRun) fill(ctx context.Context) ([]byte, error) {
+	if !r.s.cfg.EgressMode.On() {
+		return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, nil, nil)
+	}
+	providers, err := tofu.LockedProviders(r.spec.ts.Lock)
+	if err != nil {
+		return nil, err
+	}
+	allowed := r.s.cfg.ProviderRegistries
+	for _, p := range providers {
+		if host, _, _ := strings.Cut(p.Source, "/"); !slices.Contains(allowed, host) {
+			return nil, tofuRefused("provider %s is from registry %s, which provider_registries does not list: under egress_mode %s, writ serve installs providers only from %s; add %s to provider_registries to install from it",
+				p.Source, host, r.s.cfg.EgressMode, strings.Join(allowed, ", "), host)
+		}
+	}
+	return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, nil, nil)
 }
 
 // takeUID takes a provider uid no other run has, nil when the config sets

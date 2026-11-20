@@ -118,6 +118,9 @@ func TestParseConfigErrors(t *testing.T) {
 		{"egress wildcard too wide", key, env(`egress = ["*.com"]`), `env prod: egress item "*.com": a wildcard needs a domain of two labels or more`},
 		{"egress loopback", key, env(`egress = ["127.0.0.1:5432"]`), `env prod: egress item "127.0.0.1:5432": the egress proxy never connects to a loopback address`},
 		{"egress url", key, env(`egress = ["https://sts.amazonaws.com"]`), `env prod: egress item "https://sts.amazonaws.com": it is not HOST, *.DOMAIN, or an IP address`},
+		{"provider_registries not a list", "", `provider_registries = "registry.opentofu.org"`, "provider_registries must be a list [ ... ]"},
+		{"provider_registries url", "", `provider_registries = ["https://registry.opentofu.org"]`, `provider_registries item "https://registry.opentofu.org": it is not a registry's host name, such as registry.opentofu.org, as a lock file's provider address starts with`},
+		{"provider_registries with a port", "", `provider_registries = ["registry.example.com:8443"]`, `provider_registries item "registry.example.com:8443": it is not a registry's host name`},
 		{"egress with a loopback s3 endpoint", key, env("s3_endpoints = [\"http://127.0.0.1:7070\"]\n}\negress_mode = \"enforce\"\n" + tofuBlock + "env \"qa\" {\n  key = \"k\""), "env prod: s3_endpoints lists http://127.0.0.1:7070, a loopback address, which a run cannot reach from its own network namespace under egress_mode enforce"},
 		{"unknown key", "", `lisen = "x"`, "the config has no field lisen"},
 		{"unknown block", "", `listen_on { port = 1 }`, "the config has no field listen_on"},
@@ -579,11 +582,24 @@ func TestParseConfigEgress(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if want := []string{"registry.opentofu.org", "registry.terraform.io"}; !slices.Equal(cfg.ProviderRegistries, want) {
+		t.Fatalf("provider_registries %q by default, want %q", cfg.ProviderRegistries, want)
+	}
+	cfg, diags = ParseConfig("/etc/writ/serve", []byte(src+"\nprovider_registries = [\"registry.example.com\"]\n"))
+	if diags.HasErrors() || !slices.Equal(cfg.ProviderRegistries, []string{"registry.example.com"}) {
+		t.Fatalf("provider_registries %q, %v", cfg.ProviderRegistries, diags)
+	}
+
 	// A list with egress_mode off has no effect, which --check says.
 	src = strings.Replace(edited(t, "", tofuBlock), `key = "keys/prod.key"`, "key = \"keys/prod.key\"\n  egress = [\"*.amazonaws.com\"]", 1)
-	_, diags = ParseConfig("/etc/writ/serve", []byte(src))
-	if diags.HasErrors() || !strings.Contains(diagText(diags), "env prod sets egress, and egress_mode is off, so its runs keep the host's network") {
-		t.Fatalf("a list under egress_mode off: %v", diags)
+	_, diags = ParseConfig("/etc/writ/serve", []byte(src+"\nprovider_registries = [\"registry.example.com\"]\n"))
+	for _, want := range []string{
+		"env prod sets egress, and egress_mode is off, so its runs keep the host's network",
+		"provider_registries is set, and egress_mode is off, so a provider install asks any registry a lock file names; set egress_mode to report or enforce",
+	} {
+		if diags.HasErrors() || !strings.Contains(diagText(diags), want) {
+			t.Errorf("lists under egress_mode off: %v, want %q", diags, want)
+		}
 	}
 }
 

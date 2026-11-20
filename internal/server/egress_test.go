@@ -18,6 +18,7 @@ import (
 
 	"github.com/mr-karan/writ/internal/awsrole"
 	"github.com/mr-karan/writ/internal/awsrole/ststest"
+	"github.com/mr-karan/writ/internal/forge/forgetest"
 	"github.com/mr-karan/writ/internal/server"
 	"github.com/mr-karan/writ/internal/tofu"
 )
@@ -447,4 +448,56 @@ func TestTofuEgressMaskRefusesPlan(t *testing.T) {
 		}
 		check(t, f, log, run.Run.ID, run.Network, "/v1/runs/"+run.Run.ID)
 	})
+}
+
+// Under egress_mode report or enforce, a provider install asks only the
+// registries provider_registries lists: a plan whose lock file pins a
+// provider from another fails before the install, with a diagnostic that
+// names the registry and the key. Under egress_mode off a lock file's
+// registry is not checked, as before.
+func TestTofuEgressProviderRegistries(t *testing.T) {
+	lockFrom := func(host string) map[string]forgetest.File {
+		files := tofuFiles()
+		files["infra/app/.terraform.lock.hcl"] = forgetest.File{Content: strings.Replace(tofuLockFile, "registry.opentofu.org", host, 1)}
+		return files
+	}
+	refusal := func(host, mode, list string) string {
+		return "writ: install the providers of .terraform.lock.hcl into the plugin cache: provider " + host + "/hashicorp/random is from registry " + host +
+			", which provider_registries does not list: under egress_mode " + mode + ", writ serve installs providers only from " + list + "; add " + host + " to provider_registries to install from it\n"
+	}
+	listed := "provider_registries = [\"registry.example.com\"]\n"
+	tests := []struct {
+		name, mode, extra, host, want string
+	}{
+		{"enforce refuses an unlisted registry", "enforce", "", "localhost", refusal("localhost", "enforce", "registry.opentofu.org, registry.terraform.io")},
+		{"report refuses an unlisted registry", "report", "", "registry.example.com", refusal("registry.example.com", "report", "registry.opentofu.org, registry.terraform.io")},
+		{"a listed registry", "enforce", listed, "registry.example.com", ""},
+		{"the default list is replaced", "enforce", listed, "registry.opentofu.org", refusal("registry.opentofu.org", "enforce", "registry.example.com")},
+		{"terraform's registry", "enforce", "", "registry.terraform.io", ""},
+		{"off", "off", "", "localhost", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeTofu{}
+			f := tofuApplyFixtureEdit(t, runner, func(text string) string {
+				if tt.mode != "off" {
+					text = withEgress(tt.mode, `[]`)(text)
+				}
+				return text + tt.extra
+			})
+			p, _ := f.planCommit(lockFrom(tt.host), "registry")
+			runner.mu.Lock()
+			fills := len(runner.fills)
+			runner.mu.Unlock()
+			if tt.want == "" {
+				if p.Plan.Status != "pending" || fills != 1 {
+					t.Fatalf("plan %+v after %d installs\n%s", p.Plan, fills, p.Text)
+				}
+				return
+			}
+			if p.Plan.Status != "failed" || p.Text != tt.want || fills != 0 {
+				t.Fatalf("plan %+v after %d installs\n%s\nwant\n%s", p.Plan, fills, p.Text, tt.want)
+			}
+		})
+	}
 }

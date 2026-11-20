@@ -73,7 +73,15 @@ type Config struct {
 	// its own whose one way out is the egress proxy, which enforce holds
 	// to its environment's egress list.
 	EgressMode egress.Mode
+	// ProviderRegistries are the registry hosts a provider install may
+	// ask under egress_mode report or enforce: a lock file's provider
+	// address starts with its registry, which the stack chooses.
+	ProviderRegistries []string
 }
+
+// defaultProviderRegistries is provider_registries when the config sets
+// none: OpenTofu's registry, and the one Terraform's lock files name.
+var defaultProviderRegistries = []string{"registry.opentofu.org", "registry.terraform.io"}
 
 // minDriftEvery is the shortest drift.every: each check reads every
 // resource of the stack through its providers, with the plan role.

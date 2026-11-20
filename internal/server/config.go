@@ -52,7 +52,7 @@ func (d *decoder) config(b *hclsyntax.Body) *Config {
 		Envs: map[string]Env{},
 	}
 	s := shape{
-		attrs:  []string{"url", "listen", "database", "data", "provider_uids", "plan_ttl", "session_ttl", "poll_every", "trusted_proxies", "egress_mode"},
+		attrs:  []string{"url", "listen", "database", "data", "provider_uids", "plan_ttl", "session_ttl", "poll_every", "trusted_proxies", "egress_mode", "provider_registries"},
 		blocks: []string{"tls", "limits", "retention", "ui", "aws", "tofu", "drift", "policy"},
 		lists:  []string{"grant", "approval", "repo"},
 		named:  []string{"issuer", "team", "env", "forge"},
@@ -354,11 +354,24 @@ func (d *decoder) envs(top *hclsyntax.Body, bs []*hclsyntax.Block, cfg *Config) 
 	}
 }
 
+// registryRE is a registry's host name as a lock file's provider address
+// may start with it.
+var registryRE = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
+
 // egress reads egress_mode, off by default, which only a config that runs
-// OpenTofu may turn on, and checks that each env's runs can reach their
-// state from their own network namespace.
+// OpenTofu may turn on, and provider_registries, and checks that each
+// env's runs can reach their state from their own network namespace.
 func (d *decoder) egress(top map[string]field, cfg *Config) {
 	cfg.EgressMode = egress.Off
+	cfg.ProviderRegistries = defaultProviderRegistries
+	if r, ok := top["provider_registries"]; ok {
+		cfg.ProviderRegistries = d.strs(r.value, "provider_registries")
+		for _, h := range cfg.ProviderRegistries {
+			if !registryRE.MatchString(h) {
+				d.errorf(r.value, "provider_registries item %q: it is not a registry's host name, such as registry.opentofu.org, as a lock file's provider address starts with", h)
+			}
+		}
+	}
 	f, ok := top["egress_mode"]
 	if ok {
 		m, err := egress.ParseMode(d.str(f.value, "egress_mode"))
@@ -369,6 +382,9 @@ func (d *decoder) egress(top map[string]field, cfg *Config) {
 		cfg.EgressMode = m
 	}
 	if !cfg.EgressMode.On() {
+		if r, ok := top["provider_registries"]; ok {
+			d.warnf(r.value, "provider_registries is set, and egress_mode is off, so a provider install asks any registry a lock file names; set egress_mode to report or enforce")
+		}
 		return
 	}
 	if _, ok := top["tofu"]; !ok {

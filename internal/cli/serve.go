@@ -161,6 +161,11 @@ func printServeCheck(w io.Writer, file string, cfg *server.Config) error {
 			}
 			fmt.Fprintf(w, "egress: env %s allows %s\n", name, allows)
 		}
+		registries := "no registry"
+		if len(cfg.ProviderRegistries) > 0 {
+			registries = strings.Join(cfg.ProviderRegistries, ", ")
+		}
+		fmt.Fprintf(w, "egress: providers install only from %s\n", registries)
 	}
 	if a := cfg.AWS; a != nil {
 		sts := a.STSEndpoint

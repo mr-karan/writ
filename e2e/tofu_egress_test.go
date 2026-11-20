@@ -215,6 +215,7 @@ output "from_module" {
 	for _, want := range []string{
 		"egress: enforce; each OpenTofu run reaches the network only through writ's egress proxy, which refuses a destination its env's egress does not list\n",
 		"egress: env prod allows 192.0.2.10:8080\n",
+		"egress: providers install only from registry.opentofu.org, registry.terraform.io\n",
 	} {
 		if !strings.Contains(check.stdout, want) {
 			t.Errorf("writ serve --check printed\n%s\nwithout %q", check.stdout, want)
