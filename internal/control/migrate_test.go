@@ -308,7 +308,7 @@ func TestMigrateDropsLanguageTables(t *testing.T) {
 	})
 }
 
-// Migration 18 lets a plan be no-changes. The CHECK of plans named every
+// Migration 19 lets a plan be no-changes. The CHECK of plans named every
 // status before it, so a write of no-changes failed; after it, the rows
 // from before keep their statuses, their approvals and runs, and the
 // CHECK still refuses a status the lifecycle does not know.
@@ -322,7 +322,7 @@ func TestMigratePlanNoChanges(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, name := range names {
-			if strings.HasPrefix(filepath.Base(name), "0018_") {
+			if strings.HasPrefix(filepath.Base(name), "0019_") {
 				break
 			}
 			b, err := os.ReadFile(name)
@@ -332,7 +332,7 @@ func TestMigratePlanNoChanges(t *testing.T) {
 			files[name] = &fstest.MapFile{Data: b}
 		}
 		raw := controltest.Raw(t, loc)
-		if err := raw.Migrate(ctx, sqldb.Migrations{Files: files, Dir: "migrations", Schema: control.Schema, What: "v17 database", Now: time.Now}); err != nil {
+		if err := raw.Migrate(ctx, sqldb.Migrations{Files: files, Dir: "migrations", Schema: control.Schema, What: "database before migration 19", Now: time.Now}); err != nil {
 			t.Fatal(err)
 		}
 		var cfg int64
