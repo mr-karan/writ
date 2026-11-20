@@ -74,6 +74,10 @@ type Options struct {
 	// MaxOutput bounds each step's stdout and its stderr, and the saved
 	// plan, in bytes.
 	MaxOutput int
+	// Limits bound each step of a run. Memory, Pids, and CPUs hold only
+	// where New can give each step a cgroup of its own (Enforcement says
+	// whether it could); Scratch holds everywhere.
+	Limits Limits
 }
 
 // Runner starts tofu. It holds no state between runs but the open
@@ -82,6 +86,11 @@ type Runner struct {
 	opts Options
 	root *os.Root
 	git  *gitTools
+	// cgroups is the cgroup under which each step gets one of its own, ""
+	// when Options.Limits sets none or this process cannot make them,
+	// and cgroupOff is why it cannot.
+	cgroups   string
+	cgroupOff string
 	// cache is held by Fill to write the plugin cache, and by each run's
 	// init to read it.
 	cache sync.RWMutex
@@ -93,7 +102,10 @@ type Runner struct {
 
 // New checks opts, that the scratch root is safe from other users, that
 // opts.Binary is OpenTofu Version, and that opts.Git, when set, has what a
-// clone over https runs.
+// clone over https runs. When opts.Limits sets Memory, Pids, or CPUs, the
+// first New of the process moves it into a leaf of its own cgroup and
+// gives that cgroup's children the controllers, if it may; a Runner that
+// cannot runs each step without them, and Enforcement says why.
 func New(ctx context.Context, opts Options) (*Runner, error) {
 	switch {
 	case opts.Binary == "":
@@ -125,6 +137,11 @@ func New(ctx context.Context, opts Options) (*Runner, error) {
 		return nil, err
 	}
 	r := &Runner{opts: opts, root: root}
+	if opts.Limits.cgroup() {
+		if r.cgroups, err = setUpCgroups(); err != nil {
+			r.cgroupOff = err.Error()
+		}
+	}
 	if opts.Git != "" {
 		if r.git, err = findGit(ctx, opts.Git); err != nil {
 			root.Close()
@@ -214,9 +231,15 @@ type StepError struct {
 	Stdout, Stderr []byte
 	// Reason, when set, is what writ found the failure to need.
 	Reason string
+	// Limit, when set, is the limit of Options.Limits the step reached,
+	// which ended it.
+	Limit string
 }
 
 func (e *StepError) Error() string {
+	if e.Limit != "" {
+		return fmt.Sprintf("tofu %s stopped at a limit: %s", e.Step, e.Limit)
+	}
 	msg := fmt.Sprintf("tofu %s exited with code %d", e.Step, e.Code)
 	if e.Reason != "" {
 		msg += ": " + e.Reason

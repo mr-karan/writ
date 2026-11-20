@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"testing/fstest"
@@ -106,6 +107,58 @@ func fakeTofuMain(behaviour string, args []string) int {
 		err = startSleeper()
 	case "loud":
 		fmt.Printf("%4096s", "x")
+	case "alloc":
+		// More memory than TestRunLimits allows, every page touched.
+		mem := make([]byte, 256<<20)
+		for i := 0; i < len(mem); i += 4096 {
+			mem[i] = 1
+		}
+		fmt.Println("allocated", len(mem))
+	case "forkbomb":
+		// Processes until the kernel refuses one.
+		for err == nil {
+			err = startSleeper()
+		}
+	case "spin":
+		// Four threads busy for two seconds, then the CPU time they took.
+		start := time.Now()
+		var wg sync.WaitGroup
+		for range 4 {
+			wg.Go(func() {
+				for time.Since(start) < 2*time.Second {
+				}
+			})
+		}
+		wg.Wait()
+		var ru syscall.Rusage
+		if err = syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err == nil {
+			cpu := time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
+			fmt.Printf("cpu %.2f wall %.2f\n", cpu.Seconds(), time.Since(start).Seconds())
+		}
+		if err == nil {
+			return 1
+		}
+	case "scratch", "scratch-exit":
+		// 64 MiB written into the stack's directory; scratch then waits.
+		var f *os.File
+		if f, err = os.Create("fill.bin"); err == nil {
+			chunk := bytes.Repeat([]byte{1}, 1<<20)
+			for i := 0; i < 64 && err == nil; i++ {
+				_, err = f.Write(chunk)
+			}
+			err = errors.Join(err, f.Close())
+		}
+		if err == nil && behaviour == "scratch" {
+			time.Sleep(time.Hour)
+		}
+	case "cgroup":
+		var cg []byte
+		if cg, err = os.ReadFile("/proc/self/cgroup"); err == nil {
+			fmt.Print(string(cg))
+		}
+		if cmd == "plan" {
+			err = os.WriteFile(planFile, []byte("saved"), 0o600)
+		}
 	case "seccomp":
 		fmt.Print(seccompProbe())
 		return 1

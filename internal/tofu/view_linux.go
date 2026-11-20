@@ -153,9 +153,10 @@ const nsswitch = "hosts: files dns\n"
 // certificates and resolver files, a few devices, and a /proc of the
 // run's own processes. With c.net, the helper also starts in a new
 // network namespace and writ serves c.net's ports there until the stop it
-// returns is called. Where the kernel can run it, tofu runs under writ's
-// seccomp filter (seccompFilter). A failure to make the view, the
-// network, or the filter fails the step: tofu never runs without them.
+// returns is called. With c.cgroup, the helper starts in the step's
+// cgroup. Where the kernel can run it, tofu runs under writ's seccomp
+// filter (seccompFilter). A failure to make the view, the network, or the
+// filter fails the step: tofu never runs without them.
 func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 	if cmd.Err != nil {
 		return nil, cmd.Err
@@ -219,6 +220,10 @@ func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, c.plan)
 	}
 	cmd.SysProcAttr = viewAttr(c.user, c.net != nil)
+	if c.cgroup != nil {
+		// The helper starts in the step's cgroup, before it runs anything.
+		cmd.SysProcAttr.UseCgroupFD, cmd.SysProcAttr.CgroupFD = true, c.cgroup.fd()
+	}
 	err = runas.StartMapped(cmd)
 	w.Close()
 	if lnSend != nil {
