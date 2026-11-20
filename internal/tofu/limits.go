@@ -204,14 +204,12 @@ func (sc *scratch) overScratch(max int64, cg *stepCgroup) string {
 
 // usage returns the bytes on disk of sc's directory, read as the run's
 // user, counting each file with hard links once and each file and
-// directory as at least scratchInode. With cg, it adds the files on the
-// directory's filesystem that no directory names any longer but cg's
-// processes hold open or mapped: a run could write into such a file for
-// as long as the step runs. It stops once the count passes max, and fails
-// past deadline.
+// directory as at least scratchInode. With cg, it adds the files that no
+// directory names any longer but cg's threads hold open or mapped: a run
+// could write into such a file for as long as the step runs. It stops
+// once the count passes max, and fails past deadline.
 func (sc *scratch) usage(max int64, cg *stepCgroup, deadline time.Time) (int64, error) {
 	w := scratchWalk{max: max, deadline: deadline}
-	var dev uint64
 	err := asUser(sc.user, func() error {
 		f, err := sc.run.OpenFile(".", os.O_RDONLY|syscall.O_DIRECTORY, 0)
 		if err != nil {
@@ -222,7 +220,6 @@ func (sc *scratch) usage(max int64, cg *stepCgroup, deadline time.Time) (int64, 
 		if err := unix.Fstat(int(f.Fd()), &st); err != nil {
 			return err
 		}
-		dev = uint64(st.Dev)
 		if err := w.charge(&st); err != nil {
 			return err
 		}
@@ -234,7 +231,7 @@ func (sc *scratch) usage(max int64, cg *stepCgroup, deadline time.Time) (int64, 
 	if err != nil || cg == nil {
 		return w.total, err
 	}
-	held, err := cg.heldRemoved(sc.user, dev)
+	held, err := cg.heldRemoved(sc.user)
 	return w.total + held, err
 }
 

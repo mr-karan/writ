@@ -431,27 +431,27 @@ func (c *stepCgroup) remove() error {
 	return os.Remove(c.dir)
 }
 
-// heldRemoved returns the bytes on disk of the files on the filesystem dev
-// that no directory names but a thread of the cgroup holds open or maps,
-// each counted once and as at least scratchInode. A mapped file counts as
-// the end of its furthest mapping, since a mapping, unlike a descriptor,
-// gives no way to stat the file. It reads every thread, not only each
-// process: once a process's first thread exits alone, /proc/PID reads that
-// thread's empty tables while the others still hold the file, and a thread
-// cloned without CLONE_FILES has descriptors of its own. It reads /proc as
-// u, the run's user: /proc/TID/fd belongs to the uid of its thread, and
-// the kernel lets no other uid without CAP_DAC_READ_SEARCH list it, though
+// heldRemoved returns the bytes on disk of the files that no directory
+// names but a thread of the cgroup holds open or maps, each counted once
+// and as at least scratchInode, on whatever filesystem they lie: a run may
+// make a btrfs subvolume in its own directory, whose files stat gives a
+// device of their own. It reads every thread, not only each process: once
+// a process's first thread exits alone, /proc/PID reads that thread's
+// empty tables while the others still hold the file, and a thread cloned
+// without CLONE_FILES has descriptors of its own. It reads /proc as u, the
+// run's user: /proc/TID/fd belongs to the uid of its thread, and the
+// kernel lets no other uid without CAP_DAC_READ_SEARCH list it, though
 // writ made the user namespace the thread runs in.
-func (c *stepCgroup) heldRemoved(u *User, dev uint64) (int64, error) {
+func (c *stepCgroup) heldRemoved(u *User) (int64, error) {
 	tids, err := cgroupIDs(c.dir, "cgroup.threads")
 	if err != nil {
 		return 0, err
 	}
-	held := map[uint64]int64{}
+	h := heldFiles{open: map[[2]uint64]openFile{}, mapped: map[mappedFile]int64{}}
 	var denied []int
 	err = asUser(u, func() error {
 		for _, tid := range tids {
-			err := heldByThread(tid, dev, held)
+			err := h.read(tid)
 			if u != nil && errors.Is(err, os.ErrPermission) {
 				denied = append(denied, tid)
 				continue
@@ -468,21 +468,70 @@ func (c *stepCgroup) heldRemoved(u *User, dev uint64) (int64, error) {
 	// A process that made itself not dumpable gives its /proc/TID/fd to
 	// root of its user namespace, which is writ's uid.
 	for _, tid := range denied {
-		if err := heldByThread(tid, dev, held); err != nil {
+		if err := h.read(tid); err != nil {
 			return 0, err
 		}
 	}
-	var total int64
-	for _, n := range held {
-		total += max(n, scratchInode)
-	}
-	return total, nil
+	return h.total(), nil
 }
 
-// heldByThread adds to held, by inode, the bytes of each removed file on
-// dev that the thread tid holds open or maps. A thread that exits
-// meanwhile holds nothing.
-func heldByThread(tid int, dev uint64, held map[uint64]int64) error {
+// heldFiles is what threads hold of files that no directory names.
+// /proc/TID/maps gives a file's device as its filesystem's, which is not
+// always the one stat gives, as on btrfs, so a mapping is known by its
+// device, inode, and path, and is the file of a descriptor when the inode
+// and either the device or the path agree.
+type heldFiles struct {
+	// open holds the files of descriptors by stat's device and inode.
+	open map[[2]uint64]openFile
+	// mapped holds the end of each file's furthest mapping, since a
+	// mapping, unlike a descriptor, gives no way to stat the file.
+	mapped map[mappedFile]int64
+}
+
+type openFile struct {
+	blocks int64
+	path   string
+}
+
+type mappedFile struct {
+	dev  string
+	ino  uint64
+	path string
+}
+
+// inMemory reports whether path, as /proc names a removed file, is a
+// memfd or System V shared memory: memory, which run_memory bounds, as
+// is the sealed saved plan that writ gives a step.
+func inMemory(path string) bool {
+	return strings.HasPrefix(path, "/memfd:") || strings.HasPrefix(path, "/SYSV")
+}
+
+// total is the bytes of h's files, each at least scratchInode.
+func (h *heldFiles) total() int64 {
+	var n int64
+	byIno := map[uint64][][2]uint64{}
+	for id, f := range h.open {
+		n += max(f.blocks, scratchInode)
+		byIno[id[1]] = append(byIno[id[1]], id)
+	}
+	for m, end := range h.mapped {
+		if !slices.ContainsFunc(byIno[m.ino], func(id [2]uint64) bool {
+			return majorMinor(id[0]) == m.dev || h.open[id].path == m.path
+		}) {
+			n += max(end, scratchInode)
+		}
+	}
+	return n
+}
+
+// majorMinor writes dev as /proc/TID/maps does.
+func majorMinor(dev uint64) string {
+	return fmt.Sprintf("%02x:%02x", unix.Major(dev), unix.Minor(dev))
+}
+
+// read adds to h each removed file that the thread tid holds open or
+// maps. A thread that exits meanwhile holds nothing.
+func (h *heldFiles) read(tid int) error {
 	proc := "/proc/" + strconv.Itoa(tid)
 	f, err := os.Open(proc + "/fd")
 	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
@@ -502,7 +551,8 @@ func heldByThread(tid int, dev uint64, held map[uint64]int64) error {
 		}
 		for _, n := range names {
 			var st unix.Stat_t
-			err := unix.Stat(proc+"/fd/"+n, &st)
+			fd := proc + "/fd/" + n
+			err := unix.Stat(fd, &st)
 			if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ESRCH) {
 				// Closed meanwhile.
 				continue
@@ -510,9 +560,22 @@ func heldByThread(tid int, dev uint64, held map[uint64]int64) error {
 			if err != nil {
 				return fmt.Errorf("read a descriptor of the step's thread %d: %w", tid, err)
 			}
-			if st.Mode&unix.S_IFMT == unix.S_IFREG && st.Nlink == 0 && st.Dev == dev {
-				held[st.Ino] = max(held[st.Ino], st.Blocks*512)
+			if st.Mode&unix.S_IFMT != unix.S_IFREG || st.Nlink != 0 {
+				continue
 			}
+			path, err := os.Readlink(fd)
+			if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("read a descriptor of the step's thread %d: %w", tid, err)
+			}
+			path = strings.TrimSuffix(path, " (deleted)")
+			if inMemory(path) {
+				continue
+			}
+			id := [2]uint64{st.Dev, st.Ino}
+			h.open[id] = openFile{blocks: max(h.open[id].blocks, st.Blocks*512), path: path}
 		}
 	}
 	maps, err := os.Open(proc + "/maps")
@@ -523,16 +586,23 @@ func heldByThread(tid int, dev uint64, held map[uint64]int64) error {
 		return fmt.Errorf("read the mappings of the step's thread %d: %w", tid, err)
 	}
 	defer maps.Close()
-	want := fmt.Sprintf("%02x:%02x", unix.Major(dev), unix.Minor(dev))
 	sc := bufio.NewScanner(maps)
 	for sc.Scan() {
-		// START-END PERMS OFFSET MAJ:MIN INODE PATH (deleted)
-		line := sc.Text()
-		if !strings.HasSuffix(line, " (deleted)") {
+		line, ok := strings.CutSuffix(sc.Text(), " (deleted)")
+		if !ok {
 			continue
 		}
-		f := strings.Fields(line)
-		if len(f) < 6 || f[3] != want {
+		// START-END PERMS OFFSET MAJ:MIN INODE PATH, the path padded
+		// with spaces and its own spaces kept.
+		var f [5]string
+		rest := line
+		for i := range f {
+			if f[i], rest, ok = strings.Cut(strings.TrimLeft(rest, " "), " "); !ok {
+				break
+			}
+		}
+		path := strings.TrimLeft(rest, " ")
+		if !ok || inMemory(path) {
 			continue
 		}
 		start, end, _ := strings.Cut(f[0], "-")
@@ -543,7 +613,8 @@ func heldByThread(tid int, dev uint64, held map[uint64]int64) error {
 		if err := errors.Join(err1, err2, err3, err4); err != nil || ino == 0 {
 			continue
 		}
-		held[ino] = max(held[ino], int64(off+hi-lo))
+		m := mappedFile{dev: f[3], ino: ino, path: path}
+		h.mapped[m] = max(h.mapped[m], int64(off+hi-lo))
 	}
 	if err := sc.Err(); err != nil && !errors.Is(err, unix.ESRCH) {
 		return fmt.Errorf("read the mappings of the step's thread %d: %w", tid, err)

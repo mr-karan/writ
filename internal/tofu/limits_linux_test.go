@@ -476,3 +476,100 @@ func TestCgroupChecks(t *testing.T) {
 	}
 }
 
+// cgroupStandIn returns a directory whose cgroup.procs and cgroup.threads
+// list this process and its threads, each times times, as a step's
+// cgroup lists its processes: a measure of held files reads only those.
+func cgroupStandIn(t *testing.T, times int) *stepCgroup {
+	t.Helper()
+	tasks, err := os.ReadDir("/proc/self/task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var procs, threads strings.Builder
+	for range times {
+		procs.WriteString(strconv.Itoa(os.Getpid()) + "\n")
+		for _, task := range tasks {
+			threads.WriteString(task.Name() + "\n")
+		}
+	}
+	dir := t.TempDir()
+	for file, text := range map[string]string{"cgroup.procs": procs.String(), "cgroup.threads": threads.String()} {
+		if err := os.WriteFile(filepath.Join(dir, file), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return &stepCgroup{dir: dir}
+}
+
+// scratchStandIn returns a run's directory to measure, empty.
+func scratchStandIn(t *testing.T) *scratch {
+	t.Helper()
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { root.Close() })
+	return &scratch{run: root}
+}
+
+// A removed file that a step's process holds counts on whatever
+// filesystem it lies: /proc/PID/maps names a file of a btrfs subvolume,
+// which a run may make in its own directory, by the device of the
+// filesystem, not the subvolume's device that stat gives, so a measure
+// that keeps only the files of the run directory's device misses it. A
+// file on /dev/shm stands in for one. A file both open and mapped counts
+// once.
+func TestScratchCountsHeldFilesOnAnyDevice(t *testing.T) {
+	shm, err := os.MkdirTemp("/dev/shm", "writ-held-")
+	if err != nil {
+		t.Skipf("needs /dev/shm: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(shm) })
+	sc := scratchStandIn(t)
+	var a, b syscall.Stat_t
+	if err := syscall.Stat(shm, &a); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Stat(os.TempDir(), &b); err != nil {
+		t.Fatal(err)
+	}
+	if a.Dev == b.Dev {
+		t.Skip("/dev/shm and TMPDIR are one filesystem")
+	}
+	const size = 4 << 20
+	for _, how := range []string{"open", "mapped", "open and mapped"} {
+		t.Run(how, func(t *testing.T) {
+			f, err := os.CreateTemp(shm, "held-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			if err := os.Remove(f.Name()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.Write(make([]byte, size)); err != nil {
+				t.Fatal(err)
+			}
+			if how != "open" {
+				mem, err := syscall.Mmap(int(f.Fd()), 0, size, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer syscall.Munmap(mem)
+			}
+			if how == "mapped" {
+				if err := f.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			n, err := sc.usage(1<<40, cgroupStandIn(t, 1), time.Now().Add(scratchWithin))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n < size || n >= 2*size {
+				t.Fatalf("the measure counted %d bytes, not the %d of the removed file this process holds, once", n, size)
+			}
+		})
+	}
+}
+
