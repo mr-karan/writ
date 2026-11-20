@@ -106,6 +106,9 @@ func fakeTofuMain(behaviour string, args []string) int {
 		err = startSleeper()
 	case "loud":
 		fmt.Printf("%4096s", "x")
+	case "seccomp":
+		fmt.Print(seccompProbe())
+		return 1
 	case "apply-event":
 		// apply reports a change, and on SIGINT, as tofu does, it reports
 		// the state it saved and exits.

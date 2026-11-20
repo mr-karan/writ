@@ -121,6 +121,8 @@ type viewSpec struct {
 	// listens on Ports of 127.0.0.1 and hands writ the listeners.
 	Net   bool  `json:"net,omitempty"`
 	Ports []int `json:"ports,omitempty"`
+	// Seccomp installs writ's seccomp filter before the exec of tofu.
+	Seccomp bool `json:"seccomp,omitempty"`
 }
 
 // bind puts Source of the host at Target in the view, read-only unless
@@ -151,8 +153,9 @@ const nsswitch = "hosts: files dns\n"
 // certificates and resolver files, a few devices, and a /proc of the
 // run's own processes. With c.net, the helper also starts in a new
 // network namespace and writ serves c.net's ports there until the stop it
-// returns is called. A failure to make the view or the network fails the
-// step: tofu never runs without them.
+// returns is called. Where the kernel can run it, tofu runs under writ's
+// seccomp filter (seccompFilter). A failure to make the view, the
+// network, or the filter fails the step: tofu never runs without them.
 func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 	if cmd.Err != nil {
 		return nil, cmd.Err
@@ -181,7 +184,7 @@ func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 			}
 		}
 	}
-	vs := viewSpec{Binary: bin, Args: cmd.Args, Dir: dir, Binds: binds, User: c.user}
+	vs := viewSpec{Binary: bin, Args: cmd.Args, Dir: dir, Binds: binds, User: c.user, Seccomp: seccompReady() == nil}
 	if c.net != nil {
 		vs.Net, vs.Ports = true, c.net.ports()
 	}
@@ -522,7 +525,8 @@ func searchPath(ef *elf.File, origin string, loaderDirs []string) []string {
 // pid namespace. It makes
 // the view on a tmpfs mounted at /proc of its own mount namespace, makes
 // that tmpfs its root, drops the old root, takes the run's user, drops
-// every capability, and execs tofu. It returns only an error.
+// every capability, installs writ's seccomp filter, and execs tofu. It
+// returns only an error.
 func enterView(arg string) error {
 	runtime.LockOSThread()
 	var spec viewSpec
@@ -597,6 +601,11 @@ func enterView(arg string) error {
 	}
 	for _, fd := range []int{statusFD, runFD, homeFD} {
 		syscall.CloseOnExec(fd)
+	}
+	if spec.Seccomp {
+		if err := installSeccomp(); err != nil {
+			return fmt.Errorf("install writ's seccomp filter: %w", err)
+		}
 	}
 	return syscall.Exec(spec.Binary, spec.Args, os.Environ())
 }
