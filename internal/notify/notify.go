@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -174,13 +175,15 @@ type Target struct {
 	Match func(env, stack string) bool
 }
 
-// Result reports the final outcome of delivering one event to one target.
+// Result reports the final outcome of delivering one event to one target,
+// or of Dropped events that found the target's queue full.
 type Result struct {
 	Target   string
 	Event    EventKind
 	OK       bool
 	Err      string
 	Attempts int
+	Dropped  int64
 	At       time.Time
 }
 
@@ -312,7 +315,7 @@ func FormatSlack(ev Event) ([]byte, error) {
 		fmt.Fprintf(&line, " `%s`", escapeSlack(strings.ReplaceAll(target, "`", "'")))
 	}
 	if ev.Summary != "" {
-		fmt.Fprintf(&line, " — %s", escapeSlack(ev.Summary))
+		fmt.Fprintf(&line, ": %s", escapeSlack(ev.Summary))
 	}
 	var meta []string
 	if ev.StartedBy.Display != "" {
@@ -370,6 +373,7 @@ func newHTTPClient(timeout time.Duration) *http.Client {
 		timeout = DefaultTimeout
 	}
 	tr := &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: min(5*time.Second, timeout)}).DialContext,
 		TLSHandshakeTimeout:   min(5*time.Second, timeout),
 		ResponseHeaderTimeout: timeout,
@@ -403,6 +407,9 @@ type Dispatcher struct {
 type worker struct {
 	target Target
 	queue  chan Event
+	// dropped counts events Emit found no room for. The worker reports
+	// them, so Emit never waits on OnResult.
+	dropped atomic.Int64
 }
 
 // New starts a Dispatcher for opts.Targets. Call Close to stop its workers.
@@ -455,8 +462,9 @@ func (d *Dispatcher) Close() {
 }
 
 // Emit queues ev for every matching target without blocking. If a target's
-// queue is full, the event is dropped for that target, logged, and reported via
-// OnResult.
+// queue is full, the event is dropped for that target and logged, and the
+// target's worker reports the drop through OnResult after its current
+// delivery.
 func (d *Dispatcher) Emit(ev Event) {
 	if d == nil || len(d.workers) == 0 {
 		return
@@ -471,15 +479,8 @@ func (d *Dispatcher) Emit(ev Event) {
 		select {
 		case w.queue <- ev:
 		default:
+			w.dropped.Add(1)
 			d.log.Warn("notification queue full, dropping event", "notifier", w.target.Name, "event", ev.Event, "stack", ev.Stack, "env", ev.Env)
-			d.report(Result{
-				Target:   w.target.Name,
-				Event:    ev.Event,
-				OK:       false,
-				Err:      "notification queue full",
-				Attempts: 0,
-				At:       d.now().UTC(),
-			})
 		}
 	}
 }
@@ -504,6 +505,9 @@ func (d *Dispatcher) runWorker(w *worker) {
 			return
 		case ev := <-w.queue:
 			d.deliver(w.target, ev)
+			if n := w.dropped.Swap(0); n > 0 {
+				d.report(Result{Target: w.target.Name, Event: ev.Event, Err: fmt.Sprintf("queue full: dropped %d events", n), Dropped: n, At: d.now().UTC()})
+			}
 		}
 	}
 }

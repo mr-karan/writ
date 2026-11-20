@@ -445,13 +445,16 @@ func TestQueueFullDoesNotBlock(t *testing.T) {
 		<-block
 		w.WriteHeader(http.StatusOK)
 	}))
+	var unblock sync.Once
+	release := func() { unblock.Do(func() { close(block) }) }
 	defer func() {
-		close(block)
+		release()
 		srv.Close()
 	}()
 
 	var mu sync.Mutex
 	var results []notify.Result
+	reported := make(chan struct{}, 8)
 	d := notify.New(notify.Options{
 		Targets: []notify.Target{{
 			Name:   "bounded",
@@ -464,6 +467,7 @@ func TestQueueFullDoesNotBlock(t *testing.T) {
 			mu.Lock()
 			results = append(results, r)
 			mu.Unlock()
+			reported <- struct{}{}
 		},
 	})
 	defer d.Close()
@@ -486,15 +490,41 @@ func TestQueueFullDoesNotBlock(t *testing.T) {
 	}
 
 	mu.Lock()
-	dropped := 0
-	for _, r := range results {
-		if !r.OK && strings.Contains(r.Err, "queue full") {
-			dropped++
+	early := len(results)
+	mu.Unlock()
+	if early != 0 {
+		t.Fatalf("OnResult ran %d times inside Emit; the worker reports drops", early)
+	}
+
+	// The worker reports E3 and E4 as one drop after E1's delivery.
+	release()
+	deadline := time.After(5 * time.Second)
+	for {
+		mu.Lock()
+		var dropped int64
+		delivered := 0
+		for _, r := range results {
+			if r.OK {
+				delivered++
+			}
+			dropped += r.Dropped
+		}
+		mu.Unlock()
+		if delivered == 2 && dropped == 2 {
+			break
+		}
+		select {
+		case <-reported:
+		case <-deadline:
+			t.Fatalf("delivered %d, dropped %d; want 2 and 2", delivered, dropped)
 		}
 	}
-	mu.Unlock()
-	if dropped < 2 {
-		t.Errorf("dropped = %d, want at least 2", dropped)
+	mu.Lock()
+	defer mu.Unlock()
+	for _, r := range results {
+		if r.Dropped > 0 && (r.OK || r.Err != "queue full: dropped 2 events") {
+			t.Errorf("drop result = %+v", r)
+		}
 	}
 }
 
