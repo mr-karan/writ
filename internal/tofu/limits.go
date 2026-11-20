@@ -54,13 +54,13 @@ func (r *Runner) Enforcement() Enforcement {
 }
 
 // CheckLimits reports what a Runner with limits l would enforce in this
-// process, as writ serve --check prints it. It makes no cgroup and moves
-// no process; as root, it mounts an absent cgroup filesystem, as New
-// would.
+// process, as writ serve --check prints it. It moves no process of its
+// own; it starts a probe in a cgroup it makes and removes, and, as root,
+// it mounts an absent cgroup filesystem, as New would.
 func CheckLimits(l Limits) Enforcement {
 	var e Enforcement
 	if l.cgroup() {
-		if base, err := cgroupBase(false); err != nil {
+		if base, err := checkCgroups(); err != nil {
 			e.CgroupOff = err.Error()
 		} else {
 			e.Cgroup = base

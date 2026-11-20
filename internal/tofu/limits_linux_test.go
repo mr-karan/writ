@@ -20,9 +20,41 @@ const limitsStageEnv = "WRIT_TOFU_LIMITS_STAGE"
 // inDelegatedScope runs this test binary again, with env, as test, in a
 // transient systemd scope of the user's own whose cgroup is delegated to
 // the user and holds only that process, as Delegate=yes gives writ serve's
-// unit. It returns the output, or skips t where systemd-run --user cannot
-// make the scope.
-func inDelegatedScope(t *testing.T, test string, env ...string) {
+// unit, with the unit properties props. It logs the output, or skips t
+// where systemd-run --user cannot make the scope.
+func inDelegatedScope(t *testing.T, test string, props []string, env ...string) {
+	t.Helper()
+	self := systemdRunSelf(t)
+	args := []string{"--user", "--scope", "--quiet", "--collect", "-p", "Delegate=yes"}
+	for _, p := range props {
+		args = append(args, "-p", p)
+	}
+	cmd := exec.Command("systemd-run", append(args, "--", self, "-test.run=^"+test+"$", "-test.v", "-test.count=1")...)
+	cmd.Env = append(os.Environ(), env...)
+	runInUnit(t, test, cmd)
+}
+
+// inDelegatedService runs this test binary again as test, as
+// inDelegatedScope does, but as a transient service, which systemd starts
+// itself and can confine with properties such as RestrictNamespaces, as it
+// does writ serve's unit. The service gets env and this process's TMPDIR,
+// and no other environment.
+func inDelegatedService(t *testing.T, test string, props []string, env ...string) {
+	t.Helper()
+	self := systemdRunSelf(t)
+	args := []string{"--user", "--wait", "--pipe", "--quiet", "--collect", "-p", "Delegate=yes", "--setenv=TMPDIR=" + os.TempDir()}
+	for _, p := range props {
+		args = append(args, "-p", p)
+	}
+	for _, e := range env {
+		args = append(args, "--setenv="+e)
+	}
+	runInUnit(t, test, exec.Command("systemd-run", append(args, "--", self, "-test.run=^"+test+"$", "-test.v", "-test.count=1")...))
+}
+
+// systemdRunSelf returns this test binary's path, or skips t where
+// systemd-run --user cannot make a delegated scope.
+func systemdRunSelf(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("systemd-run"); err != nil {
 		t.Skip("needs systemd-run --user for a delegated cgroup: run just test-serve on a host with a systemd user session")
@@ -34,9 +66,11 @@ func inDelegatedScope(t *testing.T, test string, env ...string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("systemd-run", "--user", "--scope", "--quiet", "--collect", "-p", "Delegate=yes", "--",
-		self, "-test.run=^"+test+"$", "-test.v", "-test.count=1")
-	cmd.Env = append(os.Environ(), env...)
+	return self
+}
+
+func runInUnit(t *testing.T, test string, cmd *exec.Cmd) {
+	t.Helper()
 	out, err := cmd.CombinedOutput()
 	t.Logf("in a delegated cgroup:\n%s", out)
 	switch {
@@ -84,7 +118,7 @@ func TestRunLimits(t *testing.T) {
 	t.Run("the scratch limit holds without a cgroup", func(t *testing.T) {
 		requireLimit(t, fakeRunnerLimits(t, "scratch-exit", testLimits), "limits.run_scratch")
 	})
-	inDelegatedScope(t, "TestRunLimits", limitsStageEnv+"=scope")
+	inDelegatedScope(t, "TestRunLimits", nil, limitsStageEnv+"=scope")
 }
 
 func runLimits(t *testing.T) {
@@ -240,7 +274,7 @@ func TestRunLimitsMountsCgroupFS(t *testing.T) {
 	if _, err := exec.LookPath("unshare"); err != nil {
 		t.Skip("needs unshare: run just test-serve")
 	}
-	inDelegatedScope(t, "TestRunLimitsMountsCgroupFS", limitsStageEnv+"=nomad-scope")
+	inDelegatedScope(t, "TestRunLimitsMountsCgroupFS", nil, limitsStageEnv+"=nomad-scope")
 }
 
 // intoOwnCgroupNamespace runs alone in a delegated cgroup. It moves into a
@@ -333,4 +367,31 @@ func TestScratchMeasureMeetsAFIFO(t *testing.T) {
 // still meet limits.run_scratch.
 func TestScratchCountsEachInode(t *testing.T) {
 	requireLimit(t, fakeRunnerLimits(t, "scratch-inodes", testLimits), "limits.run_scratch")
+}
+
+// TestRunLimitsUnderTheShippedUnit plans in a delegated service confined
+// as the NixOS module confines writ serve: RestrictNamespaces="user mnt
+// pid", under which the kernel answers clone3 with ENOSYS, and
+// NoNewPrivileges. --check must report what a step then gets, and a step
+// must start in its cgroup.
+func TestRunLimitsUnderTheShippedUnit(t *testing.T) {
+	if os.Getenv(limitsStageEnv) == "restricted" {
+		e := CheckLimits(testLimits)
+		if e.Cgroup == "" {
+			t.Fatalf("--check reports limits off: %s", e.CgroupOff)
+		}
+		r := fakeRunnerLimits(t, "cgroup", testLimits)
+		if got := r.Enforcement(); got.Cgroup != e.Cgroup {
+			t.Fatalf("writ serve makes each step's cgroup under %q (%s), but --check said %s", got.Cgroup, got.CgroupOff, e.Cgroup)
+		}
+		p, err := r.Plan(context.Background(), fakeStack())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cg := strings.TrimSpace(string(p.JSON)); !strings.HasPrefix(filepath.Base(cg), "run-") {
+			t.Fatalf("the step ran in the cgroup %q, not one of its own", cg)
+		}
+		return
+	}
+	inDelegatedService(t, "TestRunLimitsUnderTheShippedUnit", []string{"RestrictNamespaces=user mnt pid", "NoNewPrivileges=yes"}, limitsStageEnv+"=restricted")
 }

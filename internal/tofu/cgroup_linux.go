@@ -101,6 +101,27 @@ func cgroupBase(apply bool) (string, error) {
 	return own, nil
 }
 
+// checkCgroups reports, for writ serve --check, the cgroup under which
+// each step would get a cgroup of its own, or why none: cgroupBase's
+// checks, and then a probe that starts a process as each step's first
+// process starts, into a cgroup of the probe's own under the base, which
+// it removes. The checks alone can pass where the start then fails.
+func checkCgroups() (string, error) {
+	own, err := cgroupBase(false)
+	if err != nil {
+		return "", err
+	}
+	probe := filepath.Join(own, "check-"+strings.ToLower(rand.Text()))
+	if err := os.Mkdir(probe, 0o755); err != nil {
+		return "", fmt.Errorf("make a cgroup under %s for a probe: %w", own, err)
+	}
+	defer os.Remove(probe)
+	if err := probeHelper(probe); err != nil {
+		return "", fmt.Errorf("writ could not start a step's first process in a cgroup of its own under %s: %w", own, err)
+	}
+	return own, nil
+}
+
 // ownCgroup returns the directory of this process's cgroup in the cgroup
 // v2 filesystem. When none is mounted and writ runs as root, it mounts
 // one at cgroupMount, if that is an empty directory and no mount point.
@@ -216,13 +237,10 @@ func writeCgroup(dir, file, value string) error {
 }
 
 // stepCgroup is the cgroup of one step: its processes, and only they,
-// run in it, from the helper's first instruction on.
+// run in it, from before the helper does anything of its own.
 type stepCgroup struct {
 	dir    string
 	limits Limits
-	// f is the cgroup's directory, which the helper is started into
-	// with CLONE_INTO_CGROUP.
-	f *os.File
 }
 
 // newStepCgroup makes a cgroup for a step under base with l's limits:
@@ -253,17 +271,13 @@ func newStepCgroup(base string, l Limits) (*stepCgroup, error) {
 			return nil, fmt.Errorf("set %s of %s: %w", s[0], c.dir, err)
 		}
 	}
-	f, err := os.Open(c.dir)
-	if err != nil {
-		_ = os.Remove(c.dir)
-		return nil, err
-	}
-	c.f = f
 	return c, nil
 }
 
-// fd is the cgroup's directory, for SysProcAttr.CgroupFD.
-func (c *stepCgroup) fd() int { return int(c.f.Fd()) }
+// enter moves the process pid, with all its threads, into the cgroup.
+func (c *stepCgroup) enter(pid int) error {
+	return writeCgroup(c.dir, "cgroup.procs", strconv.Itoa(pid))
+}
 
 // kill ends every process of the cgroup, wherever it went in its pid
 // namespace and whatever its uid, and waits until none is left.
@@ -297,7 +311,6 @@ func (c *stepCgroup) hit() string {
 
 // remove removes the cgroup, which kill emptied.
 func (c *stepCgroup) remove() error {
-	c.f.Close()
 	return os.Remove(c.dir)
 }
 

@@ -80,7 +80,7 @@ func TestPlanAsRunUserWithoutRoot(t *testing.T) {
 		inNamespaces(t, env)
 		return
 	}
-	inDelegatedScope(t, "TestPlanAsRunUserWithoutRoot", append(env, nonRootStageEnv+"=scope")...)
+	inDelegatedScope(t, "TestPlanAsRunUserWithoutRoot", nil, append(env, nonRootStageEnv+"=scope")...)
 }
 
 // inNamespaces runs this test again as root of new namespaces.

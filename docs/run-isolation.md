@@ -136,7 +136,7 @@ When a step ends, `writ serve` kills every process left in its cgroup with `cgro
 
 ### How writ serve makes the cgroups
 
-At start, `writ serve` checks the cgroup it runs in. It moves itself into a child of that cgroup, named `serve`, and enables the `memory`, `pids`, and `cpu` controllers for the cgroup's children. Each step then gets a child cgroup of its own, `run-` and a random name, and its first process starts in it. cgroup v2 lets a cgroup give its children controllers only while it has no process of its own, so `writ serve` must be the only process in its cgroup when it starts. It needs:
+At start, `writ serve` checks the cgroup it runs in. It moves itself into a child of that cgroup, named `serve`, and enables the `memory`, `pids`, and `cpu` controllers for the cgroup's children. Each step then gets a child cgroup of its own, `run-` and a random name, and `writ serve` moves the step's first process into it before that process runs anything of its own. Go would start the process in the cgroup with `clone3`, but a seccomp filter such as systemd's `RestrictNamespaces=`, which the NixOS module sets, answers `clone3` with `ENOSYS`, so `writ serve` starts it with `clone` and moves it. cgroup v2 lets a cgroup give its children controllers only while it has no process of its own, so `writ serve` must be the only process in its cgroup when it starts. It needs:
 
 - cgroup v2, the unified hierarchy, and Linux 5.14 or later for `cgroup.kill`.
 - Its cgroup's `cgroup.procs` and `cgroup.subtree_control` writable by its user. Root can write them; for another user, systemd's `Delegate=yes` makes them so.
@@ -166,7 +166,7 @@ These facts come from the exec driver's source on Nomad's main branch, read 2026
 
 ### Check that the limits hold
 
-`writ serve --check` prints whether each step would get a cgroup, under which cgroup, and with which limits. It moves `writ` into no cgroup, so run it where `writ serve` runs: in the unit's `ExecStartPre`, or with `systemd-run --scope -p Delegate=yes`. In a delegated cgroup:
+`writ serve --check` prints whether each step would get a cgroup, under which cgroup, and with which limits. It starts a probe as a step's first process starts, in a cgroup of its own that it removes after, and reports the limits off, with the reason, if the probe fails. It moves `writ` itself into no cgroup, so run it where `writ serve` runs: in the unit's `ExecStartPre`, or with `systemd-run --scope -p Delegate=yes`. In a delegated cgroup:
 
 ```
 limits: each OpenTofu step runs in a cgroup of its own under /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p3713758-i3705479.scope: memory 2GiB with no swap, 512 processes and threads, 2 CPUs

@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -29,7 +30,22 @@ import (
 // replaced the file.
 const viewHelper = "writ-tofu-view"
 
+// probeArg makes the helper a probe, which prints its cgroup once writ
+// lets it go on, and exits.
+const probeArg = "probe"
+
 func init() {
+	if len(os.Args) == 2 && os.Args[0] == viewHelper && os.Args[1] == probeArg {
+		if err := awaitGo(); err != nil {
+			os.Exit(1)
+		}
+		cg, err := os.ReadFile("/proc/self/cgroup")
+		if err != nil {
+			os.Exit(1)
+		}
+		os.Stdout.Write(cg)
+		os.Exit(0)
+	}
 	if len(os.Args) == 2 && os.Args[0] == viewHelper {
 		err := enterView(os.Args[1])
 		// enterView returns only on a failure, which writ reads from the
@@ -42,16 +58,18 @@ func init() {
 
 // The helper's descriptors after stdin, stdout, and stderr: the status pipe,
 // which closes when tofu starts and carries the error when the view fails,
-// the run's directory and its home, which the view's binds of them must
+// the go pipe, on which writ lets the helper go on once it has moved it
+// into the step's cgroup, the run's directory and its home, which the view's binds of them must
 // match, with a run's own network, its end of the socket pair through
 // which it hands writ the listeners it makes in the run's namespace, and
 // with a saved plan, the sealed file that holds it, which tofu inherits.
 const (
 	statusFD = 3
-	runFD    = 4
-	homeFD   = 5
-	netFD    = 6
-	planFD   = 7
+	goFD     = 4
+	runFD    = 5
+	homeFD   = 6
+	netFD    = 7
+	planFD   = 8
 )
 
 // sealPlan puts plan in a memfd, sealed so that no process may write,
@@ -153,8 +171,8 @@ const nsswitch = "hosts: files dns\n"
 // certificates and resolver files, a few devices, and a /proc of the
 // run's own processes. With c.net, the helper also starts in a new
 // network namespace and writ serves c.net's ports there until the stop it
-// returns is called. With c.cgroup, the helper starts in the step's
-// cgroup. Where the kernel can run it, tofu runs under writ's seccomp
+// returns is called. With c.cgroup, writ moves the helper into the step's
+// cgroup before the helper does anything (startHelper). Where the kernel can run it, tofu runs under writ's seccomp
 // filter (seccompFilter). A failure to make the view, the network, or the
 // filter fails the step: tofu never runs without them.
 func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
@@ -198,8 +216,13 @@ func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 		return nil, err
 	}
 	defer status.Close()
+	goR, goW, err := os.Pipe()
+	if err != nil {
+		w.Close()
+		return nil, err
+	}
 	cmd.Path, cmd.Args = "/proc/self/exe", []string{viewHelper, string(spec)}
-	cmd.ExtraFiles = []*os.File{w}
+	cmd.ExtraFiles = []*os.File{w, goR}
 	if c.view.run != nil {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, c.view.run, c.view.home)
 	}
@@ -207,6 +230,8 @@ func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 	if c.net != nil {
 		if lnRecv, lnSend, err = socketPair(); err != nil {
 			w.Close()
+			goR.Close()
+			goW.Close()
 			return nil, fmt.Errorf("tofu: make the socket pair that hands writ the run's listeners: %w", err)
 		}
 		defer lnRecv.Close()
@@ -220,11 +245,7 @@ func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, c.plan)
 	}
 	cmd.SysProcAttr = viewAttr(c.user, c.net != nil)
-	if c.cgroup != nil {
-		// The helper starts in the step's cgroup, before it runs anything.
-		cmd.SysProcAttr.UseCgroupFD, cmd.SysProcAttr.CgroupFD = true, c.cgroup.fd()
-	}
-	err = runas.StartMapped(cmd)
+	err = startHelper(cmd, goR, goW, c.cgroup)
 	w.Close()
 	if lnSend != nil {
 		lnSend.Close()
@@ -259,6 +280,77 @@ func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 		return nil, fmt.Errorf("tofu: make the run's private filesystem view: %s", msg)
 	}
 	return nil, fmt.Errorf("tofu: make the run's own network: %w", netErr)
+}
+
+// startHelper starts cmd, the helper, with the read end of the go pipe,
+// goR, among its descriptors, moves it into cg when cg is set, and then
+// writes the byte on goW that lets it go on. It closes both ends. A move
+// that fails kills the helper, which reads the go pipe's end and exits.
+// Go would start the helper in cg with clone3's CLONE_INTO_CGROUP, but
+// seccomp filters such as systemd's RestrictNamespaces answer clone3 with
+// ENOSYS, as they can't read its flags, so writ forks with clone and moves
+// the helper itself.
+func startHelper(cmd *exec.Cmd, goR, goW *os.File, cg *stepCgroup) error {
+	defer goW.Close()
+	err := runas.StartMapped(cmd)
+	goR.Close()
+	if err != nil {
+		return err
+	}
+	if cg != nil {
+		if err := cg.enter(cmd.Process.Pid); err != nil {
+			_ = killGroup(cmd.Process.Pid)
+			_ = cmd.Wait()
+			return fmt.Errorf("move the helper into the step's cgroup: %w", err)
+		}
+	}
+	// A helper that died already reports on the status pipe, or exits.
+	_, _ = goW.Write([]byte{1})
+	return nil
+}
+
+// probeHelper starts the helper as a probe, as startConfined starts a
+// step's first process, in new user, mount, and pid namespaces, moves it
+// into the cgroup dir, and checks that it ran there.
+func probeHelper(dir string) error {
+	goR, goW, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	var out strings.Builder
+	cmd := exec.Command("/proc/self/exe")
+	cmd.Args = []string{viewHelper, probeArg}
+	cmd.Stdout = &out
+	// A nil entry is a descriptor the probe does not have: it has no
+	// status pipe.
+	cmd.ExtraFiles = []*os.File{nil, goR}
+	cmd.SysProcAttr = viewAttr(nil, false)
+	if err := startHelper(cmd, goR, goW, &stepCgroup{dir: dir}); err != nil {
+		return err
+	}
+	t := time.AfterFunc(10*time.Second, func() { _ = killGroup(cmd.Process.Pid) })
+	err = cmd.Wait()
+	t.Stop()
+	if err != nil {
+		return fmt.Errorf("the probe failed: %w", err)
+	}
+	cg := strings.TrimPrefix(strings.TrimSpace(out.String()), "0::")
+	if cg == "" || !strings.HasSuffix(dir, cg) {
+		return fmt.Errorf("the probe ran in the cgroup %q, not in %s", cg, dir)
+	}
+	return nil
+}
+
+// awaitGo runs first in the helper: it waits until writ lets it go on, so
+// it runs nothing before writ has moved it into the step's cgroup.
+func awaitGo() error {
+	var b [1]byte
+	n, err := syscall.Read(goFD, b[:])
+	syscall.Close(goFD)
+	if n != 1 {
+		return fmt.Errorf("writ did not let the helper go on: %v", err)
+	}
+	return nil
 }
 
 // socketPair is a pair of connected Unix sockets that keep message
@@ -533,6 +625,9 @@ func searchPath(ef *elf.File, origin string, loaderDirs []string) []string {
 // every capability, installs writ's seccomp filter, and execs tofu. It
 // returns only an error.
 func enterView(arg string) error {
+	if err := awaitGo(); err != nil {
+		return err
+	}
 	runtime.LockOSThread()
 	var spec viewSpec
 	if err := json.Unmarshal([]byte(arg), &spec); err != nil {

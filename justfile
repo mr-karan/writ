@@ -212,7 +212,7 @@ fuzz-oidc time="2m":
 test-serve:
 	nix shell nixpkgs#postgresql_18 -c go test -race -count=1 -timeout 20m ./internal/control/... ./internal/tfstate/... ./internal/server/... ./internal/ui/... ./internal/awsrole/...
 	go test -race -count=1 -tags uishowcase -run '^TestShowcaseServes$' ./internal/ui
-	CGO_ENABLED=0 nix shell nixpkgs#nftables -c go test -count=1 -run 'TestProviderIsolation|TestAWSProviderRefreshesCredentials|TestPlanAsRunUserWithoutRoot|TestRunLimits|TestSeccompFilter' ./internal/provider ./internal/tofu
+	CGO_ENABLED=0 nix shell nixpkgs#nftables -c go test -count=1 -run 'TestProviderIsolation|TestAWSProviderRefreshesCredentials|TestPlanAsRunUserWithoutRoot|TestRunLimits|TestRunLimitsUnderTheShippedUnit|TestSeccompFilter' ./internal/provider ./internal/tofu
 	CGO_ENABLED=0 nix shell nixpkgs#nftables -c go test -count=1 -run '^TestRunEgressIsolation$' ./internal/tofu
 
 # Run the flake's OpenTofu, which must be 1.13.9, against the http state
