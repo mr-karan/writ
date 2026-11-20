@@ -85,9 +85,9 @@ func strings1(ctx context.Context, tx *sqldb.Tx, q string, args ...any) ([]strin
 // that was applying at or after since, "" when none. A plan requested at
 // since may have read state that such a run changed: the control plane is
 // the only writer of state, so these runs are every change state had.
-func overlappingRun(ctx context.Context, tx *sqldb.Tx, env, stack, planID string, since int64) (string, error) {
+func overlappingRun(ctx context.Context, q rowQuerier, env, stack, planID string, since int64) (string, error) {
 	var run string
-	err := tx.QueryRowContext(ctx, `SELECT id FROM runs WHERE env = ? AND stack = ? AND plan_id <> ? AND (ended_at IS NULL OR ended_at >= ?)
+	err := q.QueryRowContext(ctx, `SELECT id FROM runs WHERE env = ? AND stack = ? AND plan_id <> ? AND (ended_at IS NULL OR ended_at >= ?)
 		ORDER BY started_at DESC LIMIT 1`, env, stack, planID, since).Scan(&run)
 	if errors.Is(err, sqldb.ErrNoRows) {
 		return "", nil
@@ -133,7 +133,7 @@ func (s *Store) expire(ctx context.Context, now time.Time) (int64, error) {
 // deletePlans deletes the plans that can never be applied, requested
 // before cutoff, that no run or approval names, with their events.
 func (s *Store) deletePlans(ctx context.Context, cutoff time.Time) (int64, error) {
-	const gone = `status IN ('refused', 'failed', 'expired', 'superseded') AND requested_at < ?
+	const gone = `status IN ('no-changes', 'refused', 'failed', 'expired', 'superseded') AND requested_at < ?
 		AND NOT EXISTS (SELECT 1 FROM runs WHERE runs.plan_id = plans.id)
 		AND NOT EXISTS (SELECT 1 FROM approvals WHERE approvals.plan_id = plans.id)`
 	var n int64
@@ -486,15 +486,15 @@ func (p Pipeline) ok() bool { return p.Issuer != "" && p.ProjectID != "" && p.Pi
 
 const ofPipeline = "origin_issuer = ? AND origin_project_id = ? AND origin_pipeline = ?"
 
-// PipelinePlans returns the live plans that requests of one pipeline stand
-// for, for an approval from a job of that pipeline, oldest first, at most
-// limit.
+// PipelinePlans returns the live and no-changes plans that requests of
+// one pipeline stand for, for an approval from a job of that pipeline,
+// oldest first, at most limit.
 func (s *Store) PipelinePlans(ctx context.Context, p Pipeline, now time.Time, limit int) ([]Plan, error) {
 	if !p.ok() {
 		return nil, nil
 	}
 	return s.scanPlans(ctx, `SELECT `+planColumns+` FROM plans WHERE `+plansOfRequests(ofPipeline)+`
-		AND status IN ('pending', 'approved') AND expires_at > ? ORDER BY requested_at, ref LIMIT ?`,
+		AND (status IN ('pending', 'approved') AND expires_at > ? OR status = 'no-changes') ORDER BY requested_at, ref LIMIT ?`,
 		now.UnixMilli(), p.Issuer, p.ProjectID, p.Pipeline, now.UnixMilli(), limit)
 }
 
@@ -517,21 +517,25 @@ func (s *Store) PipelineHas(ctx context.Context, p Pipeline, id string) (bool, e
 const mergedPage = 100
 
 // MergedPlan returns the plan an apply after a merge chooses, with its
-// tally under rules: of the live commit plans of a repository's stack@env
-// whose source digest is digest, the newest one whose tally is approved,
+// tally under rules, of the commit plans of a repository's stack@env
+// whose source digest is digest. When the newest of them is no-changes,
+// it is the one, and its tally's status says there is nothing to apply.
+// Else, of the live ones, it is the newest one whose tally is approved,
 // or else the newest one. It returns ErrNotFound when none matches. The
 // digest is matched in SQL, so no number of plans of other sources hides
 // a match, and every live plan of the digest is weighed, so no number of
 // newer plans whose approvals do not count hides an older one whose
-// approvals do. BeginApply counts the chosen plan's approvals again.
+// approvals do. BeginApply counts the chosen plan's approvals again, and
+// StateMoved says whether a no-changes plan still speaks for the state.
 func (s *Store) MergedPlan(ctx context.Context, repo, env, stack, digest string, rules Rules, now time.Time) (Plan, Tally, error) {
 	var newest *Plan
 	var newestTally Tally
+	first := true
 	after := ""
 	args := []any{now.UnixMilli(), repo, env, stack, digest, now.UnixMilli()}
 	for {
 		plans, err := s.scanPlans(ctx, `SELECT `+planColumns+` FROM plans WHERE `+plansOfRequests(`repo = ? AND env = ? AND stack = ? AND source_digest = ?
-			AND source_commit <> ''`)+` AND status IN ('pending', 'approved') AND expires_at > ?`+after+`
+			AND source_commit <> ''`)+` AND (status IN ('pending', 'approved') AND expires_at > ? OR status = 'no-changes')`+after+`
 			ORDER BY made_at DESC, ref DESC LIMIT ?`, append(args, mergedPage)...)
 		if err != nil {
 			return Plan{}, Tally{}, err
@@ -546,6 +550,13 @@ func (s *Store) MergedPlan(ctx context.Context, repo, env, stack, digest string,
 		}
 		for _, p := range plans {
 			t := rules.Tally(p, stored[p.ID])
+			if p.Status == NoChanges {
+				if first {
+					return p, t, nil
+				}
+				continue
+			}
+			first = false
 			if t.Status == Approved {
 				return p, t, nil
 			}
@@ -871,6 +882,24 @@ func (s *Store) BeginApply(ctx context.Context, r ApplyRequest) (Run, error) {
 	return run, nil
 }
 
+// StateMoved says why the state of plan p's stack@env may no longer be
+// the state p read, "" when it is the same: a run on the stack@env was
+// applying at or after p was requested, or the newest version of a state
+// on writ serve's http backend is not the one p read. It asks no newer
+// plan: a plan reads state and changes none.
+func (s *Store) StateMoved(ctx context.Context, p Plan) (string, error) {
+	run, err := overlappingRun(ctx, s.db, p.Env, p.Stack, p.ID, p.RequestedAt.UnixMilli())
+	switch {
+	case err != nil:
+		return "", err
+	case run != "":
+		return fmt.Sprintf("run %s applied to %s@%s after the plan was requested", run, p.Stack, p.Env), nil
+	case p.Tofu == nil:
+		return "", nil
+	}
+	return stateVersionMoved(ctx, s.db, p)
+}
+
 // staleTofu says why a plan of an OpenTofu stack may no longer apply, ""
 // when it may: a newer plan of its stack@env was made, by the order of
 // seq, which has no ties, or the newest version of the stack's state is
@@ -886,8 +915,14 @@ func staleTofu(ctx context.Context, tx *sqldb.Tx, p Plan) (string, error) {
 	case !errors.Is(err, sqldb.ErrNoRows):
 		return "", err
 	}
+	return stateVersionMoved(ctx, tx, p)
+}
+
+// stateVersionMoved says why the newest version of the state of plan p's
+// stack@env is not the one p read, "" when it is.
+func stateVersionMoved(ctx context.Context, q rowQuerier, p Plan) (string, error) {
 	var version int64
-	err = tx.QueryRowContext(ctx, "SELECT version FROM tfstate_versions WHERE env = ? AND stack = ? ORDER BY version DESC LIMIT 1", p.Env, p.Stack).Scan(&version)
+	err := q.QueryRowContext(ctx, "SELECT version FROM tfstate_versions WHERE env = ? AND stack = ? ORDER BY version DESC LIMIT 1", p.Env, p.Stack).Scan(&version)
 	if err != nil && !errors.Is(err, sqldb.ErrNoRows) {
 		return "", err
 	}
@@ -907,6 +942,8 @@ func liveCheck(p Plan) (why, newer string) {
 	switch {
 	case p.Status == Superseded:
 		return fmt.Sprintf("plan %s is superseded: %s; plan again", p.ID, p.SupersededWhy), ""
+	case p.Status == NoChanges:
+		return fmt.Sprintf("plan %s changes no resource; there is nothing to approve or apply", p.ID), ""
 	case !p.Status.Live():
 		return fmt.Sprintf("plan %s is %s, and only a pending or approved plan is approved or applied", p.ID, p.Status), ""
 	case p.SupersededBy != "" && p.SupersededBy != p.ID:

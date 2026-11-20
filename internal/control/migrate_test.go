@@ -307,3 +307,113 @@ func TestMigrateDropsLanguageTables(t *testing.T) {
 		}
 	})
 }
+
+// Migration 18 lets a plan be no-changes. The CHECK of plans named every
+// status before it, so a write of no-changes failed; after it, the rows
+// from before keep their statuses, their approvals and runs, and the
+// CHECK still refuses a status the lifecycle does not know.
+func TestMigratePlanNoChanges(t *testing.T) {
+	controltest.Each(t, func(t *testing.T, e controltest.Engine) {
+		ctx := context.Background()
+		loc := e.New(t)
+		files := fstest.MapFS{}
+		names, err := filepath.Glob("migrations/*.sql")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range names {
+			if strings.HasPrefix(filepath.Base(name), "0018_") {
+				break
+			}
+			b, err := os.ReadFile(name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			files[name] = &fstest.MapFile{Data: b}
+		}
+		raw := controltest.Raw(t, loc)
+		if err := raw.Migrate(ctx, sqldb.Migrations{Files: files, Dir: "migrations", Schema: control.Schema, What: "v17 database", Now: time.Now}); err != nil {
+			t.Fatal(err)
+		}
+		var cfg int64
+		if err := raw.QueryRowContext(ctx, `INSERT INTO configs (digest, url, text, first_loaded, last_loaded, loaded_by)
+			VALUES ('digest', 'https://writ.example.com', '{}', ?, ?, 'test') RETURNING id`, t0.UnixMilli(), t0.UnixMilli()).Scan(&cfg); err != nil {
+			t.Fatal(err)
+		}
+		insert := func(ref, id, status string) error {
+			_, err := raw.ExecContext(ctx, `INSERT INTO plans (ref, id, status, env, stack, author_issuer, author_subject, author_person, author_display, author, teams, origin,
+				requested_at, made_at, expires_at, source_digest, config_id, seq)
+				VALUES (?, ?, ?, 'prod', 'network', 'gitlab', '1001', 'gitlab/user/1001', 'alice', '{}', '[]', '{}', ?, ?, ?, 'digest', ?, ?)`,
+				ref, id, status, t0.UnixMilli(), t0.UnixMilli(), t0.Add(time.Hour).UnixMilli(), cfg, len(ref)+int(id[0]))
+			return err
+		}
+		const applied, approved = "11111111111111111111111111111111", "22222222222222222222222222222222"
+		if err := insert("REF1", applied, "applied"); err != nil {
+			t.Fatal(err)
+		}
+		if err := insert("REF22", approved, "approved"); err != nil {
+			t.Fatal(err)
+		}
+		for _, q := range []string{
+			`INSERT INTO runs (id, plan_id, env, stack, status, actor_issuer, actor_subject, actor_person, actor_display, actor, via, approvals, named_by, started_at, ended_at)
+				VALUES ('RUN1', '` + applied + `', 'prod', 'network', 'applied', 'gitlab', 'main', 'gitlab/user/1001', 'alice', '{}', 'gitlab job 1', '[]', 'plan', 1, 2)`,
+			`INSERT INTO approvals (plan_id, person, display, issuer, subject, via, approved_at)
+				VALUES ('` + approved + `', 'gitlab/user/2002', 'bob', 'gitlab', '2002', 'gitlab job 2', 1)`,
+		} {
+			if _, err := raw.ExecContext(ctx, q); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := insert("REF333", "33333333333333333333333333333333", "no-changes"); err == nil {
+			t.Fatal("the CHECK of version 17 took no-changes")
+		}
+
+		s, err := control.Open(ctx, control.Options{Location: loc})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		if err := insert("REF333", "33333333333333333333333333333333", "no-changes"); err != nil {
+			t.Fatalf("a no-changes plan after the migration: %v", err)
+		}
+		if err := insert("REF4444", "44444444444444444444444444444444", "unchanged"); err == nil {
+			t.Fatal("the CHECK took a status the lifecycle does not know")
+		}
+		for id, want := range map[string]control.PlanStatus{applied: control.Applied, approved: control.Approved, "33333333333333333333333333333333": control.NoChanges} {
+			if p, err := s.Plan(ctx, id, t0); err != nil || p.Status != want {
+				t.Errorf("plan %s: %s, %v; want %s", id, p.Status, err, want)
+			}
+		}
+		if run, err := s.GetRun(ctx, "RUN1"); err != nil || run.PlanID != applied {
+			t.Fatalf("the run from before: %+v, %v", run, err)
+		}
+		if as, err := s.Approvals(ctx, []string{approved}); err != nil || len(as[approved]) != 1 {
+			t.Fatalf("the approval from before: %v, %v", as, err)
+		}
+		if e.Name == "sqlite" {
+			for _, check := range []string{"PRAGMA integrity_check", "PRAGMA foreign_key_check"} {
+				rows, err := raw.QueryContext(ctx, check)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got []string
+				for rows.Next() {
+					cols, _ := rows.Columns()
+					vals := make([]any, len(cols))
+					ptrs := make([]any, len(cols))
+					for i := range vals {
+						ptrs[i] = &vals[i]
+					}
+					if err := rows.Scan(ptrs...); err != nil {
+						t.Fatal(err)
+					}
+					got = append(got, fmt.Sprint(vals...))
+				}
+				rows.Close()
+				if check == "PRAGMA integrity_check" && (len(got) != 1 || got[0] != "ok") || check == "PRAGMA foreign_key_check" && len(got) != 0 {
+					t.Errorf("%s: %v", check, got)
+				}
+			}
+		}
+	})
+}

@@ -19,6 +19,9 @@ const (
 	Applying PlanStatus = "applying"
 	// Applied: the run finished with every change applied.
 	Applied PlanStatus = "applied"
+	// NoChanges: the plan changes no resource, no output, and no state, so
+	// there is nothing to approve or apply.
+	NoChanges PlanStatus = "no-changes"
 	// RefusedPlan: the plan ended with errors, so it was never saved.
 	RefusedPlan PlanStatus = "refused"
 	// Failed: the plan could not run, or its apply failed.
@@ -35,8 +38,8 @@ const (
 // status with no entry is final.
 //
 //   - planning ends pending, approved when its rules need no approval,
-//     refused, failed, or superseded when an apply on its stack@env ran
-//     while it planned.
+//     no-changes when its apply would change nothing, refused, failed, or
+//     superseded when an apply on its stack@env ran while it planned.
 //   - pending becomes approved when its last needed approval comes, or
 //     when a run begins after a change of config made approvals count
 //     again, and applying only with an override.
@@ -46,7 +49,7 @@ const (
 //   - a live plan, pending or approved, expires or is superseded.
 //   - applying ends applied or failed.
 var transitions = map[PlanStatus][]PlanStatus{
-	Planning: {Pending, Approved, RefusedPlan, Failed, Superseded},
+	Planning: {Pending, Approved, NoChanges, RefusedPlan, Failed, Superseded},
 	Pending:  {Approved, Applying, Expired, Superseded},
 	Approved: {Pending, Applying, Expired, Superseded},
 	Applying: {Applied, Failed},
