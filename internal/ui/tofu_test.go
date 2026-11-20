@@ -59,8 +59,9 @@ type recordedTofu struct {
 	// gate, when set, holds each plan until it is closed.
 	gate chan struct{}
 	// egress, when set, stands for what each plan's run does through its
-	// own network.
-	egress func(tofu.Stack)
+	// own network, and install for what its provider install does.
+	egress  func(tofu.Stack)
+	install func(*tofu.Net)
 }
 
 func (r *recordedTofu) set(rec tofuRecording) {
@@ -77,7 +78,13 @@ func (r *recordedTofu) read(name string) []byte {
 	return b
 }
 
-func (r *recordedTofu) Fill(_ context.Context, lock []byte, _ *tofu.Net, _ []string) ([]byte, error) {
+func (r *recordedTofu) Fill(_ context.Context, lock []byte, n *tofu.Net, _ []string) ([]byte, error) {
+	r.mu.Lock()
+	install := r.install
+	r.mu.Unlock()
+	if install != nil && n != nil {
+		install(n)
+	}
 	return lock, nil
 }
 

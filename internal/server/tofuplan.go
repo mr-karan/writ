@@ -150,8 +150,12 @@ func (s *Server) planTofu(ctx context.Context, ref, env, stack string, in planIn
 			return res, err
 		}
 	}
-	stk, err := run.stack(ctx, run.mask())
+	// The record of a failed install keeps what it asked for, which is
+	// the lock file's and its registry's choice, not the stack's code.
+	fillMask := run.mask()
+	stk, err := run.stack(ctx, fillMask)
 	if err != nil {
+		res.Network = run.network(fillMask).raw()
 		return res, err
 	}
 	raw, err := s.tofuRunner.Plan(ctx, stk)

@@ -127,9 +127,12 @@ type NetworkDoc struct {
 }
 
 // NetworkDestination is one host and port a run asked for, the verdict
-// it got, allowed, unlisted, or refused, why, and how many requests got
-// it.
+// it got, allowed, unlisted, refused, or unresolved, why, and how many
+// requests got it.
 type NetworkDestination struct {
+	// Step is installStep for a destination of the run's provider
+	// install, and empty for one of its tofu steps.
+	Step    string `json:"step,omitempty"`
 	Host    string `json:"host"`
 	Port    int    `json:"port"`
 	Verdict string `json:"verdict"`
@@ -141,6 +144,9 @@ type NetworkDestination struct {
 // read its plan.
 const withheldHost = "(withheld)"
 
+// installStep marks a destination of a run's provider install.
+const installStep = "install"
+
 // network returns the run's NetworkDoc, nil for a run with no egress
 // proxy, and logs one line of it. m sweeps each host. A nil m, of a run
 // whose mask could not read its plan, withholds every host, since only
@@ -150,24 +156,33 @@ func (r *tofuRun) network(m *mask.Mask) *NetworkDoc {
 		return nil
 	}
 	e, _ := r.s.envOf(r.spec.env)
-	dests, unrecorded := r.proxy.Destinations()
-	doc := &NetworkDoc{Format: FormatNetwork, Mode: string(r.proxy.Mode()), Egress: append([]string{}, e.Egress...), Destinations: []NetworkDestination{}, Unrecorded: unrecorded}
+	doc := &NetworkDoc{Format: FormatNetwork, Mode: string(r.proxy.Mode()), Egress: append([]string{}, e.Egress...), Destinations: []NetworkDestination{}}
 	var line []string
 	refused := false
-	for _, d := range dests {
-		host := withheldHost
-		if m != nil {
-			host = printable(string(m.Event([]byte(d.Host))))
+	record := func(p *egress.Proxy, step string) {
+		if p == nil {
+			return
 		}
-		doc.Destinations = append(doc.Destinations, NetworkDestination{Host: host, Port: d.Port, Verdict: string(d.Verdict), Reason: d.Reason, Count: d.Count})
-		line = append(line, fmt.Sprintf("%s %s x%d", destination(host, d.Port), d.Verdict, d.Count))
-		refused = refused || d.Verdict == egress.Refused
+		dests, unrecorded := p.Destinations()
+		doc.Unrecorded += unrecorded
+		for _, d := range dests {
+			host := withheldHost
+			if m != nil {
+				host = printable(string(m.Event([]byte(d.Host))))
+			}
+			doc.Destinations = append(doc.Destinations, NetworkDestination{Step: step, Host: host, Port: d.Port, Verdict: string(d.Verdict), Reason: d.Reason, Count: d.Count})
+			line = append(line, strings.TrimSpace(fmt.Sprintf("%s %s %s x%d", step, destination(host, d.Port), d.Verdict, d.Count)))
+			refused = refused || d.Verdict == egress.Refused
+		}
 	}
+	// The install runs before every step of the run.
+	record(r.install, installStep)
+	record(r.proxy, "")
 	log := r.s.log.Info
 	if refused {
 		log = r.s.log.Warn
 	}
-	log("run egress", "run", r.spec.id, "env", r.spec.env, "mode", doc.Mode, "destinations", strings.Join(line, ", "), "unrecorded", unrecorded)
+	log("run egress", "run", r.spec.id, "env", r.spec.env, "mode", doc.Mode, "destinations", strings.Join(line, ", "), "unrecorded", doc.Unrecorded)
 	return doc
 }
 
@@ -188,10 +203,11 @@ func destination(host string, port int) string {
 }
 
 // egressDiagnostics say why a failed step may have failed for egress: the
-// destinations the proxy refused, with the env's egress list, and a
+// destinations the run's proxy refused, with the env's egress list, and a
 // connection made around the proxy, which has no route in the run's
-// namespace. out is the step's raw output, which is searched and never
-// shown.
+// namespace. The env's list has no say over the provider install, so its
+// destinations are left out. out is the step's raw output, which is
+// searched and never shown.
 func egressDiagnostics(doc *NetworkDoc, env string, out ...[]byte) []Diagnostic {
 	if doc == nil {
 		return nil
@@ -199,7 +215,7 @@ func egressDiagnostics(doc *NetworkDoc, env string, out ...[]byte) []Diagnostic 
 	var diags []Diagnostic
 	var refused []string
 	for _, d := range doc.Destinations {
-		if d.Verdict == string(egress.Refused) {
+		if d.Verdict == string(egress.Refused) && d.Step == "" {
 			refused = append(refused, fmt.Sprintf("%s (%s)", destination(d.Host, d.Port), d.Reason))
 		}
 	}

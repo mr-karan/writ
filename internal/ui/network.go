@@ -22,9 +22,11 @@ type networkView struct {
 	Refused bool
 }
 
+// networkRow is one destination. Step is install for a destination of
+// the run's provider install.
 type networkRow struct {
-	Dest, Verdict, Reason string
-	Count                 int
+	Dest, Step, Verdict, Reason string
+	Count                       int
 }
 
 // readNetwork reads the network document of a plan or a run, nil when it
@@ -39,7 +41,7 @@ func readNetwork(raw json.RawMessage) (*networkView, error) {
 	}
 	v := &networkView{Mode: doc.Mode, Egress: doc.Egress, Unrecorded: doc.Unrecorded}
 	for _, d := range doc.Destinations {
-		v.Rows = append(v.Rows, networkRow{Dest: net.JoinHostPort(d.Host, strconv.Itoa(d.Port)), Verdict: d.Verdict, Reason: d.Reason, Count: d.Count})
+		v.Rows = append(v.Rows, networkRow{Dest: net.JoinHostPort(d.Host, strconv.Itoa(d.Port)), Step: d.Step, Verdict: d.Verdict, Reason: d.Reason, Count: d.Count})
 		v.Refused = v.Refused || d.Verdict == "refused"
 	}
 	return v, nil

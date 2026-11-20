@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -129,8 +130,9 @@ type tofuRun struct {
 	// run with no role. The environment holds only the token that fetches
 	// them, and a refresh adds to them while the run goes on.
 	served func() []string
-	// proxy is the run's egress proxy, nil under egress_mode off.
-	proxy *egress.Proxy
+	// proxy is the run's egress proxy, and install the proxy of its
+	// provider install, both nil under egress_mode off.
+	proxy, install *egress.Proxy
 	undo  []func()
 }
 
@@ -253,9 +255,11 @@ func (r *tofuRun) stack(ctx context.Context, m *mask.Mask) (tofu.Stack, error) {
 
 // fill installs the providers of the stack's lock file and returns the
 // lock file the run's init reads. The lock file is the stack's, and each
-// provider's address starts with the registry the install asks, so under
-// egress_mode report or enforce a provider from a registry that
-// provider_registries does not list is refused.
+// provider's address starts with the registry the install asks, which
+// chooses the hosts it downloads from. So under egress_mode report or
+// enforce a provider from a registry that provider_registries does not
+// list is refused, and the install runs in a network namespace of its
+// own behind a proxy of its own, which allows only public addresses.
 func (r *tofuRun) fill(ctx context.Context) ([]byte, error) {
 	if !r.s.cfg.EgressMode.On() {
 		return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, nil, nil)
@@ -271,7 +275,10 @@ func (r *tofuRun) fill(ctx context.Context) ([]byte, error) {
 				p.Source, host, r.s.cfg.EgressMode, strings.Join(allowed, ", "), host)
 		}
 	}
-	return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, nil, nil)
+	if r.install, err = egress.New(egress.Options{Mode: r.s.cfg.EgressMode, Install: true}); err != nil {
+		return nil, err
+	}
+	return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, &tofu.Net{Ports: map[int]http.Handler{egressPort: r.install}}, egressEnv)
 }
 
 // takeUID takes a provider uid no other run has, nil when the config sets

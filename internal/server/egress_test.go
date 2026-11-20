@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -203,15 +204,18 @@ func mustJSON(t *testing.T, v any) []byte {
 	return b
 }
 
-// Under egress_mode off a run keeps the host's network, as before egress:
-// no network of its own, no proxy, the state backend at writ serve's URL,
-// and no record.
+// Under egress_mode off a run and its provider install keep the host's
+// network, as before egress: no network of their own, no proxy, the state
+// backend at writ serve's URL, and no record.
 func TestTofuEgressOff(t *testing.T) {
 	runner := &fakeTofu{}
 	f := tofuApplyFixture(t, runner)
 	p, _ := f.planCommit(tofuFiles(), "off")
 	if p.Plan.Status != "pending" || string(p.Network) != "null" {
 		t.Fatalf("plan %+v, network %s", p.Plan, p.Network)
+	}
+	if runner.fillNets[0] != nil || runner.fillEnvs[0] != nil {
+		t.Fatalf("under egress_mode off the provider install got network %+v and env %v", runner.fillNets[0], runner.fillEnvs[0])
 	}
 	s := runner.stacks[0]
 	if s.Net != nil || envValue(s.Env, "HTTPS_PROXY") != "" || envValue(s.Env, "HTTP_PROXY") != "" || !strings.HasPrefix(envValue(s.Env, "TF_HTTP_ADDRESS"), f.cfg.URL+"/v1/tfstate/") {
@@ -497,6 +501,90 @@ func TestTofuEgressProviderRegistries(t *testing.T) {
 			}
 			if p.Plan.Status != "failed" || p.Text != tt.want || fills != 0 {
 				t.Fatalf("plan %+v after %d installs\n%s\nwant\n%s", p.Plan, fills, p.Text, tt.want)
+			}
+		})
+	}
+}
+
+// Under egress_mode report or enforce, the provider install runs in a
+// network namespace of its own, whose one port is an egress proxy of its
+// own: it allows a public destination whatever the env's list, and
+// refuses the metadata service and a private address. The run's record
+// names the install's destinations first, marked install, and keeps them
+// when the install fails.
+func TestTofuEgressInstall(t *testing.T) {
+	for _, mode := range []string{"report", "enforce"} {
+		t.Run(mode, func(t *testing.T) {
+			var log syncBuffer
+			runner := &fakeTofu{}
+			f := tofuApplyFixtureEdit(t, runner, withEgress(mode, `["*.amazonaws.com"]`), func(o *server.Options) {
+				o.Log = slog.New(slog.NewTextHandler(&log, nil))
+			})
+			var statuses []string
+			runner.fill = func(n *tofu.Net) error {
+				if n == nil || len(n.Ports) != 1 {
+					return fmt.Errorf("the install's network %+v, want one port", n)
+				}
+				proxy := serveRunPort(t, n.Ports[3128])
+				for _, target := range []string{"169.254.169.254:80", "10.0.0.10:443", "[fd00::10]:443", "127.0.0.1:5432"} {
+					statuses = append(statuses, connectVia(t, proxy, target))
+				}
+				return nil
+			}
+			runner.plan = func() (tofu.Plan, error) {
+				runner.mu.Lock()
+				s := runner.stacks[len(runner.stacks)-1]
+				runner.mu.Unlock()
+				connectVia(t, serveRunPort(t, s.Net.Ports[3128]), "127.0.0.1:5432")
+				return createOnly()
+			}
+			p, _ := f.planCommit(tofuFiles(), "install")
+			if p.Plan.Status != "pending" {
+				t.Fatalf("plan %+v\n%s", p.Plan, p.Text)
+			}
+			wantStatuses := []string{
+				"403 writ egress refused 169.254.169.254:80: a link-local address, where the instance metadata service is",
+				"403 writ egress refused 10.0.0.10:443: a private address, which a provider install never connects to",
+				"403 writ egress refused [fd00::10]:443: a private address, which a provider install never connects to",
+				"403 writ egress refused 127.0.0.1:5432: a loopback address",
+			}
+			if !slices.Equal(statuses, wantStatuses) {
+				t.Errorf("the install's proxy answered %q, want %q", statuses, wantStatuses)
+			}
+			env := envMap(runner.fillEnvs[0])
+			for k, v := range map[string]string{"HTTPS_PROXY": "http://127.0.0.1:3128", "https_proxy": "http://127.0.0.1:3128", "HTTP_PROXY": "http://127.0.0.1:3128", "NO_PROXY": "127.0.0.1,localhost,::1"} {
+				if env[k] != v {
+					t.Errorf("the install's %s = %q, want %q", k, env[k], v)
+				}
+			}
+			if len(env) != 6 {
+				t.Errorf("the install's environment is %v, want only the proxy's variables", runner.fillEnvs[0])
+			}
+			want := []server.NetworkDestination{
+				{Step: "install", Host: "10.0.0.10", Port: 443, Verdict: "refused", Reason: "a private address, which a provider install never connects to", Count: 1},
+				{Step: "install", Host: "127.0.0.1", Port: 5432, Verdict: "refused", Reason: "a loopback address", Count: 1},
+				{Step: "install", Host: "169.254.169.254", Port: 80, Verdict: "refused", Reason: "a link-local address, where the instance metadata service is", Count: 1},
+				{Step: "install", Host: "fd00::10", Port: 443, Verdict: "refused", Reason: "a private address, which a provider install never connects to", Count: 1},
+				{Host: "127.0.0.1", Port: 5432, Verdict: "refused", Reason: "a loopback address", Count: 1},
+			}
+			if n := networkOf(t, p.Network); !slices.Equal(n.Destinations, want) {
+				t.Errorf("the plan's network %+v, want %+v", n.Destinations, want)
+			}
+			if !strings.Contains(log.String(), `destinations="install 10.0.0.10:443 refused x1, install 127.0.0.1:5432 refused x1, install 169.254.169.254:80 refused x1, install [fd00::10]:443 refused x1, 127.0.0.1:5432 refused x1"`) {
+				t.Errorf("writ serve's log lacks the run egress line with the install's destinations:\n%s", log.String())
+			}
+
+			// A failed install keeps the record of what it asked for.
+			runner.mu.Lock()
+			runner.fill = func(n *tofu.Net) error {
+				connectVia(t, serveRunPort(t, n.Ports[3128]), "169.254.169.254:80")
+				return errors.New("tofu init exited with code 1")
+			}
+			runner.mu.Unlock()
+			p, _ = f.planCommit(tofuFiles(), "install-fails")
+			want = []server.NetworkDestination{{Step: "install", Host: "169.254.169.254", Port: 80, Verdict: "refused", Reason: "a link-local address, where the instance metadata service is", Count: 1}}
+			if n := networkOf(t, p.Network); p.Plan.Status != "failed" || !slices.Equal(n.Destinations, want) {
+				t.Errorf("a failed install's plan %+v kept network %+v, want %+v\n%s", p.Plan, n.Destinations, want, p.Text)
 			}
 		})
 	}

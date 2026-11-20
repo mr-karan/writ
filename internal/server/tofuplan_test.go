@@ -99,6 +99,11 @@ type fakeTofu struct {
 	gate   chan struct{}
 	base   string
 	fills  [][]byte
+	// fillNets and fillEnvs are the network and the environment of each
+	// Fill, and fill, when set, stands for what tofu init does in it.
+	fillNets []*tofu.Net
+	fillEnvs [][]string
+	fill     func(*tofu.Net) error
 	stacks []tofu.Stack
 	files  [][]string
 	// during is the status the state backend answered inside the plan.
@@ -253,10 +258,16 @@ func (f *fakeTofu) call(c stateCall, method, suffix, body string) int {
 
 type stateCall struct{ addr, token string }
 
-func (f *fakeTofu) Fill(_ context.Context, lock []byte, _ *tofu.Net, _ []string) ([]byte, error) {
+func (f *fakeTofu) Fill(_ context.Context, lock []byte, n *tofu.Net, env []string) ([]byte, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.fills = append(f.fills, lock)
+	f.fills, f.fillNets, f.fillEnvs = append(f.fills, lock), append(f.fillNets, n), append(f.fillEnvs, env)
+	fill := f.fill
+	f.mu.Unlock()
+	if fill != nil {
+		if err := fill(n); err != nil {
+			return nil, err
+		}
+	}
 	return append(slices.Clone(lock), filledMark...), nil
 }
 

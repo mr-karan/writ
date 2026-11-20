@@ -17,39 +17,50 @@ import (
 
 // Under egress_mode enforce, a plan's page and its run's page show what
 // the run asked writ's egress proxy for: each destination with its
-// verdict and count, and the env's egress list. The section is folded,
-// and open when the proxy refused a destination.
+// verdict and count, its provider install's marked as such, and the
+// env's egress list. The section is folded, and open when the proxy
+// refused a destination.
 func TestTofuNetworkSection(t *testing.T) {
 	x := newTofuUI(t, func(c *server.Config) { c.EgressMode = egress.Enforce })
-	var status string
+	var status, installStatus string
+	connect := func(h http.Handler, target string) string {
+		srv := httptest.NewServer(h)
+		defer srv.Close()
+		c, err := net.Dial("tcp", srv.Listener.Addr().String())
+		if err != nil {
+			t.Error(err)
+			return ""
+		}
+		defer c.Close()
+		fmt.Fprintf(c, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", target, target)
+		resp, err := http.ReadResponse(bufio.NewReader(c), &http.Request{Method: http.MethodConnect})
+		if err != nil {
+			t.Error(err)
+			return ""
+		}
+		return resp.Status
+	}
 	x.tofu.mu.Lock()
 	x.tofu.egress = func(s tofu.Stack) {
 		for _, h := range s.Net.Ports {
-			if _, ok := h.(*egress.Proxy); !ok {
-				continue
-			}
-			srv := httptest.NewServer(h)
-			defer srv.Close()
-			c, err := net.Dial("tcp", srv.Listener.Addr().String())
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			defer c.Close()
-			fmt.Fprint(c, "CONNECT registry.example.org:443 HTTP/1.1\r\nHost: registry.example.org:443\r\n\r\n")
-			if resp, err := http.ReadResponse(bufio.NewReader(c), &http.Request{Method: http.MethodConnect}); err == nil {
-				status = resp.Status
+			if _, ok := h.(*egress.Proxy); ok {
+				status = connect(h, "registry.example.org:443")
 			}
 		}
 	}
+	x.tofu.install = func(n *tofu.Net) { installStatus = connect(n.Ports[3128], "169.254.169.254:80") }
 	x.tofu.mu.Unlock()
 	p := x.plan(second)
 	if status != "403 writ egress refused registry.example.org:443: not in the list" {
 		t.Fatalf("the run's proxy answered %q", status)
 	}
+	if installStatus != "403 writ egress refused 169.254.169.254:80: a link-local address, where the instance metadata service is" {
+		t.Fatalf("the install's proxy answered %q", installStatus)
+	}
 	_, doc := x.page("/ui/plans/" + p.Plan.ID)
 	section := networkSection(t, doc)
-	for _, want := range []string{"Network 1 egress enforce", "registry.example.org:443 refused not in the list 1", "The env's egress list is empty."} {
+	for _, want := range []string{"Network 2 egress enforce", "169.254.169.254:80 provider install refused a link-local address, where the instance metadata service is 1",
+		"registry.example.org:443 refused not in the list 1", "The env's egress list is empty."} {
 		if !strings.Contains(words(section), want) {
 			t.Errorf("the plan's network section lacks %q:\n%s", want, words(section))
 		}
@@ -59,7 +70,7 @@ func TestTofuNetworkSection(t *testing.T) {
 	}
 
 	x.tofu.mu.Lock()
-	x.tofu.egress = nil
+	x.tofu.egress, x.tofu.install = nil, nil
 	x.tofu.mu.Unlock()
 	run := x.apply(x.plan(second).Plan.ID)
 	_, doc = x.page("/ui/runs/" + run.Run.ID)

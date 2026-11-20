@@ -120,7 +120,7 @@
 <thead><tr><th scope="col">Destination</th><th scope="col">Verdict</th><th scope="col" class="end">Requests</th></tr></thead>
 <tbody>
 {{- range .Rows}}
-<tr><th scope="row" class="c-main"><code>{{.Dest}}</code></th><td data-label="Verdict"><span class="chip{{if eq .Verdict "refused"}} chip-bad{{else if eq .Verdict "unlisted"}} chip-warn{{end}}">{{.Verdict}}</span>{{with .Reason}} <span class="muted">{{.}}</span>{{end}}</td><td class="end" data-label="Requests">{{template "n" (exact .Count)}}</td></tr>
+<tr><th scope="row" class="c-main"><code>{{.Dest}}</code>{{with .Step}} <span class="muted">provider {{.}}</span>{{end}}</th><td data-label="Verdict"><span class="chip{{if eq .Verdict "refused"}} chip-bad{{else if eq .Verdict "unlisted"}} chip-warn{{end}}">{{.Verdict}}</span>{{with .Reason}} <span class="muted">{{.}}</span>{{end}}</td><td class="end" data-label="Requests">{{template "n" (exact .Count)}}</td></tr>
 {{- end}}
 </tbody>
 </table>

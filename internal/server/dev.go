@@ -57,7 +57,8 @@ func DevConfig(o DevOptions) *Config {
 		PlanTTL: DefaultPlanTTL, SessionTTL: DefaultSessionTTL,
 		Limits: Limits{RequestsPerSecond: 100, RequestsPerAddress: 100, PlansPerPrincipal: DefaultPlans, Plans: DefaultPlans, Applies: DefaultApplies, Body: DefaultBody,
 			PlanTimeout: DefaultPlanTimeout, ApplyStartTimeout: DefaultApplyStartTimeout, ApplyTimeout: DefaultApplyTimeout},
-		Envs: map[string]Env{},
+		Envs:               map[string]Env{},
+		ProviderRegistries: defaultProviderRegistries,
 		Policy: authz.Policy{
 			// The team matches no claim: only the dev token joins it.
 			Teams:  []authz.Team{{Name: DevTeam, Issuer: devIssuer}},
