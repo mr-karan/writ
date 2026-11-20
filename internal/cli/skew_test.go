@@ -53,10 +53,14 @@ func TestRemoteUnknownAnswerIsAnError(t *testing.T) {
 			},
 			"writ serve is v0.1.7 and this writ is v0.1.5: install writ v0.1.7"},
 		{"an approval refused with no error", "", http.StatusConflict, map[string]any{"format": server.FormatApprove, "ok": false, "diagnostics": []any{}},
-			func(a *App, asJSON bool) error { return a.Approve(context.Background(), ApproveOptions{JSON: asJSON, ID: id}) },
+			func(a *App, asJSON bool) error {
+				return a.Approve(context.Background(), ApproveOptions{JSON: asJSON, ID: id})
+			},
 			"writ serve may be newer than this writ, v0.1.5"},
 		{"a plan that is ok and names none", "v0.1.5", http.StatusOK, map[string]any{"format": server.FormatRemotePlan, "ok": true, "plan": nil, "diagnostics": []any{}},
-			func(a *App, asJSON bool) error { return a.Show(context.Background(), ShowOptions{JSON: asJSON, ID: id}) },
+			func(a *App, asJSON bool) error {
+				return a.Show(context.Background(), ShowOptions{JSON: asJSON, ID: id})
+			},
 			"writ serve is v0.1.5 and this writ is v0.1.5"},
 	} {
 		for _, asJSON := range []bool{false, true} {
