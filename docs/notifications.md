@@ -25,7 +25,7 @@ notify "ops-slack" {
 }
 ```
 
-A Slack message has one line of text: the event, the `stack@env`, the summary, who started it, and a **View in Writ** link. Writ escapes `<`, `>`, and `&` in every field, so a stack name or a display name can't mention a channel or add a link. This message came from a drift check:
+A Slack message has one line of text: the event, the `stack@env`, the summary, who started it, and a **View in Writ** link. Writ escapes `<`, `>`, and `&` in every field, turns line breaks into spaces, and puts the display name in a code span, so neither a stack name nor a display name a person chose can mention a channel, add a link, or start a line of its own. This message came from a drift check:
 
 ```json
 {
@@ -100,8 +100,8 @@ Output of `TestNotifyEvents`, 2026-11-20, with the body indented. The test serve
 | Field | What it is |
 | --- | --- |
 | `format` | `writ.notification/v0`. |
-| `id` | The delivery's id. A retry sends the same id, so use it to drop duplicates. `X-Writ-Delivery` has it too. |
-| `event` | One of the [events](#events). `X-Writ-Event` has it too. |
+| `id` | The delivery's id. A retry sends the same id, so use it to drop duplicates. `X-Writ-Delivery` has it too, but the signature doesn't cover headers, so trust the body's `id`. |
+| `event` | One of the [events](#events). `X-Writ-Event` has it too, but the signature doesn't cover headers, so trust the body's `event`. |
 | `at` | When it happened, in UTC. |
 | `server` | The server config's `url`. |
 | `stack`, `env` | The `stack@env` it happened on. |
@@ -137,7 +137,7 @@ func verify(secret []byte, r *http.Request, body []byte) bool {
 
 | Event | When it's sent |
 | --- | --- |
-| `drift` | A drift check finds drift on a `stack@env` that was clean or never checked, or finds it clean again after drift. With `drift_mode = "every-check"`, every check that finds drift sends one too. A failed drift check doesn't count as clean or drifted. |
+| `drift` | A drift check finds drift on a `stack@env` that was clean or never checked, or finds it clean again after drift. With `drift_mode = "every-check"`, every check that finds drift sends one too. A failed drift check doesn't count as clean or drifted. An apply between two checks doesn't reset this: drift found again after an apply, with no clean check between, sends nothing under the default mode. Use `every-check` to hear about it. |
 | `plan-failed` | A plan ends `failed` or `refused`. The summary has the first error's class. |
 | `apply-failed` | An apply ends `failed`. The summary has the first error's class. |
 | `applied` | An apply ends `applied`, with what it added, changed, destroyed, and imported. |

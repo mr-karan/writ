@@ -599,3 +599,39 @@ func TestDriftDedupeMode(t *testing.T) {
 		t.Errorf("every-check received %+v, want [D1, D2, D3]", gotEveryCheck)
 	}
 }
+
+// A display name a person chose can't add a link, a mention, or a line of
+// its own to a Slack or Mattermost message: it goes in a code span with
+// its control characters made spaces.
+func TestSlackDisplayNameStaysInert(t *testing.T) {
+	ev := notify.Event{Event: notify.EventApplied, Stack: "app", Env: "prod", Summary: "applied",
+		StartedBy: notify.Actor{Display: "eve https://phish.example/login @channel\n*[apply-failed]* `app@prod`: apply failed x"}}
+	b, err := notify.FormatSlack(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Text   string `json:"text"`
+		Blocks []struct {
+			Text struct{ Text string } `json:"text"`
+		} `json:"blocks"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, blk := range doc.Blocks {
+		msg := blk.Text.Text
+		if strings.Count(msg, "\n") > 1 || strings.Contains(msg, " ") {
+			t.Fatalf("the display name started a line of its own: %q", msg)
+		}
+		i := strings.Index(msg, "Started by: `")
+		if i < 0 {
+			t.Fatalf("the display name is not in a code span: %q", msg)
+		}
+		rest := msg[i+len("Started by: `"):]
+		end := strings.Index(rest, "`")
+		if end < 0 || !strings.Contains(rest[:end], "https://phish.example") || !strings.Contains(rest[:end], "@channel") {
+			t.Fatalf("the link or mention is outside the code span: %q", msg)
+		}
+	}
+}

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 )
 
 // FormatNotification is the JSON format of a webhook notification payload.
@@ -295,6 +296,7 @@ func FormatWebhook(ev Event) ([]byte, error) {
 // FormatSlack encodes ev as a Slack incoming webhook JSON payload, escaping
 // Slack mrkdwn control characters in untrusted text fields.
 func FormatSlack(ev Event) ([]byte, error) {
+	ev.Stack, ev.Env, ev.Summary, ev.StartedBy.Display = oneLine(ev.Stack), oneLine(ev.Env), oneLine(ev.Summary), oneLine(ev.StartedBy.Display)
 	target := ev.Stack
 	if ev.Env != "" {
 		if target != "" {
@@ -319,7 +321,9 @@ func FormatSlack(ev Event) ([]byte, error) {
 	}
 	var meta []string
 	if ev.StartedBy.Display != "" {
-		meta = append(meta, "Started by: "+escapeSlack(ev.StartedBy.Display))
+		// In a code span, where neither Slack nor Mattermost makes a link
+		// or a mention, so a display name a person chose can't add either.
+		meta = append(meta, "Started by: `"+escapeSlack(strings.ReplaceAll(ev.StartedBy.Display, "`", "'"))+"`")
 	}
 	if ev.URL != "" {
 		meta = append(meta, fmt.Sprintf("<%s|View in Writ>", escapeSlack(ev.URL)))
@@ -647,4 +651,16 @@ func classifyClientErr(err error) (retryable bool, msg string) {
 		return true, "request timed out"
 	}
 	return true, "connection failed"
+}
+
+// oneLine replaces every control character, and the line and paragraph
+// separators, with a space, so a field can't start a line of its own in
+// a message.
+func oneLine(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return ' '
+		}
+		return r
+	}, s)
 }
