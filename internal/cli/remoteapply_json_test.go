@@ -268,3 +268,33 @@ func TestRemoteApplyChangedRunResponse(t *testing.T) {
 		})
 	}
 }
+
+// A proxy's error page while writ polls a run is named as a page that is
+// not JSON, with the run to follow, not as a version skew.
+func TestRemoteApplyPollProxyPage(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(server.VersionHeader, "9.9.9")
+		if r.Method == http.MethodPost {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(server.RemoteRun{Format: server.FormatRemoteRun, OK: true,
+				Run: &server.RunInfo{ID: standInRun, Status: "applying"}})
+			return
+		}
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("<html>bad gateway</html>"))
+	}))
+	defer s.Close()
+	for _, asJSON := range []bool{false, true} {
+		var out bytes.Buffer
+		a := standInApp(t, s.URL, &out)
+		a.opts.Env = "prod"
+		err := a.RemoteApply(context.Background(), RemoteApplyOptions{JSON: asJSON, Merged: true, Stack: "network"})
+		if err == nil || !strings.Contains(err.Error(), "not JSON") || !strings.Contains(err.Error(), standInRun) || strings.Contains(err.Error(), "install writ") {
+			t.Errorf("json %v: got %v, want an error naming the page and the run, not a version skew", asJSON, err)
+		}
+		if strings.Contains(out.String(), "<html>") {
+			t.Errorf("json %v: stdout holds the proxy's page", asJSON)
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -813,6 +814,44 @@ func TestHTTPSOnPlaintextListenerIsPermanent(t *testing.T) {
 	results := make(chan notify.Result, 1)
 	d := notify.New(notify.Options{
 		Targets: []notify.Target{{Name: "ops", Kind: notify.KindWebhook, URL: "https" + strings.TrimPrefix(srv.URL, "http"),
+			Events: []notify.EventKind{notify.EventApplied}}},
+		Backoff:  []time.Duration{time.Millisecond},
+		OnResult: func(r notify.Result) { results <- r },
+	})
+	defer d.Close()
+	d.Emit(notify.Event{ID: "RUN", Event: notify.EventApplied, Stack: "app", Env: "prod", Status: "applied"})
+	select {
+	case r := <-results:
+		if r.OK || r.Attempts != 1 || !strings.HasPrefix(r.Err, "tls:") {
+			t.Fatalf("delivery: %+v, want a permanent TLS error", r)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("delivery did not finish")
+	}
+}
+
+// An https URL whose listener answers with something other than TLS or
+// HTTP, such as a mail server's banner, is wrong until an operator fixes
+// the URL, so it is not tried again.
+func TestHTTPSOnNonTLSListenerIsPermanent(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_, _ = c.Write([]byte("220 mail.example ESMTP ready\r\n"))
+			c.Close()
+		}
+	}()
+	results := make(chan notify.Result, 1)
+	d := notify.New(notify.Options{
+		Targets: []notify.Target{{Name: "ops", Kind: notify.KindWebhook, URL: "https://" + ln.Addr().String() + "/hook",
 			Events: []notify.EventKind{notify.EventApplied}}},
 		Backoff:  []time.Duration{time.Millisecond},
 		OnResult: func(r notify.Result) { results <- r },

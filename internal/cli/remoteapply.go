@@ -454,6 +454,9 @@ func (a *App) waitRun(ctx context.Context, r *remote, id string) ([]byte, error)
 		if err != nil {
 			return nil, err
 		}
+		if status >= 300 && !json.Valid(doc) {
+			return nil, fmt.Errorf("writ serve, or a proxy before it, answered %d with a body that is not JSON; run %s goes on: follow it with writ show --remote %s", status, id, id)
+		}
 		if status >= 300 {
 			return doc, nil
 		}

@@ -737,6 +737,8 @@ func classifyClientErr(err error) (retryable bool, msg string) {
 		return false, "tls: handshake failed"
 	case errors.Is(err, http.ErrSchemeMismatch):
 		return false, "tls: the receiver answered HTTPS with plaintext HTTP"
+	case errors.As(err, new(tls.RecordHeaderError)):
+		return false, "tls: the receiver did not answer with TLS"
 	}
 	var dns *net.DNSError
 	if errors.As(err, &dns) {
