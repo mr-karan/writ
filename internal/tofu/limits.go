@@ -185,6 +185,17 @@ var slowScratch = fmt.Sprintf("writ could not measure the run's directory, which
 // errScratchSlow is a measure that passed scratchWithin.
 var errScratchSlow = errors.New("the measure took too long")
 
+// heldMapsMax bounds the bytes of /proc/PID/maps that one measure reads,
+// of every process of the step together. Each line is as long as the path
+// of the file it maps, which a run may make some 60KB long, and a process
+// may have 65,530 mappings: a measure past it stops the step, as one past
+// the limit does. A large process, such as a desktop's web browser, has
+// some 2,000 mappings and 200KB of maps.
+const heldMapsMax = 16 << 20
+
+// errScratchMaps is a measure that read heldMapsMax of the step's maps.
+var errScratchMaps = errors.New("the step's processes map too much to read")
+
 // errScratchDeep is a run's directory nested deeper than scratchDepth.
 var errScratchDeep = errors.New("the directory nests too deeply")
 
@@ -196,6 +207,8 @@ func (sc *scratch) overScratch(max int64, cg *stepCgroup) string {
 	switch {
 	case errors.Is(err, errScratchSlow):
 		return slowScratch
+	case errors.Is(err, errScratchMaps):
+		return fmt.Sprintf("the step's processes map more than writ reads of them, %s of /proc/PID/maps, to measure the removed files they hold for limits.run_scratch, so it stopped the step", formatSize(heldMapsMax))
 	case errors.Is(err, errScratchDeep):
 		return fmt.Sprintf("the run's directory nests more than %d directories deep, past which writ does not measure it for limits.run_scratch, so it stopped the step", scratchDepth)
 	case err != nil:
@@ -216,6 +229,7 @@ func (sc *scratch) overScratch(max int64, cg *stepCgroup) string {
 // directory names any longer but cg's threads hold open or mapped: a run
 // could write into such a file for as long as the step runs. It stops
 // once the count passes max, and fails with errScratchSlow past deadline,
+// or errScratchMaps past what it reads of the step's mappings, each of
 // which a step's measure counts as over max.
 func (sc *scratch) usage(max int64, cg *stepCgroup, deadline time.Time) (int64, error) {
 	w := scratchWalk{max: max, deadline: deadline}
@@ -240,7 +254,7 @@ func (sc *scratch) usage(max int64, cg *stepCgroup, deadline time.Time) (int64, 
 	if err != nil || cg == nil {
 		return w.total, err
 	}
-	held, err := cg.heldRemoved(sc.user, deadline)
+	held, err := cg.heldRemoved(sc.user, max-w.total, deadline)
 	return w.total + held, err
 }
 

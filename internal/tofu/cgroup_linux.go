@@ -2,9 +2,11 @@ package tofu
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"io"
 	"os"
 	"path/filepath"
@@ -482,26 +484,43 @@ func (c *stepCgroup) remove() error {
 // names but a thread of the cgroup holds open or maps, each counted once
 // and as at least scratchInode, on whatever filesystem they lie: a run may
 // make a btrfs subvolume in its own directory, whose files stat gives a
-// device of their own. It reads every thread, not only each process: once
-// a process's first thread exits alone, /proc/PID reads that thread's
-// empty tables while the others still hold the file, and a thread cloned
-// without CLONE_FILES has descriptors of its own. It reads /proc as u, the
-// run's user: /proc/TID/fd belongs to the uid of its thread, and the
-// kernel lets no other uid without CAP_DAC_READ_SEARCH list it, though
-// writ made the user namespace the thread runs in. It fails with
-// errScratchSlow past deadline.
-func (c *stepCgroup) heldRemoved(u *User, deadline time.Time) (int64, error) {
+// device of their own. It reads the descriptors of every thread, not only
+// each process's: once a process's first thread exits alone, /proc/PID
+// reads that thread's empty tables while the others still hold the file,
+// and a thread cloned without CLONE_FILES has descriptors of its own. It
+// reads the mappings of each process once, from a thread of it that is
+// alive, since its threads share them. It reads /proc as u, the run's
+// user: /proc/TID/fd belongs to the uid of its thread, and the kernel lets
+// no other uid without CAP_DAC_READ_SEARCH list it, though writ made the
+// user namespace the thread runs in. It stops once what it found passes
+// max, and returns that much. It fails with errScratchSlow past deadline,
+// and with errScratchMaps past heldMapsMax.
+func (c *stepCgroup) heldRemoved(u *User, max int64, deadline time.Time) (int64, error) {
 	tids, err := cgroupIDs(c.dir, "cgroup.threads")
 	if err != nil {
 		return 0, err
 	}
-	h := heldFiles{open: map[[2]uint64]openFile{}, mapped: map[mappedFile]int64{}}
-	var denied []int
+	pids, err := cgroupIDs(c.dir, "cgroup.procs")
+	if err != nil {
+		return 0, err
+	}
+	h := newHeldFiles(max, deadline)
+	var deniedTids, deniedPids []int
 	err = asUser(u, func() error {
 		for _, tid := range tids {
-			err := h.read(tid, deadline)
+			err := h.descriptors(tid)
 			if u != nil && errors.Is(err, os.ErrPermission) {
-				denied = append(denied, tid)
+				deniedTids = append(deniedTids, tid)
+				continue
+			}
+			if err != nil {
+				return err
+			}
+		}
+		for _, pid := range pids {
+			err := h.mappings(pid)
+			if u != nil && errors.Is(err, os.ErrPermission) {
+				deniedPids = append(deniedPids, pid)
 				continue
 			}
 			if err != nil {
@@ -510,15 +529,23 @@ func (c *stepCgroup) heldRemoved(u *User, deadline time.Time) (int64, error) {
 		}
 		return nil
 	})
-	if err != nil {
-		return 0, err
-	}
-	// A process that made itself not dumpable gives its /proc/TID/fd to
-	// root of its user namespace, which is writ's uid.
-	for _, tid := range denied {
-		if err := h.read(tid, deadline); err != nil {
-			return 0, err
+	// A process that made itself not dumpable gives its /proc/TID/fd and
+	// maps to root of its user namespace, which is writ's uid.
+	for _, tid := range deniedTids {
+		if err == nil {
+			err = h.descriptors(tid)
 		}
+	}
+	for _, pid := range deniedPids {
+		if err == nil {
+			err = h.mappings(pid)
+		}
+	}
+	switch {
+	case errors.Is(err, errScratchOver):
+		return h.least(), nil
+	case err != nil:
+		return 0, err
 	}
 	return h.total(), nil
 }
@@ -527,44 +554,103 @@ func (c *stepCgroup) heldRemoved(u *User, deadline time.Time) (int64, error) {
 // /proc/TID/maps gives a file's device as its filesystem's, which is not
 // always the one stat gives, as on btrfs, so a mapping is known by its
 // device, inode, and path, and is the file of a descriptor when the inode
-// and either the device or the path agree.
+// and either the device or the path agree. It keeps a hash of each path,
+// with a seed of its own that no run can know, not the path, which a run
+// may make some 60KB long.
 type heldFiles struct {
+	seed maphash.Seed
 	// open holds the files of descriptors by stat's device and inode.
 	open map[[2]uint64]openFile
 	// mapped holds the end of each file's furthest mapping, since a
 	// mapping, unlike a descriptor, gives no way to stat the file.
 	mapped map[mappedFile]int64
+	// inos holds the inode of each file of open and mapped, and openBytes
+	// what the files of open count: what h counts is at least each.
+	inos      map[uint64]struct{}
+	openBytes int64
+	// max is how far the count may grow before reading stops, mapsLeft
+	// how many bytes of maps are left to read, and deadline when reading
+	// stops.
+	max      int64
+	mapsLeft int64
+	deadline time.Time
 }
 
 type openFile struct {
 	blocks int64
-	path   string
+	path   uint64
 }
 
 type mappedFile struct {
-	dev  string
-	ino  uint64
-	path string
+	dev, ino, path uint64
+}
+
+func newHeldFiles(max int64, deadline time.Time) *heldFiles {
+	return &heldFiles{
+		seed:     maphash.MakeSeed(),
+		open:     map[[2]uint64]openFile{},
+		mapped:   map[mappedFile]int64{},
+		inos:     map[uint64]struct{}{},
+		max:      max,
+		mapsLeft: heldMapsMax,
+		deadline: deadline,
+	}
 }
 
 // inMemory reports whether path, as /proc names a removed file, is a
 // memfd or System V shared memory: memory, which run_memory bounds, as
 // is the sealed saved plan that writ gives a step.
-func inMemory(path string) bool {
-	return strings.HasPrefix(path, "/memfd:") || strings.HasPrefix(path, "/SYSV")
+func inMemory(path []byte) bool {
+	return bytes.HasPrefix(path, []byte("/memfd:")) || bytes.HasPrefix(path, []byte("/SYSV"))
+}
+
+// least is no more than what total returns: each file counts at least
+// scratchInode, and two files of one inode number are two files.
+func (h *heldFiles) least() int64 {
+	return max(h.openBytes, int64(len(h.inos))*scratchInode)
+}
+
+// addOpen adds the removed file of a descriptor, and fails with
+// errScratchOver once h counts more than its max.
+func (h *heldFiles) addOpen(dev, ino uint64, blocks int64, path []byte) error {
+	id := [2]uint64{dev, ino}
+	old, seen := h.open[id]
+	f := openFile{blocks: max(old.blocks, blocks), path: maphash.Bytes(h.seed, path)}
+	if seen {
+		h.openBytes -= max(old.blocks, scratchInode)
+	}
+	h.openBytes += max(f.blocks, scratchInode)
+	h.open[id] = f
+	h.inos[ino] = struct{}{}
+	return h.check()
+}
+
+// addMapped adds a mapping of a removed file that reaches end bytes into
+// it, and fails with errScratchOver once h counts more than its max.
+func (h *heldFiles) addMapped(dev, ino uint64, end int64, path []byte) error {
+	m := mappedFile{dev: dev, ino: ino, path: maphash.Bytes(h.seed, path)}
+	h.mapped[m] = max(h.mapped[m], end)
+	h.inos[ino] = struct{}{}
+	return h.check()
+}
+
+func (h *heldFiles) check() error {
+	if h.least() > h.max {
+		return errScratchOver
+	}
+	return nil
 }
 
 // total is the bytes of h's files, each at least scratchInode.
 func (h *heldFiles) total() int64 {
-	var n int64
 	byIno := map[uint64][][2]uint64{}
-	for id, f := range h.open {
-		n += max(f.blocks, scratchInode)
+	for id := range h.open {
 		byIno[id[1]] = append(byIno[id[1]], id)
 	}
+	n := h.openBytes
 	for m, end := range h.mapped {
 		if !slices.ContainsFunc(byIno[m.ino], func(id [2]uint64) bool {
-			return majorMinor(id[0]) == m.dev || h.open[id].path == m.path
+			return unix.Mkdev(unix.Major(id[0]), unix.Minor(id[0])) == m.dev || h.open[id].path == m.path
 		}) {
 			n += max(end, scratchInode)
 		}
@@ -572,18 +658,9 @@ func (h *heldFiles) total() int64 {
 	return n
 }
 
-// majorMinor writes dev as /proc/TID/maps does.
-func majorMinor(dev uint64) string {
-	return fmt.Sprintf("%02x:%02x", unix.Major(dev), unix.Minor(dev))
-}
-
-// read adds to h each removed file that the thread tid holds open or
-// maps. A thread that exits meanwhile holds nothing. It fails with
-// errScratchSlow past deadline.
-func (h *heldFiles) read(tid int, deadline time.Time) error {
-	if time.Now().After(deadline) {
-		return errScratchSlow
-	}
+// descriptors adds to h each removed file that the thread tid holds open.
+// A thread that exits meanwhile holds nothing.
+func (h *heldFiles) descriptors(tid int) error {
 	proc := "/proc/" + strconv.Itoa(tid)
 	f, err := os.Open(proc + "/fd")
 	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
@@ -594,12 +671,12 @@ func (h *heldFiles) read(tid int, deadline time.Time) error {
 	}
 	defer f.Close()
 	for {
-		if time.Now().After(deadline) {
+		if time.Now().After(h.deadline) {
 			return errScratchSlow
 		}
 		names, err := f.Readdirnames(256)
 		if errors.Is(err, io.EOF) || errors.Is(err, unix.ESRCH) || errors.Is(err, os.ErrNotExist) {
-			break
+			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("read the descriptors of the step's thread %d: %w", tid, err)
@@ -625,56 +702,135 @@ func (h *heldFiles) read(tid int, deadline time.Time) error {
 			if err != nil {
 				return fmt.Errorf("read a descriptor of the step's thread %d: %w", tid, err)
 			}
-			path = strings.TrimSuffix(path, " (deleted)")
-			if inMemory(path) {
+			p := []byte(strings.TrimSuffix(path, deleted))
+			if inMemory(p) {
 				continue
 			}
-			id := [2]uint64{st.Dev, st.Ino}
-			h.open[id] = openFile{blocks: max(h.open[id].blocks, st.Blocks*512), path: path}
+			if err := h.addOpen(st.Dev, st.Ino, st.Blocks*512, p); err != nil {
+				return err
+			}
 		}
 	}
-	maps, err := os.Open(proc + "/maps")
+}
+
+// deleted is what /proc writes after the path of a removed file.
+const deleted = " (deleted)"
+
+// mappings adds to h each removed file that the process pid maps, read
+// from the first of its threads that has mappings: a thread that has
+// exited, as the first may alone, has none. A process that exits
+// meanwhile maps nothing.
+func (h *heldFiles) mappings(pid int) error {
+	task := "/proc/" + strconv.Itoa(pid) + "/task"
+	f, err := os.Open(task)
 	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("read the mappings of the step's thread %d: %w", tid, err)
+		return fmt.Errorf("read the threads of the step's process %d: %w", pid, err)
 	}
-	defer maps.Close()
-	sc := bufio.NewScanner(maps)
-	for sc.Scan() {
-		line, ok := strings.CutSuffix(sc.Text(), " (deleted)")
-		if !ok {
-			continue
+	defer f.Close()
+	for {
+		names, err := f.Readdirnames(64)
+		if errors.Is(err, io.EOF) || errors.Is(err, unix.ESRCH) || errors.Is(err, os.ErrNotExist) {
+			return nil
 		}
-		// START-END PERMS OFFSET MAJ:MIN INODE PATH, the path padded
-		// with spaces and its own spaces kept.
-		var f [5]string
-		rest := line
-		for i := range f {
-			if f[i], rest, ok = strings.Cut(strings.TrimLeft(rest, " "), " "); !ok {
-				break
+		if err != nil {
+			return fmt.Errorf("read the threads of the step's process %d: %w", pid, err)
+		}
+		for _, n := range names {
+			found, err := h.maps(task+"/"+n+"/maps", pid)
+			if found || err != nil {
+				return err
 			}
 		}
-		path := strings.TrimLeft(rest, " ")
-		if !ok || inMemory(path) {
-			continue
+	}
+}
+
+// maps adds to h each removed file that the maps file path lists, and
+// reports whether it lists any mapping. It checks the deadline at each
+// line: a process that keeps mapping past the line writ reads, and
+// unmapping before it, keeps one read of maps going for as long as it
+// runs.
+func (h *heldFiles) maps(path string, pid int) (bool, error) {
+	if time.Now().After(h.deadline) {
+		return false, errScratchSlow
+	}
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read the mappings of the step's process %d: %w", pid, err)
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(budgeted{f, &h.mapsLeft})
+	found := false
+	for sc.Scan() {
+		found = true
+		if time.Now().After(h.deadline) {
+			return found, errScratchSlow
 		}
-		start, end, _ := strings.Cut(f[0], "-")
-		lo, err1 := strconv.ParseUint(start, 16, 64)
-		hi, err2 := strconv.ParseUint(end, 16, 64)
-		off, err3 := strconv.ParseUint(f[2], 16, 64)
-		ino, err4 := strconv.ParseUint(f[4], 10, 64)
-		if err := errors.Join(err1, err2, err3, err4); err != nil || ino == 0 {
-			continue
+		if err := h.mapping(sc.Bytes()); err != nil {
+			return found, err
 		}
-		m := mappedFile{dev: f[3], ino: ino, path: path}
-		h.mapped[m] = max(h.mapped[m], int64(off+hi-lo))
 	}
 	if err := sc.Err(); err != nil && !errors.Is(err, unix.ESRCH) {
-		return fmt.Errorf("read the mappings of the step's thread %d: %w", tid, err)
+		return found, fmt.Errorf("read the mappings of the step's process %d: %w", pid, err)
 	}
-	return nil
+	return found, nil
+}
+
+// mapping adds to h the file of a line of maps, if it is removed.
+func (h *heldFiles) mapping(line []byte) error {
+	line, ok := bytes.CutSuffix(line, []byte(deleted))
+	if !ok {
+		return nil
+	}
+	// START-END PERMS OFFSET MAJ:MIN INODE PATH, the path padded with
+	// spaces and its own spaces kept.
+	var f [5][]byte
+	rest := line
+	for i := range f {
+		if f[i], rest, ok = bytes.Cut(bytes.TrimLeft(rest, " "), []byte(" ")); !ok {
+			break
+		}
+	}
+	path := bytes.TrimLeft(rest, " ")
+	if !ok || inMemory(path) {
+		return nil
+	}
+	start, end, _ := bytes.Cut(f[0], []byte("-"))
+	major, minor, _ := bytes.Cut(f[3], []byte(":"))
+	lo, err1 := strconv.ParseUint(string(start), 16, 64)
+	hi, err2 := strconv.ParseUint(string(end), 16, 64)
+	off, err3 := strconv.ParseUint(string(f[2]), 16, 64)
+	maj, err4 := strconv.ParseUint(string(major), 16, 32)
+	minr, err5 := strconv.ParseUint(string(minor), 16, 32)
+	ino, err6 := strconv.ParseUint(string(f[4]), 10, 64)
+	if err := errors.Join(err1, err2, err3, err4, err5, err6); err != nil || ino == 0 {
+		return nil
+	}
+	return h.addMapped(unix.Mkdev(uint32(maj), uint32(minr)), ino, int64(off+hi-lo), path)
+}
+
+// budgeted reads from r until *left bytes are read in all, and then fails
+// with errScratchMaps.
+type budgeted struct {
+	r    io.Reader
+	left *int64
+}
+
+func (b budgeted) Read(p []byte) (int, error) {
+	if *b.left <= 0 {
+		return 0, errScratchMaps
+	}
+	if int64(len(p)) > *b.left {
+		p = p[:*b.left]
+	}
+	n, err := b.r.Read(p)
+	*b.left -= int64(n)
+	return n, err
 }
 
 // cgroupKeys reads a cgroup file of "KEY VALUE" lines.
