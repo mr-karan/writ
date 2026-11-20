@@ -526,3 +526,20 @@ Recommendation: a person, never a CI team, with `admin` on every env the pool se
 - Spacelift, [worker pools](https://docs.spacelift.io/concepts/worker-pools): private workers make outbound connections, over MQTT or HTTP long-poll. Read 2026-11-20.
 - OTF, [runners](https://docs.otf.ninja/runners/): `otf-agent` joins an agent pool with a token of that pool. Read 2026-11-20.
 - Atlantis, [security](https://www.runatlantis.io/docs/security), as cited in [compare.md](../compare.md), read 2026-11-15.
+
+## Decisions (2026-11-20)
+
+The owner accepted every recommendation above:
+
+1. Prod plans and applies can run on separate pools: an env sets `runs_on` for plans and `apply_runs_on` for applies.
+2. Runners are identified by public keys pinned at enrollment, not by a certificate authority.
+3. Credentials are relayed only: `writ serve` assumes the role and relays short-lived credentials through the runner's per-run endpoint. Runner hosts hold no AWS identity.
+4. `egress_mode = "off"` is allowed on a pool, with a `--check` warning; `enforce` is the documented mode.
+5. A runner's network record is accepted and documented as only as trustworthy as the runner host.
+6. Runs don't survive a `writ serve` restart in phases 1 and 2.
+7. Each runner fills its own plugin cache in phase 1.
+8. Phase 2 checks at apply time that the saved plan shows the approved changes.
+9. The `tfplan` read order is fixed now, apart from runners, once a test confirms the gap.
+10. Only a person with `admin` on every env a pool serves can mint its enrollment tokens.
+
+Next: phase 0, the executor seam inside `writ serve`, with no change in behavior.
