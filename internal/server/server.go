@@ -358,7 +358,20 @@ func reqOf(r *http.Request) *request { return r.Context().Value(ctxKey{}).(*requ
 
 // Handler is the API, with the control UI if MountUI added it, behind the
 // audit row and the limit on each client address.
-func (s *Server) Handler() http.Handler { return s.limitClients(s.audited) }
+func (s *Server) Handler() http.Handler {
+	h := s.limitClients(s.audited)
+	if s.version == "" {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(VersionHeader, s.version)
+		h.ServeHTTP(w, r)
+	})
+}
+
+// VersionHeader carries writ serve's version on every answer, so a CLI
+// older than the server can say so before an answer it cannot read.
+const VersionHeader = "X-Writ-Version"
 
 // UIRoute is one route of the control UI: a ServeMux pattern and its
 // handler, a func, so a router cannot be a route.

@@ -2,6 +2,10 @@ package control_test
 
 import (
 	"context"
+	"crypto/rand"
+	"errors"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,4 +133,43 @@ func TestFinishDriftReturnsPreviousDriftStatus(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestPeekNotificationStatusesDistinguishesMissingGrant(t *testing.T) {
+	ctx := context.Background()
+	loc := controltest.Postgres.New(t)
+	if _, err := control.PeekNotificationStatuses(ctx, loc); !errors.Is(err, control.ErrNotMigrated) {
+		t.Fatalf("before migration: %v", err)
+	}
+	s, err := control.Open(ctx, control.Options{Location: loc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	db := controltest.Raw(t, loc)
+	exec := func(query string) {
+		t.Helper()
+		if _, err := db.ExecContext(ctx, query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	role := "peek_" + strings.ToLower(rand.Text())
+	exec("CREATE ROLE " + role + " LOGIN")
+	t.Cleanup(func() {
+		exec("DROP OWNED BY " + role)
+		exec("DROP ROLE " + role)
+	})
+	exec("GRANT USAGE ON SCHEMA " + control.Schema + " TO " + role)
+	u, err := url.Parse(loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.User = url.User(role)
+	if _, err := control.PeekNotificationStatuses(ctx, u.String()); err == nil || errors.Is(err, control.ErrNotMigrated) {
+		t.Fatalf("without SELECT: want a database error, got %v", err)
+	}
+	exec("GRANT SELECT ON notification_status TO " + role)
+	if _, err := control.PeekNotificationStatuses(ctx, u.String()); err != nil {
+		t.Fatalf("with SELECT: %v", err)
+	}
 }

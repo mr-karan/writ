@@ -525,3 +525,20 @@ func TestSupersededBy(t *testing.T) {
 		}
 	}
 }
+
+// Every answer names writ serve's version in X-Writ-Version, one that
+// needs no token and a refusal too, so a CLI can say it is older than the
+// server before an answer it cannot read.
+func TestAnswersNameTheVersion(t *testing.T) {
+	f := newFixture(t, nil)
+	for _, r := range []response{
+		f.do("GET", "/v1/server", "", nil),
+		f.do("GET", "/v1/whoami", f.token(nil), nil),
+		f.do("GET", "/v1/whoami", "", nil),
+		f.do("GET", "/v1/no-such-route", f.token(nil), nil),
+	} {
+		if got := r.header.Get(server.VersionHeader); got != "test" {
+			t.Errorf("%d %s: %s is %q, want test", r.status, r.body, server.VersionHeader, got)
+		}
+	}
+}

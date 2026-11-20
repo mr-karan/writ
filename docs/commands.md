@@ -34,7 +34,7 @@ writ [--dir DIR] [--env ENV] [--server URL] [--verbose] <command> [flags] [args]
 | `writ apply --remote --yes` | Plan as `writ plan --remote` does, and apply the plan when no approval rule needs one. A plan that changes no resource is printed, and nothing runs. |
 | `writ plans --remote` | Print the plans `writ serve` keeps in `--env`, newest first, with what started each: `person` for a person's session, `ci` for a CI job's token. `--stack`, `--status`, and `--started-by` narrow them. While more plans match, the last line names the `--cursor` of the next page. Drift checks aren't plans: the stack's Drift tab and `GET /v1/drift` show them. |
 | `writ runs --remote` | Print the runs `writ serve` started in `--env`, newest first, of `--stack` or of every stack. |
-| `writ audit --remote` | Print the rows of `writ serve`'s audit log that your token may see, newest first. `--plan ID` takes in the plan's approvals, its run, and the run's state writes; `--run`, `--env` with `--stack`, `--person`, `--op`, `--since`, and `--until` narrow the rows. While more rows match, the last line names the `--cursor` of the next page. See [Read the audit log](api.md#read-the-audit-log). |
+| `writ audit --remote` | Print the rows of `writ serve`'s audit log that your token may see, newest first. `--plan ID` takes in the plan's approvals, its run, and the run's state writes; `--run`, `--env` with `--stack`, `--person`, `--op`, `--since`, and `--until` narrow the rows, and `--changes` leaves out the reads. While more rows match, the last line names the `--cursor` of the next page. See [Read the audit log](api.md#read-the-audit-log). |
 | `writ state adopt STACK --env ENV --version N --reason TEXT`, or `--serial N` for a stack on S3 | Seal a secret set with the newest state of an OpenTofu stack that has none, such as a state on S3 that an apply outside Writ wrote, so its plans can be approved again. It needs `adopt`, and a person's session. A secret the state contains where nothing marks it isn't learned. See [Adopt a state](adopt-state.md). |
 | `writ login [URL]` | Sign in to a control plane through the team's identity provider, and keep a session, which lasts the control plane's `session_ttl`, 12 hours by default, in `~/.config/writ/sessions.json`, readable by you alone. When the identity provider offers the device flow, it prints a code to type at its page. When it doesn't, as on GitLab.com, it prints a URL to open in a browser on this computer, opens it when it can, and takes the identity provider's answer on a loopback port. `--device` and `--browser` force a flow. With no URL it signs in to the control plane that `--server` or `WRIT_SERVER` sets. `--issuer NAME` picks the identity provider when the control plane has several. See [writ login](sign-in.md#people-writ-login). |
 | `writ logout [URL]` | End your session on the control plane and delete it from the session file. |
@@ -71,6 +71,7 @@ writ [--dir DIR] [--env ENV] [--server URL] [--verbose] <command> [flags] [args]
 | `--status STATUS` | `plans --remote` | Print only the plans of the status, as `GET /v1/plans/{id}` shows it, such as `pending`, `applied`, or `no-changes`. |
 | `--started-by person`, `--started-by ci` | `plans --remote` | Print only the plans a person started from a session, or the plans of a CI job's token. |
 | `--plan ID`, `--run ID`, `--person ID`, `--op OP` | `audit --remote` | Print only the rows of the plan, by its id or ref, with its run's; of the run; of the person, as `writ whoami` prints the id; or of the operation. |
+| `--changes` | `audit --remote` | Leave out the reads: the rows of op `read` and `state-read`, and the requests by `GET` or `HEAD` that name no op and were allowed or needed no decision, such as `GET /v1/whoami`, a control UI page, and its static files. |
 | `--since TIME`, `--until TIME` | `audit --remote` | Print only the rows at or after `--since`, and before `--until`, both RFC 3339 times such as `2026-11-19T09:30:00Z`. |
 | `--cursor C` | `plans --remote`, `audit --remote` | Print the page after the one that named `C`. |
 | `--stack NAME` | `plan`, `apply`, `plans`, `runs`, `audit` with `--remote` | The stack's name on `writ serve`. For `plan` and `apply`, the default is its path from the Git work tree, or its directory's name outside one. `plans` and `runs` list only that stack's plans or runs when it's given, and every stack's in the environment when it isn't. `audit` needs `--env` with it. |
@@ -104,6 +105,18 @@ Without `--json`, `writ plan --remote` and `writ apply --remote` print the plan 
 | 130 | Interrupted by `SIGINT` or `SIGTERM` (for example, pressing Ctrl-C). |
 
 With `--json`, stdout has one JSON document on exit codes 0, 1, and 2.
+
+## Version skew
+
+Every answer of `writ serve` names its version in the `X-Writ-Version` header. When the server is a newer release than `writ`, a remote command warns once on stderr and carries on:
+
+```
+writ: warning: writ serve is v0.1.7 and this writ is v0.1.5: a newer writ serve can answer in ways an older writ cannot read; install writ v0.1.7, the version of writ serve
+```
+
+A newer release is a newer major or minor version, or, before 1.0, any newer version, because a 0.y release adds features in its patch number. A development build, whose version is `dev`, never warns. An older server doesn't warn either: `writ` reads what older servers send.
+
+When a remote command gets an answer it can't use, such as a status it doesn't expect or a document without the fields it needs, it fails with an error that says so and names both versions, never with exit 1 and nothing printed. With `--json`, stdout has the command's failure document. Install the `writ` of the server's version, and pin it in CI, as [Set up GitLab CI](set-up-gitlab-ci.md#pin-the-cli-to-the-servers-version) shows.
 
 ## Environment variables
 

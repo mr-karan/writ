@@ -1,6 +1,6 @@
 # API
 
-`writ serve` serves a REST API. The CLI, the control UI, and CI jobs all use it, so anything you can do there you can also do with `curl` and a token. Request bodies may be sent uncompressed or with `Content-Encoding: gzip` (bounded by `limits.body` after decompression). Every `/v1/` response is a Writ document with `format`, `ok`, and `diagnostics`. A refusal is the route's own document with `ok: false` and one diagnostic (except pre-handler refusals on `/v1/policy`, which use `writ.error/v0`). [JSON output](json-output.md#documents-of-writ-serve) lists the fields of each document.
+`writ serve` serves a REST API. The CLI, the control UI, and CI jobs all use it, so anything you can do there you can also do with `curl` and a token. Request bodies may be sent uncompressed or with `Content-Encoding: gzip` (bounded by `limits.body` after decompression). Every `/v1/` response is a Writ document with `format`, `ok`, and `diagnostics`. A refusal is the route's own document with `ok: false` and one diagnostic (except pre-handler refusals on `/v1/policy`, which use `writ.error/v0`). [JSON output](json-output.md#documents-of-writ-serve) lists the fields of each document. Every answer carries `X-Writ-Version`, the version of `writ serve`, so a client can tell it's older than the server; `writ` warns when it is. See [Version skew](commands.md#version-skew).
 
 ## Routes
 
@@ -32,11 +32,11 @@
 | `GET /v1/index?env=&stack=` | `read` | `writ.state-index/v0`: the [state index](serve.md#the-state-index) of one OpenTofu `stack@env`. 404 when it has nothing for it. |
 | `GET /v1/overview` | any token | `writ.overview/v0`: what `writ serve` does in each environment where the token can read a stack, in one answer, for the control UI's sidebar and overview. It has only the stacks, plans, and runs that `GET /v1/drift`, `GET /v1/plans`, and `GET /v1/applies` would answer the same token, and the repositories' polls only for a token that `GET /v1/repos` answers. A token that may read nothing gets no environment. |
 | `POST /v1/plans/{id}/approvals`, `POST /v1/approvals`, `DELETE /v1/plans/{id}/approvals/mine` | `approve` | `writ.approve/v0`. See [Approval routes](#approval-routes). |
-| `POST /v1/runs` | `apply`, with the plan's risk classes | 202 and `writ.remote-run/v0` with status `applying`. An apply after a merge whose newest plan of the merged sources is `no-changes` starts no run: 200 and `writ.remote-run/v0` with `run` `null` and `plan` that plan's id. |
+| `POST /v1/runs` | `apply`, with the plan's risk classes | 202 and `writ.remote-run/v0` with status `applying`. An apply after a merge starts no run if a current `no-changes` plan matches the merged sources, or if the newest run applied those sources and wrote the current HTTP state version. The response is 200 and `writ.remote-run/v0` with `run` `null` and `plan` set to that plan's id. |
 | `GET /v1/runs/{id}?wait=60s` | `read` | `writ.remote-run/v0`. With `wait`, the request waits for a run that applies to end, at most 120 seconds. |
 | `GET /v1/applies?env=&stack=&limit=` | `read` | `writ.remote-runs/v0`: the runs `writ serve` started, newest first, with each one's stack, plan, status, and times, only those of stacks the token can read. `more` says older runs were left out. Each run carries its plan's source digest in `sources`. |
 | `POST /v1/apply-requests/{key}/outcome` | a token, and for a `started` key, the run's principal or `admin` | `writ.apply-outcome/v0`: `started` with the run, or `none`. A key with no row gets a `none` row. See [When an answer is lost](apply.md#when-an-answer-is-lost). |
-| `GET /v1/audit?plan=&run=&env=&stack=&person=&op=&since=&until=&limit=&cursor=` | any token | `writ.audit/v0`: a page of the audit log, newest first, only the rows the token may see. See [Read the audit log](#read-the-audit-log). |
+| `GET /v1/audit?plan=&run=&env=&stack=&person=&op=&changes=&since=&until=&limit=&cursor=` | any token | `writ.audit/v0`: a page of the audit log, newest first, only the rows the token may see. See [Read the audit log](#read-the-audit-log). |
 | `GET`, `POST`, `LOCK`, `UNLOCK /v1/tfstate/{stack}` (and `/v1/tfstate/{stack}/lock`) | a run's state token | OpenTofu `http` state backend protocol, reachable only by a running plan or apply's single-run token (`plan` tokens may only `GET`; `apply` tokens may `GET`, `POST`, `LOCK`, and `UNLOCK`). |
 | `GET`, `POST /ui/...` | browser session cookie | HTML pages and actions of the [control UI](sign-in.md#the-control-ui) (`/ui/`, `/ui/plans`, `/ui/plans/{id}`, `/ui/runs/{id}`, `/ui/drift/{id}`, `/ui/audit`, `/ui/stacks/{env}/{stack...}`, `/ui/login`, `/ui/callback`, `/ui/logout`, `/ui/dev-login`). |
 
@@ -184,7 +184,7 @@ The body of `POST /v1/runs` sets a plan, or a `stack@env` to apply after a merge
 {"format": "writ.run-request/v1", "env": "prod", "stacks": ["network"], "merged": {}}
 ```
 
-A plan that changes no resource, `no-changes`, never applies. By its id, `POST /v1/runs` refuses it as `state`: `plan ID changes no resource; there is nothing to apply`. After a merge, the job on the default branch runs on every merge, so when the newest plan of the merged commit's sources is `no-changes`, the answer is 200, `ok: true`, `run: null`, `plan` the plan's id, and `text` that says there is nothing to apply. If a run applied to the `stack@env`, or its state moved, after that plan was requested, the plan no longer speaks for the state, and the answer is a `state` refusal that asks for a new plan.
+A plan that changes no resource, `no-changes`, never applies. By its id, `POST /v1/runs` refuses it as `state`: `plan ID changes no resource; there is nothing to apply`. After a merge, the job on the default branch runs on every merge, so when the newest plan of the merged commit's sources is `no-changes` and still describes the state, the answer is 200, `ok: true`, `run: null`, `plan` the plan's id, and `text` that says there is nothing to apply. When that plan is stale, Writ checks whether the newest run applied the same sources and wrote the current HTTP state version. If it cannot verify that, including for S3 state, it asks for a new plan. An apply grant is required before Writ returns plan ids, run ids, or state versions for a merged apply.
 
 `POST /v1/runs` takes the request's key in the `Idempotency-Key` header. A refusal returns its route's document, `ok: false`, and one diagnostic, except a policy refusal, which carries a summary and one diagnostic for each policy result. The class and status say what kind of refusal it is, and the message gives the cause. The causes below are examples, not a complete list:
 
@@ -194,7 +194,7 @@ A plan that changes no resource, `no-changes`, never applies. By its id, `POST /
 | `denied` | 403 | the principal can't do this | a grant or an approval is missing; another principal's key; a CI job applying another pipeline's plan, its own override, or a commit, repository, or branch other than its own |
 | `policy` | 403 | a policy denies the apply | |
 | `state` | 409 | the plan can't be applied in its current state | the plan is a drift check, changes no resource, isn't live, or expired, state moved under it, its approvals changed while the policy was evaluated, another run applies to the `stack@env`, or the key is closed, with `key_closed: true` |
-| `saved-plan` | 409 | the plan's sources don't allow this apply | the sources don't match, the saved plan is missing or speculative, its commit can't be checked, or the merged commit's sources were applied already, so there is nothing to apply |
+| `saved-plan` | 409 | the plan's sources don't allow this apply | the sources don't match, the saved plan is missing or speculative, its commit can't be checked, or no approved plan matches the merged sources |
 | `usage` | 400, 404, 409, 413 | the request is wrong, and the caller can fix it | a malformed body or key; a plan, repository, or Git host object that doesn't exist or can't be seen; a key that expired or was used for another request; an override that isn't needed; a body past the size limit; an environment the config no longer serves |
 | `usage` | 429 | too many requests | past `limits.applies` or `limits.requests_per_second` |
 | the failure's class, or `internal` | 409, 500 | the plan's policy input can't be prepared | |
@@ -310,6 +310,7 @@ A plan, an approval or its withdrawal, an apply, an adoption, a new repository, 
 | `env`, and `stack` with it | Of the environment, and of the stack there. A row that lists several stacks matches each of them. `env` must be one `writ serve` plans in, as on `GET /v1/plans`. |
 | `person` | Of the person, by the id `writ whoami` prints, such as `gitlab/user/1001` |
 | `op` | Of the operation: `read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`, `state-read`, `state-write`, `state-lock`, `state-unlock`, or `hook`. Any other value returns 400. |
+| `changes` | `true` leaves out the reads: the rows of op `read` and `state-read`, and the requests by `GET` or `HEAD` that name no op and were allowed or needed no decision, such as `GET /v1/whoami`, a control UI page, and its static files. A refused request of no op, a sign-in, and the server's start stay. It takes no `op` of `read` or `state-read`. `false`, or none, gives every row. |
 | `since`, `until` | At or after `since`, and before `until`, both RFC 3339 times |
 | `limit` | At most this many, from 1 to 200, 50 by default |
 | `cursor` | After the last row of the page whose `next` this is. A cursor works until `writ serve` restarts, and then returns 400: read the first page again. |
@@ -318,7 +319,8 @@ Which rows a token sees follows its grants:
 
 - A row of a `stack@env` needs `read` on every stack the row lists there.
 - A row of an environment that lists no stack, such as a list of an environment's plans, needs `read` on some stack there.
-- A row of no environment, or of every one, needs `admin` on every stack in every environment, as `POST /v1/repos` does. These are the server's start, sign-ins and sign-outs, `GET /v1/whoami`, refused tokens, the added repositories, and requests refused before they set a `stack@env`. A principal with that grant sees every row.
+- A webhook delivery's row, op `hook`, needs `read` on a stack of the pinned repository in any environment. The row's Git host and project id must match the current repository. The repository's stacks come from the head of its default branch, with the repository's prefix. Only server-wide admins can read a row with a missing or different project identity. Its `via` is `webhook of repository NAME`. See [Get changes in seconds with a webhook](webhooks.md#what-writ-serve-answers).
+- A row of no environment, or of every one, needs `admin` on every stack in every environment, as `POST /v1/repos` does. These are the server's start, sign-ins and sign-outs, `GET /v1/whoami`, refused tokens, the added repositories, webhook deliveries to a name with no webhook, and requests refused before they set a `stack@env`. A principal with that grant sees every row.
 
 An approval of a pipeline's plans in several environments leaves one row for each environment, and each row lists only that environment's stacks and grants. So a token that reads only staging sees the staging part of the approval and nothing of prod.
 

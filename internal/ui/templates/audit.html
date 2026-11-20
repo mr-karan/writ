@@ -10,6 +10,9 @@
 {{template "pick" .EnvPick}}
 {{template "pick" .OpPick}}
 {{template "pick" .TimePick}}
+{{- if not .Op}}
+<span class="seg" role="group" aria-label="Entries"><a href="{{.ChangesHref}}"{{if not .Reads}} aria-current="true"{{end}}>Changes</a><a href="{{.ReadsHref}}"{{if .Reads}} aria-current="true"{{end}}>Show reads</a></span>
+{{- end}}
 {{- if .Filtered}}
 <span class="end"><a class="button small" href="/ui/audit">Clear filters</a></span>
 {{- end}}
@@ -27,6 +30,7 @@
 <details class="fold audit-filters"{{if .MoreOpen}} open{{end}}>
 <summary><span>More filters</span></summary>
 <form method="get" action="/ui/audit" class="audit-form" role="search">
+{{- if .Reads}}<input type="hidden" name="reads" value="1">{{end}}
 <div><label for="af-env">Environment</label><select id="af-env" name="env"><option value="">All environments</option>{{range .Envs}}<option value="{{.}}"{{if eq $.Data.Env .}} selected{{end}}>{{.}}</option>{{end}}</select></div>
 <div><label for="af-stack">Stack</label><input id="af-stack" name="stack" type="search" value="{{.Stack}}" placeholder="Stack name" autocomplete="off"></div>
 <div><label for="af-person">Person</label><input id="af-person" name="person" type="search" value="{{.Person}}" placeholder="Person id" autocomplete="off"></div>
@@ -49,19 +53,19 @@
 <td>{{template "status" $r.Decision}}</td>
 <th scope="row" class="c-main">{{if $r.Route}}<code>{{$r.Method}} {{$r.Route}} {{$r.Status}}</code>{{else}}<code>{{$r.Kind}}</code>{{end}}{{if or $r.Plan $r.Run $r.ReasonWithheld $r.Reason}}<span class="under">{{if $r.Plan}}plan <a class="id" href="/ui/plans/{{$r.Plan}}">{{short $r.Plan}}</a>{{if or $r.Run $r.ReasonWithheld $r.Reason}} · {{end}}{{end}}{{if $r.Run}}run <a class="id" href="/ui/runs/{{$r.Run}}">{{short $r.Run}}</a>{{if or $r.ReasonWithheld $r.Reason}} · {{end}}{{end}}{{if $r.ReasonWithheld}}<span class="chip">reason withheld</span>{{else if $r.Reason}}<span class="msg" data-field="reason">{{$r.Reason}}</span>{{end}}</span>{{end}}</th>
 <td data-label="Op" class="audit-op">{{if $r.Op}}<code>{{$r.Op}}</code>{{end}}</td>
-<td data-label="Target">{{if $r.Stacks}}{{range $j, $st := $r.Stacks}}{{if $j}}, {{end}}<a href="{{link "/ui/stack" "stack" $st "env" $r.Env}}">{{$st}}</a>{{end}}{{if $r.Env}}@{{$r.Env}}{{end}}{{else if $r.Env}}{{if eq $r.Env "*"}}<code>*</code>{{else}}{{$r.Env}}{{end}}{{end}}</td>
-<td data-label="By">{{if $r.Principal}}<span class="by">{{template "audit-by" $r.PrincipalKind}}<span class="ref" data-field="principal">{{$r.Principal}}</span></span>{{end}}{{if $r.Person}}<a class="under id" href="{{link "/ui/audit" "person" $r.Person}}">{{$r.Person}}</a>{{end}}</td>
+<td data-label="Target">{{if $r.Stacks}}{{range $j, $st := $r.Stacks}}{{if $j}}, {{end}}<a href="{{link "/ui/stack" "stack" $st "env" $r.Env}}">{{$st}}</a>{{end}}{{if $r.Env}}@{{$r.Env}}{{end}}{{else if hookRepo $r}}repository <a href="/ui/repos/{{hookRepo $r}}">{{hookRepo $r}}</a>{{else if $r.Env}}{{if eq $r.Env "*"}}<code>*</code>{{else}}{{$r.Env}}{{end}}{{end}}</td>
+<td data-label="By" class="audit-by">{{if $r.Principal}}<span class="by">{{template "audit-by" $r.PrincipalKind}}<span class="ref" data-field="principal">{{$r.Principal}}</span></span>{{end}}{{if $r.Person}}<a class="under id" href="{{link "/ui/audit" "person" $r.Person "reads" $.Data.ReadsParam}}">{{$r.Person}}</a>{{end}}</td>
 <td class="end" data-label="When">{{if $r.Request}}<a href="#row-{{$i}}-{{$r.Request}}">{{template "when" $r.At}}</a>{{else}}{{template "when" $r.At}}{{end}}</td>
 </tr>
 {{- end}}
 </tbody>
 </table>
 </div>
-{{if .Next}}<p class="card-foot"><span class="muted">{{if not .Cursor}}The newest {{end}}{{template "n" (exact (len .Rows))}} entries that match</span> <a href="{{link "/ui/audit" "env" .Env "stack" .Stack "person" .Person "op" .Op "plan" .Plan "run" .Run "since" .Since "until" .Until "cursor" .Next}}">Older entries</a></p>{{end}}
+{{if .Next}}<p class="card-foot"><span class="muted">{{if not .Cursor}}The newest {{end}}{{template "n" (exact (len .Rows))}} entries that match</span> <a href="{{link "/ui/audit" "env" .Env "stack" .Stack "person" .Person "op" .Op "plan" .Plan "run" .Run "since" .Since "until" .Until "cursor" .Next "reads" .ReadsParam}}">Older entries</a></p>{{end}}
 {{else if .Next}}
-<p class="empty">Writ scanned recent entries and found only entries outside your grants.<br><a class="button" href="{{link "/ui/audit" "env" .Env "stack" .Stack "person" .Person "op" .Op "plan" .Plan "run" .Run "since" .Since "until" .Until "cursor" .Next}}">Older entries</a></p>
+<p class="empty">Writ scanned recent entries and found only entries outside your grants.<br><a class="button" href="{{link "/ui/audit" "env" .Env "stack" .Stack "person" .Person "op" .Op "plan" .Plan "run" .Run "since" .Since "until" .Until "cursor" .Next "reads" .ReadsParam}}">Older entries</a></p>
 {{else if .Cursor}}
-<p class="empty">Every older entry that matches is listed before this page.<br><a class="button" href="{{link "/ui/audit" "env" .Env "stack" .Stack "person" .Person "op" .Op "plan" .Plan "run" .Run "since" .Since "until" .Until}}">The newest entries</a></p>
+<p class="empty">Every older entry that matches is listed before this page.<br><a class="button" href="{{link "/ui/audit" "env" .Env "stack" .Stack "person" .Person "op" .Op "plan" .Plan "run" .Run "since" .Since "until" .Until "reads" .ReadsParam}}">The newest entries</a></p>
 {{else}}
 <p class="empty">{{none "no-audit" (exact (len .Rows))}}{{if .Filtered}}<br><a class="button" href="/ui/audit">Clear filters</a>{{end}}</p>
 {{end}}

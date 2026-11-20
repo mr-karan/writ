@@ -58,6 +58,7 @@ type Options struct {
 // App runs commands for one stack directory.
 type App struct {
 	opts Options
+	seen serverSeen
 }
 
 // New returns an App, filling unset options with the process defaults.

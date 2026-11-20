@@ -591,6 +591,46 @@ func (s *Store) LastApplied(ctx context.Context, env, stack string, now time.Tim
 	return plans[0], nil
 }
 
+// NewestRunApplied returns the newest run and its plan if the run applied.
+// It returns ErrNotFound when no run started or the newest is applying or
+// failed. If no HTTP state version was written by that run, moved explains
+// why the state might differ from what the run left.
+func (s *Store) NewestRunApplied(ctx context.Context, env, stack string, now time.Time) (p Plan, run, moved string, err error) {
+	var planID, wrote string
+	var status RunStatus
+	var version int64
+	// BeginApply records the Applying event after taking the stack's turn.
+	// Its generated id orders starts even when the server clock goes back.
+	err = s.db.QueryRowContext(ctx, `SELECT r.id, r.plan_id, r.status, coalesce(v.version, 0), coalesce(v.run_id, '')
+		FROM runs r JOIN plans p ON p.id = r.plan_id
+		JOIN plan_events e ON e.plan_ref = p.ref AND e.to_status = 'applying' AND e.run = r.id
+		LEFT JOIN tfstate_versions v ON v.env = r.env AND v.stack = r.stack AND v.version = (
+			SELECT max(version) FROM tfstate_versions WHERE env = r.env AND stack = r.stack)
+		WHERE r.env = ? AND r.stack = ? ORDER BY e.id DESC LIMIT 1`, env, stack).Scan(&run, &planID, &status, &version, &wrote)
+	switch {
+	case errors.Is(err, sqldb.ErrNoRows):
+		return Plan{}, "", "", ErrNotFound
+	case err != nil:
+		return Plan{}, "", "", err
+	case status != RunApplied:
+		return Plan{}, "", "", ErrNotFound
+	}
+	plans, err := s.scanPlans(ctx, `SELECT `+planColumns+` FROM plans WHERE id = ?`, now.UnixMilli(), planID)
+	if err != nil {
+		return Plan{}, "", "", err
+	}
+	if len(plans) == 0 {
+		return Plan{}, "", "", ErrNotFound
+	}
+	switch {
+	case version == 0:
+		moved = fmt.Sprintf("writ serve has no http state version for %s@%s", stack, env)
+	case wrote != run:
+		moved = fmt.Sprintf("the state of %s@%s is at version %d, which run %s did not write", stack, env, version, run)
+	}
+	return plans[0], run, moved, nil
+}
+
 // Supersede moves the live plan with id to superseded, for a check outside
 // the store that found what it would change is no longer what it showed,
 // such as its ref moving. A plan no longer live is left as it is.

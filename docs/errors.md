@@ -144,6 +144,7 @@ Common causes:
 - `plan ID expired at TIME: plan again`
 - `plan ID changes no resource; there is nothing to apply`, from `writ apply --remote ID`, and `plan ID changes no resource; there is nothing to approve or apply`, from `writ approve --remote ID`
 - `plan ID of STACK@ENV matches the sources at COMMIT and changes no resource, but run RUN applied to STACK@ENV after the plan was requested: plan again`
+- `run RUN applied plan ID of STACK@ENV, which has the sources of REPO at COMMIT, but the state of STACK@ENV is at version N, which run RUN did not write: plan again`
 - `another run is applying to STACK@ENV; try again when it ends`
 - `plan ID is a drift check of STACK@ENV, which writ serve never approves or applies: plan the stack to change it`
 - `plan ID is a speculative plan, of files a client sent, which writ serve never approves: push the commit and plan it`
@@ -163,12 +164,11 @@ The control plane refused the plan it would apply, because the plan's sources do
 Common causes:
 
 - `no approved plan of STACK@ENV matches the sources of REPO at COMMIT: plan the merge request again after a rebase, and approve the new plan`
-- `nothing to apply: plan ID, applied last to STACK@ENV, has the sources of REPO at COMMIT`
 - `plan ID is superseded: REF moved to COMMIT, whose sources of STACK differ from the plan's, made at COMMIT; plan the new commit`
 - `plan ID keeps no saved plan, so it cannot apply: plan its commit again`
 - `plan ID is a speculative plan, of files a client sent, which a team's control plane never applies: push the commit and plan it`
 
-What to do: plan the commit again, and get the new plan approved. `nothing to apply` means the merged commit's sources are already applied. [Apply after a merge](apply.md#apply-after-a-merge) shows how the plan is found.
+What to do: plan the commit again, and get the new plan approved. An apply after a merge whose sources the newest run applied is no error: it passes with nothing to apply. [Apply after a merge](apply.md#apply-after-a-merge) shows how the plan is found.
 
 ## `state-io`
 

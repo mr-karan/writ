@@ -9,12 +9,14 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,7 +24,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
 )
@@ -409,11 +410,33 @@ type Dispatcher struct {
 }
 
 type worker struct {
-	target Target
-	queue  chan Event
-	// dropped counts events Emit found no room for. The worker reports
-	// them, so Emit never waits on OnResult.
-	dropped atomic.Int64
+	target   Target
+	queue    chan Event
+	cooldown time.Time
+	// dropped counts the events Emit found no room for, by kind. The
+	// worker reports them, so Emit never waits on OnResult.
+	mu      sync.Mutex
+	dropped map[EventKind]int64
+}
+
+// drop counts one event of kind that found no room in the queue.
+func (w *worker) drop(kind EventKind) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.dropped == nil {
+		w.dropped = map[EventKind]int64{}
+	}
+	w.dropped[kind]++
+}
+
+// takeDropped returns the counts of dropped events by kind, and starts
+// them again from zero.
+func (w *worker) takeDropped() map[EventKind]int64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	d := w.dropped
+	w.dropped = nil
+	return d
 }
 
 // New starts a Dispatcher for opts.Targets. Call Close to stop its workers.
@@ -483,7 +506,7 @@ func (d *Dispatcher) Emit(ev Event) {
 		select {
 		case w.queue <- ev:
 		default:
-			w.dropped.Add(1)
+			w.drop(ev.Event)
 			d.log.Warn("notification queue full, dropping event", "notifier", w.target.Name, "event", ev.Event, "stack", ev.Stack, "env", ev.Env)
 		}
 	}
@@ -508,20 +531,27 @@ func (d *Dispatcher) runWorker(w *worker) {
 		case <-d.ctx.Done():
 			return
 		case ev := <-w.queue:
-			d.deliver(w.target, ev)
-			if n := w.dropped.Swap(0); n > 0 {
-				d.report(Result{Target: w.target.Name, Event: ev.Event, Err: fmt.Sprintf("queue full: dropped %d events", n), Dropped: n, At: d.now().UTC()})
+			d.deliver(w, ev)
+			dropped := w.takeDropped()
+			for _, kind := range slices.Sorted(maps.Keys(dropped)) {
+				n := dropped[kind]
+				d.report(Result{Target: w.target.Name, Event: kind, Err: fmt.Sprintf("queue full: dropped %d events", n), Dropped: n, At: d.now().UTC()})
 			}
 		}
 	}
 }
 
-func (d *Dispatcher) deliver(target Target, ev Event) {
+func (d *Dispatcher) deliver(w *worker, ev Event) {
+	target := w.target
 	var lastErr string
 	attempts := 0
 	for attempt := 0; attempt <= len(d.backoff); attempt++ {
+		delay := time.Until(w.cooldown)
 		if attempt > 0 {
-			timer := time.NewTimer(d.backoff[attempt-1])
+			delay = max(d.backoff[attempt-1], delay)
+		}
+		if delay > 0 {
+			timer := time.NewTimer(delay)
 			select {
 			case <-d.ctx.Done():
 				timer.Stop()
@@ -530,7 +560,11 @@ func (d *Dispatcher) deliver(target Target, ev Event) {
 			}
 		}
 		attempts++
-		retryable, errMsg := sendOnce(d.ctx, d.client, target, ev, d.now(), d.version)
+		out := sendOnce(d.ctx, d.client, target, ev, d.now(), d.version)
+		retryable, errMsg := out.retryable, out.err
+		if out.after > 0 {
+			w.cooldown = time.Now().Add(out.after)
+		}
 		if errMsg == "" {
 			d.log.Debug("notification delivered", "notifier", target.Name, "event", ev.Event, "stack", ev.Stack, "env", ev.Env, "attempts", attempts)
 			d.report(Result{
@@ -571,16 +605,30 @@ func (d *Dispatcher) report(r Result) {
 func SendTest(ctx context.Context, target Target, ev Event, timeout time.Duration) error {
 	client := newHTTPClient(timeout)
 	defer client.CloseIdleConnections()
-	_, errMsg := sendOnce(ctx, client, target, ev, time.Now().UTC(), "")
-	if errMsg != "" {
-		return errors.New(errMsg)
+	if out := sendOnce(ctx, client, target, ev, time.Now().UTC(), ""); out.err != "" {
+		return errors.New(out.err)
 	}
 	return nil
 }
 
-func sendOnce(ctx context.Context, client *http.Client, target Target, ev Event, now time.Time, version string) (retryable bool, errMsg string) {
+// sent is how one attempt at a delivery ended. err is writ's own short
+// text, "" when it arrived. after is how long the receiver asked to be
+// left before the next attempt, bounded by maxRetryAfter.
+type sent struct {
+	retryable bool
+	err       string
+	after     time.Duration
+}
+
+// maxRetryAfter bounds the wait a 429's Retry-After asks for, since a
+// target's worker sends nothing else while it waits.
+const maxRetryAfter = 5 * time.Minute
+
+func failed(retryable bool, msg string) sent { return sent{retryable: retryable, err: msg} }
+
+func sendOnce(ctx context.Context, client *http.Client, target Target, ev Event, now time.Time, version string) sent {
 	if err := CheckURL(target.URL); err != nil {
-		return false, err.Error()
+		return failed(false, err.Error())
 	}
 	var body []byte
 	var err error
@@ -590,14 +638,14 @@ func sendOnce(ctx context.Context, client *http.Client, target Target, ev Event,
 	case KindWebhook:
 		body, err = FormatWebhook(ev)
 	default:
-		return false, "unknown notifier kind"
+		return failed(false, "unknown notifier kind")
 	}
 	if err != nil {
-		return false, err.Error()
+		return failed(false, err.Error())
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.URL, bytes.NewReader(body))
 	if err != nil {
-		return false, "invalid request"
+		return failed(false, "invalid request")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	ua := "writ"
@@ -618,20 +666,42 @@ func sendOnce(ctx context.Context, client *http.Client, target Target, ev Event,
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return classifyClientErr(err)
+		return failed(classifyClientErr(err))
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponseDrain))
 	_ = resp.Body.Close()
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		return false, ""
+		return sent{}
 	case resp.StatusCode >= 300 && resp.StatusCode < 400:
-		return false, "redirect refused"
-	case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
-		return true, fmt.Sprintf("http status %d", resp.StatusCode)
+		return failed(false, "redirect refused")
+	case resp.StatusCode == http.StatusTooManyRequests:
+		return sent{retryable: true, err: "http status 429", after: retryAfter(resp.Header.Get("Retry-After"), now)}
+	case resp.StatusCode >= 500:
+		return failed(true, fmt.Sprintf("http status %d", resp.StatusCode))
 	default:
-		return false, fmt.Sprintf("http status %d", resp.StatusCode)
+		return failed(false, fmt.Sprintf("http status %d", resp.StatusCode))
 	}
+}
+
+// retryAfter is the wait a Retry-After header asks for, in seconds or as
+// an HTTP date, at most maxRetryAfter, and 0 when it asks for none or
+// can't be read.
+func retryAfter(v string, now time.Time) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	var d time.Duration
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+		if n <= 0 {
+			return 0
+		}
+		d = time.Duration(min(n, int64(maxRetryAfter/time.Second))) * time.Second
+	} else if at, err := http.ParseTime(v); err == nil {
+		d = at.Sub(now)
+	}
+	return min(max(d, 0), maxRetryAfter)
 }
 
 // classifyClientErr turns an http.Client error into a short, sanitized error
@@ -645,6 +715,42 @@ func classifyClientErr(err error) (retryable bool, msg string) {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true, "request timed out"
+	}
+	// A certificate or a name that does not resolve is wrong until an
+	// operator fixes it, so it is not tried again, and the text says
+	// which.
+	var unknownCA x509.UnknownAuthorityError
+	var hostname x509.HostnameError
+	var invalid x509.CertificateInvalidError
+	var verify *tls.CertificateVerificationError
+	var alert tls.AlertError
+	switch {
+	case errors.As(err, &unknownCA):
+		return false, "tls: certificate signed by an unknown authority"
+	case errors.As(err, &hostname):
+		return false, "tls: certificate is not valid for the host"
+	case errors.As(err, &invalid) && invalid.Reason == x509.Expired:
+		return false, "tls: certificate expired or not yet valid"
+	case errors.As(err, &invalid), errors.As(err, &verify):
+		return false, "tls: certificate not valid"
+	case errors.As(err, &alert):
+		return false, "tls: handshake failed"
+	case errors.Is(err, http.ErrSchemeMismatch):
+		return false, "tls: the receiver answered HTTPS with plaintext HTTP"
+	case errors.As(err, new(tls.RecordHeaderError)):
+		return false, "tls: the receiver did not answer with TLS"
+	}
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		switch {
+		case dns.IsNotFound:
+			return false, "dns: no such host"
+		case dns.IsTimeout:
+			return true, "dns: lookup timed out"
+		case dns.IsTemporary:
+			return true, "dns: lookup failed"
+		}
+		return false, "dns: lookup failed"
 	}
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {
