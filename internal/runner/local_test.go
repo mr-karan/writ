@@ -353,3 +353,66 @@ func TestNewUIDsFails(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+// A second Release gives nothing back, so one uid never sits in the pool
+// twice and never goes to two runs at once.
+func TestLocalReleaseTwice(t *testing.T) {
+	var mu sync.Mutex
+	var reaped []uint32
+	uids, err := runner.NewUIDs(61000, 61000, func(uid uint32) error {
+		mu.Lock()
+		defer mu.Unlock()
+		reaped = append(reaped, uid)
+		return nil
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := local(t, &fakeTofu{})
+	l.UIDs = uids
+	s, err := l.Reserve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Release()
+	s.Release()
+	if len(reaped) != 2 {
+		t.Fatalf("reaped %v, want the start's reap and one release's", reaped)
+	}
+	a, err := l.Reserve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := l.Reserve(ctx); err == nil {
+		t.Fatal("a pool of one uid gave out two slots after a double release")
+	}
+	a.Release()
+}
+
+// A job id that isn't one path element is refused before anything is
+// written or removed, so no id can reach outside the job's own directory.
+func TestLocalRefusesPathIDs(t *testing.T) {
+	l := local(t, &fakeTofu{})
+	keep := filepath.Join(l.Work, "keep")
+	if err := os.MkdirAll(keep, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"", ".", "..", "../x", "a/b", "/abs"} {
+		s, err := l.Reserve(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		j := job(runner.Plan)
+		j.ID = id
+		_, err = s.Run(context.Background(), context.Background(), j)
+		s.Release()
+		if _, ok := errors.AsType[*runner.StartError](err); !ok {
+			t.Fatalf("job id %q: %v, want a StartError", id, err)
+		}
+		if _, err := os.Stat(keep); err != nil {
+			t.Fatalf("job id %q removed another job's directory: %v", id, err)
+		}
+	}
+}

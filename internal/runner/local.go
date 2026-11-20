@@ -58,10 +58,14 @@ type localSlot struct {
 	user *runas.User
 }
 
-// Release ends what still runs as the slot's uid and gives it back.
+// Release ends what still runs as the slot's uid and gives it back. A
+// second Release does nothing, so a uid never goes back to the pool twice
+// and is never handed to two runs.
 func (s *localSlot) Release() {
 	if s.user != nil {
-		s.l.UIDs.give(s.user.UID)
+		uid := s.user.UID
+		s.user = nil
+		s.l.UIDs.give(uid)
 	}
 }
 
@@ -73,6 +77,12 @@ func (s *localSlot) Run(start, ctx context.Context, job Job) (Result, error) {
 	case Plan, Apply, Show, Pull:
 	default:
 		return Result{}, &StartError{fmt.Errorf("runner: a job of kind %q", job.Kind)}
+	}
+	// The id names the job's work directory, which Run removes, so it must
+	// be one path element: an empty id or one with a separator or .. would
+	// remove more than the job's own directory.
+	if job.ID == "" || job.ID == "." || job.ID == ".." || filepath.Base(job.ID) != job.ID {
+		return Result{}, &StartError{fmt.Errorf("runner: job id %q is not one path element", job.ID)}
 	}
 	work := filepath.Join(s.l.Work, job.ID)
 	defer os.RemoveAll(work)

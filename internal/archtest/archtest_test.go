@@ -67,6 +67,7 @@ var thin = []string{module + "/internal/control", "github.com/jackc/pgx"}
 var serveOnly = []string{
 	"internal/control", "internal/tfstate", "internal/mask", "internal/oidc",
 	"internal/authz", "internal/sqldb", "internal/policy", "internal/forge",
+	"internal/awsrole",
 }
 
 var impure = []string{

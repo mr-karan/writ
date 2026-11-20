@@ -23,7 +23,7 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 - The control UI names the product Writ, and says `writ serve` only for the command. Access, Settings, and Repositories no longer say they are read from the config file.
 - A `writ serve` with `provider_uids` marks itself not dumpable at start, because it holds state keys and secrets: no process of its own user can trace it or read its memory, and it writes no core dump. See [How providers are kept from the keys](docs/serve.md#how-providers-are-kept-from-the-keys).
 - A plan that failed because its state has no secret set shows the explanation once, in the note with the adopt command. Its diagnostic is one short line. The plan's document is unchanged.
-- Internal: `writ serve` runs each OpenTofu run as a job of an executor, in the new `internal/runner` package, still in its own process and with no change in behavior. Separate runners will build on this seam.
+- Internal: `writ serve` runs each OpenTofu run as a job of an executor, in the new `internal/runner` package, still in its own process and with no change in what a run does or answers. Separate runners will build on this seam.
 
 ### Fixed
 
