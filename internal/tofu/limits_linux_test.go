@@ -111,7 +111,11 @@ func runLimits(t *testing.T) {
 		requireLimit(t, fakeRunnerLimits(t, "alloc", testLimits), "limits.run_memory")
 	})
 	t.Run("pids", func(t *testing.T) {
-		r := fakeRunnerLimits(t, "forkbomb", testLimits)
+		// Room in memory for the fake's processes, which the race
+		// detector makes several times larger.
+		l := testLimits
+		l.Memory = 1 << 30
+		r := fakeRunnerLimits(t, "forkbomb", l)
 		requireLimit(t, r, "limits.run_pids")
 		requireNoneLeft(t, r.opts.Binary)
 	})
