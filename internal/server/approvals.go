@@ -25,12 +25,15 @@ func (s *Server) approvePlan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.approve(w, r, []control.Plan{p})
+	s.approve(w, r, []control.Plan{p}, nil)
 }
 
 // approvePipeline is POST /v1/approvals with pipeline: a CI job approves
 // every live plan of its own pipeline, all or none, so a script on the
-// author's branch cannot pick one plan and leave out another.
+// author's branch cannot pick one plan and leave out another. A plan of
+// the pipeline that changes no resource takes no approval: the answer
+// lists it as it is, and a pipeline of only such plans approves nothing
+// and passes.
 func (s *Server) approvePipeline(w http.ResponseWriter, r *http.Request) {
 	body, ok := s.approveBody(w, r, true)
 	if !ok {
@@ -56,15 +59,42 @@ func (s *Server) approvePipeline(w http.ResponseWriter, r *http.Request) {
 		s.dbFailed(w, r, FormatApprove, err)
 		return
 	}
+	var live, unchanged []control.Plan
+	for _, p := range plans {
+		if p.Status == control.NoChanges {
+			unchanged = append(unchanged, p)
+		} else {
+			live = append(live, p)
+		}
+	}
 	switch {
 	case len(plans) == 0:
-		s.refuse(w, r, FormatApprove, diag.Usage, http.StatusNotFound, "pipeline %s of project %s has no pending or approved plan", trunc(pipeline), trunc(project))
+		s.refuse(w, r, FormatApprove, diag.Usage, http.StatusNotFound, "pipeline %s of project %s has no pending, approved, or no-changes plan", trunc(pipeline), trunc(project))
 		return
 	case len(plans) > maxPipelinePlans:
-		s.refuse(w, r, FormatApprove, diag.Usage, http.StatusRequestEntityTooLarge, "pipeline %s has more than %d live plans; approve them by id", trunc(pipeline), maxPipelinePlans)
+		s.refuse(w, r, FormatApprove, diag.Usage, http.StatusRequestEntityTooLarge, "pipeline %s has more than %d plans; approve them by id", trunc(pipeline), maxPipelinePlans)
+		return
+	case len(live) == 0:
+		e := &reqOf(r).entry
+		e.Op, e.Env, e.Decision, e.Reason = string(authz.Approve), unchanged[0].Env, control.Allowed, "nothing to approve: every plan of the pipeline changes no resource"
+		for _, p := range unchanged {
+			e.Stacks = append(e.Stacks, p.Stack)
+			d := s.cfg.Policy.Decide(pr.teams, authz.Approve, []string{p.Stack}, p.Env, nil)
+			if !d.Allowed {
+				s.refuse(w, r, FormatApprove, diag.Denied, http.StatusForbidden, "%s may not approve plan %s: %s", pr.info.Display, p.ID, d.Reason)
+				return
+			}
+			e.Grants = append(e.Grants, oneBased(d.Grants)...)
+		}
+		doc, err := s.approveDoc(r, unchanged)
+		if err != nil {
+			s.dbFailed(w, r, FormatApprove, err)
+			return
+		}
+		s.reply(w, http.StatusOK, doc)
 		return
 	}
-	s.approve(w, r, plans)
+	s.approve(w, r, live, unchanged)
 }
 
 // approveBody reads an approval's body: none, {}, or
@@ -116,7 +146,7 @@ func (s *Server) dbFailed(w http.ResponseWriter, r *http.Request, format string,
 // be a plan of a commit. The caller needs approve on each plan's
 // stack@env, must be a person, and through a CI token may approve only
 // plans of the token's own pipeline.
-func (s *Server) approve(w http.ResponseWriter, r *http.Request, plans []control.Plan) {
+func (s *Server) approve(w http.ResponseWriter, r *http.Request, plans, unchanged []control.Plan) {
 	req := reqOf(r)
 	pr := req.principal
 	e := &req.entry
@@ -198,7 +228,7 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request, plans []control
 		return
 	}
 	req.audited = true
-	doc, err := s.approveDoc(r, out)
+	doc, err := s.approveDoc(r, append(out, unchanged...))
 	if err != nil {
 		s.dbFailed(w, r, FormatApprove, err)
 		return

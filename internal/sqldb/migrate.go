@@ -26,6 +26,12 @@ import (
 // {{now}} is the time the migrations run, in Unix milliseconds, for a row
 // a migration writes, such as an event: the engines spell the current
 // time differently.
+//
+// A migration that the subset cannot say, such as a change to a table's
+// CHECK, which SQLite cannot alter, is a pair of files of one number:
+// NNNN_name.postgres.sql and NNNN_name.sqlite.sql. Each engine runs its
+// own and records it as NNNN_name.sql. A file of the pair without its twin
+// is refused, so no engine skips a migration the other runs.
 type Migrations struct {
 	// Files holds the migrations; Dir is the directory in it.
 	Files fs.FS
@@ -61,6 +67,10 @@ func (d *DB) Migrate(ctx context.Context, m Migrations) error {
 		return err
 	}
 	slices.Sort(names)
+	files, err := engineFiles(names, d.pg)
+	if err != nil {
+		return err
+	}
 	now := strconv.FormatInt(m.Now().UnixMilli(), 10)
 	return d.Write(ctx, func(tx *Tx) error {
 		var stmts []string
@@ -93,9 +103,9 @@ func (d *DB) Migrate(ctx context.Context, m Migrations) error {
 		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 			return err
 		}
-		versions := make([]int, len(names))
-		for i, file := range names {
-			base := path.Base(file)
+		versions := make([]int, len(files))
+		for i, f := range files {
+			base := f.name
 			v, err := strconv.Atoi(strings.SplitN(base, "_", 2)[0])
 			if err != nil || len(base) < 6 || base[4] != '_' || v < 1 || i > 0 && v <= versions[i-1] {
 				return fmt.Errorf("migration %s is out of sequence", base)
@@ -118,8 +128,8 @@ func (d *DB) Migrate(ctx context.Context, m Migrations) error {
 		if len(applied) > 0 {
 			highest = slices.Max(mapKeys(applied))
 		}
-		for i, file := range names {
-			version, base := versions[i], path.Base(file)
+		for i, f := range files {
+			version, base, file := versions[i], f.name, f.path
 			if have, ok := applied[version]; ok {
 				if have != base {
 					return fmt.Errorf("the %s recorded migration %d as %s, and this writ's is %s: it was made by another build of writ; make a new database", m.What, version, have, base)
@@ -144,6 +154,44 @@ func (d *DB) Migrate(ctx context.Context, m Migrations) error {
 		}
 		return nil
 	})
+}
+
+// migrationFile is a migration this engine runs: the file at path, which
+// it records as name.
+type migrationFile struct{ path, name string }
+
+// engineFiles are the migrations of names that the engine runs, in order:
+// every file of the shared subset, and of each pair of engine files the
+// one of this engine, named without its engine.
+func engineFiles(names []string, pg bool) ([]migrationFile, error) {
+	own, other := ".sqlite.sql", ".postgres.sql"
+	if pg {
+		own, other = other, own
+	}
+	var out []migrationFile
+	for _, file := range names {
+		base := path.Base(file)
+		name := base
+		for _, suffix := range []string{own, other} {
+			stem, ok := strings.CutSuffix(file, suffix)
+			if !ok {
+				continue
+			}
+			twin := own
+			if suffix == own {
+				twin = other
+			}
+			if !slices.Contains(names, stem+twin) {
+				return nil, fmt.Errorf("migration %s has no twin %s", base, path.Base(stem+twin))
+			}
+			name = path.Base(stem) + ".sql"
+		}
+		if strings.HasSuffix(file, other) {
+			continue
+		}
+		out = append(out, migrationFile{path: file, name: name})
+	}
+	return out, nil
 }
 
 // Version returns the newest migration the database records, 0 for none.

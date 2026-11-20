@@ -31,7 +31,7 @@
 | `GET /v1/index?env=&stack=` | `read` | `writ.state-index/v0`: the [state index](serve.md#the-state-index) of one OpenTofu `stack@env`. 404 when it has nothing for it. |
 | `GET /v1/overview` | any token | `writ.overview/v0`: what `writ serve` does in each environment where the token can read a stack, in one answer, for the control UI's sidebar and overview. It has only the stacks, plans, and runs that `GET /v1/drift`, `GET /v1/plans`, and `GET /v1/applies` would answer the same token, and the repositories' polls only for a token that `GET /v1/repos` answers. A token that may read nothing gets no environment. |
 | `POST /v1/plans/{id}/approvals`, `POST /v1/approvals`, `DELETE /v1/plans/{id}/approvals/mine` | `approve` | `writ.approve/v0`. See [Approval routes](#approval-routes). |
-| `POST /v1/runs` | `apply`, with the plan's risk classes | 202 and `writ.remote-run/v0` with status `applying` |
+| `POST /v1/runs` | `apply`, with the plan's risk classes | 202 and `writ.remote-run/v0` with status `applying`. An apply after a merge whose newest plan of the merged sources is `no-changes` starts no run: 200 and `writ.remote-run/v0` with `run` `null` and `plan` that plan's id. |
 | `GET /v1/runs/{id}?wait=60s` | `read` | `writ.remote-run/v0`. With `wait`, the request waits for a run that applies to end, at most 120 seconds. |
 | `GET /v1/applies?env=&stack=&limit=` | `read` | `writ.remote-runs/v0`: the runs `writ serve` started, newest first, with each one's stack, plan, status, and times, only those of stacks the token can read. `more` says older runs were left out. Each run carries its plan's source digest in `sources`. |
 | `POST /v1/apply-requests/{key}/outcome` | a token, and for a `started` key, the run's principal or `admin` | `writ.apply-outcome/v0`: `started` with the run, or `none`. A key with no row gets a `none` row. See [When an answer is lost](apply.md#when-an-answer-is-lost). |
@@ -45,7 +45,7 @@
 | --- | --- | --- |
 | `auth` | 401 | No token, a token that failed a check, or a token that already created a plan, an approval, or a run |
 | `denied` | 403 | No grant allows it, the plan lacks its approvals, or its author approves it |
-| `state` | 404, 409 | The plan isn't live, it expired, or state changed after it was created, or `writ serve` knows no state to adopt |
+| `state` | 404, 409 | The plan isn't live, it changes no resource, it expired, or state changed after it was created, or `writ serve` knows no state to adopt |
 | `saved-plan` | 409 | No approved plan matches the sources, or the plan's branch moved to other sources |
 | `usage` | 400, 404, 405, 409, 413, 429 | A malformed request, an unknown id, a body over the limit, too many requests, or a request the config doesn't allow, such as adding a repository to a config that pins them |
 | `policy` | 403 | A [policy](policy.md) refused the apply |
@@ -169,9 +169,9 @@ Output of a real run, 2026-11-10, with the other headers cut.
 | Method and path | Grant | Body | Response |
 | --- | --- | --- | --- |
 | `POST /v1/plans/{id}/approvals` | `approve` on the plan's `stack@env` | none, `{}`, or `writ.approve-request/v0` | `writ.approve/v0` |
-| `POST /v1/approvals` | `approve` on each plan's `stack@env`, a CI token | `writ.approve-request/v0` with `pipeline: true` | `writ.approve/v0` |
+| `POST /v1/approvals` | `approve` on each plan's `stack@env`, a CI token | `writ.approve-request/v0` with `pipeline: true` | `writ.approve/v0`. It approves the pipeline's live plans and lists its `no-changes` plans as they are; a pipeline whose plans are all `no-changes` approves nothing and answers 200. |
 | `DELETE /v1/plans/{id}/approvals/mine` | `approve` | none | `writ.approve/v0` |
-| `POST /v1/runs` | `apply` with the plan's risk classes, and `override` for an override | `writ.run-request/v1` | 202 and `writ.remote-run/v0` |
+| `POST /v1/runs` | `apply` with the plan's risk classes, and `override` for an override | `writ.run-request/v1` | 202 and `writ.remote-run/v0`, or 200 with `run` `null` when an apply after a merge has nothing to apply |
 | `POST /v1/state/adopt` | `adopt` on the `stack@env`, a person | `writ.state-adopt-request/v0` | `writ.state-adopt/v0`. See [Adopt a state](adopt-state.md). |
 | `GET /v1/runs/{id}` | `read` | none | `writ.remote-run/v0`. With `?wait=DURATION`, up to 120 seconds, the request waits for a run that applies to end. |
 | `POST /v1/apply-requests/{key}/outcome` | a token. The run of a `started` key, to its principal and to `admin` only. | none | `writ.apply-outcome/v0`: `outcome` `started` with `run`, or `none`. See [When an answer is lost](apply.md#when-an-answer-is-lost). |
@@ -183,6 +183,8 @@ The body of `POST /v1/runs` sets a plan, or a `stack@env` to apply after a merge
 {"format": "writ.run-request/v1", "env": "prod", "stacks": ["network"], "merged": {}}
 ```
 
+A plan that changes no resource, `no-changes`, never applies. By its id, `POST /v1/runs` refuses it as `state`: `plan ID changes no resource; there is nothing to apply`. After a merge, the job on the default branch runs on every merge, so when the newest plan of the merged commit's sources is `no-changes`, the answer is 200, `ok: true`, `run: null`, `plan` the plan's id, and `text` that says there is nothing to apply. If a run applied to the `stack@env`, or its state moved, after that plan was requested, the plan no longer speaks for the state, and the answer is a `state` refusal that asks for a new plan.
+
 `POST /v1/runs` takes the request's key in the `Idempotency-Key` header. A refusal returns its route's document, `ok: false`, and one diagnostic, except a policy refusal, which carries a summary and one diagnostic for each policy result. The class and status say what kind of refusal it is, and the message gives the cause. The causes below are examples, not a complete list:
 
 | Class | Status | Means | For example |
@@ -190,7 +192,7 @@ The body of `POST /v1/runs` sets a plan, or a `stack@env` to apply after a merge
 | `auth` | 401 | the request isn't signed in | no token, a token that isn't valid, an expired session, a token used twice |
 | `denied` | 403 | the principal can't do this | a grant or an approval is missing; another principal's key; a CI job applying another pipeline's plan, its own override, or a commit, repository, or branch other than its own |
 | `policy` | 403 | a policy denies the apply | |
-| `state` | 409 | the plan can't be applied in its current state | the plan is a drift check, isn't live, or expired, state moved under it, its approvals changed while the policy was evaluated, another run applies to the `stack@env`, or the key is closed, with `key_closed: true` |
+| `state` | 409 | the plan can't be applied in its current state | the plan is a drift check, changes no resource, isn't live, or expired, state moved under it, its approvals changed while the policy was evaluated, another run applies to the `stack@env`, or the key is closed, with `key_closed: true` |
 | `saved-plan` | 409 | the plan's sources don't allow this apply | the sources don't match, the saved plan is missing or speculative, its commit can't be checked, or the merged commit's sources were applied already, so there is nothing to apply |
 | `usage` | 400, 404, 409, 413 | the request is wrong, and the caller can fix it | a malformed body or key; a plan, repository, or Git host object that doesn't exist or can't be seen; a key that expired or was used for another request; an override that isn't needed; a body past the size limit; an environment the config no longer serves |
 | `usage` | 429 | too many requests | past `limits.applies` or `limits.requests_per_second` |

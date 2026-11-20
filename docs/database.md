@@ -37,6 +37,8 @@ A row with no route is the server's start or the end of a plan. Under `writ serv
 
 The schema counts its own versions in `schema_migrations`. A control database with another name for migration 1, such as the Postgres-only `0001_init.sql` of builds before 2026-11-10, is refused with that name.
 
+A migration that the SQL both engines share can't say is a pair of files of one number, `NNNN_name.postgres.sql` and `NNNN_name.sqlite.sql`. Each engine runs its own and records it as `NNNN_name.sql`, and a file of a pair without its twin is refused. Migration 0019 is one: it lets a plan's status be `no-changes`. SQLite can't alter a table's CHECK, so on SQLite it edits the CHECK's text in place, the way SQLite's documentation gives for a change that leaves every row valid, and checks that the edit took. No row moves.
+
 Migration 0016 dropped `stacks`, which recorded where builds from before the first release kept each `stack@env`'s state, and the tables of the CloudTrail change watcher. That state itself stays where it was: a schema named `state_ENV_STACK_HASH` in the database on Postgres, or a file under `state/` beside `control.db` under `writ serve --dev`. No version of `writ` reads it, so drop it when no one needs it.
 
 ## Connection timeouts and backups

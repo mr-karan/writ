@@ -43,7 +43,7 @@ Output of `writ serve --dev`, 2026-11-15.
 
 `writ.remote-plan/v0` has the plan's fields and, in `document`, the masked plan document:
 
-- `plan.id` identifies the plan once it ends. `plan.ref` identifies it while it plans. `plan.status` is `planning`, `pending`, `approved`, `applying`, `applied`, `refused`, `failed`, `superseded`, or `expired`.
+- `plan.id` identifies the plan once it ends. `plan.ref` identifies it while it plans. `plan.status` is `planning`, `pending`, `approved`, `applying`, `applied`, `no-changes`, `refused`, `failed`, `superseded`, or `expired`. A `no-changes` plan changes nothing: there is nothing to approve or apply.
 - `plan.started_by` is `person` for a plan a person started from a session, and `ci` for a plan of a CI job's token, which `plan.origin` names.
 - `plan.approvals` has `need`, `approved_by`, and `teams_that_may_approve`. The author's approval never counts.
 - `document` keeps OpenTofu's own keys: `format_version`, `terraform_version`, `resource_changes`, `resource_drift`, `output_changes`, `checks`. Each entry of `resource_changes` has `address`, `type`, and `change` with `actions`, `before`, `after`, `replace_paths`, and `importing` for an import. `variables` has only the variables' names.

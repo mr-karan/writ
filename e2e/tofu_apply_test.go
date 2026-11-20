@@ -553,10 +553,28 @@ env "prod" {
 		t.Fatalf("writ runs --remote after the first apply:\n%s", r)
 	}
 
-	// Step 4: the same files plan no changes, and an edit plans exactly one
-	// update.
-	if again := plan("again", v1); again.Plan.Stacks[0].Changes != 0 || !strings.Contains(again.Text, "No changes.") {
+	// Step 4: the same files plan no changes: the plan is no-changes, takes
+	// no approval, and the job on main after their merge has nothing to
+	// apply and passes. An edit plans exactly one update.
+	again := plan("again", v1)
+	if again.Plan.Status != "no-changes" || again.Plan.Stacks[0].Changes != 0 || !strings.Contains(again.Text, "No changes.") {
 		t.Fatalf("the plan of the applied files: %+v, changes %v\n%s", again.Plan, actions(again), again.Text)
+	}
+	if r := s.writ(0, s.token(nil), "show", "--remote", again.Plan.ID); !strings.Contains(r.stdout, "changes no resource: there is nothing to apply.") {
+		t.Fatalf("writ show --remote of the plan of no change:\n%s", r)
+	} else {
+		t.Logf("writ show --remote of the plan of no change:\n%s", r.stdout)
+	}
+	bob := s.token(map[string]any{"user_id": "2002", "user_login": "bob", "user_access_level": "maintainer", "pipeline_id": pipelines[again.Plan.ID]})
+	if r := s.writ(1, bob, "approve", "--remote", again.Plan.ID); !strings.Contains(r.stdout+r.stderr, "changes no resource") {
+		t.Fatalf("an approval of the plan of no change:\n%s", r)
+	} else {
+		t.Logf("writ approve --remote of the plan of no change:\n%s", r.stdout+r.stderr)
+	}
+	if r := merge(0, v1); !strings.Contains(r.stdout, "there is nothing to apply") {
+		t.Fatalf("the apply after the merge of no change:\n%s", r)
+	} else {
+		t.Logf("writ apply --remote --merged of no change:\n%s", r.stdout+r.stderr)
 	}
 	v2 := tofuAppFiles(lock, "v2")
 	edit := plan("edit", v2)

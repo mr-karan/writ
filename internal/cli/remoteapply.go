@@ -68,6 +68,10 @@ func (a *App) Approve(ctx context.Context, o ApproveOptions) (err error) {
 		verb = "Withdrew your approval of"
 	}
 	for _, p := range doc.Plans {
+		if p.Status == server.PlanNoChanges {
+			fmt.Fprintf(out, "Plan %s for %s (%s) changes no resource, so it takes no approval.\n", p.ID, p.Env, escapeHuman(p.Stack, false))
+			continue
+		}
 		var by []string
 		for _, ap := range p.ApprovedBy {
 			by = append(by, ap.Display)
@@ -150,8 +154,14 @@ func (a *App) RemoteApply(ctx context.Context, o RemoteApplyOptions) (err error)
 		}
 		// With --json, stdout holds one document: the plan when no run
 		// follows, else the run. An approved plan always runs: one with no
-		// resource change may still change outputs.
-		if p.Plan.Status != "approved" {
+		// resource change still changes an output, a move, or state. A
+		// plan that changes nothing has nothing to apply, which is no
+		// failure.
+		switch p.Plan.Status {
+		case "approved":
+		case "no-changes":
+			return a.printRemotePlan(o.JSON, doc)
+		default:
 			return cmpOrFailed(a.printRemotePlan(o.JSON, doc))
 		}
 		if !o.JSON {
@@ -168,9 +178,19 @@ func (a *App) RemoteApply(ctx context.Context, o RemoteApplyOptions) (err error)
 	if err != nil {
 		return err
 	}
-	run, err := a.startRemoteRun(ctx, r, body, server.NewApplyKey(a.opts.Now()), o.JSON)
+	run, nothing, err := a.startRemoteRun(ctx, r, body, server.NewApplyKey(a.opts.Now()), o.JSON)
 	if err != nil {
 		return err
+	}
+	if nothing != nil {
+		if o.JSON {
+			_, err := a.opts.Stdout.Write(nothing)
+			return err
+		}
+		var doc server.RemoteRun
+		_ = json.Unmarshal(nothing, &doc)
+		io.WriteString(a.humanOutput(), escapeHuman(doc.Text, true))
+		return nil
 	}
 	if !o.JSON {
 		fmt.Fprintf(a.humanOutput(), "Run %s of plan %s for %s (%s), by %s%s%s.\n", run.ID, run.Plan, run.Env, escapeHuman(run.Stack, false),
@@ -222,17 +242,19 @@ func overrideWords(run *server.RunInfo) string {
 // no request with the closed key starts a run. After an answer that does
 // not decide, a transport error, a timeout, or a 503 without outcome none,
 // it asks the outcome route. The key makes each request of the command
-// start one run at most.
-func (a *App) startRemoteRun(ctx context.Context, r *remote, body []byte, key string, asJSON bool) (*server.RunInfo, error) {
+// start one run at most. A 200 started no run because the plan writ serve
+// found changes no resource: nothing is its body.
+func (a *App) startRemoteRun(ctx context.Context, r *remote, body []byte, key string, asJSON bool) (run *server.RunInfo, nothing []byte, err error) {
 	hdr := http.Header{server.ApplyKeyHeader: {key}}
 	var last []byte
 	for try := range remoteTries {
 		if try > 0 && !wait(ctx, try) {
-			return a.askOutcome(ctx, r, key, asJSON)
+			run, err = a.askOutcome(ctx, r, key, asJSON)
+			return run, nil, err
 		}
 		status, b, err := r.once(ctx, http.MethodPost, "/v1/runs", body, remoteTimeout, hdr)
 		if _, redirected := errors.AsType[*redirectError](err); redirected {
-			return nil, err
+			return nil, nil, err
 		}
 		last = b
 		switch {
@@ -240,13 +262,20 @@ func (a *App) startRemoteRun(ctx context.Context, r *remote, body []byte, key st
 			if !asJSON {
 				fmt.Fprintf(a.humanOutput(), "The apply request got no answer: %v\nAsking writ serve whether it started a run.\n", escapeHuman(err.Error(), false))
 			}
-			return a.askOutcome(ctx, r, key, asJSON)
+			run, err = a.askOutcome(ctx, r, key, asJSON)
+			return run, nil, err
 		case status == http.StatusAccepted:
 			var started server.RemoteRun
 			if err := json.Unmarshal(b, &started); err != nil || started.Run == nil {
-				return nil, fmt.Errorf("writ serve answered 202 with a body that is not %s", server.FormatRemoteRun)
+				return nil, nil, fmt.Errorf("writ serve answered 202 with a body that is not %s", server.FormatRemoteRun)
 			}
-			return started.Run, nil
+			return started.Run, nil, nil
+		case status == http.StatusOK:
+			var none server.RemoteRun
+			if err := json.Unmarshal(b, &none); err != nil || none.Format != server.FormatRemoteRun || !none.OK || none.Run != nil || none.Plan == "" {
+				return nil, nil, fmt.Errorf("writ serve answered 200 with a body that is not %s with nothing to apply", server.FormatRemoteRun)
+			}
+			return nil, b, nil
 		case keyClosed(status, b):
 			if !asJSON {
 				fmt.Fprintf(a.humanOutput(), "writ serve closed the key %s with no run. Sending the request again with a new key.\n", key)
@@ -260,12 +289,13 @@ func (a *App) startRemoteRun(ctx context.Context, r *remote, body []byte, key st
 			if !asJSON {
 				fmt.Fprintln(a.humanOutput(), "writ serve answered 503 and did not say that no run started. Asking it whether one did.")
 			}
-			return a.askOutcome(ctx, r, key, asJSON)
+			run, err = a.askOutcome(ctx, r, key, asJSON)
+			return run, nil, err
 		default:
-			return nil, a.remoteFailed(asJSON, b)
+			return nil, nil, a.remoteFailed(asJSON, b)
 		}
 	}
-	return nil, a.remoteFailed(asJSON, last)
+	return nil, nil, a.remoteFailed(asJSON, last)
 }
 
 // outcomeOf is the outcome field of a refusal, "" for none.

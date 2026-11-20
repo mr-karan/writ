@@ -304,6 +304,11 @@ type RemoteRun struct {
 	Format string   `json:"format"`
 	OK     bool     `json:"ok"`
 	Run    *RunInfo `json:"run"`
+	// Plan is set, with Run null, when an apply after a merge found that
+	// the newest plan of the merged commit's sources changes no resource:
+	// it names that plan, and no run began, because there is nothing to
+	// apply.
+	Plan string `json:"plan,omitempty"`
 	// Document is writ.tofu-apply/v0 once the run ends, or writ.apply/v0
 	// for an apply that could not start or was lost, and null before.
 	Document json.RawMessage `json:"document"`

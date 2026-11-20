@@ -7,11 +7,21 @@ import (
 	"strings"
 )
 
-// MigrationFiles names the migrations this writ applies, in order.
+// MigrationFiles names the migrations this writ applies, in order, as a
+// database records them: a pair of engine files once, without its engine.
 func MigrationFiles() []string {
-	names, _ := fs.Glob(migrations, "migrations/*.sql")
-	for i, n := range names {
-		names[i] = path.Base(n)
+	files, _ := fs.Glob(migrations, "migrations/*.sql")
+	var names []string
+	for _, f := range files {
+		n := path.Base(f)
+		for _, engine := range []string{".postgres.sql", ".sqlite.sql"} {
+			if stem, ok := strings.CutSuffix(n, engine); ok {
+				n = stem + ".sql"
+			}
+		}
+		if len(names) == 0 || names[len(names)-1] != n {
+			names = append(names, n)
+		}
 	}
 	return names
 }

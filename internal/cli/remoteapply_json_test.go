@@ -140,3 +140,87 @@ func TestRemoteApplyRefusalNotJSON(t *testing.T) {
 		}
 	}
 }
+
+// noChangeStandIn is a control plane whose plan of network changes no
+// resource: a commit plans as no-changes, and an apply after a merge
+// answers 200 with no run. runs counts the requests to POST /v1/runs.
+func noChangeStandIn(t *testing.T, runs *int) *httptest.Server {
+	t.Helper()
+	const id = "d3f700d860a97483a7ad509c31fe9e28"
+	plan := &server.PlanInfo{Ref: "r1", ID: id, Status: "no-changes", Env: "prod", Stacks: []server.PlanStack{{Stack: "network"}},
+		Source: server.PlanSourceInfo{Kind: server.SourceCommit, Repo: "infra", Commit: strings.Repeat("a", 40)}}
+	reply := func(w http.ResponseWriter, status int, doc any) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(doc)
+	}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "POST" && r.URL.Path == "/v1/plans":
+			reply(w, http.StatusAccepted, server.RemotePlan{Format: server.FormatRemotePlan, OK: true, Plan: &server.PlanInfo{Ref: "r1", Status: "planning"}, Diagnostics: []server.Diagnostic{}})
+		case r.Method == "GET" && r.URL.Path == "/v1/plans/r1":
+			reply(w, http.StatusOK, server.RemotePlan{Format: server.FormatRemotePlan, OK: true, Plan: plan, Text: "No changes.\n", Diagnostics: []server.Diagnostic{}})
+		case r.Method == "POST" && r.URL.Path == "/v1/runs":
+			*runs++
+			reply(w, http.StatusOK, server.RemoteRun{Format: server.FormatRemoteRun, OK: true, Plan: id, Document: json.RawMessage("null"), Diagnostics: []server.Diagnostic{},
+				Text: "Plan " + id + " of network@prod has the sources of infra at aaaaaaaa and changes no resource: there is nothing to apply.\n"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(s.Close)
+	return s
+}
+
+// The apply job after a merge whose plan changes no resource passes: writ
+// apply --remote --merged says there is nothing to apply and exits 0, and
+// with --json prints the one document writ serve sent.
+func TestRemoteApplyMergedNothingToApply(t *testing.T) {
+	for _, asJSON := range []bool{false, true} {
+		var runs int
+		s := noChangeStandIn(t, &runs)
+		var out bytes.Buffer
+		a := standInApp(t, s.URL, &out)
+		a.opts.Env = "prod"
+		if err := a.RemoteApply(context.Background(), RemoteApplyOptions{JSON: asJSON, Merged: true, Stack: "network"}); err != nil {
+			t.Fatalf("json %v: %v\n%s", asJSON, err, out.String())
+		}
+		if runs != 1 {
+			t.Fatalf("json %v: %d requests to apply", asJSON, runs)
+		}
+		if asJSON {
+			if got := formats(t, out.Bytes()); len(got) != 1 || got[0] != server.FormatRemoteRun {
+				t.Errorf("stdout holds %v, want one %s", got, server.FormatRemoteRun)
+			}
+		} else if !strings.Contains(out.String(), "there is nothing to apply") {
+			t.Errorf("stdout %q", out.String())
+		}
+	}
+}
+
+// writ apply --remote --yes of a commit whose plan changes no resource
+// prints the plan, starts no run, and exits 0.
+func TestRemoteApplyYesNothingToApply(t *testing.T) {
+	for _, asJSON := range []bool{false, true} {
+		var runs int
+		s := noChangeStandIn(t, &runs)
+		var out bytes.Buffer
+		a := standInApp(t, s.URL, &out)
+		a.opts.Env = "prod"
+		o := yesOptions()
+		o.JSON, o.Plan.JSON = asJSON, asJSON
+		if err := a.RemoteApply(context.Background(), o); err != nil {
+			t.Fatalf("json %v: %v\n%s", asJSON, err, out.String())
+		}
+		if runs != 0 {
+			t.Fatalf("json %v: %d requests to apply", asJSON, runs)
+		}
+		if asJSON {
+			if got := formats(t, out.Bytes()); len(got) != 1 || got[0] != server.FormatRemotePlan {
+				t.Errorf("stdout holds %v, want one %s", got, server.FormatRemotePlan)
+			}
+		} else if !strings.Contains(out.String(), "changes no resource") || strings.Contains(out.String(), "writ apply --remote") {
+			t.Errorf("stdout %q", out.String())
+		}
+	}
+}

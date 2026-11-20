@@ -50,8 +50,9 @@ var readableAttrs = []string{"aria-label", "aria-description", "aria-valuetext",
 var noneWords = regexp.MustCompile(`(?i)\b(no|nothing|none|never|clean|all clear)\b`)
 
 // terms are the phrases that hold a word of noneWords and say nothing is
-// absent: a clean work tree is one with every change committed.
-var terms = regexp.MustCompile(`\bclean work tree\b`)
+// absent: a clean work tree is one with every change committed, and
+// no-changes is a plan's status, a value such as the Status picker lists.
+var terms = regexp.MustCompile(`\bclean work tree\b|\bno-changes\b`)
 
 // fieldsRE are the listings and fields of a page, as template text: each
 // row or field says what one record holds, so its own words, such as no

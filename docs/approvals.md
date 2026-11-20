@@ -28,7 +28,7 @@ approval {
 }
 ```
 
-Writ takes the largest `need` among the rules that match the plan's stack, its environment, and any of its risk classes. If a plan has no changes, it needs no approval. You can set `need` from 1 to 10.
+Writ takes the largest `need` among the rules that match the plan's stack, its environment, and any of its risk classes. A plan with no risk class matches no rule, so it needs no approval. A plan that changes nothing at all takes none either: it's [`no-changes`](#a-plan-that-changes-nothing). You can set `need` from 1 to 10.
 
 In `stacks` you write patterns, the same as in [grants](serve.md#stack-patterns). Use `*` to match within one part of a stack name, and a part `**` to match any number of parts, so `data/**` covers `data` and every stack under it.
 
@@ -73,6 +73,7 @@ At any moment a plan has one status. Writ changes it with a conditional update i
 | `approved` | The plan has the approvals its rules need, or needs none. |
 | `applying` | A run is applying the plan. |
 | `applied` | The run applied every change. |
+| `no-changes` | The plan changes nothing, so there is nothing to approve or apply. |
 | `refused` | The plan ended with errors, so it was never saved. |
 | `failed` | The plan couldn't run, or its apply failed. |
 | `expired` | `plan_ttl` passed before the plan was applied. |
@@ -86,7 +87,7 @@ A plan can move only along the rows below. They live in one table in `internal/c
 
 | From | To | When |
 | --- | --- | --- |
-| `planning` | `pending`, `approved`, `refused`, `failed` | The plan ends. A plan that needs no approval is `approved`. |
+| `planning` | `pending`, `approved`, `no-changes`, `refused`, `failed` | The plan ends. A plan that needs no approval is `approved`, and one that changes nothing is `no-changes`. |
 | `planning` | `superseded` | An apply on the same `stack@env` ran while the plan was being created. |
 | `pending` | `approved` | The last approval the rules need arrives, or a run begins after a change of config made approvals count again. |
 | `approved` | `pending` | An approval is withdrawn, or a change of config stopped one counting, and the plan falls short. The next approval, withdrawal, or run records it. |
@@ -95,7 +96,17 @@ A plan can move only along the rows below. They live in one table in `internal/c
 | `pending`, `approved` | `superseded` | Another run on the `stack@env` ends, or the apply finds the plan stale. |
 | `applying` | `applied`, `failed` | The run ends. |
 
-Once a plan is `applied`, `refused`, `failed`, `expired`, or `superseded`, it stays there.
+Once a plan is `applied`, `no-changes`, `refused`, `failed`, `expired`, or `superseded`, it stays there.
+
+### A plan that changes nothing
+
+A plan is `no-changes` when OpenTofu would find nothing to apply: each resource change is a no-op that neither moves nor imports the resource, no output changes, and nothing changed outside OpenTofu. A plan whose only change is an output, a move, a data source read at apply time, or an object changed outside OpenTofu still writes state when it applies, so it stays `pending` or `approved` and applies as any plan does.
+
+A `no-changes` plan never expires, keeps no saved plan, and isn't counted among the plans that wait or apply. No one approves or applies it: by its id, Writ refuses both as `state`, `plan ID changes no resource`. An approval of a pipeline lists it and approves the pipeline's other plans, so the approve job of a merge request whose plans change nothing passes.
+
+After the merge, the apply job finds the newest plan of the merged commit's sources. When that plan is `no-changes`, the job says there is nothing to apply and exits 0, as long as no run applied to the `stack@env`, and its state didn't move, after the plan was requested. Otherwise it's refused as `state`, and you plan again. [Apply after a merge](apply.md#apply-after-a-merge) shows the output.
+
+Plans made before this release keep the status they had: a live plan that changes nothing stays `approved` until it expires.
 
 **If you're upgrading from a build without approvals,** plan again after the upgrade. The upgrade moved plans once, outside this table. No earlier build had approvals, so none of its plans can have been approved. Its person ids also contained the issuer's host, and another spelling of the host could split one person in two. So migration 5 of the control database moves every live plan from an earlier build, `planning`, `pending`, or `approved`, to `expired`, and `history` gives the reason `made before approvals`. The author's fields stay as they were.
 

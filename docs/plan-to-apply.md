@@ -91,7 +91,7 @@ When you run `writ apply --remote ID` or `writ apply --remote --merged --env ENV
 
 - **State and secret set**: On the `http` backend, each state write is sealed under the environment key alongside a new sealed secret set carrying forward every secret the mask knew. On S3, Writ pulls the post-apply serial and seals its secret set.
 - **State index**: Writ runs `tofu show -json` on the resulting state (with no cloud credentials) and updates the stack's resource index through `internal/mask`.
-- **Saved plan deleted**: Once a plan leaves live status (`applied`, `failed`, `expired`, or `superseded`), its sealed saved plan is deleted.
+- **Saved plan deleted**: Once a plan leaves live status (`applied`, `failed`, `expired`, or `superseded`), its sealed saved plan is deleted. A `no-changes` plan never keeps one.
 - **Crash recovery**: Every `writ serve` process tags runs with its process ID. On restart (and every minute after), `writ serve` marks abandoned `applying` runs as `failed`, revokes their state tokens, and releases their `http`-backend state locks in one transaction.
 
 ## Next steps

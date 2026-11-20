@@ -98,7 +98,7 @@ Run T5QKSTXGRYE66SZBECBPGUV7QV of plan f38f9206b30b2f7ffbcaca647a9b8190 for dev 
 
 Output of a real run, 2026-11-16.
 
-If no approved plan matches, the job fails and nothing changes:
+If no approved plan matches, and the newest plan of the sources isn't `no-changes`, the job fails and nothing changes:
 
 - If a plan with the same sources lacks approvals, Writ refuses it as `denied`, with its id.
 - If the sources equal the last applied plan's, Writ refuses it as `saved-plan`, `nothing to apply`.
@@ -113,13 +113,29 @@ $ writ apply --remote --merged --stack app --repo demo --commit de72518e5a53e44a
 error: saved-plan: no approved plan of app@dev matches the sources of demo at de72518e: plan the merge request again after a rebase, and approve the new plan
 ```
 
+If the newest plan of the merged sources is `no-changes`, there is nothing to apply: the job says so, starts no run, and exits 0. Here the merge request planned files that were already applied:
+
+```
+$ writ show --remote abc0596aff0857c996028b716be98aee
+OpenTofu 1.13.9 plan of app@prod
+
+No changes.
+Plan abc0596aff0857c996028b716be98aee for prod (app), by gitlab acme/infra #1849404 (alice), changes no resource: there is nothing to apply.
+$ writ approve --remote abc0596aff0857c996028b716be98aee
+error: state: plan abc0596aff0857c996028b716be98aee changes no resource; there is nothing to approve or apply
+$ writ apply --remote --merged --env prod --stack app
+Plan abc0596aff0857c996028b716be98aee of app@prod has the sources of infra at 2357a3f0 and changes no resource: there is nothing to apply.
+```
+
+Output of `TestTofuApproveApply` in `e2e/`, 2026-11-20. If a run applied to the `stack@env`, or its state moved, after that plan was requested, the job fails with `state` and asks you to plan again. [A plan that changes nothing](approvals.md#a-plan-that-changes-nothing) says when a plan is `no-changes`.
+
 If the author removes the approve job from the branch, the merge request can merge, and the job on `main` finds no approved plan. So `main` has code that isn't applied until someone approves the plan and runs the job again. The control plane, not the pipeline, is the gate.
 
 ### Plan and apply in one command
 
 On the dev control plane, you can do both at once. Run `writ apply --remote --yes`, and it plans the commit as `writ plan --remote` does, and applies the plan when no rule needs an approval. If the plan needs approvals, the command prints it and exits 1.
 
-With `--json`, stdout has one document: the plan when it needs approvals and nothing runs, else the run. Your approved plan runs even with no resource change, because it may change outputs.
+With `--json`, stdout has one document: the plan when nothing runs, else the run. An approved plan runs even with no resource change, because an output, a move, or the state may still change. A plan that changes nothing is `no-changes`: the command prints it, starts no run, and exits 0.
 
 If you interrupt while the command follows the run, it stops following, the run goes on, and the command exits 1 with the failure document, which identifies the run.
 

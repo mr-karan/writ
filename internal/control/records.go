@@ -319,9 +319,10 @@ type PlanResult struct {
 	// ID is the saved plan's signature, "" for a plan that could not be
 	// saved.
 	ID string
-	// Status is Pending, Refused, or Failed. A pending plan whose rules
-	// need no approval is stored Approved, and one an apply on its
-	// stack@env overlapped is stored Superseded.
+	// Status is Pending, NoChanges, Refused, or Failed. A pending plan
+	// whose rules need no approval is stored Approved, and a pending or
+	// no-changes plan that an apply on its stack@env overlapped is stored
+	// Superseded.
 	Status    PlanStatus
 	MadeAt    time.Time
 	ExpiresAt time.Time
@@ -347,14 +348,14 @@ type PlanResult struct {
 }
 
 // FinishPlan records how a plan ended, ends its state tokens, and writes
-// its audit row, in one transaction. A plan that would be live is
-// superseded instead when an apply on its stack@env ran while it
-// planned: it may have read state that apply was changing. A plan whose
+// its audit row, in one transaction. A plan that would be live or
+// no-changes is superseded instead when an apply on its stack@env ran
+// while it planned: it may have read state that apply was changing. A plan whose
 // id another request's plan already has is that plan, so the request is
 // superseded by it and reads as it.
 func (s *Store) FinishPlan(ctx context.Context, ref string, r PlanResult, e Entry) error {
 	switch r.Status {
-	case Pending, Approved, RefusedPlan, Failed:
+	case Pending, Approved, NoChanges, RefusedPlan, Failed:
 	default:
 		return fmt.Errorf("a plan cannot end %s", r.Status)
 	}
@@ -416,7 +417,7 @@ func finishOwn(ctx context.Context, tx *sqldb.Tx, ref, env, stack string, reques
 		doc = string(r.Document)
 	}
 	to := r.Status
-	if to.Live() {
+	if to.Live() || to == NoChanges {
 		run, err := overlappingRun(ctx, tx, env, stack, "", requested)
 		if err != nil {
 			return err
@@ -917,7 +918,8 @@ type Retention struct {
 	// Audit is the age past which audit rows are deleted.
 	Audit time.Duration
 	// Plans is the age past which plans that can no longer be applied
-	// (refused, failed, expired, superseded) are deleted, with their saved form.
+	// (no-changes, refused, failed, expired, superseded) are deleted, with
+	// their saved form.
 	Plans time.Duration
 }
 

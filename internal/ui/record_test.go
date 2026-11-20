@@ -19,6 +19,8 @@ import (
 //   - second-plan.json: a plan that forgets, imports, replaces with
 //     replace_paths, creates in a module, changes outputs, and finds drift.
 //   - second-apply.jsonl: the `apply -json` events of that plan.
+//   - quiet-plan.json: the second stage planned again after its apply,
+//     which changes nothing.
 //   - third-plan.json and third-apply.jsonl: a plan whose apply fails.
 //
 // It reads providers from a filesystem mirror, so after the providers are
@@ -96,6 +98,8 @@ func TestRecordTofuFixtures(t *testing.T) {
 	run(false, "plan", "-input=false", "-lock=false", "-var-file=second.tfvars", "-out=second.plan")
 	write("second-plan.json", run(false, "show", "-json", "second.plan"))
 	write("second-apply.jsonl", run(false, "apply", "-input=false", "-json", "second.plan"))
+	run(false, "plan", "-input=false", "-lock=false", "-var-file=second.tfvars", "-out=quiet.plan")
+	write("quiet-plan.json", run(false, "show", "-json", "quiet.plan"))
 
 	stage("third.tf")
 	run(false, "plan", "-input=false", "-lock=false", "-var-file=second.tfvars", "-out=third.plan")
