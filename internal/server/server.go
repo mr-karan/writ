@@ -7,7 +7,7 @@
 // plans run with state opened read-only, stay on the server, and are named
 // by the saved plan's signature.
 //
-// Each plan and apply runs OpenTofu through a TofuRunner.
+// Each plan and apply runs OpenTofu through a runner.Tofu.
 package server
 
 import (
@@ -36,6 +36,7 @@ import (
 	"github.com/mr-karan/writ/internal/notify"
 	"github.com/mr-karan/writ/internal/oidc"
 	"github.com/mr-karan/writ/internal/policy"
+	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/tfstate"
 )
 
@@ -53,7 +54,7 @@ type Options struct {
 	// People are the issuers people sign in to the control UI with.
 	People []*oidc.Provider
 	// Tofu runs OpenTofu for the stacks of .tf files. Nil refuses them.
-	Tofu TofuRunner
+	Tofu runner.Tofu
 	// Assumer assumes the environments' roles. A config with a role needs
 	// one.
 	Assumer awsrole.Assumer
@@ -81,7 +82,7 @@ type Server struct {
 	store       *control.Store
 	verifier    Verifier
 	people      []*oidc.Provider
-	tofuRunner  TofuRunner
+	tofuRunner  runner.Tofu
 	version     string
 	log         *slog.Logger
 	now         func() time.Time

@@ -12,42 +12,13 @@ import (
 	"github.com/mr-karan/writ/internal/diag"
 	"github.com/mr-karan/writ/internal/egress"
 	"github.com/mr-karan/writ/internal/mask"
+	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/tofu"
 )
 
-// The ports of 127.0.0.1 that writ serves in the network namespace of a
-// run under egress_mode report or enforce. Each step has a namespace of
-// its own, so the ports are the same for every run.
-const (
-	// egressPort is the egress proxy, which HTTP_PROXY and HTTPS_PROXY
-	// point to.
-	egressPort = 3128
-	// credsPort is the credential endpoint of awsrole.Broker.
-	credsPort = 3129
-	// statePort is the http state backend, /v1/tfstate/ and nothing else.
-	statePort = 3130
-)
-
-// runLoopback is where a run with its own network reaches what writ
-// serves.
-const runLoopback = "http://127.0.0.1:"
-
-// egressEnv points every HTTP client of a run at the egress proxy. Both
-// spellings are set: curl, which git uses, reads only the lowercase
-// http_proxy, and Go reads either. Loopback goes direct, to the
-// credential endpoint and the state backend.
-var egressEnv = func() []string {
-	proxy := runLoopback + strconv.Itoa(egressPort)
-	const direct = "127.0.0.1,localhost,::1"
-	return []string{
-		"HTTP_PROXY=" + proxy, "HTTPS_PROXY=" + proxy, "http_proxy=" + proxy, "https_proxy=" + proxy,
-		"NO_PROXY=" + direct, "no_proxy=" + direct,
-	}
-}()
-
 // credsURL is the credential endpoint as a run with its own network
 // reaches it.
-var credsURL = runLoopback + strconv.Itoa(credsPort) + awsrole.CredentialsPath
+var credsURL = runner.Loopback + strconv.Itoa(runner.CredsPort) + awsrole.CredentialsPath
 
 // stateBase is writ serve's URL as a run's state backend reaches it: the
 // config's url, or the bridged state port under egress_mode report or
@@ -56,7 +27,7 @@ func (s *Server) stateBase() string {
 	if !s.cfg.EgressMode.On() {
 		return s.cfg.URL
 	}
-	return runLoopback + strconv.Itoa(statePort)
+	return runner.Loopback + strconv.Itoa(runner.StatePort)
 }
 
 // initEgress makes what the state port serves: the state backend behind
@@ -101,9 +72,9 @@ func (r *tofuRun) net() *tofu.Net {
 	if r.proxy == nil {
 		return nil
 	}
-	n := &tofu.Net{Ports: map[int]http.Handler{egressPort: r.proxy, statePort: r.s.stateHandler(r.spec.id)}}
+	n := &tofu.Net{Ports: map[int]http.Handler{runner.EgressPort: r.proxy, runner.StatePort: r.s.stateHandler(r.spec.id)}}
 	if r.s.broker != nil {
-		n.Ports[credsPort] = r.s.broker.Handler()
+		n.Ports[runner.CredsPort] = r.s.broker.Handler()
 	}
 	return n
 }

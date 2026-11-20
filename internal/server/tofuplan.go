@@ -29,31 +29,6 @@ import (
 	"github.com/mr-karan/writ/internal/tofu"
 )
 
-// TofuRunner runs OpenTofu for the stacks of .tf files. *tofu.Runner is
-// one.
-type TofuRunner interface {
-	// Fill installs the providers a lock file pins into the plugin cache
-	// that every run reads, and returns the lock file a run's init reads,
-	// which a tofu.Stack's Lock takes. With net, tofu init runs in a
-	// network namespace of its own whose ports net serves, with env; a
-	// nil net keeps writ serve's own network.
-	Fill(ctx context.Context, lock []byte, net *tofu.Net, env []string) ([]byte, error)
-	// Plan runs init, plan, and show of one stack and returns the raw
-	// result, which only the mask may read.
-	Plan(ctx context.Context, s tofu.Stack) (tofu.Plan, error)
-	// Apply runs init, show of a saved plan, and apply, and returns the
-	// raw show and `tofu apply -json` event stream, which only the mask
-	// may read.
-	Apply(ctx context.Context, s tofu.Stack, plan []byte) (tofu.Applied, error)
-	// Show runs init without the backend and show of a state, and returns
-	// the raw `tofu show -json`, which only the mask may read.
-	Show(ctx context.Context, s tofu.Stack, state []byte) (tofu.State, error)
-	// Pull runs init, state pull from the stack's backend, and show of
-	// the pulled state, and returns the raw `tofu show -json`, which only
-	// the mask may read, with the state's serial.
-	Pull(ctx context.Context, s tofu.Stack) (tofu.State, error)
-}
-
 // maxTofuDiagnostics bounds the lines of a failed step's output that a
 // refused plan keeps.
 const maxTofuDiagnostics = 40

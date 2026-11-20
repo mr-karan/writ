@@ -19,6 +19,7 @@ import (
 	"github.com/mr-karan/writ/internal/mask"
 	"github.com/mr-karan/writ/internal/repo"
 	"github.com/mr-karan/writ/internal/runas"
+	"github.com/mr-karan/writ/internal/runner"
 	"github.com/mr-karan/writ/internal/tfstate"
 	"github.com/mr-karan/writ/internal/tofu"
 )
@@ -161,7 +162,7 @@ func (s *Server) startRun(ctx context.Context, spec runSpec) (_ *tofuRun, err er
 		return nil, err
 	}
 	if r.proxy != nil {
-		r.env = append(slices.Clone(r.env), egressEnv...)
+		r.env = append(slices.Clone(r.env), runner.EgressEnv...)
 	}
 	switch {
 	case spec.role == "":
@@ -278,7 +279,7 @@ func (r *tofuRun) fill(ctx context.Context) ([]byte, error) {
 	if r.install, err = egress.New(egress.Options{Mode: r.s.cfg.EgressMode, Install: true}); err != nil {
 		return nil, err
 	}
-	return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, &tofu.Net{Ports: map[int]http.Handler{egressPort: r.install}}, egressEnv)
+	return r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, &tofu.Net{Ports: map[int]http.Handler{runner.EgressPort: r.install}}, runner.EgressEnv)
 }
 
 // takeUID takes a provider uid no other run has, nil when the config sets
