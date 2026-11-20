@@ -102,7 +102,6 @@ The [glossary](glossary.md) defines each term. Use the term in the first column,
 | drift | skew, divergence |
 | to check | validate, lint |
 | agent | AI, bot, assistant |
-| version 0 | alpha, beta, preview |
 
 Write "Terraform and OpenTofu" when a statement is true of both tools. Name one tool when it's true of that tool only, as for a benchmark that ran OpenTofu.
 
@@ -121,14 +120,14 @@ Each page is one type. The docs index and the site's navigation group pages by t
 | Project | How is Writ built, and how do I change it? | Architecture and contributor docs. |
 
 - Each concept page ends with links to its guide and its reference. Each guide starts by linking its concept, for readers who want the why.
-- Limits live in two places: a short "Limits" section at the end of the page a reader uses the feature from, and [Status and limits](status.md), which rolls them up. Roadmap that isn't a limit stays out of the user docs.
+- Limits live in two places: a short "Limits" section at the end of the page a reader uses the feature from, and [Supported platforms and limits](status.md), which rolls them up. Roadmap that isn't a limit stays out of the user docs.
 - Evidence has a fixed home. "How it's tested" closes a concept page. Each output block gets a one-line caption under it with its source.
 - Link a Writ term to the [glossary](glossary.md) the first time a page uses it.
 - End a page that has a natural next page with a "Next steps" list.
 
 ## By surface
 
-**Landing copy.** A headline is a claim the reader can check. Under it, one or two sentences to "you". One figure. At most three bullets a section, about 20 words each, with at most one code span a bullet and no config keys. Each section ends with one plain sentence on its limit, at body size, and a link to the docs for the rest. The version 0 notice stays in the first screen. Prefer a number or a concrete noun to an adjective.
+**Landing copy.** A headline is a claim the reader can check. Under it, one or two sentences to "you". One figure. At most three bullets a section, about 20 words each, with at most one code span a bullet and no config keys. Each section ends with one plain sentence on its limit, at body size, and a link to the docs for the rest. Prefer a number or a concrete noun to an adjective.
 
 **Concept docs.** Open with the problem or the definition in two or three sentences. Then how it works, with one example or an analogy the reader already has. Then limits. Then how it's tested, which is one of Writ's real strengths and belongs here, not in the opening. End with links to the guide and the reference.
 

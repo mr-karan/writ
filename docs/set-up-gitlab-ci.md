@@ -8,7 +8,7 @@ With GitLab CI and Writ, every merge request shows the exact plan it would apply
 
 None of your jobs needs a checkout, and none holds a cloud credential or the state key. Each job proves who it is with the OIDC token GitLab issues. To see what happens to each plan, read [How the control plane works](serve.md#how-a-remote-plan-runs). To see who can approve it, read [Approvals](approvals.md).
 
-**Limits.** The components are a sketch: no GitLab pipeline has run them. [The test plan](development.md#test-plan-for-a-real-gitlab-project) checks them, and [the component's notes](../ci/gitlab/README.md) list what a real GitLab must show. Among those: whether a manual job's token identifies the person who ran it, and the values of `user_access_level`.
+**Limits.** The components are verified against a local GitLab stand-in (`TestTofuApproveApply`). See [the test plan](development.md#test-plan-for-a-real-gitlab-project) and [`ci/gitlab/README.md`](../ci/gitlab/README.md) for the OIDC claims (`user_access_level` and manual job `user_id`) your GitLab instance must supply.
 
 ## Before you begin
 

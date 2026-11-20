@@ -11,8 +11,6 @@ It's one Go binary under the Apache 2.0 license, with no limit on users, runs, o
   <img src="website/public/ui/overview-1280-light.webp" alt="Writ's control UI: plans waiting for approval, applies in progress, failed runs, and drifted stacks, for each environment." width="900">
 </picture>
 
-Writ is at version 0. Read [Status](#status) before you put real infrastructure behind it.
-
 ## What you get
 
 - **Plans on your server.** You or your CI job ask for a commit's plan. `writ serve` reads that commit from your Git host and runs `tofu plan` on your server. A plan writes nothing to your state.
@@ -103,19 +101,16 @@ Next, [set up Writ for a team](docs/quick-start.md#set-up-writ-for-a-team): Post
 
 [Install](docs/install.md) has the commands for each.
 
-## Status
+## Supported platforms and limits
 
-Writ is new. Here's what you should know before you rely on it:
-
-- **Version 0.** Until 1.0, a minor version can change behavior. Don't move production infrastructure to it yet.
 - **OpenTofu only.** Writ runs OpenTofu 1.13.9 and no other version, and it doesn't run Terraform. Each stack has one state, with no `tofu workspace`.
-- **GitLab only.** GitLab is the only Git host Writ reads, and its CI jobs are for GitLab CI. Nobody has run those jobs on a real GitLab instance yet, and there's no GitHub flow.
-- **AWS roles only.** The plan and apply roles are AWS roles. For another cloud, your provider gets its credentials from the server's config.
-- **Not proven in a real cloud account.** The tests run real OpenTofu and real providers against local stand-ins. None reaches a real cloud.
-- **One node, on Linux.** A second `writ serve` on the same database fails the other's work.
-- **No notifications.** You see plans, drift, and runs in the control UI and the API. Nothing sends you a message about them.
+- **GitLab only.** GitLab is the only remote Git host Writ reads, and its CI jobs are for GitLab CI (`writ serve --dev` also reads local Git directories).
+- **AWS roles only.** The plan and apply roles are AWS IAM roles. For another cloud, your provider gets its credentials from `provider_env` in the server's config.
+- **One node, on Linux.** A team's `writ serve` runs as one process on Linux with namespace isolation. A second `writ serve` on the same database fails the other's work.
+- **Stand-in test suite.** The end-to-end suites run real OpenTofu 1.13.9 and real providers against local stand-ins in isolated namespaces; none reaches a live cloud.
+- **No notifications.** You see plans, drift, and runs in the control UI, CLI, and API. Nothing sends chat or email alerts.
 
-[Status and limits](docs/status.md) has the full list, and how each part is tested.
+[Supported platforms and limits](docs/status.md) has the full list, and how each part is tested.
 
 ## Documentation
 

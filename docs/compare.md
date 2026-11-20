@@ -40,12 +40,12 @@ Spacelift, HCP Terraform, env zero, and Scalr are paid control planes for the sa
 
 A hosted service you don't run. Support, which Terraform Enterprise includes ([pricing][h-pricing]), and compliance reports, such as Spacelift's SOC 2 Type II ([security][sl-security]). Terraform as well as OpenTofu. Notifications, which Spacelift sends from policy ([home page][sl-home]). Cost estimates before an approval ([env zero][e-approval]). Self-service templates, such as Spacelift's Blueprints ([pricing][sl-pricing]). Years of use: Scalr says "1,000+ teams made the switch" ([home page][sc-home]).
 
-Writ has none of these. It works with GitLab only, runs on one node, and is at version 0. If you need Terraform, GitHub, a hosted service, or support today, choose one of them.
+Writ has none of these. It works with OpenTofu 1.13.9 and GitLab on a single Linux node. If you need Terraform, GitHub, a hosted service, or vendor support today, choose one of them.
 
 ## Next steps
 
 - [Writ compared with OpenTofu in plain GitLab CI](compare-gitlab-ci.md): what Writ adds to a pipeline that runs `tofu` itself, and what it costs.
-- [Status and limits](status.md): what's built, how it's tested, and what's missing.
+- [Supported platforms and limits](status.md): what's built, how it's tested, and what's missing.
 - [Quick start](quick-start.md): try Writ on your own machine, with no cloud account.
 
 [sl-pricing]: https://spacelift.io/pricing

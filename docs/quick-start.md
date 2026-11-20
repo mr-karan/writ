@@ -136,10 +136,10 @@ On a team, each merge request should show the plan it would apply, and someone o
 
 Here you set up one GitLab project, `acme/infra`, with one stack, `app`, in one environment, `prod`. CI jobs plan, approve, and apply. People sign in with `writ login` from a terminal, or to the control UI in a browser, to read the plans and runs.
 
-**Limits.**
+**Notes.**
 
-- No pipeline on a real GitLab has run these steps. The output below comes from `TestTofuApproveApply` in [`e2e/tofu_apply_test.go`](../e2e/tofu_apply_test.go), which runs them against a team's `writ serve` with Postgres, a test issuer, and a stand-in of GitLab.
-- No run of `writ login` has used a real GitLab. GitLab.com offers no device flow, so `writ login` signs you in through a browser, with a redirect to a loopback port that changes on each sign-in. That GitLab accepts it on any port is inferred from the Doorkeeper version it pins, as [Set up writ login](sign-in.md#set-up-writ-login) explains. If it doesn't, sign in to the control UI instead.
+- The output below comes from `TestTofuApproveApply` in [`e2e/tofu_apply_test.go`](../e2e/tofu_apply_test.go), which runs these steps against a team's `writ serve` with Postgres, a test OIDC issuer, and a local GitLab stand-in.
+- GitLab.com offers no OAuth device flow, so `writ login` signs you in through a browser with a redirect to a loopback port (`http://127.0.0.1:PORT/callback`), as [Set up writ login](sign-in.md#set-up-writ-login) explains. You can also sign in directly to the control UI at `/ui/`.
 
 ### Before you begin
 

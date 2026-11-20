@@ -4,8 +4,6 @@ Writ is an open-source, self-hosted control plane for [OpenTofu](https://opentof
 
 Writ is a single Go binary under the Apache 2.0 license, with no limit on users, runs, or resources. A team's server stores its records in Postgres; on your own machine, `writ serve --dev` runs on loopback with SQLite and needs no cloud account.
 
-Writ is at version 0. Read [Status and limits](status.md) before putting production infrastructure behind it.
-
 ## Get started
 
 New to Writ? Run it locally in five minutes with no cloud account, then see how it fits your workflow.
@@ -14,7 +12,7 @@ New to Writ? Run it locally in five minutes with no cloud account, then see how 
 | --- | --- |
 | Plan and apply a stack locally with `writ serve --dev` | [Quick start](quick-start.md) |
 | Install the `writ` binary, container image, or Nix package | [Install](install.md) |
-| Check what works in version 0 and what's missing | [Status and limits](status.md) |
+| Check supported platforms, test coverage, and current limits | [Supported platforms and limits](status.md) |
 | Compare Writ with plain GitLab CI or paid control planes | [Writ vs plain GitLab CI](compare-gitlab-ci.md) or [Other control planes](compare.md) |
 
 ## Guides
@@ -26,6 +24,7 @@ Task-focused guides with prerequisites, numbered steps, expected output, and tro
 - [Plan and apply](apply.md): plan a commit, approve it, apply by ID or after merge, recover from lost answers, and use overrides.
 - [Configure approvals](approvals.md): write approval rules by stack, environment, and risk class, and see who can approve.
 - [Write and test policies](write-a-policy.md): write Rego rules, test them locally with `conftest`, and enforce them in `writ serve`.
+- [Policy cookbook](policy-cookbook.md): 12 copy-pasteable Rego rules and unit tests for tags, S3, encryption, security groups, instance sizes, regions, change windows, and approvals.
 - [Adopt existing state](adopt-state.md): seal a secret set for a state Writ didn't write so its plans can be approved again.
 - [Migrate from Terraform](migrate-from-terraform.md): bring a Terraform stack, lock file, and state to Writ and OpenTofu.
 - [Handle secrets and masking](secrets.md): keep secrets out of plans, logs, and the state index, and know what the mask can't catch.

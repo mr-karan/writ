@@ -99,7 +99,7 @@ Writ restricts what code and tools a run can use to make outbound connections:
 - **No cloud credentials during `init`**: `tofu init` fetches modules and providers without cloud credentials. Only `plan` and `apply` (and the S3 backend configuration step) receive the run's role credentials.
 - **Provider binaries pinned by lock file**: `writ serve` installs providers into `tofu.plugin_cache` itself from `.terraform.lock.hcl` using a synthetic config, so stack code never runs with write access to the plugin cache.
 
-### Egress limits in version 0
+### Host network and egress limits
 
 `writ serve` leaves the rest of the network namespace unchanged so `tofu init` can reach `registry.opentofu.org` and module hosts, and providers can reach cloud APIs. Writ does not yet include a built-in egress proxy or host allow-list for provider traffic. If you need strict outbound allow-lists (for example, allowing only your cloud APIs and OpenTofu registry), add `meta skuid 61000-61063` egress rules in `nftables` or enforce them at your VPC firewall.
 

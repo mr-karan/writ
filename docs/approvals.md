@@ -171,7 +171,7 @@ Every `writ serve` process has an id, and each run records the process that bega
 
 The sweep each minute also catches a run whose start an earlier process committed after this one started. That can happen on Postgres, where the commit of a process that stopped can complete later. `TestRestartWithAnUnresolvedCommit` holds such a commit while a second process starts, and requires that the second process's sweep fails the run.
 
-Run one `writ serve` process per control database, as [Status and limits](status.md) says. `TestTofuRestartEndsState` stops a run while it holds the stack's lock, starts a second process, and requires that the run's token is refused and that the next apply takes the lock.
+Run one `writ serve` process per control database, as [Supported platforms and limits](status.md) says. `TestTofuRestartEndsState` stops a run while it holds the stack's lock, starts a second process, and requires that the run's token is refused and that the next apply takes the lock.
 
 ## How an OpenTofu plan is approved and applied
 
