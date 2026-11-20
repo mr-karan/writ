@@ -207,7 +207,8 @@ func (sc *scratch) overScratch(max int64, cg *stepCgroup) string {
 // directory as at least scratchInode. With cg, it adds the files that no
 // directory names any longer but cg's threads hold open or mapped: a run
 // could write into such a file for as long as the step runs. It stops
-// once the count passes max, and fails past deadline.
+// once the count passes max, and fails with errScratchSlow past deadline,
+// which a step's measure counts as over max.
 func (sc *scratch) usage(max int64, cg *stepCgroup, deadline time.Time) (int64, error) {
 	w := scratchWalk{max: max, deadline: deadline}
 	err := asUser(sc.user, func() error {
@@ -231,7 +232,7 @@ func (sc *scratch) usage(max int64, cg *stepCgroup, deadline time.Time) (int64, 
 	if err != nil || cg == nil {
 		return w.total, err
 	}
-	held, err := cg.heldRemoved(sc.user)
+	held, err := cg.heldRemoved(sc.user, deadline)
 	return w.total + held, err
 }
 

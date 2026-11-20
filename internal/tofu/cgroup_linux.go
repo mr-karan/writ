@@ -441,8 +441,9 @@ func (c *stepCgroup) remove() error {
 // without CLONE_FILES has descriptors of its own. It reads /proc as u, the
 // run's user: /proc/TID/fd belongs to the uid of its thread, and the
 // kernel lets no other uid without CAP_DAC_READ_SEARCH list it, though
-// writ made the user namespace the thread runs in.
-func (c *stepCgroup) heldRemoved(u *User) (int64, error) {
+// writ made the user namespace the thread runs in. It fails with
+// errScratchSlow past deadline.
+func (c *stepCgroup) heldRemoved(u *User, deadline time.Time) (int64, error) {
 	tids, err := cgroupIDs(c.dir, "cgroup.threads")
 	if err != nil {
 		return 0, err
@@ -451,7 +452,7 @@ func (c *stepCgroup) heldRemoved(u *User) (int64, error) {
 	var denied []int
 	err = asUser(u, func() error {
 		for _, tid := range tids {
-			err := h.read(tid)
+			err := h.read(tid, deadline)
 			if u != nil && errors.Is(err, os.ErrPermission) {
 				denied = append(denied, tid)
 				continue
@@ -468,7 +469,7 @@ func (c *stepCgroup) heldRemoved(u *User) (int64, error) {
 	// A process that made itself not dumpable gives its /proc/TID/fd to
 	// root of its user namespace, which is writ's uid.
 	for _, tid := range denied {
-		if err := h.read(tid); err != nil {
+		if err := h.read(tid, deadline); err != nil {
 			return 0, err
 		}
 	}
@@ -530,8 +531,12 @@ func majorMinor(dev uint64) string {
 }
 
 // read adds to h each removed file that the thread tid holds open or
-// maps. A thread that exits meanwhile holds nothing.
-func (h *heldFiles) read(tid int) error {
+// maps. A thread that exits meanwhile holds nothing. It fails with
+// errScratchSlow past deadline.
+func (h *heldFiles) read(tid int, deadline time.Time) error {
+	if time.Now().After(deadline) {
+		return errScratchSlow
+	}
 	proc := "/proc/" + strconv.Itoa(tid)
 	f, err := os.Open(proc + "/fd")
 	if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
@@ -542,6 +547,9 @@ func (h *heldFiles) read(tid int) error {
 	}
 	defer f.Close()
 	for {
+		if time.Now().After(deadline) {
+			return errScratchSlow
+		}
 		names, err := f.Readdirnames(256)
 		if errors.Is(err, io.EOF) || errors.Is(err, unix.ESRCH) || errors.Is(err, os.ErrNotExist) {
 			break

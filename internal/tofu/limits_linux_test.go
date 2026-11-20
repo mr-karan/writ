@@ -573,3 +573,20 @@ func TestScratchCountsHeldFilesOnAnyDevice(t *testing.T) {
 	}
 }
 
+// A measure of the removed files a step's processes hold is bounded as a
+// walk is: one past its deadline is as one over the limit, so a run that
+// makes itself slow to read in /proc doesn't escape limits.run_scratch.
+// A cgroup that lists this process many times stands in for one slow to
+// read.
+func TestScratchHeldMeasureIsBounded(t *testing.T) {
+	sc := scratchStandIn(t)
+	cg := cgroupStandIn(t, 20000)
+	start := time.Now()
+	_, err := sc.usage(1<<40, cg, time.Now().Add(100*time.Millisecond))
+	if !errors.Is(err, errScratchSlow) {
+		t.Fatalf("a measure past its deadline returned %v, not errScratchSlow", err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("a measure with 100ms to run took %v", d)
+	}
+}

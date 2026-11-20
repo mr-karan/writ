@@ -2,7 +2,10 @@
 
 package tofu
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 var errNoCgroups = errors.New("cgroup limits need Linux")
 
@@ -13,8 +16,8 @@ func seccompReady() error                { return errors.New("the seccomp filter
 // stepCgroup is a step's cgroup, which only Linux makes.
 type stepCgroup struct{}
 
-func newStepCgroup(string, Limits) (*stepCgroup, error) { return nil, errNoCgroups }
-func (*stepCgroup) kill() error                         { return nil }
-func (*stepCgroup) hit() string                         { return "" }
-func (*stepCgroup) remove() error                       { return nil }
-func (*stepCgroup) heldRemoved(*User) (int64, error)    { return 0, nil }
+func newStepCgroup(string, Limits) (*stepCgroup, error)         { return nil, errNoCgroups }
+func (*stepCgroup) kill() error                                 { return nil }
+func (*stepCgroup) hit() string                                 { return "" }
+func (*stepCgroup) remove() error                               { return nil }
+func (*stepCgroup) heldRemoved(*User, time.Time) (int64, error) { return 0, nil }
