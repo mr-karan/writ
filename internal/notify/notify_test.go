@@ -24,7 +24,7 @@ func TestCheckURL(t *testing.T) {
 		url     string
 		wantErr bool
 	}{
-		{"https hook", "https://hooks.slack.com/services/T00/B00/XXX", false},
+		{"https hook", "https://hooks.example.com/services/a/b/c", false},
 		{"https generic with query", "https://hooks.example.com/writ?channel=ops", false},
 		{"http loopback ipv4", "http://127.0.0.1:8080/hook", false},
 		{"http loopback ipv6", "http://[::1]:8080/hook", false},

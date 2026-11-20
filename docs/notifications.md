@@ -10,7 +10,7 @@ Create an [incoming webhook](https://api.slack.com/messaging/webhooks) for the c
 
 ```sh
 umask 077
-printf '%s\n' 'https://hooks.slack.com/services/T000/B000/XXXXXXXX' > /etc/writ/slack-ops.url
+printf '%s\n' 'https://hooks.slack.com/services/YOUR/WEBHOOK/PATH' > /etc/writ/slack-ops.url
 chown writ /etc/writ/slack-ops.url
 ```
 
