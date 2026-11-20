@@ -2,6 +2,7 @@ package tofu
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -33,8 +34,9 @@ const (
 var egressNamespace = []string{"--user", "--map-root-user", "--map-users=auto", "--map-groups=auto", "--net", "--pid", "--fork", "--mount-proc"}
 
 // egressPrelude readies the network namespace as root of the user
-// namespace: the instance metadata address and two test servers'
+// namespace: the instance metadata address and three test servers'
 // addresses on loopback, which stand for the network writ serve reaches,
+// the last a private one,
 // and docs/serve.md's firewall rule. writ then runs as root of the
 // namespace, as the tofu gate runs it. A writ that is not root of its
 // user namespace, with only the capabilities systemd's unit gives it,
@@ -46,6 +48,7 @@ ip link set lo up
 ip addr add 169.254.169.254/32 dev lo
 ip addr add 192.0.2.10/32 dev lo
 ip addr add 192.0.2.11/32 dev lo
+ip addr add 10.0.0.10/32 dev lo
 nft -f "$1"
 shift
 exec "$@"
@@ -65,11 +68,15 @@ const egressMetadataRules = `table inet writ {
 // namespace, it reaches a listed server through writ's egress proxy, is
 // refused an unlisted one, the host's loopback, and the metadata address,
 // reaches none of them around the proxy, and still gets the role's
-// credentials from the broker with its token. Under egress_mode off the
-// same run reaches the host's network as before, and the firewall rule
-// still keeps it from the metadata address. It needs unshare with
-// subordinate uids, ip, and nft (`just test-serve` provides nft), and
-// skips without them.
+// credentials from the broker with its token. A provider install, which
+// runs as writ, where no firewall rule of the provider uids holds, gets a
+// namespace of its own too, whose proxy lets it reach a public address
+// and refuses a private one, the host's loopback, and the metadata
+// address. Under egress_mode off the same run reaches the host's network
+// as before, and the firewall rule still keeps it from the metadata
+// address, which an install on writ's own network reaches. It needs
+// unshare with subordinate uids, ip, and nft (`just test-serve` provides
+// nft), and skips without them.
 func TestRunEgressIsolation(t *testing.T) {
 	if os.Getenv(egressChildEnv) != "" {
 		egressChild(t)
@@ -164,6 +171,7 @@ func egressChild(t *testing.T) {
 	}
 	serve("192.0.2.10:8080", "listed")
 	serve("192.0.2.11:8080", "unlisted")
+	serve("10.0.0.10:8080", "private")
 	serve("169.254.169.254:80", "metadata")
 	// A service on the host's loopback, as writ serve's own API or a
 	// Postgres listening there.
@@ -208,6 +216,18 @@ func egressChild(t *testing.T) {
 		}
 		return string(p.Log)
 	}
+	// fill runs Fill with a probe in tofu's place, whose init fails so
+	// that Fill returns what the probe saw.
+	fill := func(n *Net, env []string) string {
+		t.Helper()
+		lock := []byte("provider \"registry.opentofu.org/hashicorp/random\" {\n  version = \"3.7.2\"\n  hashes = [\"h1:probe\"]\n}\n")
+		_, err := r.Fill(ctx, lock, n, append(env, "PROBE_INIT_FAIL=1"))
+		se, ok := errors.AsType[*StepError](err)
+		if !ok {
+			t.Fatalf("fill: %v", err)
+		}
+		return string(se.Stdout)
+	}
 	expect := func(t *testing.T, got string, want ...string) {
 		t.Helper()
 		for _, w := range want {
@@ -246,6 +266,31 @@ func egressChild(t *testing.T) {
 		t.Logf("the proxy recorded %+v", dests)
 	})
 
+	t.Run("install", func(t *testing.T) {
+		install, err := egress.New(egress.Options{Mode: egress.Enforce, Install: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		const proxyURL = "http://127.0.0.1:3128"
+		got := fill(&Net{Ports: map[int]http.Handler{3128: install}}, []string{
+			"HTTP_PROXY=" + proxyURL, "HTTPS_PROXY=" + proxyURL, "NO_PROXY=127.0.0.1,localhost,::1",
+			"PROBE_CONNECT=192.0.2.11:8080,10.0.0.10:8080," + hostLoop + ",169.254.169.254:80",
+			"PROBE_DIAL=192.0.2.11:8080," + hostLoop + ",169.254.169.254:80",
+		})
+		expect(t, got,
+			"interfaces: lo <nil>",
+			"connect 192.0.2.11:8080: 200 Connection established",
+			"connect 10.0.0.10:8080: 403 writ egress refused 10.0.0.10:8080: a private address, which a provider install never connects to",
+			"connect "+hostLoop+": 403 writ egress refused "+hostLoop+": a loopback address",
+			"connect 169.254.169.254:80: 403 writ egress refused 169.254.169.254:80: a link-local address, where the instance metadata service is",
+			"dial 192.0.2.11:8080: connect: network is unreachable",
+			"dial "+hostLoop+": connect: connection refused",
+			"dial 169.254.169.254:80: connect: network is unreachable",
+		)
+		dests, _ := install.Destinations()
+		t.Logf("the install's proxy recorded %+v", dests)
+	})
+
 	t.Run("off", func(t *testing.T) {
 		env := []string{"PROBE_DIAL=192.0.2.11:8080," + hostLoop + ",169.254.169.254:80", "PROBE_CREDS=1"}
 		got := plan(nil, env, session.Env())
@@ -256,11 +301,17 @@ func egressChild(t *testing.T) {
 			"creds: 200 ASIATEST000000000001",
 		)
 		// writ itself reaches the metadata address, so the rule, not the
-		// namespace, kept the provider uid from it.
+		// namespace, kept the provider uid from it, and an install on
+		// writ's own network reaches it.
 		c, err := net.DialTimeout("tcp", "169.254.169.254:80", 2*time.Second)
 		if err != nil {
 			t.Fatalf("writ cannot reach the metadata address either: %v", err)
 		}
 		c.Close()
+		expect(t, fill(nil, []string{"PROBE_DIAL=10.0.0.10:8080," + hostLoop + ",169.254.169.254:80"}),
+			"dial 10.0.0.10:8080: ok",
+			"dial "+hostLoop+": ok",
+			"dial 169.254.169.254:80: ok",
+		)
 	})
 }

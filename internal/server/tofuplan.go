@@ -34,8 +34,10 @@ import (
 type TofuRunner interface {
 	// Fill installs the providers a lock file pins into the plugin cache
 	// that every run reads, and returns the lock file a run's init reads,
-	// which a tofu.Stack's Lock takes.
-	Fill(ctx context.Context, lock []byte) ([]byte, error)
+	// which a tofu.Stack's Lock takes. With net, tofu init runs in a
+	// network namespace of its own whose ports net serves, with env; a
+	// nil net keeps writ serve's own network.
+	Fill(ctx context.Context, lock []byte, net *tofu.Net, env []string) ([]byte, error)
 	// Plan runs init, plan, and show of one stack and returns the raw
 	// result, which only the mask may read.
 	Plan(ctx context.Context, s tofu.Stack) (tofu.Plan, error)

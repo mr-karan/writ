@@ -68,7 +68,7 @@ func TestFill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := r.Fill(context.Background(), lock)
+	got, err := r.Fill(context.Background(), lock, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestFillRecordsHashes(t *testing.T) {
 	t.Run("the hashes init records are returned, and the next Fill reads them from the Runner", func(t *testing.T) {
 		cache := t.TempDir()
 		r := newRunner(t, fakeTofu(t, "fill-record"), cache, t.TempDir(), time.Minute, 1<<20)
-		first, err := r.Fill(ctx, lock)
+		first, err := r.Fill(ctx, lock, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -138,7 +138,7 @@ func TestFillRecordsHashes(t *testing.T) {
 		if !reflect.DeepEqual(ps, want) {
 			t.Fatalf("Fill returned a lock that pins %+v, want %+v", ps, want)
 		}
-		second, err := r.Fill(ctx, lock)
+		second, err := r.Fill(ctx, lock, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -158,7 +158,7 @@ func TestFillRecordsHashes(t *testing.T) {
 	t.Run("an init that changes a version fails Fill and records nothing", func(t *testing.T) {
 		cache := t.TempDir()
 		r := newRunner(t, fakeTofu(t, "fill-bump"), cache, t.TempDir(), time.Minute, 1<<20)
-		if _, err := r.Fill(ctx, lock); err == nil || !strings.Contains(err.Error(), "other providers or versions") {
+		if _, err := r.Fill(ctx, lock, nil, nil); err == nil || !strings.Contains(err.Error(), "other providers or versions") {
 			t.Fatalf("Fill: %v, want a refusal of the changed version", err)
 		}
 		if len(r.hashes) != 0 {

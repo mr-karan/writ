@@ -244,7 +244,7 @@ func (r *tofuRun) stateToken(ctx context.Context, stack string, scope control.St
 // file and returns how tofu runs the stack. m sweeps the output of a
 // failed fill.
 func (r *tofuRun) stack(ctx context.Context, m *mask.Mask) (tofu.Stack, error) {
-	lock, err := r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock)
+	lock, err := r.s.tofuRunner.Fill(ctx, r.spec.ts.Lock, nil, nil)
 	if err != nil {
 		return tofu.Stack{}, fmt.Errorf("install the providers of %s into the plugin cache: %w%s", tofu.LockFile, err, stepLines(m, err))
 	}

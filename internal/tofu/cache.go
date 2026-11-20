@@ -101,6 +101,12 @@ func literalString(e hclsyntax.Expression) (string, bool) {
 // access, which writ's umask may have withheld. One Fill runs at a time,
 // and no run's init overlaps it.
 //
+// The lock file is the stack's, so it chooses the registry tofu init asks
+// and, through the registry, every host it downloads from. With n, tofu
+// init runs in a network namespace of its own whose ports n serves, as a
+// run's steps do, and env, which points its clients at those ports, is
+// its environment. With a nil n it runs on writ serve's own network.
+//
 // A provider the lock pins with no hashes, as FromTerraform leaves one,
 // gets the hashes tofu records as it installs it, after it checks the
 // registry's signature, and the returned lock holds them; without them a
@@ -108,7 +114,7 @@ func literalString(e hclsyntax.Expression) (string, bool) {
 // Fill of the same version reads the cache instead of the registry, and
 // every run of that version, a plan and its apply among them, gets the same
 // hashes. A lock whose every provider has hashes is returned as it is.
-func (r *Runner) Fill(ctx context.Context, lock []byte) ([]byte, error) {
+func (r *Runner) Fill(ctx context.Context, lock []byte, n *Net, env []string) ([]byte, error) {
 	providers, err := LockedProviders(lock)
 	if err != nil {
 		return nil, err
@@ -143,12 +149,12 @@ func (r *Runner) Fill(ctx context.Context, lock []byte) ([]byte, error) {
 	sc, err := r.makeScratch([]string{"."}, []file{
 		{name: "main.tf", data: []byte(main.String()), mode: 0o600},
 		{name: LockFile, data: lock, mode: 0o600},
-	}, ".", nil, nil)
+	}, ".", env, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer sc.remove()
-	sc.fill = true
+	sc.fill, sc.net = true, n
 	// tofu records hashes only in a lock file it may write, so an init
 	// that must record some runs without -lockfile=readonly. The
 	// configuration pins each version, so the hashes are all it can

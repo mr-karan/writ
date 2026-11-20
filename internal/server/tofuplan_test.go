@@ -253,7 +253,7 @@ func (f *fakeTofu) call(c stateCall, method, suffix, body string) int {
 
 type stateCall struct{ addr, token string }
 
-func (f *fakeTofu) Fill(_ context.Context, lock []byte) ([]byte, error) {
+func (f *fakeTofu) Fill(_ context.Context, lock []byte, _ *tofu.Net, _ []string) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.fills = append(f.fills, lock)
