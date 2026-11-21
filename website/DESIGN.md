@@ -1,6 +1,6 @@
 ---
 name: Writ website
-description: The landing page and docs of Writ, set like a technical record.
+description: The landing page and docs of Writ, visual-first and sparse.
 colors:
   bg: "#f6f4ec"
   surface: "#fdfcf6"
@@ -24,12 +24,6 @@ colors:
   term-bg: "#171a2c"
   term-ink: "#e8e8e2"
   term-dim: "#a0a2b3"
-  # The voxels of the pictures: indigo, bone, moss, ochre, each at its middle level.
-  vx-indigo: "#2f3a7c"
-  vx-bone: "#d8d1bf"
-  vx-moss: "#7b8d52"
-  vx-ochre: "#ecb233"
-  # The dark theme, under .dark in app/global.css.
   dark-bg: "#10121f"
   dark-surface: "#171a2a"
   dark-surface-2: "#1e2133"
@@ -49,77 +43,29 @@ colors:
   dark-btn: "#ece6d2"
   dark-gild: "#ecb233"
   dark-term-bg: "#0a0b15"
-  # Syntax colors of code blocks: light, then the dark set that terminals also take.
-  syn-comment: "#5a6273"
-  syn-punct: "#4b5260"
-  syn-type: "#0b6676"
-  syn-function: "#7a35a8"
-  syn-dark-punct: "#adafbe"
-  syn-dark-string: "#7fd6a0"
-  syn-dark-number: "#f2c26b"
-  syn-dark-type: "#7fd1de"
-  syn-dark-function: "#d0a7ff"
-  syn-dark-remove: "#ff9c9c"
 typography:
   display:
     fontFamily: "Newsreader, Iowan Old Style, Palatino, Georgia, serif"
-    fontSize: "clamp(2.625rem, 1.3rem + 4.7vw, 4.75rem)"
+    fontSize: "clamp(2.25rem, 1.5rem + 2.8vw, 3.625rem)"
     fontWeight: 500
-    lineHeight: 1.02
+    lineHeight: 1.06
     letterSpacing: "-0.028em"
   headline:
     fontFamily: "Newsreader, Iowan Old Style, Palatino, Georgia, serif"
-    fontSize: "clamp(1.875rem, 1.3rem + 2vw, 2.75rem)"
+    fontSize: "clamp(1.625rem, 1.25rem + 1.4vw, 2.25rem)"
     fontWeight: 500
-    lineHeight: 1.08
+    lineHeight: 1.12
     letterSpacing: "-0.02em"
   title:
     fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "1.25rem"
-    fontWeight: 600
-    lineHeight: 1.25
-    letterSpacing: "-0.016em"
-  page-title:
-    fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "clamp(1.875rem, 1.5rem + 1.4vw, 2.375rem)"
-    fontWeight: 600
-    lineHeight: 1.08
-    letterSpacing: "-0.03em"
-  title-sm:
-    fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.0625rem"
     fontWeight: 600
-    lineHeight: 1.35
-  lede:
-    fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "clamp(1.0625rem, 1rem + 0.3vw, 1.1875rem)"
-    fontWeight: 400
-    lineHeight: 1.55
-  lede-docs:
-    fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "1.125rem"
-    fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.3
   body:
     fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "17px"
+    fontSize: "16px"
     fontWeight: 400
-    lineHeight: 1.6
-  ui:
-    fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "1rem"
-    fontWeight: 400
-    lineHeight: 1.6
-  small:
-    fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "0.9375rem"
-    fontWeight: 400
-    lineHeight: 1.6
-  label:
-    fontFamily: "Archivo Variable, ui-sans-serif, system-ui, sans-serif"
-    fontSize: "0.8125rem"
-    fontWeight: 400
-    lineHeight: 1.6
+    lineHeight: 1.55
   code:
     fontFamily: "Chivo Mono Variable, ui-monospace, Menlo, Consolas, monospace"
     fontSize: "0.8125rem"
@@ -128,273 +74,74 @@ typography:
 rounded:
   sm: "4px"
   md: "8px"
-  pill: "999px"
+  lg: "12px"
 spacing:
-  gutter: "clamp(24px, 4vw, 56px)"
-  section: "clamp(64px, 7.6vw, 112px)"
-  section-top: "clamp(24px, 2.8vw, 36px)"
-components:
-  button-primary:
-    backgroundColor: "{colors.btn}"
-    textColor: "{colors.surface}"
-    rounded: "{rounded.md}"
-    padding: "0 20px"
-    height: "46px"
-  button-ghost:
-    backgroundColor: "transparent"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-    padding: "0 20px"
-    height: "46px"
-  terminal:
-    backgroundColor: "{colors.term-bg}"
-    textColor: "{colors.term-ink}"
-    rounded: "{rounded.md}"
-  frame:
-    backgroundColor: "{colors.surface}"
-    rounded: "{rounded.md}"
+  gutter: "clamp(16px, 3vw, 24px)"
+  section: "clamp(52px, 6.5vw, 88px)"
 ---
 
 # Design System: Writ website
 
-`PRODUCT.md` has the product record. `docs/style.md` has the voice, and it wins for prose on docs pages. The token values above are the light theme of `app/global.css`. The dark values are in that file under `.dark`.
+`PRODUCT.md` holds the product record. `docs/style.md` sets the voice for docs prose. The tokens above define the light theme in `app/global.css`; dark values live under `.dark` in the same file.
 
-## Overview
+## Direction
 
-**Creative North Star: "The keep"**
+The landing page is visual-first and sparse. Every section leads with a real product screenshot, an architecture diagram, real Rego/terminal output, or a compact icon grid. Long explanations, comparison tables, security lists, and FAQs live in `/docs`, not on the landing page.
 
-A writ is a written order, and Writ is the one server that holds the cloud keys. The landing page draws that as a place: an island of small cubes, seen from above, with a stone keep on it. The ochre is what only the keep holds. It lies in the keep's court, makes the key on its tower, and climbs in single cubes from the tower to the cloud. Huts on the shore send a plan up the road to the gate and hold no ochre. At the lower left the land is a wire frame that fills in toward the island: a plan, not yet built.
+**Core constraints:**
 
-Under the pictures the page is still a technical record: paper, ink, one left-aligned grid, real output, and real screenshots. The pictures carry the idea, and the text carries the claims.
-
-The landing page was redrawn on 2026-11-17. The owner asked for voxel art after a set of reference images, and then asked for more distance from them. So the palette is indigo, bone, moss, and ochre, and the pictures are isometric voxels from the site's own generator. Nothing is traced or taken from the references.
-
-**Key Characteristics:**
-
-- Three pictures: the hero, the strip in "What Writ is", and the sea the page ends on. Each is drawn by code from a fixed seed.
-- Left-aligned on one 12-column rhythm: a section's heading takes 5 columns and its lede takes 7.
-- A rule of slabs opens each section. Hairline rules divide rows inside one.
-- Real product only: captures of the control UI and output from real runs, each with a caption that says where it came from.
-- A limit sits beside its claim at body size, marked with the caret of the wordmark.
-- Calm in both themes. The only motion is the cubes that climb to the cloud, a slow drift of the cloud, and the three-step figure.
+- Total visible prose on the landing page (excluding code blocks, nav, and footer) stays under 250 words.
+- No paragraph on the landing page exceeds 25 words.
+- Real product evidence above the fold: the hero pairs an 8-word headline, a one-line subhead, and two CTAs directly above a full-width framed capture of the real control UI with pure-CSS view tabs (Overview, Plan, Resources, Drift, Runs).
+- Subtle motion only (workflow connector flow), disabled under `prefers-reduced-motion`.
+- Full parity across light and dark themes and across 390 px phone and desktop viewports, with zero horizontal overflow.
 
 ## Colors
 
-A paper ground with indigo-black ink, indigo for links and the primary button, the product's own status colors, and ochre for what the keep holds.
+Warm paper ground (`bg`) with indigo-black ink (`ink`), crisp elevated surfaces (`surface`) with 1 px hairline rules (`rule`, `rule-strong`), indigo for links, icons, and the primary button (`accent`, `btn`), and ochre (`gild`, `mark`) reserved for the second line of the hero headline, the `writ serve` trust-boundary bar, the wordmark caret, and the scope limit caret.
 
-### Primary
-
-- **Ink** (`ink`): headings and body.
-- **Indigo** (`accent`, `btn`): links, focus rings, the active step of the three-step figure, and the primary button.
-
-### Secondary
-
-- **Ochre** (`gild`, `mark`, and `vx-o*`): the second sentence of the headline, the mark, the caret before each limit, the rule over the keep's column in the map, and in the pictures only what the keep holds. Nowhere else.
-
-### Neutral
-
-- **Ground** (`bg`): the whole page, in every section.
-- **Surface** (`surface`) and **Surface 2** (`surface-2`): inside frames, inline code, and the frame's address bar.
-- **Ink 2** and **Ink 3**: secondary text and captions.
-- **Rule** and **Rule Strong**: 1 px dividers.
-- **Ok, Warn, Bad** with their soft grounds: status only, as the product uses them.
-
-### The pictures
-
-Four families of six levels each, `--vx-i1` to `--vx-o6` in `app/global.css`: indigo for the sea and the huts, bone for stone, sand, and cloud, moss for the land, and ochre. A cube's top face is one level paler than its left face, and its right face one level darker. The dark theme has its own values: the same sea by night.
-
-### Named Rules
-
-**The One Ground Rule.** Every section sits on `bg`. Sections are separated by a rule and space, never by a band of another color.
-
-**The Caret Rule.** The ochre caret means "here is a limit". It marks every limit sentence and every item of "Current scope and limits", and nothing else.
-
-**The Ochre Rule.** In a picture, ochre is only on or from the keep. A hut, a plan on the road, and the planned land have none.
-
-**The Status Rule.** Green, amber, and red appear only where the product would show that status. A check mark beside a fact isn't a status, so facts get no icon.
-
-Contrast, computed from the tokens with the WCAG formula on 2026-11-17. Every text pair is at least 4.5:1 in both themes:
+All text pairs exceed 4.5:1 WCAG contrast in both light and dark themes:
 
 | Pair | Light | Dark |
 | --- | --- | --- |
 | `ink` on `bg` | 15.1 | 15.6 |
 | `ink-2` on `surface` | 8.8 | 8.6 |
-| `ink-3` on `surface-2`, the lowest text pair | 5.1 | 5.2 |
+| `ink-3` on `surface-2` | 5.1 | 5.2 |
 | `accent` on `accent-soft` | 7.4 | 6.9 |
-| `ok` on `ok-soft`, `warn` on `warn-soft`, `bad` on `bad-soft` | 5.5, 5.5, 5.2 | 8.1, 9.0, 7.7 |
-| `gild` on `bg`, the headline's second sentence and the caret | 4.6 | 9.7 |
-| The primary button's text on `btn` | 12.9 | 14.9 |
-| Terminal dim text on the terminal | 6.8 | 7.8 |
-| The docs' lowest syntax color on `surface-2` | 5.0 | 6.3 |
-
-The 1 px rules are about 1.4:1, and no control depends on one alone. The pictures are decoration beside text that says the same thing, and the hero's picture has a text description.
+| `gild` on `bg` | 4.6 | 9.7 |
+| `on-btn` on `btn` | 12.9 | 14.9 |
+| `term-dim` on `term-bg` | 6.8 | 7.8 |
 
 ## Typography
 
-**Display Font:** Newsreader at weight 500, for the landing page's `h1` and `h2` (with Iowan Old Style, Palatino, Georgia)
-**Body Font:** Archivo, variable, at its normal width (with ui-sans-serif, system-ui)
-**Code Font:** Chivo Mono, variable (with ui-monospace, Menlo, Consolas)
+- **Display and section headings (`h1`, `h2`):** Newsreader at weight 500.
+- **UI, card titles, and body:** Archivo variable at weights 400 and 600 (800 only for the wordmark).
+- **Code, terminal output, and URL bars:** Chivo Mono variable.
 
-**Character:** a text serif for the headings, a grotesque for everything else, and the name set heavy and tight: Archivo at 800 with -0.045em tracking. Mono is for code, output, and addresses only.
+All fonts are self-hosted Latin subsets from pinned `@fontsource` packages with no external font requests.
 
-Every face is a self-hosted Latin subset from a pinned `@fontsource` package. Newsreader is one static weight, 24 KB, because the variable file is 58 KB and cost the phone score.
+## Layout & Sections
 
-### Hierarchy
+Container max width is `1160px` (`24px` side gutters on desktop, `16px` on phones). Sections sit on one ground separated by subtle 1 px dividers.
 
-- **Display** (Newsreader 500, 42 to 76 px fluid, 1.02): the landing headline only, at most 10.8em wide. Its second sentence is a line of its own in `gild`.
-- **Headline** (Newsreader 500, 30 to 44 px fluid, 1.08): a section heading. On the docs, the page title is Archivo 600 at 30 to 38 px.
-- **Title** (600, 20 px, 1.25): a claim in "What changes", a step's name, and the headings of the two lists under the comparison. **Title, small** is 17 px, for the titles of short columns.
-- **Body** (400, 17 px, 1.6): every paragraph, list, and limit on the landing page. **UI** (16 px) is the landing page's body on a phone, the docs' body, buttons, and tabs. **Small** (15 px) is for table cells, the header's links, the hero's facts, "more" links, and the footer, and for nothing that is a sentence to read.
-- **Lede** (17 to 19 px, `ink-2`, at most 38rem wide): the paragraph beside a section heading. On the docs the lede is 18 px, and running text is at most 34rem wide, which keeps lines under 80 characters.
-- **Label** (400, 13 px, `ink-3`): captions under output and screenshots, table column heads, the labels of the hero's facts, and a terminal's title bar.
-- **Code** (400, 13 px, 1.65): terminals and code blocks. Inline code is 0.84em on `surface-2`.
-
-### Named Rules
-
-**The Two Weights Rule.** Archivo is set at 400 and 600, and at 800 only for the name. No 500, 520, 560, 580, or 650. Text is 400, and anything that names or acts is 600: a title, a button, a tab, a row's label, a status pill.
-
-**The No Eyebrow Rule.** No chip, kicker, or uppercase label sits above a heading. The heading says it.
-
-**The Left Edge Rule.** Headings and text align left on the grid. Nothing on the landing page is centered. The pictures sit to the right of the text or run the full width under it.
-
-## Layout
-
-The container is 1160 px at most, with 24 px gutters and 16 px on a phone. Sections stack on one ground. Each opens with a rule of slabs, 26 to 40 px of space, then its head: the heading in 5 of 12 columns, the lede in the other 7. There are 72 to 136 px under a section, so there's always more space above a heading than under it.
-
-The same 5 and 7 split runs down the page: the steps beside their output, each claim beside its evidence, the questions beside their answers, and the install text beside its terminals. Under 860 px every split becomes one column, in source order.
-
-The landing page's sections:
-
-| Section | What it shows |
-| --- | --- |
-| Hero | The headline, the lede, and clear CTAs (Quick start, GitHub, Docs) at the top left. The picture of the keep runs full width under them, and on a wide page the keep rises to the right of the text. Four facts close the hero under it (license, deployment, price, engine with a link to supported platforms). Under 980 px the picture moves under the text and shows the keep. |
-| What Writ is | A strip of sea: two huts on the left, the keep in the middle, the cloud on the right, with ochre cubes going from the tower to the cloud. Under it the three parties in three columns, in the same order. Then a 2x2 grid covering the four problems when CI runs OpenTofu directly (CI holding credentials, applies differing from reviewed plans, no audit log, unnoticed drift). |
-| How a change gets applied | A six-stage pipeline rail (MR, Plan in Writ, Review & approve, Merge, Apply, Audit) above the three-station Plan/Approve/Apply flow with real output from `TestTofuApproveApply` beside it, and the refusal of a stale plan as a limit. |
-| Thirteen layers of defense | Thirteen code-verified security layers in a two-column rule grid, followed by the host-network egress limit and a link to `/docs/security-model`. |
-| Your rules, as code | A 5/7 split explaining `deny` vs `warn` at plan and apply time alongside real Rego from `examples/policy/tls.rego` and the real `writ plan --remote` refusal output from `docs/policy.md`. |
-| The control UI | Five screenshots of the redesigned control UI behind pure-CSS text tabs: Overview, Plan review, Resources (categorized state index), Drift, and Runs. |
-| Built to keep keys, secrets, and policy under control | Six rows, each a claim, its limit, and a docs link beside its evidence: who holds which credential, a build-time highlighted HCL server config snippet, a secret shown as `(sensitive)`, a drift table, real `writ audit --remote` output, and a Rego policy refusal. Four columns under them cover sandboxed runs and egress controls, exact sealed plans, `writ mcp`, and S3 state / `writ import bulk`. |
-| When Writ fits & Compare | First, a two-column guide leading with when Writ fits your team and contrasting when plain CI + OIDC fits. Then six rows against Spacelift and HCP Terraform, cut from `docs/compare.md`, followed by "Current scope and limits" and "What you can check yourself". On a phone each comparison row stacks as a block. |
-| Questions | Six questions. |
-| Try it locally | What you need, Quick start and GitHub buttons, the install commands with a copy button, and a real dev run transcript. |
-| Footer | The name, set large, with the keep's island seen from farther off, then the license line and the links. |
-
-Rules the page keeps:
-
-- The headline doesn't name OpenTofu, at the owner's request. The lede under it does, in its first sentence, and so does the page's title.
-- The copy lives in `lib/landing.ts`. Every terminal output and the limits list come from `content/landing.json`, which `scripts/gen-content.ts` cuts from the README and the docs. A fence that no longer matches fails the build.
-- The page says "the plan it kept", "with its secrets hidden", and "where an approval rule applies". "Sealed", "masked plan", "grants", and "risk classes" stay in the docs.
-- Each claim names its limit in one sentence at body size. Every fact about another tool has a source and a date, on the comparison pages.
-- When `docs/compare.md` changes, change `compare` in `lib/landing.ts` with it.
-
-The docs are Fumadocs' layout: a sidebar tree, the reading column, and a table of contents. A docs page opens with its title and the first paragraph of its source file, set as the lede. The manifest's description goes to the page's metadata, the search index, and `llms.txt`. Each `h2` opens with a rule, as a section does on the landing page.
-
-## Elevation & Depth
-
-Flat, outside the pictures. Depth comes from rules and from the two surface tones. One soft shadow (`0 1px 2px` plus `0 18px 40px -18px`) sits under a screenshot frame, because a frame is a window onto another page. Nothing else has a shadow, and nothing is blurred: the header is opaque.
-
-**The Objects Only Rule.** A border with a radius means "this is a thing you could open": a screenshot or a terminal. Text never sits in a card.
-
-## Shapes
-
-Corners are 8 px on frames, terminals, and buttons, and 4 px on inline code. Status pills are fully round, as in the control UI. Rules are 1 px. The keep's column of the map opens with a 2 px ochre rule, the one heavier line on the page.
+| Section | Visual lead | Purpose |
+| --- | --- | --- |
+| Header | Sticky 60 px bar | Wordmark, Docs, GitHub, search icon, theme switch, Quick start CTA. |
+| Hero | Tabbed control UI window (`Overview`, `Plan`, `Resources`, `Drift`, `Runs`) | Direct category headline ("The self-hosted control plane for OpenTofu"), one-line differentiator subhead, two CTAs (`Quick start`, `GitHub`), real UI above the fold, and a 4-item open-source/platform proof strip. |
+| Workflow (`#how`) | Inline SVG pipeline diagram (`Git push -> Plan -> Policy -> Approve -> Apply -> Audit`) | Shows the trust boundary between CI (OIDC only) and `writ serve` (cloud roles and state keys), with one link to `/docs/plan-to-apply`. |
+| Features (`#features`) | 6-card icon grid (3x2 desktop, 1x6 phone) | Core capabilities: No CI cloud keys, OPA Rego policy, Masked secrets, Scheduled drift checks, Sandboxed Linux runs, MCP for agents. |
+| Showcases (`#policy`) | Full-width UI captures + 5/7 Rego split | Full-width masked secret capture (`secret` on desktop, native `plan-390` on phones), 5/7 split Rego rule + refusal output from `content/landing.json`, and full-width drift table capture (`drift` on desktop, native `stack-390` on phones). |
+| Try it (`#try`) | Elevated CTA band + copyable terminal | 4-line install and `writ serve --dev` command, Quick start and Compare CTAs, and one ochre-caret scope line linking to `/docs/status`. |
+| Footer | Compact single band | Wordmark, Apache 2.0 notice, and links to docs, security, comparison, GitHub, and `llms.txt`. |
 
 ## Components
 
-### Buttons
-
-- **Shape:** 8 px radius, 46 px tall, 36 px in the header.
-- **Primary:** deep indigo fill with paper-colored text, and bone with dark text in the dark theme. One per view: "Get started" in the hero, "Follow the quick start" at the end.
-- **Ghost:** transparent with a `rule-strong` border that turns ink on hover.
-- **Focus:** a 2 px accent outline, 3 px off.
-
-### Limit
-
-A sentence at body size in ink, with the ochre caret in a 14 px column before it. `components/landing/limit.tsx`. Use it for a limit and for nothing else.
-
-### Pictures
-
-`lib/voxel/iso.ts` is the generator. A scene puts cubes into a `World`. The world decides what hides what for each triangle of the isometric lattice, merges the faces of one tone in one plane into large polygons, and writes one path for each tone. A planned cube is a wire frame: faces of the ground's color and the lines between them. `lib/voxel/scenes.ts` has the three pictures and the section rule.
-
-Each picture is a static file, `/voxel/hero.svg`, `/voxel/map.svg`, and `/voxel/foot.svg`, written at build time by `app/voxel/[name]/route.ts`: 17, 6, and 7 KB gzipped. Its paths have no colors of their own. They read the `--vx-*` tokens, and `components/landing/voxel.tsx` draws each layer with `<use>`, which hands the page's tokens down. So a picture follows the theme with no script, and the document doesn't carry it: inline, the three pictures made the page's HTML 88 KB gzipped, against 23 KB now.
-
-To change a picture, change its scene and look at it: `bun run build`, then serve `out/`. To add ochre, read the Ochre Rule first.
-
-### Frame
-
-A screenshot of the control UI with a one-line address bar in mono that shows `writ.example.com` and the page's path. No window dots. The tour's frames scroll inside.
-
-### Terminal
-
-Indigo-black in both themes, 8 px radius, an optional title bar in sans, and output exactly as `writ` printed it. A caption under it says which run it came from.
-
-### Steps
-
-Three numbered stations down a 2 px line. The number is the sequence, so it stays. A done station is filled green, the active one is ringed in accent. The line fills from station to station and each step's output takes its turn every 3.2 s once the figure is half in view. A click stops it and shows that step's output. The server renders the finished figure and all three outputs, so the page reads without script, and nothing moves under `prefers-reduced-motion`. `components/landing/flow.tsx` is its script, with no animation library.
-
-### Tabs
-
-Text tabs on a rule: the chosen one is ink with a 2 px ink underline. They're radio inputs and CSS, so they switch without script.
-
-### Navigation
-
-A 60 px opaque header: the wordmark with its caret laid in slabs, four text links (How it works, Compare, Docs, GitHub), search, the theme switch, and one primary button. Under 860 px the text links go, and the docs carry them.
-
-## Do's and Don'ts
-
-### Do:
-
-- **Do** put a limit beside its claim with the `Limit` component.
-- **Do** show a real capture or real output for every claim, with a caption that says where it came from.
-- **Do** keep the 5 and 7 split, so headings share one left edge down the page.
-- **Do** end the page's reading on the install commands.
-- **Do** keep ochre for what the keep holds.
-
-### Don't:
-
-- **Don't** put text in a card, or a card in a card.
-- **Don't** add a chip, an eyebrow, an icon tile, a fact bar with check marks, a bento grid, or a closing call-to-action band.
-- **Don't** center a heading or a lede.
-- **Don't** use green, amber, or red for anything that isn't a status.
-- **Don't** bring in a picture that isn't drawn by the generator: no stock image, no rendered voxel art.
-- **Don't** use mono for anything that isn't code, output, or an address.
-- **Don't** draw the product. Shoot it. The pictures draw the idea, never the control UI.
+- **Product Window (`.product-window`):** 12 px radius, `1px solid var(--color-rule-strong)` border, layered elevation shadow, pure-CSS radio tabs in the bar so view switching requires no JavaScript. Uses `<Shot>` for automatic light/dark and 1280/390 responsive captures.
+- **Pipeline Diagram (`.pipe-diagram`):** Dashed CI zone and solid `writ serve` zone with a 2 px ochre top accent, inline vector stage icons, and subtle animated connector flow that stops under `prefers-reduced-motion`. Stacks cleanly on narrow screens.
+- **Feature Cards (`.feat-card`):** `var(--color-surface)` with 1 px hairline border, 36 px tinted icon tile, short title, and one concise sentence.
+- **Terminals (`.term`):** Dark in both themes, build-time Shiki tokenization via `lib/code.tsx`, copy button via `CopyButton`. Every snippet comes from `content/landing.json` cut by `scripts/gen-content.ts`.
+- **Limit (`.limit`):** Ochre proofreader's caret beside the concise platform scope note.
 
 ## Screenshots
 
-`just ui-shots [ref]` shoots every image of the control UI from the `uishowcase` test of `internal/ui` at a Git ref, by default `HEAD`. It checks the ref out into a throwaway worktree, gives the demo data readable names (alice, bob, the repository `infra`, the stacks `billing` and `dns`), serves the showcase on loopback, and shoots each page with headless Chromium in light and dark, at 1280 and 390 px wide and twice the pixel density. It writes AVIF and WebP to `public/ui/`, and their sizes, paths, and date to `lib/ui-shots.json`, which the captions and frames read.
-
-| Image | Page | Size |
-| --- | --- | --- |
-| `overview`, `plan`, `resources`, `stack`, `runs` at 1280 and 390 | The five tour pages (overview, plan review, categorized stack Resources view `stack-many`, stack Drift view `stack-drift`, and runs), up to 1,600 px tall | 11 to 85 KB AVIF each |
-| `secret` | The replaced resource whose keepers show `(sensitive)` | 15 KB AVIF |
-| `drift` | The stack page's `#drift-changes` drift table | 10 KB AVIF |
-
-Re-shoot after the control UI changes:
-
-1. Merge the UI change, then run `just ui-shots` on this branch, or `just ui-shots <ref>` for another ref.
-2. If it stops with "the showcase at REF has no ...", the showcase's names or its reviewer changed. Update `renames` or the reviewer patch in `scripts/ui-shots.ts`.
-3. If a page's layout moved, check the crops: `secret` is the first `details.change[data-kind="replace"]` of the plan page, and `drift` is `#drift-changes` of the stack page.
-4. Look at the images in `public/ui/`, then build the site and commit both.
-
-At `e0f4d85` the showcase's reviewer server mounts no control UI, so its dev sign-in link answers 404 and the showcase fails. The script mounts one in its worktree until the showcase does.
-
-`scripts/shoot.ts` drives Chromium over the DevTools protocol, so the site takes no browser library. It also takes a JSON list of shots on its own, for screenshots of the site itself.
-
-## Audit, 2026-11-17
-
-Lighthouse 12.8.2 on the static export, served gzipped on loopback, in Chromium, with its default throttling:
-
-| | Before the redraw | After |
-| --- | --- | --- |
-| Performance, phone | 96 | 92 and 93, over two runs |
-| Performance, desktop | not run | 100 |
-| Accessibility | not run | 100 |
-| Largest contentful paint, phone | 2.7 s | 3.3 s |
-| Layout shift | 0 | 0 |
-| Page weight | 469 KiB | 511 KiB |
-| The page's HTML, gzipped | 20 KB | 23 KB |
-
-The largest paint is the hero's lede in both. The redraw adds one font file of 24 KB and the hero's picture of 17 KB. `scrollWidth` is 390 on a phone.
-
-`impeccable` hasn't been run since the redraw. Its last run, on the page before this one, is in this file's history.
+`just ui-shots [ref]` captures every control UI image in `public/ui/` (light and dark, 1280 and 390 widths) and writes dimensions and paths to `lib/ui-shots.json`. Re-run after control UI changes.

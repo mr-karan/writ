@@ -69,10 +69,10 @@ export async function Transcript({ text, wrap = false, label = 'Terminal output'
 }
 
 /** Syntax-highlighted code block (e.g. HCL server config), tokenized at build time. */
-export async function CodeBlock({ code, lang = 'hcl', label = 'Code example' }: { code: string; lang?: string; label?: string }) {
+export async function CodeBlock({ code, lang = 'hcl', label = 'Code example', wrap = false }: { code: string; lang?: string; label?: string; wrap?: boolean }) {
   const lines = await tokenize(code, lang);
   return (
-    <figure className="transcript">
+    <figure className={wrap ? 'transcript is-wrapped' : 'transcript'}>
       <pre tabIndex={0} role="group" aria-label={label}>
         <code>
           {lines.map((tokens, i) => (

@@ -10,12 +10,7 @@ export function Header() {
         <Link href="/" aria-label="Writ, home" className="brand">
           <Wordmark />
         </Link>
-        <nav aria-label="Sections" className="nav-links">
-          <a href="#how">How it works</a>
-          <a href="#security">Security</a>
-          <a href="#policy">Policy</a>
-          <a href="#product">Control UI</a>
-          <a href="#compare">Compare</a>
+        <nav aria-label="Primary" className="nav-links">
           <Link href="/docs">Docs</Link>
           <a href={site.repo}>GitHub</a>
         </nav>
