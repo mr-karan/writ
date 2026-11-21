@@ -31,7 +31,7 @@ Cloud credentials and state keys stay on one server you run. For plans and appli
 
 ## Capabilities and Constraints
 
-What ships today: commit-based plans, plan-bound peer approvals, separate AWS STS plan/apply roles, secret masking across plans/logs/diagnostics/state index, OPA Rego policy at plan and apply, scheduled drift checks, Slack and signed webhook notifications, a synchronous Postgres audit log, Linux run isolation with opt-in egress proxy, `writ import bulk`, and `writ mcp` for coding agents.
+What ships today: commit-based plans, plan-bound peer approvals, separate AWS STS plan/apply roles, secret masking across plans/logs/diagnostics/state index, OPA Rego policy at plan and apply, scheduled drift checks, Slack and signed webhook notifications, a synchronous database audit log, Linux run isolation with opt-in egress proxy, `writ import bulk`, and `writ mcp` for coding agents.
 
 Key limits stated clearly (full list in `docs/status.md`):
 

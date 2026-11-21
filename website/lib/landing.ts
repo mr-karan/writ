@@ -4,10 +4,10 @@
 
 export const hero = {
   title: {
-    plain: 'Plan, approve, and apply.',
-    accent: 'Cloud keys stay home.',
+    plain: 'The self-hosted control plane',
+    accent: 'for OpenTofu',
   },
-  subhead: 'Self-hosted OpenTofu control plane. CI sends a commit; your server plans, enforces policy, and applies.',
+  subhead: 'Policy-checked, approved applies from your own server. CI sends a commit and never touches cloud credentials.',
   tabs: [
     {
       id: 'overview',
@@ -44,7 +44,7 @@ export const hero = {
 } as const;
 
 export const workflow = {
-  title: 'Commit to applied state',
+  title: 'Keep cloud keys off CI runners',
   note: 'Approvals bind to one saved plan; authors cannot self-approve.',
   link: { text: 'How it works', href: '/docs/plan-to-apply' },
   stages: [
@@ -61,7 +61,7 @@ export const workflow = {
 } as const;
 
 export const features = {
-  title: 'Built for teams',
+  title: 'Isolation, policy, and visibility built in',
   items: [
     {
       id: 'keys',
@@ -98,21 +98,21 @@ export const features = {
 
 export const showcase = {
   review: {
-    title: 'Review masked diffs',
+    title: 'Secrets stay masked in every plan',
     text: 'Approve one saved plan ID in the UI or CLI while secrets stay hidden.',
     link: { text: 'Approvals', href: '/docs/approvals' },
     alt: 'A replaced resource in the Writ control UI whose keepers show {"secret":"(sensitive)"} before and after.',
   },
   policy: {
-    title: 'Policy as code',
+    title: 'Block unsafe plans with OPA Rego',
     text: 'Test Rego rules with conftest and block non-compliant plans before apply.',
     link: { text: 'Policy cookbook', href: '/docs/policy-cookbook' },
     regoTitle: 'policy/baseline/tls.rego',
     denyTitle: 'writ plan --remote (exit 1)',
   },
   drift: {
-    title: 'Drift and audit log',
-    text: 'Scheduled checks flag outside edits; audited API, UI, and state calls write to Postgres.',
+    title: 'Detect drift and log every request',
+    text: 'Scheduled checks flag outside edits; audited API, UI, and state calls write to the database.',
     links: [
       { text: 'Drift checks', href: '/docs/drift-checks' },
       { text: 'Security model', href: '/docs/security-model' },
@@ -122,8 +122,8 @@ export const showcase = {
 } as const;
 
 export const tryIt = {
-  title: 'Try Writ locally',
-  text: 'One binary on loopback with SQLite and OpenTofu 1.13.9. No cloud account needed.',
+  title: 'Try Writ locally with no cloud account',
+  text: 'Start one binary on loopback with SQLite and OpenTofu 1.13.9.',
   limit: 'Team server needs Linux, OpenTofu 1.13.9, and GitLab.',
   limitLink: { text: 'Limits', href: '/docs/status' },
   terminalTitle: 'Install and start writ serve --dev',

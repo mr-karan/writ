@@ -5,8 +5,8 @@
   One palette for the landing page and the docs: a paper ground, indigo-black
   ink, 1 px rules, a deep indigo primary button, indigo for links and state,
   and the product's status colors only where the product uses them. The
-  ochre is spent on the mark, on the caret that marks a limit, on one phrase
-  of the headline, and on what the keep holds in the landing page's pictures.
+  ochre is spent on the mark, on the caret that marks a limit, on the second
+  line of the hero headline, and on the server trust-boundary bar.
 
   Every color on the site is one of these tokens. The --color-fd-* names are
   the ones Fumadocs UI reads. DESIGN.md lists each pair's contrast.
@@ -89,35 +89,6 @@
   --term-dim: #a0a2b3;
   --shadow: 0 1px 2px rgb(20 22 40 / 0.05), 0 18px 40px -18px rgb(20 22 40 / 0.22);
   --shadow-lg: 0 1px 2px rgb(20 22 40 / 0.06), 0 24px 56px -20px rgb(20 22 40 / 0.28);
-
-  /*
-    The cubes of the landing page's pictures: indigo, bone, moss, and ochre,
-    each from 1, its darkest, to 6, its palest.
-  */
-  --vx-i1: #141a3d;
-  --vx-i2: #1f2759;
-  --vx-i3: #2f3a7c;
-  --vx-i4: #4a57a3;
-  --vx-i5: #7d88c6;
-  --vx-i6: #b9c0e3;
-  --vx-b1: #8f8672;
-  --vx-b2: #aaa18c;
-  --vx-b3: #c4bca8;
-  --vx-b4: #d8d1bf;
-  --vx-b5: #e7e1d1;
-  --vx-b6: #f1ecde;
-  --vx-m1: #2f3a1f;
-  --vx-m2: #43522b;
-  --vx-m3: #5c6e3b;
-  --vx-m4: #7b8d52;
-  --vx-m5: #a3b279;
-  --vx-m6: #c8d2a6;
-  --vx-o1: #8f5a0a;
-  --vx-o2: #b8770f;
-  --vx-o3: #d89518;
-  --vx-o4: #ecb233;
-  --vx-o5: #f5cc66;
-  --vx-o6: #fae3a3;
 }
 
 .dark {
@@ -148,26 +119,6 @@
   --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 18px 40px -18px rgb(0 0 0 / 0.6);
   --shadow-lg: 0 1px 2px rgb(0 0 0 / 0.5), 0 28px 64px -18px rgb(0 0 0 / 0.72);
   color-scheme: dark;
-
-  /* The same sea by night: the stone is moonlit, and the dark faces stay above the ground's own dark. */
-  --vx-i1: #1c2452;
-  --vx-i2: #263071;
-  --vx-i3: #34418f;
-  --vx-i4: #4b59ad;
-  --vx-i5: #6f7cc4;
-  --vx-i6: #99a3d8;
-  --vx-b1: #5e594d;
-  --vx-b2: #777164;
-  --vx-b3: #938d7e;
-  --vx-b4: #ada695;
-  --vx-b5: #c3bcaa;
-  --vx-b6: #d6d0bf;
-  --vx-m1: #26301a;
-  --vx-m2: #364325;
-  --vx-m3: #4c5c31;
-  --vx-m4: #667744;
-  --vx-m5: #8a9a63;
-  --vx-m6: #adba87;
 }
 
 /* Terminals are dark in both themes, so they take the dark syntax colors. */
@@ -613,7 +564,7 @@ a.btn {
   background: var(--color-surface-2);
 }
 
-@media (max-width: 860px) {
+@media (max-width: 640px) {
   .nav-links {
     display: none;
   }
@@ -789,9 +740,10 @@ a.btn {
 
 .product-window .view img,
 .frame .view img {
+  display: block;
   width: 100%;
+  height: auto;
   max-width: none;
-  object-fit: contain;
 }
 
 @media (max-width: 760px) {
@@ -810,8 +762,12 @@ a.btn {
 }
 
 @media (max-width: 700px) {
+  .hero-stage {
+    width: calc(100% - 16px);
+  }
+
   .product-window .view {
-    aspect-ratio: 390 / 500;
+    aspect-ratio: 390 / 610;
   }
 }
 
@@ -1113,6 +1069,22 @@ a.btn {
   }
 }
 
+/* Full-width visual showcase header */
+.wide-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 32px;
+  flex-wrap: wrap;
+  margin-bottom: clamp(20px, 2.6vw, 28px);
+}
+
+.wide-head p {
+  margin: 8px 0 0;
+  color: var(--color-ink-2);
+  max-width: 44rem;
+}
+
 /* Alternating visual-first showcases */
 .split {
   display: grid;
@@ -1193,18 +1165,29 @@ a.btn {
 
 .crop img {
   width: 100%;
+  height: auto;
   display: block;
 }
 
 @media (max-width: 700px) {
-  .crop {
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
+  /* Native 390 px captures replace the wide desktop crops on phones, framed cleanly on the relevant section. */
+  .crop-secret picture,
+  .crop-drift picture {
+    width: 100%;
   }
 
-  .crop img {
-    width: 520px;
-    max-width: none;
+  .crop-secret img {
+    width: 100%;
+    aspect-ratio: 390 / 500;
+    object-fit: cover;
+    object-position: 50% 66%;
+  }
+
+  .crop-drift img {
+    width: 100%;
+    aspect-ratio: 390 / 560;
+    object-fit: cover;
+    object-position: 50% 80%;
   }
 }
 
