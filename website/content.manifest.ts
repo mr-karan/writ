@@ -290,6 +290,12 @@ export const pages: Page[] = [
     description: 'The writ mcp tools and their guarantees, response bounds, file rules under --dir, plans from a work tree, Git isolation, and how writ agent init treats your files.',
     parts: whole('docs/how-writ-mcp-works.md'),
   },
+  {
+    slug: 'how-the-mask-works',
+    title: 'How the mask works',
+    description: 'The four rules of Writ's mask, what it learns from each run, and when it drops a whole document rather than risk a leak.',
+    parts: whole('docs/how-the-mask-works.md'),
+  },
 ];
 
 export const nav: NavEntry[] = [
@@ -339,6 +345,7 @@ export const nav: NavEntry[] = [
   'how-sign-in-works',
   'how-import-bulk-works',
   'how-writ-mcp-works',
+  'how-the-mask-works',
 ];
 
 // Where a link to a source file lands on the site.
@@ -384,4 +391,5 @@ export const fileRoutes: Record<string, string> = {
   'docs/how-sign-in-works.md': '/docs/how-sign-in-works',
   'docs/how-import-bulk-works.md': '/docs/how-import-bulk-works',
   'docs/how-writ-mcp-works.md': '/docs/how-writ-mcp-works',
+  'docs/how-the-mask-works.md': '/docs/how-the-mask-works',
 };
