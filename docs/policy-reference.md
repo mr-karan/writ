@@ -2,6 +2,45 @@
 
 Policies evaluate one input (the masked plan document plus `input.writ`) using a fixed allow-list of Rego built-ins inside a bounded child process. See [Write and test policies](write-a-policy.md) and the [Policy cookbook](policy-cookbook.md).
 
+## How policy decisions work
+
+| Result | Mandatory set | Advisory set |
+| --- | --- | --- |
+| `deny` or `violation` message | denies | warns |
+| `warn` message | warns | warns |
+| Evaluation error | denies | warns |
+
+- **Plan time:** a mandatory deny sets the plan to `refused`, keeps the masked document and decision, and discards the saved plan, so it cannot be approved or applied.
+- **Apply time:** `POST /v1/runs` re-evaluates live plans against the current policy sets with `decision = "apply"`, the caller, and the counting approvals. A deny returns `403` (`policy`), starts no run, spends no CI token, and leaves the plan `approved`. If sources moved, the state lacks a secret set, or approvals changed before the start commits, Writ returns `409`. A new or tighter policy applies at apply time to plans made earlier.
+- **Not on drift checks:** policies do not run on [drift checks](drift-checks.md).
+- **Nothing overrides a deny:** neither approvals nor `writ apply --remote --override` bypass a mandatory deny. `--override` skips approval rules only.
+- **Reading active policies:** `GET /v1/policy` (and the `policy` tool in [`writ mcp`](agents.md#the-mcp-server)) returns the active sets as [`writ.policy/v0`](json-output.md#documents-of-writ-serve) to any principal with `read` or `admin` on any `stack@env`. **Warning:** never put secrets in Rego files. Policy text is not masked, and anyone who can read any stack can read it.
+- **Secrets in messages:** policies get only the masked plan document, and their messages pass through the mask before storage or display. **Limit:** a secret hardcoded in a rule's own message text is not scrubbed unless it is in the run's mask. Outcomes are decided before masking, so a secret that spells `deny` cannot change the verdict.
+
+## Rules a policy set must follow
+
+Rules live in `package main` of a policy set directory:
+
+- `deny`, `violation`, `deny_*`, and `violation_*` block the plan or apply when the set's `level` is `mandatory`.
+- `warn` and `warn_*` attach warnings without blocking approval or apply.
+- Each rule returns a set of strings or objects with a string `msg` field.
+
+`package main` can import helper packages. Each set compiles and evaluates in isolation, so one set cannot alter another's rules. Writ refuses:
+
+- A set with no `deny*`, `violation*`, or `warn*` rule in `package main`.
+- Any `exception` rule (encode exceptions directly in the rule condition).
+- `print` or any built-in outside the [allowed built-ins list](#built-ins).
+
+## writ serve and conftest
+
+For rules that read non-secret fields the mask keeps, `conftest` and `writ serve` return the same verdicts and messages. Expected differences:
+
+- Sensitive values become `"(sensitive)"` in `writ serve`, while `conftest` sees cleartext.
+- `input.writ` (`decision`, `now`, `environment`, `stack`, `actor`, `approvals`) exists only in `writ serve`. Read it with `object.get(input, ["writ", "environment"], "")` so rules work in both.
+- Built-in runtime errors are strict in `writ serve` (triggering a deny) and silent in `conftest`.
+- Rules referencing dropped keys (`planned_values`, `prior_state`) or disallowed built-ins fail `writ serve` startup.
+- `writ serve` doesn't load `exception` rules or external `--data` documents.
+
 ## Input
 
 `input` is the masked plan document stored by `writ serve`, matching `tofu show -json` keys (`format_version`, `terraform_version`, `timestamp`, `errored`, `resource_changes`, `resource_drift`, `output_changes`, `checks`, `relevant_attributes`) with four differences from [the mask](secrets.md):

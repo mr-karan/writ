@@ -1,23 +1,10 @@
 # Write and test a policy
 
-Policies are directories of Rego files that `writ serve` evaluates against each plan's masked document at plan time and again before apply. Unlike approval rules, a mandatory policy deny can't be approved or overridden.
+Write a Rego policy, test it locally with `conftest`, and load it into `writ serve`, which evaluates it on each plan's masked document at plan time and again before apply. How verdicts work is in [How policy decisions work](policy-reference.md#how-policy-decisions-work).
 
-Rules follow `conftest` conventions: write them once, test them locally with `conftest verify` and `conftest test`, and load them into `writ serve` from server config. Policies load only from server config directories, never from a stack's repository, so a merge request cannot weaken or delete the rules that check it. Ready-made rules are in the [Policy cookbook](policy-cookbook.md).
+> **Warning:** a mandatory deny cannot be approved or overridden, not even with `writ apply --remote --override`. Policies load only from server config directories, never from a stack's repository, so a merge request cannot weaken them.
 
-## How policy decisions work
-
-| Result | Mandatory set | Advisory set |
-| --- | --- | --- |
-| `deny` or `violation` message | denies | warns |
-| `warn` message | warns | warns |
-| Evaluation error | denies | warns |
-
-- **Plan time:** a mandatory deny sets the plan to `refused`, keeps the masked document and decision, and discards the saved plan, so it cannot be approved or applied.
-- **Apply time:** `POST /v1/runs` re-evaluates live plans against the current policy sets with `decision = "apply"`, the caller, and the counting approvals. A deny returns `403` (`policy`), starts no run, spends no CI token, and leaves the plan `approved`. If sources moved, the state lacks a secret set, or approvals changed before the start commits, Writ returns `409`. A new or tighter policy applies at apply time to plans made earlier.
-- **Not on drift checks:** policies do not run on [drift checks](drift-checks.md).
-- **Nothing overrides a deny:** neither approvals nor `writ apply --remote --override` bypass a mandatory deny. `--override` skips approval rules only.
-- **Reading active policies:** `GET /v1/policy` (and the `policy` tool in [`writ mcp`](agents.md#the-mcp-server)) returns the active sets as [`writ.policy/v0`](json-output.md#documents-of-writ-serve) to any principal with `read` or `admin` on any `stack@env`. **Warning:** never put secrets in Rego files. Policy text is not masked, and anyone who can read any stack can read it.
-- **Secrets in messages:** policies get only the masked plan document, and their messages pass through the mask before storage or display. **Limit:** a secret hardcoded in a rule's own message text is not scrubbed unless it is in the run's mask. Outcomes are decided before masking, so a secret that spells `deny` cannot change the verdict.
+> **Warning:** never put secrets in Rego files. Policy text is not masked, and anyone who can read any stack can read it through `GET /v1/policy`.
 
 ## Before you begin
 
@@ -26,11 +13,7 @@ Rules follow `conftest` conventions: write them once, test them locally with `co
 
 ## 1. Write a rule
 
-Create a policy set directory (for example `policy/baseline`) and put rules in `package main`:
-
-- `deny`, `violation`, `deny_*`, and `violation_*` block the plan or apply when the set's `level` is `mandatory`.
-- `warn` and `warn_*` attach warnings without blocking approval or apply.
-- Each rule returns a set of strings or objects with a string `msg` field.
+Create a policy set directory (for example `policy/baseline`) with rules in `package main`. `deny*` and `violation*` rules block when the set is `mandatory`; `warn*` rules warn. Naming and refusal rules are in [Rules a policy set must follow](policy-reference.md#rules-a-policy-set-must-follow).
 
 Write `policy/baseline/tls.rego` and `policy/baseline/files.rego`:
 
@@ -56,12 +39,6 @@ warn_file_permission contains msg if {
 	msg := sprintf("%s: file_permission is %s; set 0600, so only its owner reads it", [rc.address, rc.change.after.file_permission])
 }
 ```
-
-`package main` can import helper packages. Each set compiles and evaluates in isolation, so one set cannot alter another's rules. Writ refuses:
-
-- A set with no `deny*`, `violation*`, or `warn*` rule in `package main`.
-- Any `exception` rule (encode exceptions directly in the rule condition).
-- `print` or any built-in outside the [allowed built-ins list](policy-reference.md#built-ins).
 
 ## 2. Unit-test it with `conftest verify`
 
@@ -112,13 +89,7 @@ conftest:   deny local_file.key: file_permission is 0777; set 0600, so only its 
 
 Output of a real run, 2026-11-15.
 
-Expected differences between `conftest` and `writ serve`:
-
-- Sensitive values become `"(sensitive)"` in `writ serve`, while `conftest` sees cleartext.
-- `input.writ` (`decision`, `now`, `environment`, `stack`, `actor`, `approvals`) exists only in `writ serve`. Read it with `object.get(input, ["writ", "environment"], "")` so rules work in both.
-- Built-in runtime errors are strict in `writ serve` (triggering a deny) and silent in `conftest`.
-- Rules referencing dropped keys (`planned_values`, `prior_state`) or disallowed built-ins fail `writ serve` startup.
-- `writ serve` doesn't load `exception` rules or external `--data` documents.
+`writ serve` masks sensitive values, adds `input.writ`, and is stricter about built-in errors, so a rule can pass in `conftest` and deny in `writ serve` ([writ serve and conftest](policy-reference.md#writ-serve-and-conftest)).
 
 ## 4. Give it to writ serve
 
@@ -162,17 +133,7 @@ A mandatory deny stores the masked document and decision with `status = "refused
 
 ## Start from the examples
 
-`examples/policy` provides a full policy set and unit tests (`policy_test.rego` and `cookbook_test.rego`). See the [Policy cookbook](policy-cookbook.md) for full rules and tests:
-
-| File | Rule | Verdict |
-| --- | --- | --- |
-| `tls.rego` | `deny_rsa` | Denies RSA keys shorter than 4096 bits |
-| `files.rego` | `warn_file_permission` | Warns on `local_file` / `local_sensitive_file` with `file_permission != "0600"` |
-| `replace.rego` | `deny_replace`, `warn_replace` | Denies replacement of `tls_private_key` or `nomad_job`; warns on other replacements |
-| `deletes.rego` | `deny_delete`, `warn_delete` | Denies deletes in `prod`; warns elsewhere and under `conftest` |
-| `window.rego` | `deny_window` | Denies `prod` applies 09:00 to 16:00 Asia/Kolkata, Monday to Friday |
-| `cookbook.rego` | `deny_missing_tags`, `deny_public_s3`, `deny_unencrypted_storage`, `deny_open_ingress`, `deny_instance_size`, `deny_region`, `warn_iam_wildcard`, `deny_iam_prod_apply` | AWS tags, S3 public access, encryption, security groups, instance sizes, regions, and IAM/approval rules |
-| `writ.rego` | | Helpers reading `environment` and `decision` from `input.writ` (default `""` under `conftest`) |
+`examples/policy` holds a full policy set and unit tests. Its files are listed in the [Policy cookbook](policy-cookbook.md#files-in-examplespolicy).
 
 ## Troubleshooting
 

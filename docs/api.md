@@ -26,7 +26,7 @@ The JSON REST API of `writ serve`, used by the CLI, the control UI, and CI jobs.
 | `GET /v1/plans/{id}?wait=60s` | `read` | `writ.remote-plan/v0` by ID or ref (`wait` up to `120s`) |
 | `POST /v1/state/adopt` | `adopt` (person) | `writ.state-adopt/v0` ([Adopt a state](adopt-state.md)) |
 | `GET /v1/config` | `read` on any stack | `writ.config/v0` (adds `limits` and `retention` for `admin`; no paths/secrets) |
-| `GET /v1/policy` | `read` or `admin` on any stack | `writ.policy/v0`: active policy sets and `.rego` text ([Write and test policies](write-a-policy.md#how-policy-decisions-work)) |
+| `GET /v1/policy` | `read` or `admin` on any stack | `writ.policy/v0`: active policy sets and `.rego` text ([Write and test policies](policy-reference.md#how-policy-decisions-work)) |
 | `POST /v1/repos` | global `admin` | `201` and `writ.repo/v0` ([Repository routes](#repository-routes)) |
 | `GET /v1/repos`, `GET /v1/repos/{name}` | `read` on any stack | `writ.repos/v0`, `writ.repo/v0` |
 | `POST /v1/hooks/{forge}/{repo}` | webhook secret | `writ.hook/v0` ([Webhook route](#webhook-route)) |
