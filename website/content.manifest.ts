@@ -284,6 +284,12 @@ export const pages: Page[] = [
     description: 'What writ import bulk generates, how resources are named, what writ import accept accepts, selection files, listing, refusals, and limits.',
     parts: whole('docs/how-import-bulk-works.md'),
   },
+  {
+    slug: 'how-writ-mcp-works',
+    title: 'How writ mcp works',
+    description: 'The writ mcp tools and their guarantees, response bounds, file rules under --dir, plans from a work tree, Git isolation, and how writ agent init treats your files.',
+    parts: whole('docs/how-writ-mcp-works.md'),
+  },
 ];
 
 export const nav: NavEntry[] = [
@@ -332,6 +338,7 @@ export const nav: NavEntry[] = [
   'how-run-isolation-works',
   'how-sign-in-works',
   'how-import-bulk-works',
+  'how-writ-mcp-works',
 ];
 
 // Where a link to a source file lands on the site.
@@ -376,4 +383,5 @@ export const fileRoutes: Record<string, string> = {
   'docs/how-run-isolation-works.md': '/docs/how-run-isolation-works',
   'docs/how-sign-in-works.md': '/docs/how-sign-in-works',
   'docs/how-import-bulk-works.md': '/docs/how-import-bulk-works',
+  'docs/how-writ-mcp-works.md': '/docs/how-writ-mcp-works',
 };
