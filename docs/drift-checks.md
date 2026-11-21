@@ -37,7 +37,7 @@ writ serve --config /etc/writ/serve --check
 
 ### 3. Read drift results
 
-Writ checks every OpenTofu `stack@env` with HTTP state, a state index, or a known S3 read. It looks for due checks at startup and every quarter of `every` (at most every 30 seconds), and also checks after an apply finishes, after it detects an outside S3 write, and after [`writ state adopt`](adopt-state.md). Results show in:
+Checks start at startup and then on the schedule ([When drift checks run](config.md#when-drift-checks-run)). Results show in:
 
 - **Control UI:** Overview (`/ui/`) shows drifted stack counts and alerts; `/ui/stack?stack=STACK&env=ENV&view=drift` lists recent checks.
 - **API:** `GET /v1/drift` with `read` on the stack:
@@ -59,51 +59,10 @@ curl -sS "https://writ.example.com/v1/drift?env=prod&stack=app" \
 Drift results never store attribute values, only resource addresses, actions, and changed top-level attribute names passed through [the mask](secrets.md):
 
 ```json
-{
-    "diagnostics": [],
-    "format": "writ.drift/v0",
-    "more": false,
-    "ok": true,
-    "stacks": [
-        {
-            "backend": "http",
-            "check": {
-                "changes": [
-                    {
-                        "action": "create",
-                        "address": "terraform_data.keyed[\"(sensitive)\"]",
-                        "kind": "code"
-                    },
-                    {
-                        "action": "delete",
-                        "address": "terraform_data.keyed[\"(sensitive)\"]",
-                        "kind": "code"
-                    }
-                ],
-                "checked_at": "2026-11-15T06:22:51Z",
-                "code": 2,
-                "commit": "dda65cefe05a83f1433a335c880fdfb4a1d7a51d",
-                "drifted_since": "2026-11-15T06:22:51Z",
-                "error": "",
-                "outside": 0,
-                "plan": "703a6a51ed7d286e9bdbe4f62eeaac6d",
-                "repo": "infra",
-                "started_at": "2026-11-15T06:22:51Z",
-                "status": "drifted"
-            },
-            "checking": false,
-            "env": "prod",
-            "indexed_at": "2026-11-15T06:22:50Z",
-            "indexed_version": 3,
-            "outside_write": null,
-            "resources": 5,
-            "stack": "app"
-        }
-    ]
-}
+{"format":"writ.drift/v0","ok":true,"stacks":[{"stack":"app","env":"prod","backend":"http","check":{"status":"drifted","outside":0,"code":2,"changes":[{"action":"create","address":"terraform_data.keyed[\"(sensitive)\"]","kind":"code"}, ...]}}]}
 ```
 
-Output of a real run, 2026-11-15.
+Excerpt of a real run, 2026-11-15; every field is in [JSON output](json-output.md#documents-of-writ-serve).
 
 A clean check clears the drifted flag. Writ keeps the newest 20 checks per `stack@env`; `GET /v1/drift?env=ENV&stack=STACK` returns them under `checks`, each with a `ref`.
 

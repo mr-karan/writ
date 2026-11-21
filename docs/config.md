@@ -259,6 +259,10 @@ Each notifier has its own 128-event queue and background sender, so slow receive
 
 Requires `provider_uids` so OpenTofu never executes as `writ serve`'s OS user.
 
+## When drift checks run
+
+With a `drift` block, Writ checks every OpenTofu `stack@env` with HTTP state, a state index, or a known S3 read. It looks for due checks at startup and every quarter of `every` (at most every 30 seconds), and also checks after an apply finishes, after it detects an outside S3 write, and after [`writ state adopt`](adopt-state.md). Each check refreshes every resource with `plan_role`, never takes the last free plan slot, skips stacks with an active apply, and is discarded and queued again if an apply starts mid-check. Writ keeps the newest 20 checks per `stack@env`. See [Enable drift checks](drift-checks.md).
+
 ## writ serve --dev defaults
 
 | Area | Behavior |
