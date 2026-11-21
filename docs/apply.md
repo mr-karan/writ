@@ -1,38 +1,38 @@
 # Plan and apply
 
-Plan a commit on `writ serve`, get teammates to approve that exact plan, and apply it by ID or after a merge. Below are the commands, how to recover when a network answer is lost, and how to override approval rules in an emergency.
+Plan a commit on `writ serve`, approve that exact plan, and apply it by ID or after a merge. This page also covers lost-response recovery and emergency overrides.
 
-For how approval rules work and why a plan can become stale, read [Configure approvals](approvals.md) and [How a plan becomes an apply](plan-to-apply.md).
+For approval rules and stale-plan checks, see [Approvals](approvals.md) and [How a plan becomes an apply](plan-to-apply.md).
 
 ## Before you begin
 
 - A running `writ serve` (or `writ serve --dev`) with your [repository added](add-repository.md).
-- A live [`writ login`](sign-in.md#people-writ-login) session, a dev control plane, or a GitLab CI `WRIT_ID_TOKEN`.
-- Grants covering the operation you want (`plan`, `approve`, `apply`, or `override` plus the plan's [risk classes](glossary.md)). Check with `writ whoami`.
+- A [`writ login`](sign-in.md#people-writ-login) session, a dev server, or a GitLab CI `WRIT_ID_TOKEN`.
+- Grants covering the action (`plan`, `approve`, `apply`, or `override` plus the plan's [risk classes](glossary.md)). Run `writ whoami` to check.
 
 ## Plan a commit
 
-From inside a clean Git work tree of a registered repository, run:
+From a clean Git working tree of a registered repository:
 
 ```sh
 writ plan --remote --env prod
 ```
 
-Under `writ serve --dev`, `--env` defaults to `dev`. From CI (with no checkout), pass `--stack` and `--commit` explicitly:
+Under `writ serve --dev`, `--env` defaults to `dev`. In CI (with no checkout), pass `--stack` and `--commit`:
 
 ```sh
 writ plan --remote --env prod --stack app --commit "$CI_COMMIT_SHA"
 ```
 
-Writ fetches the commit from your Git host, runs `tofu plan -lock=false` on the server, masks secrets, checks your policies, and prints the plan ID.
+`writ serve` fetches the commit from the Git host, runs `tofu plan -lock=false`, masks secrets, evaluates policies, and returns the plan ID.
 
 ## Approve a plan
 
-You approve from your laptop, with your [`writ login`](sign-in.md#people-writ-login) session. If a grant gives your team `apply`, you apply by id the same way. In the control UI, the plan's page has an Approve button for a signed-in person who didn't create the plan, and it sends the same request.
+Approve from the CLI with a [`writ login`](sign-in.md#people-writ-login) session, or click **Approve** on the plan page in the control UI.
 
-When you run `writ approve --remote ID`, it prints one line for each plan it approved, as `Approved plan ID for ENV (STACK): N of M approvals (WHO), STATUS.` Writ records your stable id as the actor, such as `gitlab/user/2002`, and its auth, `person`. To take an approval back, run `writ approve --remote --withdraw ID`. You can do that until the plan starts applying.
+`writ approve --remote ID` prints `Approved plan ID for ENV (STACK): N of M approvals (WHO), STATUS.` Writ records your stable person ID (such as `gitlab/user/2002`) with auth `person`. Withdraw an approval before apply starts with `writ approve --remote --withdraw ID`.
 
-In GitLab CI, your merge request job plans each stack, and the plan's text is the masked plan. Here's the text of the plan from alice's merge request job:
+In GitLab CI, a merge request job plans each stack and prints the masked plan:
 
 ```
 OpenTofu 1.13.9 plan of app@prod
@@ -46,19 +46,17 @@ Plan: 4 to add, 0 to change, 0 to destroy.
 Outputs that change: pet.
 ```
 
-Output of `TestTofuApproveApply`, 2026-11-16, against a team's `writ serve` with a test issuer and a stand-in of GitLab.
+Output of `TestTofuApproveApply`, 2026-11-16, against a team's `writ serve` with a test issuer and a GitLab stand-in.
 
-Then bob, a maintainer, runs the approve job of the same pipeline, `writ approve --remote --pipeline`. That job approves every live plan of the pipeline, all or none. If alice runs the same job, Writ refuses it with exit code 1, and the plan stays pending.
+A maintainer then runs the manual `writ-approve` job (`writ approve --remote --pipeline`), which approves every live plan in that pipeline atomically. If the plan's author runs it, Writ refuses with exit code 1 and the plan stays `pending`.
 
 ## Apply a plan
 
-To apply, you need `apply` on the plan's `stack@env` and every risk class of its changes, from one grant or several. Your run applies the stored saved plan, with the environment's `apply_role`, and with its own provider uid when your config sets `provider_uids`. To read it, `writ serve` opens the saved plan with the environment's key, and it opens only as the plan it was made for.
+Applying requires `apply` on the plan's `stack@env` and every risk class in the plan (from one grant or several). `writ serve` decrypts the saved plan using the environment's key (bound to that plan ID, stack, and environment) and runs `tofu apply` with `apply_role` and its own UID from `provider_uids`.
 
-Your client follows the run until it ends. Press Ctrl-C once and you stop following, but the run goes on. To see it later, run `writ show --remote RUN`.
+The CLI streams the run until it finishes. Pressing Ctrl-C once detaches without stopping the server-side run; inspect it later with `writ show --remote RUN`.
 
 ### Apply by id
-
-To apply one plan, run `writ apply --remote ID`:
 
 ```
 $ writ apply --remote 931d8c004160c9e54cd554d70d1df149
@@ -72,19 +70,15 @@ Run VL7RNRTHG3SYT7GRXC5O23VWV6 of plan 931d8c004160c9e54cd554d70d1df149 for dev 
 
 Output under `writ serve --dev`, 2026-11-16.
 
-From a CI job, you can apply by id only a plan of the job's own pipeline, with the same issuer, project, and pipeline, or a plan its pipeline got as the same plan as an earlier pipeline's. That's for a team that applies before the merge, such as on staging.
+A CI job can apply by ID only a plan belonging to its own pipeline (same issuer, project, and pipeline, or a deduplicated plan shared with it), which supports pre-merge applies such as staging.
 
 ### Apply after a merge
 
-Run `writ apply --remote --merged --env ENV --stack NAME`. That applies the approved plan of the stack whose sources equal the merged commit's.
+Run `writ apply --remote --merged --env ENV --stack NAME` to apply the approved plan whose stack sources match the merged commit.
 
-From a GitLab CI job, the commit is the token's `sha`, and the job must run on the repository's default branch. Anyone else sets `--repo` and `--commit`. Either way, `writ serve` checks at the Git host that the commit is on the default branch.
+In GitLab CI, the commit comes from the token's `sha` on the default branch. Outside CI, pass `--repo` and `--commit`. Either way, `writ serve` verifies with the Git host that the commit is on the default branch.
 
-Here's how it finds the plan. First `writ serve` reads the stack's files at the merged commit, as a plan of that commit would, and looks up the live commit plans of the repository's `stack@env` with that digest in the control database. Then the newest approved one applies, however many other live plans the `stack@env` has.
-
-Because `writ serve` weighs every live plan of the digest, newer plans whose approvals don't count never hide an older plan whose approvals do. Since it compares sources, not commit ids, it works for merge commits, squash merges, and fast-forward merges.
-
-Here, under `writ serve --dev`, a person sets the commit:
+`writ serve` reads the stack's files at the merged commit, looks up live commit plans for that `stack@env` with the same source digest, and applies the newest approved match. Newer unapproved plans don't shadow an older approved plan with the same sources. Comparing source digests rather than commit SHAs makes merge commits, squash merges, and fast-forward merges all work.
 
 ```
 $ writ apply --remote --merged --stack app --repo demo --commit d9a4b37495d9d1c581d07a7895d9ef3a3401f4c2
@@ -100,18 +94,18 @@ Output of a real run, 2026-11-16.
 
 When no approved plan matches and there is no current `no-changes` plan:
 
-- A matching plan that lacks approvals is refused as `denied`. The response includes its id after Writ checks the caller's apply grant.
-- A retry succeeds if the newest run on the `stack@env` applied the same sources and wrote the current state version on Writ's `http` backend. The job says there is nothing to apply, starts no run, and exits 0. If the current version is missing or was written by someone else, Writ refuses the retry as `state` and asks you to plan again. The same refusal applies to S3, where Writ doesn't verify the state left by the run.
-- A newer run that's still applying or failed prevents the retry from using an earlier successful run. With no matching plan or run, Writ asks for a new plan.
+- A matching plan missing approvals returns `403 denied` (including its plan ID once the caller's `apply` grant is verified).
+- Retrying an apply job succeeds with exit 0 and no new run if the newest run on `stack@env` applied those exact sources and wrote the current state version on Writ's HTTP backend. If state moved or uses S3, Writ returns `state` and asks for a new plan.
+- A newer `applying` or `failed` run blocks retry matching against an earlier success.
 
-Here's a commit that no plan was created for:
+If no plan matches the commit's sources:
 
 ```
 $ writ apply --remote --merged --stack app --repo demo --commit de72518e5a53e44a1fd8ed6389cb663a844dd929
 error: saved-plan: no approved plan of app@dev matches the sources of demo at de72518e: plan the merge request again after a rebase, and approve the new plan
 ```
 
-If the newest plan of the merged sources is `no-changes` and still describes the state, there is nothing to apply: the job says so, starts no run, and exits 0. Here the merge request planned files that were already applied:
+If the newest plan for the merged sources is `no-changes` and still current, the job exits 0 with nothing to apply:
 
 ```
 $ writ show --remote abc0596aff0857c996028b716be98aee
@@ -125,55 +119,55 @@ $ writ apply --remote --merged --env prod --stack app
 Plan abc0596aff0857c996028b716be98aee of app@prod has the sources of infra at 2357a3f0 and changes no resource: there is nothing to apply.
 ```
 
-Output of `TestTofuApproveApply` in `e2e/`, 2026-11-20. If a run applied to the `stack@env`, or its state moved after the plan was requested, Writ checks the newest run before asking you to plan again. This lets you retry an apply that reverted to the no-changes plan's sources when the revert wrote the current HTTP state version. [A plan that changes nothing](approvals.md#a-plan-that-changes-nothing) says when a plan is `no-changes`.
+Output of `TestTofuApproveApply` in `e2e/`, 2026-11-20. If another run applied or state moved after that plan was requested, Writ checks whether the newest run applied those sources and wrote the current HTTP state version before asking for a fresh plan. See [A plan that changes nothing](approvals.md#a-plan-that-changes-nothing).
 
-If the author removes the approve job from the branch, the merge request can merge, and the job on `main` finds no approved plan. So `main` has code that isn't applied until someone approves the plan and runs the job again. The control plane, not the pipeline, is the gate.
+Even if someone removes the approve job from a branch and merges, the default-branch apply job refuses to run without an approved plan. The control plane enforces the gate, not the CI YAML.
 
 ### Plan and apply in one command
 
-On the dev control plane, you can do both at once. Run `writ apply --remote --yes`, and it plans the commit as `writ plan --remote` does, and applies the plan when no rule needs an approval. If the plan needs approvals, the command prints it and exits 1.
+On `writ serve --dev`, `writ apply --remote --yes` plans the current commit and applies it immediately if no approval rule matches. If approvals are required, it prints the plan and exits 1.
 
-With `--json`, stdout has one document: the plan when nothing runs, else the run. An approved plan runs even with no resource change, because an output, a move, or the state may still change. A plan that changes nothing is `no-changes`: the command prints it, starts no run, and exits 0.
-
-If you interrupt while the command follows the run, it stops following, the run goes on, and the command exits 1 with the failure document, which identifies the run.
+With `--json`, stdout prints one document: the plan if nothing ran, otherwise the run. A `no-changes` plan prints and exits 0 without starting a run. Interrupting while following leaves the server run going and exits 1 with a failure document naming the run.
 
 ## When an answer is lost
 
-Your request to apply can start a run and lose its answer. Your connection can break, or the database can commit the run after the client stops its wait of 30 seconds. So your client sends a key, and the key tells it whether a run started.
+If a network drop or 30-second timeout interrupts an apply request, the server may still have started the run. `writ apply --remote` sends an idempotency key so it can check what happened and attach to the run automatically.
 
-In most cases you don't have to do anything. On its own, `writ apply --remote` asks `writ serve` and follows the run if one started. If it prints a key and a command, run that command later to find out.
+If the CLI can't reach the server to confirm, it prints the key and a follow-up command:
 
-That command, `writ show --remote --request KEY`, asks the outcome route. You see the run, or a note that no run started, and it also closes a key with no run.
+```sh
+writ show --remote --request KEY
+```
 
-Read on to learn how the key works, so you can trust what the client tells you.
+That command queries the outcome route, reports whether a run started, and closes the key if no run started.
 
 ### How the key works
 
-For each command, `writ apply --remote` creates one key, and sends it in the `Idempotency-Key` header of each request to apply: by id, after a merge, and with `--yes`. Your key is the Unix time in seconds, a dash, and 26 random characters from `crypto/rand`, such as `1794405508-IDTB4TY5M2Z4M4RFR773KN4BKQ`. If your request has no key, `writ serve` creates one.
+Each `writ apply --remote` invocation generates one `Idempotency-Key`: Unix seconds, a dash, and 26 random characters from `crypto/rand` (for example `1794405508-IDTB4TY5M2Z4M4RFR773KN4BKQ`). If a client omits the header, `writ serve` generates one.
 
-Every key has one row, and the row is final. Writ writes the key in the transaction that starts the run, as its first write. That row says one of three things:
+The key is written as the first write inside the transaction that starts the run, and its row is final:
 
-- `started`: a request with the key started a run. If the same principal repeats the same request, it gets 202 with the same run. That starts no second run and spends no second CI token. The key with another request is refused as `usage`, and from another principal as `denied`.
-- `none`: the outcome route, or `writ serve` after a failed commit, closed the key with no run. A request with the key is refused as `state` with `key_closed: true` and starts no run.
-- No row: no request with the key started a run. If Writ refuses a request before its commit, it writes no row, so the command can send the key again.
+- `started`: a run started. Repeating the same request as the same principal returns `202` with that run without starting a second run or spending a second CI token. Reusing the key for a different request returns `usage`; another principal gets `denied`.
+- `none`: closed with no run (by the outcome route or after a rolled-back commit). Any later apply with that key returns `state` with `key_closed: true`.
+- No row: no run started and no refusal committed the key, so the client may reuse it.
 
 ### Ask whether a run started
 
-To ask, call `POST /v1/apply-requests/{key}/outcome`. It returns `started` with the run, or `none`. For a key with no row, it first writes a `none` row, and answers after that write commits.
+`POST /v1/apply-requests/{key}/outcome` returns `started` (with the run) or `none`. If the key has no row, the route writes `none` and answers after committing.
 
-On Postgres, the write waits for a transaction that holds the same key, so the route can't answer `none` while the commit of a run waits. On SQLite, the write lock does the same. So `none` is final: no later request with the key starts a run. Asking closes a key with no run, so to ask is to cancel.
+On Postgres and SQLite, that write serializes against any in-flight start transaction for the same key, so `none` can never race ahead of a committing run. Asking closes an unused key, so asking also cancels any delayed retry carrying that key.
 
 ### What writ apply does for you
 
-After a transport error, a timeout, or a 503 whose `outcome` isn't `none`, `writ apply --remote` asks the outcome route, at most 5 times:
+After a transport error, timeout, or `503` whose `outcome` isn't `none`, `writ apply --remote` queries the outcome route up to 5 times:
 
-- With `started`, it prints the run and follows it.
-- With `none`, it prints that no run started and exits 1. Run the command again: it creates a new key.
-- When the route doesn't answer, it prints the key and the command that asks later, and exits 1.
+- `started`: prints and follows the run.
+- `none`: prints that no run started and exits 1; rerun the command to use a new key.
+- Unreachable: prints the key and `writ show --remote --request KEY`, then exits 1.
 
-After a 429, or a 503 with `outcome` `none` and no `key_closed`, it sends the same request with the same key again. After a 503 with `outcome` `none` and `key_closed: true`, or a 409 with `key_closed: true`, it sends the same request with a new key, because no request with the closed key starts a run. These sends share the 5 tries. A 503 with `outcome` `unknown` never gets a new key.
+After a `429`, or a `503` with `outcome: "none"` and `key_closed: false`, the CLI retries with the same key. After a `503` or `409` with `key_closed: true`, it retries with a new key. All retries share the 5-attempt cap; a `503` with `outcome: "unknown"` never rotates the key.
 
-You can see each case below, from `TestRemoteApplyOutcome`, run against a stand-in of `writ serve` on 2026-11-16. In them, the run's text, `Applied 1 change in 5ms.`, and its end time are the stand-in's. First, a stand-in that drops the connection after the run's transaction commits:
+Examples from `TestRemoteApplyOutcome` (against a `writ serve` stand-in, 2026-11-16). First, connection dropped after the run committed:
 
 ```
 $ writ apply --remote d3f700d860a97483a7ad509c31fe9e28
@@ -184,7 +178,7 @@ Applied 1 change in 5ms.
 Run LLGTGDJCKQ6LZQJWNBMA2ESMHV of plan d3f700d860a97483a7ad509c31fe9e28 for prod (network), by alice: applied at 2026-11-11T10:00:05Z.
 ```
 
-Next, when the request started no run, and when the outcome route doesn't answer:
+Next, when no run started, and when the outcome route fails:
 
 ```
 $ writ apply --remote d3f700d860a97483a7ad509c31fe9e28
@@ -198,7 +192,7 @@ error: usage: no route POST /v1/apply-requests/1794800081-PM5SZ64M6ISVYOSYKVCKAB
 error: state-io: writ serve did not say whether the apply request with the key 1794800081-PM5SZ64M6ISVYOSYKVCKABCWOC started a run; ask later with: writ show --remote --request 1794800081-PM5SZ64M6ISVYOSYKVCKABCWOC
 ```
 
-`TestApplyKeyClosedBySettle` runs a real `writ serve` whose first commit of a run's start fails and rolls back. Then `writ serve` settles the key to `none` and returns 503 with `key_closed: true`, and the client sends the request again with a new key. Against the stand-in, which answers the same way:
+When the server rolls back a failed commit, settles the key to `none`, and returns `503` with `key_closed: true`, the CLI retries with a new key:
 
 ```
 $ writ apply --remote d3f700d860a97483a7ad509c31fe9e28
@@ -210,68 +204,60 @@ Run LLGTGDJCKQ6LZQJWNBMA2ESMHV of plan d3f700d860a97483a7ad509c31fe9e28 for prod
 
 ### What each 503 means
 
-When `POST /v1/runs` returns 503, its `outcome` is `none` if the request started no run, and `unknown` if `writ serve` can't tell. A 503 of the outcome route has `outcome` `unknown`.
+A `503` from `POST /v1/runs` sets `outcome: "none"` if no run started, or `outcome: "unknown"` if the server can't tell. A `503` from the outcome route always sets `outcome: "unknown"`.
 
-Only two answers promise that no request with the key starts a run: `none` from the outcome route, and `key_closed: true` on a refusal of `POST /v1/runs`. If you get a 503 with `outcome` `none` and no `key_closed`, it comes from a failure before the commit. In that case the key has no row, and the same key can start a run.
+Only `outcome: "none"` from the outcome route or `key_closed: true` on `POST /v1/runs` guarantees the key can never start a run. A `503` with `outcome: "none"` and no `key_closed` failed before commit, so the same key can still be retried.
 
 ### When the commit returns an error
 
-In that case, `writ serve` asks the database for the key's outcome, as the outcome route does, with 5 seconds for the attempt:
+If committing the run's start returns an error, `writ serve` checks the database for the key's outcome (5-second timeout):
 
-- With `started`, the run goes on and the answer is 202.
-- With `none`, the answer is 503 with `outcome` `none` and `key_closed: true`, and the key is closed.
-- When the attempt fails, the answer is 503 with `outcome` `unknown`. Meanwhile `writ serve` keeps the apply slot and asks again every 5 seconds, for at most 2 minutes. `started` then starts the run's work. `none`, the end of the 2 minutes, and the stop of `writ serve` give the slot back.
-
-If a run started and `writ serve` gave up on it, the run stays `applying` with no work behind it until the next sweep marks it `failed`, as [What a run records](approvals.md#what-a-run-records) says. So a database outage holds an apply slot for at most 2 minutes.
+- `started`: continues the run and answers `202`.
+- `none`: answers `503` with `outcome: "none"` and `key_closed: true`.
+- Still failing: answers `503` with `outcome: "unknown"`, holds the apply slot, and retries every 5 seconds for up to 2 minutes. If `started` appears, it launches the run; if `none`, timeout, or server stop occurs, it releases the slot. Any orphaned `applying` row is later marked `failed` by the minute sweep ([What a run records](approvals.md#what-a-run-records)).
 
 ### Who can learn a key's outcome
 
-For a `started` key, the outcome route answers the principal that started the run, by issuer and subject, and any principal with `admin`. Writ refuses another principal as `denied`, with an audit row, and that refusal shows that the key started a run. For a key with no run, it answers any principal with a valid token, and closes the key.
+For a `started` key, only the principal that started the run (same issuer and subject) or a global `admin` can read the outcome; anyone else gets `403 denied` (audited). For an unused key, any authenticated principal can query it and close it to `none`.
 
-So if someone learns a key before its run starts, from a log or the output of a CI job, they can close it, and the apply with that key then starts nothing. With 130 random bits, nobody can guess a key. In GitLab CI, a job's subject identifies its project and branch, not its pipeline, so the jobs of one branch are one principal here.
+Keys have 130 random bits and can't be guessed, though anyone who reads a key from a log before the apply runs can close it. In GitLab CI, a job's subject identifies project and branch, so jobs on the same branch share a principal here.
 
 ### How long a key lives
 
-Your key starts a run for 24 hours after the time it contains. Writ refuses an older key as `usage`, before it reads the key's row, and also a key more than 5 minutes ahead of its own clock.
-
-Once written, a `started` row stays as long as its run. Each hour, the prune deletes a `none` row 25 hours after its key's time. By then the key is refused, so a replay of a key whose `none` row is gone starts no run. `TestPruneThenReplay` proves it.
-
-The prune also guards against a clock that moves back. It keeps the greatest time of a key whose `none` row it deleted, in the transaction of the delete, and that time never goes down. Later, the transaction that starts a run refuses a key at or below that time as `state` with `key_closed: true`, whatever the clock of `writ serve` says. So a clock that moves back doesn't reopen a key.
-
-Because a key contains whole seconds, a new key created in the same second as that time is refused too. `TestPruneThenClockBack` and `TestPruneFloor` prove it on SQLite and Postgres.
+A key is accepted for 24 hours after its embedded Unix timestamp and at most 5 minutes ahead of server time. `started` rows live as long as their run. Hourly pruning deletes `none` rows older than 25 hours and records a monotonic prune-floor timestamp in the same transaction; any key at or below that floor is refused as `state` with `key_closed: true`, preventing clock rollback from reopening pruned keys.
 
 ## Override the approval rules
 
-Sometimes you need to apply before the approvals arrive, such as to rotate a leaked key while the approver is away. If you have `override`, you can apply a plan without the approvals its rules need, with a reason of 10 to 500 characters:
+For emergencies (such as rotating a leaked key when approvers are unavailable), a person with `override` can apply without waiting for approvals by supplying a reason (10 to 500 characters):
 
-```
+```sh
 writ apply --remote ID --override "bob on leave, rotate leaked key, OPS-112"
 ```
 
-- Your override skips the approval rules only. You still need `apply` and every risk class of the plan.
-- A CI job can't give one. If a plan already has its approvals, Writ refuses an override, as `usage`, so the record shows only real overrides.
-- Writ records your reason in the run, the plan's history, the audit row, the log at `WARN`, and the stack's state.
+- `--override` skips approval rules only. You still need `apply` and all plan risk classes, and mandatory Rego policy denies still block the apply.
+- CI jobs can't use `--override`. If a plan already has its approvals, Writ refuses `--override` as `usage`.
+- The reason is recorded on the run, plan history, audit log, server log (`WARN`), and stack state.
 
 ## Limits
 
-- `limits.applies`, 4 by default, bounds the runs that apply at once. Past it, you get 429. Applies share the provider uids with plans and wait for a free one.
-- `limits.apply_start_timeout`, 10 minutes by default, bounds that wait. `limits.apply_timeout`, 4 hours by default, stops a running apply from starting more changes, and lets the changes that are running finish. See [Time limits](api.md#time-limits). An apply of an OpenTofu plan stops the same way, through OpenTofu's own interrupt.
-- A start whose commit failed holds its apply slot while `writ serve` asks for the key's outcome: every 5 seconds, 5 seconds for each attempt, for at most 2 minutes.
-- A key starts a run for 24 hours after the time it contains, and can be at most 5 minutes ahead of the clock of `writ serve`. A `none` row is deleted 25 hours after its key's time.
-- `writ apply --remote` waits 30 seconds for each answer. It sends a request to apply at most 5 times, asks the outcome route at most 5 times, and waits 2, 4, 8, and 16 seconds between tries. It follows a run for 30 minutes, counted from when it starts to follow, not from the start of the run.
-- An approval of a pipeline covers at most 50 plans.
-- An override's reason is 10 to 500 characters, and so is an adoption's.
+- `limits.applies` (default `4`): concurrent applies; excess requests get `429`. Applies share `provider_uids` with plans and wait for a free UID.
+- `limits.apply_start_timeout` (default `10m`): max wait for a free UID. `limits.apply_timeout` (default `4h`): sends `SIGINT` to OpenTofu so running changes finish without starting new ones ([Time limits](api.md#time-limits)).
+- Failed-commit settlement holds an apply slot for at most 2 minutes (5-second retries).
+- Request keys live 24 hours (max 5 minutes future skew); `none` rows prune after 25 hours.
+- `writ apply --remote` uses a 30-second per-request timeout, up to 5 apply attempts and 5 outcome queries (backoff 2s, 4s, 8s, 16s), and follows a run for up to 30 minutes from attach time.
+- Pipeline approval covers at most 50 plans.
+- Override and adoption reasons must be 10 to 500 characters.
 
 ## Troubleshooting
 
-- **`403 denied: PRINCIPAL made plan ID and cannot approve it`**: Wherever an approval rule applies, the plan's author cannot approve it (even from a different channel like the UI vs CI). Ask a teammate with `approve` on the `stack@env`.
-- **`409 state: plan ID is stale` or `expired`**: A newer plan was created for the same `stack@env`, state changed, or `plan_ttl` elapsed. Create a new plan (`writ plan --remote`) and have it approved.
-- **`409 saved-plan: no approved plan matches`**: The merged commit's stack files differ from any live approved plan (for example after a rebase or edit). Plan the latest commit and approve it.
-- **`403 policy: policy refuses the apply`**: A mandatory Rego policy denied at the apply point. `--override` cannot bypass policy denials. Fix the code, commit, and plan again.
-- **Connection dropped mid-request**: If `writ apply --remote` prints a request key, run `writ show --remote --request KEY` before retrying so you know whether a run already started.
+- **`403 denied: PRINCIPAL made plan ID and cannot approve it`**: Authors can't approve their own plans under an approval rule. Ask a teammate with `approve`.
+- **`409 state: plan ID is stale` or `expired`**: A newer plan exists, state moved, or `plan_ttl` elapsed. Plan and approve again.
+- **`409 saved-plan: no approved plan matches`**: Stack files in the merged commit don't match any live approved plan. Plan the latest commit and approve it.
+- **`403 policy: policy refuses the apply`**: A mandatory Rego policy denied the apply. `--override` doesn't bypass policy; fix the code and plan again.
+- **Connection dropped mid-request**: Run the printed `writ show --remote --request KEY` command before retrying.
 
 ## Next steps
 
-- [Configure approvals](approvals.md): set up approval rules and understand stale-plan checks.
-- [Read the audit log](audit-log.md): follow a plan through approvals, apply, and state writes.
-- [Errors](errors.md): every error class and recovery step.
+- [Approvals](approvals.md): approval rules, risk classes, and stale-plan checks.
+- [Read the audit log](audit-log.md): trace plans, approvals, applies, and state writes.
+- [Errors](errors.md): error classes and recovery steps.

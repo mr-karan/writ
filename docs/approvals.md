@@ -1,16 +1,12 @@
 # Approvals
 
-When you approve a merge request, you're saying the code can merge. When you approve a Writ plan, you're saying that exact plan can run. Writ is built around the second kind of approval.
+Approving a merge request authorizes merging code. Approving a Writ plan authorizes applying that exact plan.
 
-On a team's control plane, every apply starts from a commit's plan. Someone other than the plan's author approves it, as many times as your approval rules require. Then you apply it, either by the plan's id or by a merged commit whose sources equal the plan's. `writ serve` applies the saved plan it kept, with the environment's apply role, to the state it holds.
-
-Clients never send code or a saved plan to an apply. No laptop or CI job holds the state key or a cloud credential, either. For the commands, see [Approve and apply a plan](apply.md).
-
-Today `writ serve` plans only commits. If you kept plans from before that, some may be speculative plans, made from files a client sent. No control plane takes an approval of one, `writ serve --dev` included. A team's control plane never applies one, so it stays `pending`. `writ serve --dev` applies one that its rules ask no approval of, so the one person it serves can still apply a plan they kept.
+On a team's control plane, every apply comes from a commit plan. Teammates other than the author approve the plan ID according to your `approval` rules, then you apply it by ID or via `--merged`. `writ serve` applies the sealed saved plan with the environment's `apply_role`; clients never send code or saved plans to an apply and never hold cloud credentials or state keys. For CLI commands, see [Plan and apply](apply.md).
 
 ## Set how many approvals a plan needs
 
-You write approval rules in the config. Each `approval` block is one rule, and it says how many approvals a plan needs, by stack, environment, and risk class. In this example, the first rule requires one approval for every kind of change in prod, and the second requires one for a delete or a data loss anywhere:
+Define `approval` blocks in `/etc/writ/serve` by stack pattern, environment, and risk class:
 
 ```hcl
 approval {
@@ -28,95 +24,81 @@ approval {
 }
 ```
 
-Writ takes the largest `need` among the rules that match the plan's stack, its environment, and any of its risk classes. A plan with no risk class matches no rule, so it needs no approval. A plan that changes nothing at all takes none either: it's [`no-changes`](#a-plan-that-changes-nothing). You can set `need` from 1 to 10.
+Writ takes the highest `need` (1 to 10) across all matching rules. A plan with no risk classes needs no approval; a plan that changes nothing becomes [`no-changes`](#a-plan-that-changes-nothing). With no `approval` blocks, no plan requires approval. Run `writ serve --check` to print active rules.
 
-In `stacks` you write patterns, the same as in [grants](serve.md#stack-patterns). Use `*` to match within one part of a stack name, and a part `**` to match any number of parts, so `data/**` covers `data` and every stack under it.
+`stacks` uses the same glob syntax as [grants](serve.md#stack-patterns): `*` matches within one path segment and `**` matches any number of segments (`data/**` matches `data` and everything under it).
 
-When Writ creates a plan, it records what the rules required at that moment. At apply time it requires the larger of that and what your current rules require. So if you make the config stricter, that counts at once.
-
-If you write no rules, no plan needs an approval. To print your rules, run `writ serve --check`.
+Writ records the required count at plan time and re-evaluates current rules at apply time, taking the larger number. Stricter config rules apply immediately to existing plans.
 
 ## Who can approve a plan
 
-Anyone with `approve` on the plan's `stack@env` can approve it, except the plan's author. The approver must be a person. The rest of this section covers how Writ counts people, approvals from CI jobs, and what happens when you rename an identity.
+Any person with `approve` on the plan's `stack@env` can approve it, except the plan's author.
 
-Writ counts each person once, by their stable id, `IDENTITY/user/ID`, such as `gitlab/user/2002`. That id combines the `identity` your config gives the token's issuer with the user id. The issuers of one Git host share an identity, so the GitLab CI job alice started and alice's own session count as one person. To see why the id uses a name from your config and not the issuer's host, read [Who a person is](serve.md#who-a-person-is).
+Writ identifies each person by `IDENTITY/user/ID` (for example `gitlab/user/2002`), combining the issuer's configured `identity` with the user ID. Issuers sharing an `identity` (such as GitLab login and GitLab CI) map to the same person, so a user can't approve their own CI plan from the CLI or browser. See [Who a person is](serve.md#who-a-person-is).
 
-If a plan already has its approvals, another approve request passes, whoever asks, and records nothing more. That's why your pipeline's approve job passes when the author runs it after a reviewer approved the pipeline's plans.
+Once a plan has enough approvals, extra approve requests succeed as no-ops (so a pipeline's approve job passes if re-run after approval).
 
-Some grants never get as far as a request. `writ serve --check` refuses an `approve` grant to a CI issuer's team unless the team matches a claim about the person who ran the job, such as `user_access_level`, `user_id`, or `user_login`. It also refuses any `override` or `adopt` grant to a CI issuer's team.
+`writ serve --check` rejects an `approve` grant to a CI issuer team unless the team matches a user claim (`user_access_level`, `user_id`, or `user_login`), and rejects `override` or `adopt` grants to any CI issuer team.
 
 ### Approve from a CI job
 
-When you approve through a CI job's token, you can approve only plans from that job's own pipeline: the same issuer, project, and pipeline.
+A CI job token can approve only plans from its own pipeline (same issuer, project, and pipeline ID). If two pipelines produce byte-identical saved plans for the same commit and state, Writ deduplicates them and associates the plan with both pipelines.
 
-Sometimes two pipelines produce the same plan. If OpenTofu writes a plan byte for byte the same as an earlier pipeline's, for the same commit and state, the new pipeline gets the earlier plan, with its id and its approvals. That plan then belongs to both pipelines.
+Because project and pipeline IDs are scoped per GitLab instance, a job on one trusted GitLab instance can't approve a plan from another. Plans created from a personal session belong to no pipeline and can't be approved by a CI job.
 
-Project and pipeline ids are unique only within one GitLab instance. So if your config trusts two GitLab instances, a job on the second can't approve a plan from the first, whatever its ids. And if you create a plan with your own session, it belongs to no pipeline, so no CI job can approve it.
-
-To approve a whole pipeline, run `writ approve --remote --pipeline`. It approves every live plan in the pipeline, or none. If the job can't approve one of them, Writ refuses the whole request and records nothing. Each token approves once.
+`writ approve --remote --pipeline` approves every live plan in the pipeline atomically; if any plan fails validation, none are approved. Each CI token can approve once.
 
 ### After you rename an identity
 
-Renaming an `identity` in the config changes the id of every person under it. Writ refuses an approval from a person whose id has an identity the config doesn't define, such as a session from before the rename. It also refuses to approve a plan whose author's id has such an identity. Sign in again, or create the plan again.
-
-Approvals you gave before the rename stop counting, because their ids have the old identity. A plan they approved reads as `pending`, and no apply counts them. Approve again under the new identity, and you count once. If you roll the rename back, the old approval counts again and the plan reads as `approved`.
+Renaming an issuer's `identity` changes every person ID under it. Sessions or plan authors referencing an undefined identity are refused until they sign in or plan again. Approvals recorded under the old identity stop counting (reverting the plan to `pending`) unless you approve under the new identity or roll back the rename.
 
 ## Track a plan's status
 
-At any moment a plan has one status. Writ changes it with a conditional update in the control database, and `plan_events` records each change with who or what made it and why. You can read those changes as `history` from `GET /v1/plans/{id}`.
+Each plan has one status updated conditionally in the control database, with every transition logged to `plan_events` (`history` in `GET /v1/plans/{id}`).
 
 | Status | Meaning |
 | --- | --- |
-| `planning` | `writ serve` is creating the plan. |
-| `pending` | The plan is saved and waits for its approvals. A kept speculative plan stays here. |
-| `approved` | The plan has the approvals its rules need, or needs none. |
+| `planning` | `writ serve` is running `tofu plan`. |
+| `pending` | Saved and waiting for approvals. |
+| `approved` | Has all required approvals (or needs none). |
 | `applying` | A run is applying the plan. |
-| `applied` | The run applied every change. |
-| `no-changes` | The plan changes nothing, so there is nothing to approve or apply. |
-| `refused` | The plan ended with errors, so it was never saved. |
-| `failed` | The plan couldn't run, or its apply failed. |
-| `expired` | `plan_ttl` passed before the plan was applied. |
-| `superseded` | State, or the branch the plan was created from, moved after the plan. `superseded_why` says how. |
+| `applied` | The run succeeded. |
+| `no-changes` | Nothing to change; nothing to approve or apply. |
+| `refused` | Plan failed validation or policy; not saved. |
+| `failed` | Plan execution or apply failed. |
+| `expired` | `plan_ttl` elapsed before apply. |
+| `superseded` | State, a newer plan, or the source branch moved (`superseded_why` explains). |
 
-For a live plan, Writ works out the status from its approvals under your current config. A commit's plan is `approved` when the approvals that count reach what it needs, and `pending` until then. That's the status `GET /v1/plans/{id}` reports, the one `GET /v1/plans?status=` lists by, and the one each apply checks.
+For live plans, Writ computes effective status (`pending` vs `approved`) against your current config whenever plans are read, listed, or applied. Config changes take effect immediately without rewriting database rows; the stored status updates at the next approval, withdrawal, or run.
 
-So when you change the config, an approval can stop counting, or count again, without any write to the control database. The stored status catches up at the plan's next approval, withdrawal, or run, and `history` records the move.
-
-A plan can move only along the rows below. They live in one table in `internal/control/lifecycle.go`, and the store refuses any other move.
+Allowed state transitions (enforced in `internal/control/lifecycle.go`):
 
 | From | To | When |
 | --- | --- | --- |
-| `planning` | `pending`, `approved`, `no-changes`, `refused`, `failed` | The plan ends. A plan that needs no approval is `approved`, and one that changes nothing is `no-changes`. |
-| `planning` | `superseded` | An apply on the same `stack@env` ran while the plan was being created. |
-| `pending` | `approved` | The last approval the rules need arrives, or a run begins after a change of config made approvals count again. |
-| `approved` | `pending` | An approval is withdrawn, or a change of config stopped one counting, and the plan falls short. The next approval, withdrawal, or run records it. |
-| `pending`, `approved` | `applying` | A run begins. From `pending`, only with an override. |
-| `pending`, `approved` | `expired` | `plan_ttl` passes. |
-| `pending`, `approved` | `superseded` | Another run on the `stack@env` ends, or the apply finds the plan stale. |
-| `applying` | `applied`, `failed` | The run ends. |
+| `planning` | `pending`, `approved`, `no-changes`, `refused`, `failed` | Plan finishes. |
+| `planning` | `superseded` | Another apply ran on the same `stack@env` during planning. |
+| `pending` | `approved` | Required approvals met (or config change restores count). |
+| `approved` | `pending` | Approval withdrawn or config change makes count short. |
+| `pending`, `approved` | `applying` | Run starts (from `pending` only with `--override`). |
+| `pending`, `approved` | `expired` | `plan_ttl` elapsed. |
+| `pending`, `approved` | `superseded` | Another run ended or apply found the plan stale. |
+| `applying` | `applied`, `failed` | Run ends. |
 
-Once a plan is `applied`, `no-changes`, `refused`, `failed`, `expired`, or `superseded`, it stays there.
+`applied`, `no-changes`, `refused`, `failed`, `expired`, and `superseded` are terminal.
 
 ### A plan that changes nothing
 
-A plan is `no-changes` when OpenTofu would find nothing to apply: each resource change is a no-op that neither moves nor imports the resource, no output changes, and nothing changed outside OpenTofu. A plan whose only change is an output, a move, a data source read at apply time, or an object changed outside OpenTofu still writes state when it applies, so it stays `pending` or `approved` and applies as any plan does.
+A plan becomes `no-changes` only when every resource change is a no-op with no move or import, no output changes, and no outside-OpenTofu drift. Plans that change an output, move a resource, read an apply-time data source, or reconcile drift still write state and stay `pending` or `approved`.
 
-A `no-changes` plan never expires, keeps no saved plan, and isn't counted among the plans that wait or apply. No one approves or applies it: by its id, Writ refuses both as `state`, `plan ID changes no resource`. An approval of a pipeline lists it and approves the pipeline's other plans, so the approve job of a merge request whose plans change nothing passes.
-
-After the merge, the apply job finds the newest plan of the merged commit's sources. When that plan is `no-changes`, the job says there is nothing to apply and exits 0, as long as no run applied to the `stack@env`, and its state didn't move, after the plan was requested. For a stale no-changes plan, Writ checks whether the newest run applied those sources and wrote the current HTTP state version. If it cannot verify that, it refuses the apply as `state` and asks you to plan again. [Apply after a merge](apply.md#apply-after-a-merge) shows the output.
-
-Plans made before this release keep the status they had: a live plan that changes nothing stays `approved` until it expires.
-
-**If you're upgrading from a build without approvals,** plan again after the upgrade. The upgrade moved plans once, outside this table. No earlier build had approvals, so none of its plans can have been approved. Its person ids also contained the issuer's host, and another spelling of the host could split one person in two. So migration 5 of the control database moves every live plan from an earlier build, `planning`, `pending`, or `approved`, to `expired`, and `history` gives the reason `made before approvals`. The author's fields stay as they were.
+A `no-changes` plan never expires, stores no saved plan, and rejects direct `approve` or `apply` by ID with `state`. `writ approve --remote --pipeline` skips it while approving other plans in the pipeline. After merge, `writ apply --remote --merged` exits 0 with nothing to apply as long as no run or state write intervened; if one did, Writ verifies whether the newest run applied those sources and wrote the current HTTP state version, otherwise asking for a fresh plan.
 
 ## Why an approved plan can still be refused
 
-You approve one plan id, and that plan applies what it showed, or nothing. So before a run begins, Writ runs these checks:
+Before starting an apply, Writ verifies the plan still matches current code and state:
 
-- **Expired.** If the plan is past `plan_ttl`, Writ refuses it as `state`, and it becomes `expired`.
-- **State changed.** Because `writ serve` is the only writer of the state it holds, its own runs are every change that state has had. So if a run on the plan's `stack@env` was applying at or after you requested the plan, Writ refuses the plan as `state`, and the plan becomes `superseded`. When a run ends, every other live plan for that `stack@env` becomes `superseded` too.
-- **The branch moved.** When you apply by id a plan created from a branch, `writ serve` reads the branch's head at the Git host. If the head's sources for the stack equal the plan's, the plan passes. If they differ, or the branch is gone, Writ refuses the apply as `saved-plan`, and the plan becomes `superseded`. Writ can't check a plan of a ref that isn't a branch, so you can apply that plan only after a merge. Here's a plan created before the next commit on `main`:
+- **Expired (`state`):** `plan_ttl` elapsed; plan becomes `expired`.
+- **State changed (`state`):** A run was applying on `stack@env` at or after plan request time; plan becomes `superseded`. Finishing any run also supersedes all other live plans for that `stack@env`.
+- **Branch moved (`saved-plan`):** When applying a branch plan by ID, Writ checks the branch head on the Git host. If stack files differ or the branch was deleted, the plan becomes `superseded`. Non-branch refs can only be applied via `--merged`.
 
   ```
   $ writ apply --remote b9a409594e580d10863ee1bd40f99e14
@@ -125,9 +107,7 @@ You approve one plan id, and that plan applies what it showed, or nothing. So be
 
   Output under `writ serve --dev`, 2026-11-16.
 
-Because every plan is for an [OpenTofu stack](serve.md#opentofu-stacks), two more checks run, and OpenTofu runs a third:
-
-- **A newer plan.** Only the newest plan for a `stack@env` applies. If someone created a newer plan after yours, Writ refuses yours as `state`, and it becomes `superseded`. You also can't approve a plan whose `superseded_by` is a newer plan of its merge request; Writ refuses that with the same message. Each plan takes the next number for its `stack@env` in the transaction that records it, so even two plans requested in the same millisecond have an order. Here, the sources of a merged commit equal an approved plan, but a newer plan of the stack replaced that plan:
+- **A newer plan exists (`state`):** Only the newest plan for a `stack@env` can apply (ordered by a per-stack sequence number). Plans superseded by a newer plan in the same merge request can't be approved either.
 
   ```
   $ writ apply --remote --merged --env prod --stack app
@@ -136,8 +116,6 @@ Because every plan is for an [OpenTofu stack](serve.md#opentofu-stacks), two mor
 
   Output of `TestTofuApproveApply` in `e2e/`, 2026-11-16.
 
-  Under `writ serve --dev`, applying by id a plan of an earlier commit fails the same way:
-
   ```
   $ writ apply --remote 545df270380c53e2f138f94a8af47c27
   error: state: plan 545df270380c53e2f138f94a8af47c27 is stale: plan ad00789c35428a3f8f642902039fc22e of app@dev is newer; plan again
@@ -145,21 +123,15 @@ Because every plan is for an [OpenTofu stack](serve.md#opentofu-stacks), two mor
 
   Output of a real run, 2026-11-16.
 
-- **The state moved.** For a stack on the http backend, each plan records which version of the state it read. If the newest version is a different one, Writ refuses the plan as `state`, and it becomes `superseded`. A stack on S3 has no such version. There, `tofu apply` refuses a saved plan whose state's serial or lineage moved.
-- **OpenTofu's own check.** OpenTofu refuses to apply a saved plan whose state changed after the plan. The run then fails with `OpenTofu refused plan ID: the state of STACK@ENV changed after the plan was made; plan again`. `just test-tofu` proves this refusal on OpenTofu 1.13.9.
+- **State version moved (`state`):** On Writ's HTTP backend, the newest state version must match what the plan read. On S3, `tofu apply` itself refuses if serial or lineage moved.
+- **OpenTofu's check:** If state changed after planning, OpenTofu refuses the saved plan and the run fails with `OpenTofu refused plan ID: the state of STACK@ENV changed after the plan was made; plan again`.
 
-Writ starts a run in one transaction, the move to `applying`. That transaction records the token's use, locks the plan, and checks its status, expiry, approvals, and the runs of its `stack@env`. Then it moves the plan with a conditional update and inserts the run.
-
-If Writ refuses the apply, your CI token isn't spent. Most refusals roll the transaction back. When the plan expired, or state moved under it, the refusal commits the plan's move instead, and deletes the token's use and the key's row before that commit. Once a token has started a run, Writ refuses it if you use it again. `TestRefusalSpendsNoToken` proves this on SQLite and Postgres.
-
-Two applies of one plan, or of two plans for one `stack@env`, can't both begin. Two unique indexes enforce that on SQLite and Postgres alike: one on a plan's runs, and one on a `stack@env`'s applying run.
+Starting a run happens in one transaction: check token reuse, lock the plan, verify status/expiry/approvals/runs, update status to `applying`, and insert the run. Refusals don't spend the caller's CI token (even when committing `expired` or `superseded`, Writ deletes the token-use and idempotency rows before commit). Unique indexes guarantee at most one run per plan and at most one `applying` run per `stack@env`.
 
 ## What a run records
 
-Writ keeps a record of every run, so you can see who applied what, and on whose approval:
-
-- The control database keeps the run: its plan, its actor, the approvals that counted when it began, the override, whether it referred to the plan or a merged commit, its role session, and, when it ends, its document and printed text. To see one, run `writ show --remote RUN` or call `GET /v1/runs/{id}`. The actor is the person's stable id, with its kind: `ci-job`, `person`, or `dev`.
-- To list runs, newest first, run `writ runs --remote`:
+- **Database:** Plan ID, actor (`ci-job`, `person`, or `dev`), counting approvals, override reason, apply mode (by ID or merged), role session, structured document, and masked output. View with `writ show --remote RUN` or `GET /v1/runs/{id}`.
+- **Listing:** `writ runs --remote` lists runs newest first:
 
   ```
   $ writ runs --remote --stack app
@@ -171,29 +143,22 @@ Writ keeps a record of every run, so you can see who applied what, and on whose 
 
   Output of a dev control plane, 2026-11-16.
 
-- Every request leaves an audit row, in the same transaction as the approval or the run it created. When a run ends, it leaves one more, of kind `apply-finished`.
-- In its JSON log, `writ serve` writes `approved`, `apply started`, `apply ended`, and an override at `WARN`.
+- **Audit and logs:** Synchronous audit rows for approvals, run start, and `apply-finished`; JSON logs for `approved`, `apply started`, `apply ended`, and overrides (`WARN`).
 
 ### When writ serve stops during an apply
 
-If `writ serve` stops during an apply, the stack's state has what OpenTofu wrote before it stopped. The run's lock on that state stays until the sweep below releases it.
+If `writ serve` crashes or stops mid-apply, OpenTofu's state reflects whatever finished before exit, and the state lock stays held until recovered.
 
-Every `writ serve` process has an id, and each run records the process that began it. At start, and every minute after, `writ serve` marks as `failed` each run that another process left applying, and each run of its own process that it does no work for, along with its plan. It supersedes the plans of the same `stack@env`.
-
-The sweep each minute also catches a run whose start an earlier process committed after this one started. That can happen on Postgres, where the commit of a process that stopped can complete later. `TestRestartWithAnUnresolvedCommit` holds such a commit while a second process starts, and requires that the second process's sweep fails the run.
-
-Run one `writ serve` process per control database, as [Supported platforms and limits](status.md) says. `TestTofuRestartEndsState` stops a run while it holds the stack's lock, starts a second process, and requires that the run's token is refused and that the next apply takes the lock.
+Each `writ serve` process has a unique process ID stored on its runs. At startup and every minute thereafter, `writ serve` marks any `applying` run belonging to another process (or without active local work) as `failed`, marks its plan `failed`, supersedes other live plans for that `stack@env`, and releases its state tokens and locks. Run only one `writ serve` process per database ([Supported platforms and limits](status.md)).
 
 ## How an OpenTofu plan is approved and applied
 
-You approve an OpenTofu stack's plan with `writ approve` or the control UI's approve button. You apply it with `writ apply --remote ID` or `writ apply --remote --merged`. The grant checks are the same as for any commit's plan: you need `approve` or `apply` on the `stack@env`, and `risks` that cover the plan's risk classes.
+Approve with `writ approve` or the control UI; apply with `writ apply --remote ID` or `writ apply --remote --merged`. Callers need `approve` or `apply` on `stack@env`, plus `risks` covering every risk class in the plan.
 
 ### How a change gets its risk class
 
-Writ gives each resource change a risk class from its actions, and your approval rules and grants match on that class:
-
 | OpenTofu actions | Shown as | Risk class |
-|---|---|---|
+| --- | --- | --- |
 | `create` | create | `create` |
 | `update` | update | `update` |
 | `delete` | delete | `delete` |
@@ -202,41 +167,28 @@ Writ gives each resource change a risk class from its actions, and your approval
 | `forget, create` | replace | `replace` |
 | `no-op` or `read` | nothing | none |
 
-A forget, as `removed { lifecycle { destroy = false } }` plans, leaves the object and stops managing it. The stack loses control of the object as a delete loses it, so a forget counts as `delete`.
-
-An import adds `create` to its change's class, because it writes state for an object the stack didn't manage.
-
-If a plan has any other actions, Writ refuses it, with the resource's address and the actions. That way, a kind of change Writ doesn't know never applies without approval.
+`forget` (`removed { lifecycle { destroy = false } }`) counts as `delete` because the stack relinquishes control of the object. Imports add `create` because they bring an unmanaged object into state. Unknown actions are refused so new action types never bypass approval.
 
 ### What the plan id covers
 
-When you approve, you approve a plan id. The plan id is the first 32 hex digits of a SHA-256 over the masked plan document, the SHA-256 of the saved plan, the commit, the stack, and the environment.
+A plan ID is the first 32 hex characters of SHA-256 over the masked plan document, the SHA-256 of the saved plan file, the commit SHA, the stack name, and the environment.
 
-So a new commit creates a new id. Planning the same commit again creates a new id too, unless OpenTofu writes the same saved plan and masked document byte for byte, as for two plans in the same second. In that case the request gets the earlier plan, with its id and its approvals.
-
-Writ seals the saved plan that `tofu plan -out` wrote with AES-256-GCM, under a key derived from the environment's `key` file. The seal has its own HKDF label, separate from the state's, and takes the plan id, the stack, and the environment as associated data. So a sealed plan opens only as the plan it was made for. No API route returns it, and Writ deletes it when the plan stops being live: applied, failed, superseded, or expired.
+Writ seals the `tofu plan -out` file with AES-256-GCM under a key derived from the environment's `key` file (separate HKDF label from state, with plan ID, stack, and environment as associated data). No API route serves the saved plan, and Writ deletes it when the plan leaves live status.
 
 ### Review a plan in the control UI
 
-Before you approve in the control UI, the plan page shows you what will change. It reads only the masked document.
+The plan page renders only the masked document: summary counts (add, change, destroy, replace, forget, import), per-resource diffs grouped by module and address (`action_reason`, `replace_paths`, import IDs, risk classes, before/after attributes with sensitive values shown as `(sensitive)`), drift, and output changes. If the document can't be parsed, the page disables approval.
 
-You see the counts to add, change, destroy, replace, forget, and import, and then each resource change that changes something, by module and then address. For each change you get its actions, OpenTofu's `action_reason` in words, the `replace_paths` that force a replace, the import marker and id, its risk classes, and its attributes before and after. A value under a sensitive mark shows as `(sensitive)`, with a note when it changes. Drift and the outputs that change have their own sections.
-
-If the page can't read the document, it says so and offers no approval.
-
-After the apply, the run's page shows the run's status, its plan, its timing, what the apply did to each resource, and the masked diagnostics of a failed apply.
+After apply, the run page shows status, timing, per-resource events, and masked diagnostics on failure.
 
 ### How the apply runs
 
-When you apply, Writ reads the commit's files again from the Git host, checks them against the plan's sources, and writes them into a new directory. `tofu init -input=false -lockfile=readonly` and `tofu show -json PLAN` run with no cloud credential. Then `tofu apply -input=false -json PLAN` runs with the environment's `provider_env` and its `apply_role` from the credential broker. Both run as a provider uid in the [filesystem view](serve.md#what-a-run-can-see).
-
-Before the mask reads the apply's events, it starts from the [secret set](serve.md#policy-and-the-mask) of the state the plan read. Then it learns the saved plan's secrets from that `show`, as it did when it masked the plan. It needs both because an address can contain a value that only the plan marks, as a `for_each` key made with `nonsensitive()` does, or a past value that only the set lists. If the state has no secret set, the plan fails, so no one can approve or apply it.
-
-On the http backend, the run gets a token that can `LOCK`, `POST`, and `UNLOCK` the state of its one `stack@env`. The token ends with the run, however the run ends.
-
-A [stack on S3](serve.md#stacks-on-s3) gets no token. Instead, a second `init`, which fetches nothing, configures its backend with the apply role. `tofu apply` takes and releases the bucket's lock file, and `tofu state pull` with the apply role reads the serial the apply left.
-
-Here's the run's text for the job on `main` after a merge:
+1. Writ fetches the commit files from the Git host, verifies them against the plan's source digest, and writes them to a fresh scratch directory.
+2. `tofu init -input=false -lockfile=readonly` and `tofu show -json PLAN` run without cloud credentials inside the [run sandbox](run-isolation.md).
+3. The mask loads the state's [secret set](serve.md#policy-and-the-mask) plus secrets learned from `tofu show -json PLAN` so unmarked values (such as `nonsensitive()` `for_each` keys or rotated secrets) are still scrubbed.
+4. `tofu apply -input=false -json PLAN` runs with `provider_env` and `apply_role` as an isolated UID.
+   - **HTTP backend:** Receives a single-run token scoped to `LOCK`, `POST`, and `UNLOCK` for that `stack@env`, revoked when the run ends.
+   - **S3 backend:** Runs a second offline `init` with `apply_role`, lets `tofu apply` manage the bucket lock file, and runs `tofu state pull` to record the resulting serial ([Stacks on S3](serve.md#stacks-on-s3)).
 
 ```
 OpenTofu apply of app@prod
@@ -250,54 +202,26 @@ State version 1 of app@prod.
 
 Output of `TestTofuApproveApply`, 2026-11-16.
 
-If an apply runs past `limits.apply_timeout`, OpenTofu gets SIGINT. It starts no more changes, waits for the ones running, and writes the state they left, and the run fails with that reason. If it still hasn't ended 2 hours later, `writ serve` kills it.
+Past `limits.apply_timeout`, Writ sends `SIGINT` to OpenTofu so running operations finish and write state without starting new ones, then fails the run. If OpenTofu hasn't exited 2 hours later, Writ kills it.
 
 ### What the run's document contains
 
-When the run ends, Writ keeps its document as `writ.tofu-apply/v0`:
-
-- `ok` and `applied`.
-- `status`: `applied` or `apply-failed`.
-- `state_version`: the newest version of the stack's state when the run ended.
-- `summary`: OpenTofu's count of what it added, changed, imported, and destroyed.
-- `events`: each `apply_start`, `apply_complete`, and `apply_errored` event with the resource's address and action, swept by the mask. An event keeps no resource id, because a provider picks the id and nothing marks one that contains a secret.
-
-If the apply fails, the document keeps each diagnostic's severity, summary, file, line, and column, swept by the mask. It never keeps the detail or snippet, the same as for a failed plan.
-
-If the apply couldn't start, or `writ serve` lost it by stopping during the run, Writ keeps `writ.apply/v0` instead, with `status` `apply-failed` and one diagnostic that says why.
+Completed applies store a `writ.tofu-apply/v0` document containing `ok`, `applied`, `status` (`applied` or `apply-failed`), `state_version`, `summary`, and masked `events` (`apply_start`, `apply_complete`, `apply_errored` without provider-chosen resource IDs). Failed applies include masked diagnostic summaries and source locations (never detail text or code snippets). Applies that never started or were lost to a restart store `writ.apply/v0` with `status: "apply-failed"`.
 
 ### What else an apply does
 
-**It refreshes the state index.** After a successful apply, the run runs `tofu show -json` on the state it left, with no cloud credential, and the mask reads it into the rows of the [state index](serve.md#the-state-index). If that step fails, the apply doesn't. The index is refreshed within five minutes.
-
-**It checks your policy again.** If your config has a `policy` block, a plan that a policy denies when it's created is `refused` and keeps no saved plan, so no one can approve or apply it. A plan that passes is checked again when someone asks to apply it, with `input.writ.decision = "apply"`, the person or CI job that asks, and the approvals that count then. A deny at that point returns 403 with class `policy`, starts no run, and leaves the plan approved.
-
-Nothing overrides a deny. Neither an approval nor `--override` does, because `--override` skips only the approval rules. The run keeps the decision of a pass or a warning. [Policy](policy.md) has the details.
-
-**It writes the audit log.** Each request the run sends to the state backend gets a row. A state write, a retried one included, gets a `state-write` row with the version, serial, lineage, and SHA-256. Each read, lock, and unlock gets a row too. The run gets an `apply-finished` row.
-
-**It won't touch a state with no secret set.** If no apply of `writ serve` sealed a secret set for the plan's state version or S3 serial, the plan fails and no one can approve it. Such a state may keep a past secret where nothing marks it, as [States with no secret set](serve.md#states-with-no-secret-set) explains.
-
-To fix that, someone with `adopt` on the `stack@env` seals a set for the newest such state with `writ state adopt`, giving a reason of 10 to 500 characters. Its plans can then be approved. The set has only what the state marks sensitive and the environment's `provider_env` values, so a secret the state contains unmarked may show in later plans. [Adopt a state](adopt-state.md) covers the details and the risk.
+- **Refreshes the state index:** Runs `tofu show -json` with no cloud credentials after a successful apply to update the [state index](serve.md#the-state-index). A refresh error doesn't fail the apply; background refresh retries within 5 minutes.
+- **Re-evaluates policy:** Policies run again at apply time with `input.writ.decision = "apply"`, the caller, and active approvals. A deny returns `403 policy`, leaves the plan approved, and can't be overridden. See [Policy](policy.md).
+- **Writes audit rows:** Every state backend read, write (`state-write` with version, serial, lineage, SHA-256), lock, and unlock is audited, plus `apply-finished`.
+- **Requires a secret set:** Plans against state versions without a sealed secret set fail so they can't be approved. Run `writ state adopt` with an `adopt` grant and a 10 to 500 character reason to establish one ([Adopt a state](adopt-state.md)).
 
 ### How Writ releases locks after a crash
 
-A stack's lock has no expiry, so a run that a crash stopped would hold it for good. That's why each end of a run's state access deletes the run's tokens and then its locks, in one transaction. If the run takes a lock while its access ends, that lock is released too.
-
-The transaction that records how a run or a plan ended also ends its tokens and releases its locks. So a run never reads as ended while its token still works, even when its own end of that access failed.
-
-When `writ serve` marks a run left applying as `failed`, it ends the run's state tokens and releases its locks in the same transaction. At start, and every minute after, it also ends the tokens, and releases the locks, of every run that neither applies nor plans. Each lock released this way leaves an audit row of kind `state-unlock`, with the lock, the run, and the `stack@env`.
-
-These tests prove it:
-
-- `TestTofuRestartEndsState` stops a run while it holds the lock, starts a second process, and requires that the run's token is refused and that the next apply takes the lock.
-- `TestTofuRunEndEndsState` fails the run's own end of its state access, and requires that the ended run's token is refused and its lock released.
-- `TestTofuSweepEndsState` fails that end and the record of the run's end too, and requires the same after the sweep each minute.
-- `TestEndStateAfterLockInFlight` holds a lock request inside its transaction on Postgres while the run's access ends, and requires that no lock is left.
+State locks don't expire on their own. When a run or plan ends, Writ revokes its state tokens and deletes its locks in one transaction (and also inside the transaction that records the run's end). The startup and per-minute sweep cleans up tokens and locks for any run that is no longer planning or applying, writing a `state-unlock` audit row for every lock released.
 
 ## Next steps
 
-- [Plan and apply](apply.md): the commands, applies after a merge, and overrides.
+- [Plan and apply](apply.md): commands, merged applies, lost-response recovery, and overrides.
 - [How a plan becomes an apply](plan-to-apply.md): end-to-end lifecycle from commit to state index.
 - [Control plane internals](serve.md): teams, grants, and roles.
-- [How repositories work](repos.md): how a plan refers to a commit.
+- [How repositories work](repos.md): commit resolution and polling.
