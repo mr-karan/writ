@@ -54,7 +54,7 @@ Output of a real run, 2026-11-16 (`writ import bulk SELECTION.json --json` witho
 ## `writ import accept --imports FILE PLAN --json` (`writ.import-accept/v0`)
 
 ```json
-{"format":"writ.import-accept/v0","ok":true,"objects":1,"imports":1,"refusals":[],"settings":[{"address":"nomad_job.nomad_job_import_web_default","attribute":"deregister_on_destroy","value":true,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"},{"address":"nomad_job.nomad_job_import_web_default","attribute":"deregister_on_id_change","value":true,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"},{"address":"nomad_job.nomad_job_import_web_default","attribute":"detach","value":true,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"},{"address":"nomad_job.nomad_job_import_web_default","attribute":"preserve_counts","value":false,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"},{"address":"nomad_job.nomad_job_import_web_default","attribute":"read_allocation_ids","value":false,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"},{"address":"nomad_job.nomad_job_import_web_default","attribute":"rerun_if_dead","value":false,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"}],"diagnostics":[]}
+{"format":"writ.import-accept/v0","ok":true,"objects":1,"imports":1,"refusals":[],"settings":[{"address":"nomad_job.nomad_job_import_web_default","attribute":"deregister_on_destroy","value":true,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"}],"diagnostics":[]}
 ```
 
 - `objects`, `imports`: manifest object count and accepted import count.

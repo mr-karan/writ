@@ -1,6 +1,10 @@
 # API
 
-`writ serve` exposes a JSON REST API used by the CLI, control UI, and CI jobs. Request bodies may be uncompressed or `Content-Encoding: gzip` (capped at `limits.body` after decompression). Every `/v1/` response returns `format`, `ok`, and `diagnostics` (refusals use the route's own format with `ok: false`, except pre-handler `/v1/policy` refusals which return `writ.error/v0`) and carries `X-Writ-Version` ([Version skew](commands.md#version-skew), [JSON output](json-output.md#documents-of-writ-serve)).
+The JSON REST API of `writ serve`, used by the CLI, the control UI, and CI jobs.
+
+- Request bodies are plain or `Content-Encoding: gzip`, capped at `limits.body` after decompression.
+- Every `/v1/` response has `format`, `ok`, and `diagnostics`, and the header `X-Writ-Version` ([Version skew](commands.md#version-skew), [JSON output](json-output.md#documents-of-writ-serve)).
+- Refusals use the route's own format with `ok: false`. Exception: pre-handler `/v1/policy` refusals return `writ.error/v0`.
 
 ## Routes
 
@@ -76,67 +80,9 @@ Content-Length: 695
 
 Output under `writ serve --dev`, 2026-11-16 (responses also include `network`, `null` when `egress_mode = "off"`).
 
-`POST /v1/plans` takes `writ.plan-request/v1` (`env`, single-element `stacks`, `hints`, `source`); unknown fields are refused. Completed plan example:
+`POST /v1/plans` takes `writ.plan-request/v1` (`env`, single-element `stacks`, `hints`, `source`); unknown fields are refused. A completed plan adds its `id`, final `status`, each stack's `changes` and `source_digest`, and the masked `document`.
 
-```
-$ curl -sS "$SERVER/v1/plans/$ID" -H "Authorization: Bearer $TOKEN" | jq '{format, ok, plan: (.plan | {ref, id, status, env, stacks, author: {kind: .author.kind, person: .author.person}, source}), document: (.document | {format_version, terraform_version, variables, resource_changes: [.resource_changes[] | {address, change: {actions: .change.actions, after: .change.after}}]}), diagnostics}'
-{
-  "format": "writ.remote-plan/v0",
-  "ok": true,
-  "plan": {
-    "ref": "MM4PBQUBYHS6B3KVAWW5WLALOC",
-    "id": "a9443d1adb1bc57bfee682d5bf8fcf85",
-    "status": "approved",
-    "env": "dev",
-    "stacks": [
-      {
-        "stack": "app",
-        "changes": 1,
-        "source_digest": "7d9984593cfb19f9b1655c9a54d6d5c57f029f4c8a83d5d69c1bb2364848605a"
-      }
-    ],
-    "author": {
-      "kind": "dev",
-      "person": "dev/root"
-    },
-    "source": {
-      "kind": "commit",
-      "repo": "repo",
-      "ref": "refs/heads/main",
-      "commit": "6728f57a379c57399d0a6ff1978f78df26284936",
-      "ref_check": "on-ref"
-    }
-  },
-  "document": {
-    "format_version": "1.2",
-    "terraform_version": "1.13.9",
-    "variables": [
-      "canary"
-    ],
-    "resource_changes": [
-      {
-        "address": "random_pet.name",
-        "change": {
-          "actions": [
-            "create"
-          ],
-          "after": {
-            "keepers": {
-              "canary": "(sensitive)"
-            },
-            "length": 2,
-            "prefix": null,
-            "separator": "-"
-          }
-        }
-      }
-    ]
-  },
-  "diagnostics": []
-}
-```
-
-Output under `writ serve --dev`, 2026-11-16. `superseded_by` links to a newer pending plan in the same merge request:
+`superseded_by` links to a newer pending plan in the same merge request:
 
 ```
 $ curl -sS "$SERVER/v1/plans?env=prod&stack=network" -H "Authorization: Bearer $WRIT_ID_TOKEN" | jq -c '.plans[] | {id, superseded_by}'
@@ -200,25 +146,33 @@ Unknown fields (such as tokens) are refused; forge tokens never appear in respon
 
 `POST /v1/hooks/{forge}/{repo}` receives GitLab webhooks for pinned repositories with `webhook_secret_file` ([Get changes in seconds with a webhook](webhooks.md)). It takes no bearer token; deliveries authenticate with `X-Gitlab-Token` or a `whsec_` `webhook-signature`.
 
-- Verified `Push Hook`: `202` (`writ.hook/v0`, `queued: true`), triggering an immediate default-branch read via the forge API (body is capped at 1 MiB and never parsed, stored, or logged).
-- Duplicate `webhook-id` / `Idempotency-Key`: `200` (`duplicate: true`). Non-push verified event: `200` (`queued: false`).
-- Any verification failure, including an unknown repo/webhook, missing/wrong secret, bad signature/timestamp, or body over 1 MiB (`check: hook-body`): `401` (`auth`: `the delivery failed verification`).
-- Rate limits (`429`, `Retry-After: 1`): > 10 deliveries/s per client IP (dropped before body read, writes no audit row) or > 5 deliveries/s per repository (audited). All other deliveries write an `op = hook` audit row.
+| Delivery | Response |
+| --- | --- |
+| Verified `Push Hook` | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never parsed, stored, or logged. |
+| Duplicate `webhook-id` or `Idempotency-Key` | `200`, `duplicate: true` |
+| Verified, not a push | `200`, `queued: false` |
+| Any verification failure: unknown repository or webhook, missing or wrong secret, bad signature or timestamp, body over 1 MiB (`check: hook-body`) | `401`, `auth`: `the delivery failed verification` |
+| Over 10 deliveries/s from one client IP | `429`, `Retry-After: 1`. Dropped before the body is read; no audit row. |
+| Over 5 deliveries/s for one repository | `429`, `Retry-After: 1`. Audited. |
+
+Every other delivery writes an `op = hook` audit row.
 
 ## Token checks
 
-`writ serve` accepts compact JWS tokens signed with `RS256` or `ES256` and validates them in order (first failure returns `401 auth`):
+Compact JWS tokens signed with `RS256` or `ES256`, checked in this order. The first failure returns `401 auth`.
 
-1. **Shape:** 3 strict base64url segments, <= 16 KiB (JWE refused).
-2. **Header:** `alg` is `RS256` or `ES256` (`kid` required; `jku`, `jwk`, `x5u`, `x5c`, `crit`, `b64`, `enc`, `zip`, `epk`, and duplicate JSON keys refused).
-3. **Issuer:** `iss` equals a configured issuer's `url` exactly.
-4. **Signature:** Verified against the issuer's cached JWKS (`kid` type and `alg` must match).
-5. **Times:** `exp` and `iat` required, `nbf` optional, 60s leeway.
-6. **Audience:** `aud` must be `writ serve`'s `url` alone.
-7. **Claims:** Non-empty `sub`, `jti`, and all required claims for the issuer's kind (GitLab CI: `project_id`, `project_path`, `namespace_id`, `pipeline_id`, `pipeline_source`, `job_id`, `ref_path`, `ref_protected`, `sha`, `user_id`, `user_login`; GitHub Actions: `repository`, `repository_id`, `repository_owner_id`, `run_id`, `ref`, `sha`, `event_name`, `workflow_ref`, `actor`, `actor_id`).
-8. **Replay:** Each CI token `jti` allows one write, recorded until `exp`.
+| # | Check | Rule |
+| --- | --- | --- |
+| 1 | Shape | 3 strict base64url segments, at most 16 KiB. JWE refused. |
+| 2 | Header | `alg` is `RS256` or `ES256`. `kid` required. `jku`, `jwk`, `x5u`, `x5c`, `crit`, `b64`, `enc`, `zip`, `epk`, and duplicate JSON keys refused. |
+| 3 | Issuer | `iss` equals a configured issuer's `url` exactly. |
+| 4 | Signature | Verified against the issuer's cached JWKS. The key's `kid`, type, and `alg` must match. |
+| 5 | Times | `exp` and `iat` required, `nbf` optional, 60s leeway. |
+| 6 | Audience | `aud` is `writ serve`'s `url` alone. |
+| 7 | Claims | Non-empty `sub` and `jti`, and every required claim of the issuer's kind. GitLab CI: `project_id`, `project_path`, `namespace_id`, `pipeline_id`, `pipeline_source`, `job_id`, `ref_path`, `ref_protected`, `sha`, `user_id`, `user_login`. GitHub Actions: `repository`, `repository_id`, `repository_owner_id`, `run_id`, `ref`, `sha`, `event_name`, `workflow_ref`, `actor`, `actor_id`. |
+| 8 | Replay | Each CI token `jti` allows one write, recorded until `exp`. |
 
-JWKS refreshes hourly (or per `Cache-Control: max-age` clamped to 5m to 1h), at most once per minute on unknown `kid`, with 24h stale fallback on fetch error (10s timeout, 1 MiB max, <= 100 keys, RSA 2048 to 8192 `e=65537`, EC P-256, HTTPS on issuer host, no redirects).
+JWKS refreshes hourly, or per `Cache-Control: max-age` clamped to 5m to 1h, and at most once a minute on an unknown `kid`. On a fetch error it falls back to the stale set for 24h. Fetch bounds: 10s timeout, 1 MiB, at most 100 keys, RSA 2048 to 8192 with `e=65537`, EC P-256, HTTPS on the issuer's host, no redirects.
 
 ### Identity provider refusals
 
@@ -296,20 +250,26 @@ Output under `writ serve --dev`, 2026-11-19.
 
 ## Rate limits
 
-Two token-bucket limiters (1-second burst, up to 10,000 buckets each):
+Two token-bucket limiters, each with a 1-second burst and up to 10,000 buckets:
 
-1. **Per client address (`limits.requests_per_address`, default `20`/s):** Checked before routing, auth, or body reads. Excess returns `429` (`Retry-After: 1`) with no audit row and throttled server logs (once per 10s). IPv6 addresses group by `/64`.
-2. **Per principal (`limits.requests_per_second`, default `10`/s):** Checked after auth; excess returns `429` with an audit row.
+| Limiter | Default | Checked | Excess |
+| --- | --- | --- | --- |
+| Per client address, `limits.requests_per_address` | `20`/s; IPv6 grouped by `/64` | Before routing, auth, or body reads | `429` (`Retry-After: 1`), no audit row, server log throttled to once per 10s |
+| Per principal, `limits.requests_per_second` | `10`/s | After auth | `429`, with an audit row |
 
-Webhooks additionally enforce 10/s per IP (no audit row) and 5/s per repository (audited). `X-Forwarded-For` is honored only when the TCP peer is inside `trusted_proxies` (selecting the rightmost untrusted IP). `writ serve --dev` uses 100/s for both limits.
+- Webhooks also enforce 10/s per IP (no audit row) and 5/s per repository (audited).
+- `X-Forwarded-For` is honored only when the TCP peer is inside `trusted_proxies`; Writ takes the rightmost untrusted IP.
+- `writ serve --dev` uses 100/s for both limits.
 
 ## Time limits
 
-- **`limits.plan_timeout` (default `30m`):** Covers commit fetch, UID wait, `init`, and `plan`; kills the process group on expiry and marks the plan `failed`.
-- **`limits.apply_start_timeout` (default `10m`):** Covers saved-plan decrypt, role assumption, and UID wait before `tofu apply` starts.
-- **`limits.apply_timeout` (default `4h`):** Sends `SIGINT` to OpenTofu so running changes finish without starting new ones, fails the run, and kills OpenTofu if still alive 2 hours later.
+| Limit | Default | Covers | On expiry |
+| --- | --- | --- | --- |
+| `limits.plan_timeout` | `30m` | Commit fetch, UID wait, `init`, `plan` | Kills the process group and marks the plan `failed`. |
+| `limits.apply_start_timeout` | `10m` | Saved-plan decrypt, role assumption, UID wait before `tofu apply` starts | - |
+| `limits.apply_timeout` | `4h` | `tofu apply` | Sends OpenTofu `SIGINT` so running changes finish and no new ones start, fails the run, and kills OpenTofu if it is still alive 2 hours later. |
 
-If a run's processes fail to exit after termination, its UID is withheld until restart:
+If a run's processes do not exit after termination, its UID is withheld until restart:
 
 ```
 the plan ran past limits.plan_timeout, 500ms, while it waited for a provider uid: 2 of the 2 provider_uids are withheld because their processes did not end, and the others serve running plans and applies
