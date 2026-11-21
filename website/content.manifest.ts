@@ -278,6 +278,12 @@ export const pages: Page[] = [
     description: 'How writ login and the control UI sign people in: CLI discovery, device and browser flows, pending limits, sessions, control UI pages, and response headers.',
     parts: whole('docs/how-sign-in-works.md'),
   },
+  {
+    slug: 'how-import-bulk-works',
+    title: 'How import bulk works',
+    description: 'What writ import bulk generates, how resources are named, what writ import accept accepts, selection files, listing, refusals, and limits.',
+    parts: whole('docs/how-import-bulk-works.md'),
+  },
 ];
 
 export const nav: NavEntry[] = [
@@ -325,6 +331,7 @@ export const nav: NavEntry[] = [
   'security-model',
   'how-run-isolation-works',
   'how-sign-in-works',
+  'how-import-bulk-works',
 ];
 
 // Where a link to a source file lands on the site.
@@ -368,4 +375,5 @@ export const fileRoutes: Record<string, string> = {
   'docs/security-model.md': '/docs/security-model',
   'docs/how-run-isolation-works.md': '/docs/how-run-isolation-works',
   'docs/how-sign-in-works.md': '/docs/how-sign-in-works',
+  'docs/how-import-bulk-works.md': '/docs/how-import-bulk-works',
 };
