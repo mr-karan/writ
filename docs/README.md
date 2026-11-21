@@ -50,3 +50,5 @@ Writ is one Go binary under Apache 2.0, with no limits on users, runs, or resour
 
 - [How a plan becomes an apply](plan-to-apply.md): each step from commit to state index.
 - [Security model](security-model.md): credential boundaries, isolation, masking, and limits.
+- [Plan lifecycle reference](plan-lifecycle.md): statuses, staleness checks, apply steps, and run records.
+- How it works: [run isolation](how-run-isolation-works.md), [sign-in](how-sign-in-works.md), [import bulk](how-import-bulk-works.md), [writ mcp](how-writ-mcp-works.md), [the mask](how-the-mask-works.md), [AWS credentials](how-aws-credentials-work.md).
