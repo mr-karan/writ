@@ -223,7 +223,7 @@ env "prod" {
 
 ### forge and repo
 
-- **`forge "NAME"`:** `kind = "gitlab"`, `url` (`https://` or loopback `http://`), `read_token_file` (`read_api` scope), optional `ca_file`, and optional `write_token_file` (reserved for future write operations; warns if set).
+- **`forge "NAME"`:** `kind = "gitlab"`, `url` (`https://` or loopback `http://`), `read_token_file` (`read_api` scope), optional `ca_file`, and optional `write_token_file` (reserved for future write operations; warns if set). `read_token_file` is re-read on every call, so it rotates without a restart, and is sent only in `PRIVATE-TOKEN` with redirects disabled. Writ never echoes raw forge response text in API answers, logs, or database rows; read tokens are redacted from errors, and refused if a forge echoes them back.
 - **`repo`:** `name` (`[a-z0-9][a-z0-9._-]*`), `forge`, `project` (`namespace/project`), optional `path`, optional `prefix` (ending in `/`), and optional `webhook_secret_file` (plain token or GitLab 19.1+ `whsec_` signing token, re-read on each delivery) ([Get changes in seconds with a webhook](webhooks.md)).
 
 ### notify
@@ -246,9 +246,39 @@ Files are read once at startup (restart after edits). Subscribing to `drift` wit
 
 Requires `provider_uids` so OpenTofu never executes as `writ serve`'s OS user.
 
+## Repository and stack rules
+
+The rules [Add a repository](add-repository.md) applies.
+
+### Rules for adding a repository
+
+Adding a repository needs `admin` on every stack in every env, because repository code can define any stack name. Most teams instead pin repositories with `repo` blocks in `/etc/writ/serve`, so config review governs them. On `writ serve --dev`, the dev team can add any repository.
+
+| Rule | Detail |
+| --- | --- |
+| Admin grant scope | Only grants with `envs = ["*"]` count, and their `stacks` patterns must match every depth up to 64 parts (the most a 128-character name has). A pattern of `*` parts matches one exact depth (`"*"`, `"*/*"`). Mixing `*` and `**` matches at least as many parts as the `*`s, so `stacks = ["**"]` alone covers every depth. |
+| Unique names and targets | No two repositories share a `name`, or the same `project` and `path`. |
+| Unique stack names | State is stored by stack name, so stack names are global per control plane. On a collision, pass `--prefix payments/` (or `prefix = "payments/"` in HCL) to get `payments/network` and so on. |
+| Disjoint prefixes | No prefix may start with another's: `payments/` and `payments/eu/` are refused together. Two repositories may share the exact same prefix, or one may have none. Pinned `repo` blocks follow the same rule; offending entries are skipped and logged. |
+| No stack under another's prefix | An unprefixed stack `a/x` is refused next to a repository with prefix `a/`, and the reverse. Polling enforces this on new commits: Writ refuses the commit, keeps the previous head, and records the error until it is fixed. |
+
+Writ runs these checks inside the transaction that stores the repository, so two concurrent requests cannot both succeed.
+
+### What a stack may not contain
+
+Writ refuses a commit or stack, before OpenTofu runs, for any of these:
+
+| Rule | Refused |
+| --- | --- |
+| Files | A missing `.terraform.lock.hcl`; a committed `.terraform/` directory; any `.tf.json`, `.tofu.json`, or `.writ` file; any symlink under `path`. Submodules are ignored. |
+| Backend | Anything but an empty `backend "http" {}` or an allow-listed `backend "s3"` ([AWS roles and credentials](aws-credentials.md#2-grant-s3-state-permissions-if-using-backend-s3)). A missing backend and `cloud {}` are refused. |
+| Module `source` | A non-literal source, or one that is not: a relative path (`./`, `../`) inside the repository `path`; a registry address (`[HOST/]NS/NAME/SYS[//SUBDIR]`); or a remote address (`git::`, `hg::`, `s3::`, `gcs::`, `http::`, `https::`, `github.com/`, `bitbucket.org/`). |
+| Module address parts | Any query parameter but a literal `ref` and `depth` (so `checksum`, `archive`, `filename`, `sshkey`, `rev`, S3 credential parameters, and so on), `#` fragments, `file:` (even percent-encoded), backslashes, absolute paths, `~`, Windows and UNC paths, `oci://`. |
+| Size and fetch limits | `1 MiB` per `.tf`, `.tofu`, `.tfvars`, or lock file; `16 MiB` per other file; `2,000` files or `64 MiB` across a stack and its local modules; `2,000` lock files (`16 MiB` total); `20,000` tree entries; `1 MiB` per tree page; `8 MiB` per other API response; `10s` per Git host HTTP call. |
+
 ## Stack names and prefixes
 
-A repository's `prefix` prepends to each stack directory (`prefix = "payments/"` + `network` = `payments/network`). Grants, approvals, and state key off this full name. Writ rejects overlapping prefixes or stack names colliding with another repository's prefix ([Rules for adding a repository](add-repository.md#rules-for-adding-a-repository)).
+A repository's `prefix` prepends to each stack directory (`prefix = "payments/"` + `network` = `payments/network`). Grants, approvals, and state key off this full name. Writ rejects overlapping prefixes or stack names colliding with another repository's prefix ([Rules for adding a repository](#rules-for-adding-a-repository)).
 
 ## State
 
