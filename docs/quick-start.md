@@ -130,7 +130,7 @@ A team `writ serve` adds Postgres, OIDC sign-in for CI jobs and people, teams, g
 - A GitLab project (`acme/infra`, numeric ID `4242`)
 - A `writ` container image reachable by your GitLab runners (for example `registry.example.com/writ:0.1.8`, copied from [`ghcr.io/mr-karan/writ:0.1.8`](install.md#the-container-image))
 
-The transcripts below come from `TestTofuApproveApply` in [`e2e/tofu_apply_test.go`](../e2e/tofu_apply_test.go) against Postgres, a test OIDC issuer, and a local GitLab stand-in.
+The transcripts below come from a real run against Postgres, a local OIDC test issuer, and a local GitLab stand-in.
 
 ### 1. Commit the stack to the default branch
 
@@ -296,7 +296,7 @@ teams: acme
 prod  app  read  -
 ```
 
-Output of `TestTofuApproveApply`, 2026-11-16.
+Output of a real run, 2026-11-16.
 
 You can also open `https://writ.example.com/ui/repos/infra` directly in a browser and sign in through GitLab.
 
@@ -343,7 +343,7 @@ Plan: 4 to add, 0 to change, 0 to destroy.
 Outputs that change: pet.
 ```
 
-Output of `TestTofuApproveApply`, 2026-11-16.
+Output of a real run, 2026-11-16.
 
 If `alice` (the author) tries to approve the plan, Writ refuses:
 
@@ -378,7 +378,7 @@ Apply: 4 added, 0 changed, 0 destroyed.
 State version 1 of app@prod.
 ```
 
-Output of `TestTofuApproveApply`, 2026-11-16.
+Output of a real run, 2026-11-16.
 
 If `alice` pushes another commit to the MR, a new plan is created and the old approved plan can no longer apply; see [Why an approved plan can still be refused](approvals.md#why-an-approved-plan-can-still-be-refused).
 

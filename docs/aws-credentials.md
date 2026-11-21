@@ -107,7 +107,7 @@ Each STS assumption logs session name, source identity, and access key ID:
 {"time":"2026-11-10T19:21:56.87338551+05:30","level":"INFO","msg":"assumed role","component":"credentials","role":"arn:aws:iam::222222222222:role/writ-plan","session":"writ-ci-OH7MRPZTDKWIQBRXFHJDKV3GAD","source_identity":"gitlab-4242-1849213","why":"start","access_key_id":"ASIATEST000000000001","expires":"2026-11-10T14:51:56Z"}
 ```
 
-Output of `just test-serve`, 2026-11-10.
+Output of a real run against a local STS stand-in, 2026-11-10.
 
 ## How credentials reach providers and CloudTrail
 

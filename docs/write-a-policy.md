@@ -102,14 +102,14 @@ tofu show -json plan.out > plan.json
 conftest test --policy policy/baseline plan.json
 ```
 
-For rules reading non-secret fields kept by Writ's mask, `conftest` and `writ serve` return identical verdicts and messages (`just policy-parity` verifies `examples/policy` across three stacks):
+For rules reading non-secret fields kept by Writ's mask, `conftest` and `writ serve` return identical verdicts and messages:
 
 ```
 writ serve: deny local_file.key: file_permission is 0777; set 0600, so only its owner reads it | tls_private_key.key: an RSA key needs 4096 bits, and this one has 2048
 conftest:   deny local_file.key: file_permission is 0777; set 0600, so only its owner reads it | tls_private_key.key: an RSA key needs 4096 bits, and this one has 2048
 ```
 
-Output of `just policy-parity`, 2026-11-15.
+Output of a real run, 2026-11-15.
 
 Expected differences between `conftest` and `writ serve`:
 
@@ -155,7 +155,7 @@ Policy: denied, so this plan cannot be approved or applied.
   warn: [examples] local_file.note: file_permission is 0777; set 0600, so only its owner reads it
 ```
 
-Output of `TestTofuPlanByCommit`, 2026-11-15.
+Output of a real run, 2026-11-15.
 
 A mandatory deny stores the masked document and decision with `status = "refused"` and discards the saved plan. Neither `writ approve --remote` nor `writ apply --remote --override` can apply it. Once you raise `rsa_bits` to `4096` and plan again, only the warning remains and the plan becomes `pending` (or `approved` if no approval rule matches).
 

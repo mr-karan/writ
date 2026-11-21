@@ -105,7 +105,7 @@ Drift results never store attribute values, only resource addresses, actions, an
 }
 ```
 
-Output of `just e2e`, 2026-11-15, indented with `python3 -m json.tool`.
+Output of a real run, 2026-11-15.
 
 A clean check clears the drifted flag. Writ keeps the newest 20 checks per `stack@env`; `GET /v1/drift?env=ENV&stack=STACK` returns them under `checks`, each with a `ref`.
 

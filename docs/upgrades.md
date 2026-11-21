@@ -26,7 +26,7 @@ Each `env.*.key` (32 random bytes) [seals](glossary.md) HTTP-backend states, sav
 
 ### 3. Configure retention (optional)
 
-Every hour, `writ serve` automatically marks plans past `plan_ttl` as `expired`, prunes expired CI token `jti`s, and prunes closed `apply_requests` `none` rows older than 25 hours (updating `apply_key_floor` so clock skew can't reopen closed keys).
+Every hour, `writ serve` automatically marks plans past `plan_ttl` as `expired`, prunes expired CI token `jti`s, and prunes closed apply idempotency keys older than 25 hours.
 
 By default, completed plans and audit rows are kept forever. Add a `retention` block to prune older records:
 
@@ -79,14 +79,9 @@ curl -sS https://writ.example.com/healthz
 
 Output of a real run, 2026-11-16 (a team server lists each issuer under `issuers`).
 
-## Version-specific upgrade notes
+## Downgrades
 
-- **Downgrades are refused:** Starting an older `writ` against a database migrated by a newer version fails immediately. Restore your pre-upgrade Postgres dump before rolling back.
-- **Pre-release builds (before 2026-11-10 / 2026-11-12):**
-  - Migration 1 requires the unified SQLite/Postgres schema (older Postgres-only `0001_init.sql` databases are refused).
-  - Migration 5 expires pre-approval live plans (`made before approvals`); re-plan after upgrading.
-  - Migration 16 dropped legacy `stacks` and CloudTrail watcher tables; old `state_ENV_STACK_HASH` schemas can be dropped once unused.
-  - `**` in stack patterns matches any number of segments (previously one segment like `*`); review grant and approval patterns before restarting.
+Starting an older `writ` against a database migrated by a newer version fails immediately. Restore your pre-upgrade Postgres dump before rolling back.
 
 ## Troubleshooting
 

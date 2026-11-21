@@ -95,7 +95,7 @@ approval {
 # Project settings of acme/infra: protect main, and turn on "Pipelines must succeed".
 ```
 
-Output of `TestTofuApproveApply`, 2026-11-16, against a team's `writ serve` on loopback. It shows the shape only: the image tag and the `http://127.0.0.1:40185` server URL are the test's. Don't copy this transcript. Run the command against your own control plane, with your release's image tag, and copy what it prints, which carries your server's URL.
+Output of a real run against a local test `writ serve` on loopback, 2026-11-16. It shows the shape only: the image tag and the `http://127.0.0.1:40185` server URL are the test's. Don't copy this transcript. Run the command against your own control plane, with your release's image tag, and copy what it prints, which carries your server's URL.
 
 1. Add the YAML lines your run printed to `.gitlab-ci.yml`.
 2. Add the HCL blocks it printed to `/etc/writ/serve` and restart `writ serve`.

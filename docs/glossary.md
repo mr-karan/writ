@@ -16,9 +16,8 @@ Each Writ term has one meaning across the docs, CLI, and UI. Where Terraform or 
 | variable | A stack input declared with `variable`. Variables with `sensitive = true` are secrets. | Input variable |
 | output | A value exposed by a stack with `output`. | Output value |
 | module | A directory of OpenTofu code called via a `module` block. `writ serve` allows local paths inside the repo, registry addresses, and vetted remote URLs. | Module |
-| annotation layer | Writ's table of facts missing from provider schemas (cross-resource references and provider-populated attributes), used by `writ import bulk`. | |
-| secret | Any value `internal/mask` must strip: OpenTofu `sensitive` values, `sensitive = true` variables, `provider_env` values, and assumed STS credentials. See [Secrets and the mask](secrets.md). | Sensitive value |
-| mask | `internal/mask`, the single package that writes every output leaving an OpenTofu run (masked plans, logs, diagnostics, egress hosts, and state index rows), replacing secrets with `(sensitive)`. | |
+| secret | Any value Writ's mask must strip: OpenTofu `sensitive` values, `sensitive = true` variables, `provider_env` values, and assumed STS credentials. See [Secrets and the mask](secrets.md). | Sensitive value |
+| mask | Writ's single masking boundary over every output leaving an OpenTofu run (masked plans, logs, diagnostics, egress hosts, and state index rows), replacing secrets with `(sensitive)`. | |
 | masked plan | OpenTofu's plan JSON after passing through the mask and key allow-list. Stored by `writ serve`, checked by Rego policy, and displayed by the CLI and UI. | |
 | secret set | The secrets a run's mask knew, sealed alongside each state version or S3 serial so later runs mask older secrets. States without a secret set can't be approved until adopted. | |
 | seal | Encrypt with an environment's 32-byte key (AES-256-GCM): used for `http`-backend states, saved plans, and secret sets. | |

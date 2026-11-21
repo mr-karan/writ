@@ -34,7 +34,7 @@ Output of a real run, 2026-11-16. Run `writ whoami` to inspect which server and 
 
 ## People: writ login
 
-`writ login` uses `golang.org/x/oauth2` against a `kind = "people"` issuer:
+`writ login` works against a `kind = "people"` issuer:
 
 - **Device flow (RFC 8628):** used when the issuer publishes `device_authorization_endpoint`.
 - **Browser PKCE flow (RFC 8252 / RFC 7636):** used otherwise ([Sign in through a browser](#sign-in-through-a-browser)).
@@ -60,7 +60,7 @@ $ writ logout
 Signed out of http://127.0.0.1:44701: session 3VGMLAJ2CWONYGAD3SG56GEP4S of bob ended.
 ```
 
-Output of an end-to-end test against a test issuer, 2026-11-11. That test has since been removed; `TestLoginWhoamiLogout` in `internal/cli` covers the same flow. After `writ logout`, the old session token is refused with `auth`.
+Output of a real run against a local test issuer, 2026-11-11. After `writ logout`, the old session token is refused with `auth`.
 
 ### What happens when you sign in
 
@@ -85,7 +85,7 @@ Teams: acme
 Session ends 2026-11-16T20:39:54Z.
 ```
 
-Output of `TestTofuApproveApply` in `e2e/`, 2026-11-16, with a test issuer and scripted browser.
+Output of a real run against a local test issuer, 2026-11-16.
 
 1. `writ login` binds `127.0.0.1:0`, generates `state` and a PKCE verifier, and posts the `http://127.0.0.1:PORT/callback` redirect URI and S256 challenge to `POST /v1/auth/browser`.
 2. `writ serve` validates the exact loopback callback format and 43-char S256 challenge, creates a nonce, stores a 10-minute in-memory handle, and returns the IdP authorization URL (`writ.browser/v0`).
@@ -147,14 +147,14 @@ Unauthenticated pending logins in server memory are bounded:
 1. Register `https://URL/ui/callback` with scopes `openid profile email` on your confidential OAuth app.
 2. Unauthenticated `/ui/*` requests redirect (`303`) to `/ui/login?next=PATH` (`next` is restricted to `/ui/`).
 3. `/ui/login/start` stores `state`, `nonce`, and a PKCE verifier in a 10-minute `HttpOnly` cookie and redirects to the IdP with an S256 challenge. Writ sends the challenge even when the discovery document doesn't list S256, and logs a warning at start.
-4. `/ui/callback` checks `state` in constant time, clears the cookie, exchanges the code with verifier and client secret, validates the ID token and nonce, resolves teams, and stores a `browser` session in `sessions`.
+4. `/ui/callback` checks `state` in constant time, clears the cookie, exchanges the code with verifier and client secret, validates the ID token and nonce, resolves teams, and stores a `browser` session.
 5. `POST /ui/logout` ends the server session (without signing out of the IdP).
 
 If a page's own audit row can't be written, the page answers `503`, sets no cookie, and redirects nowhere. A sign-out that can't end its session shows that page too: the cookie and the session stay.
 
 ### What every page sends
 
-Session cookies use `HttpOnly`, `SameSite=Lax`, and on `https://` URLs `Secure` plus the `__Host-` prefix. Forms are protected by Go's `http.CrossOriginProtection` (`Sec-Fetch-Site` / `Origin`). Every `/ui/` response enforces a strict CSP with no inline scripts/styles or third-party origins:
+Session cookies use `HttpOnly`, `SameSite=Lax`, and on `https://` URLs `Secure` plus the `__Host-` prefix. Forms are protected by cross-origin request checks (`Sec-Fetch-Site` and `Origin`). Every `/ui/` response enforces a strict CSP with no inline scripts/styles or third-party origins:
 
 ```
 Cache-Control: no-store
@@ -168,7 +168,7 @@ Transfer-Encoding: chunked
 
 Headers from `/ui/whoami`, 2026-11-16.
 
-Pages work with JavaScript disabled; `writ.js` adds local-timezone tooltips, relative timestamps, menu toggles, and copy buttons. Styles build on vendored [Oat](https://oat.ink) 1.0.0 with system fonts (16,409 bytes gzipped total across all static assets) and meet WCAG 2.2 contrast ratios in light and dark themes.
+Pages work with JavaScript disabled (JavaScript adds local-timezone tooltips, relative timestamps, menu toggles, and copy buttons), use system fonts with no external assets, and support light and dark themes.
 
 ## Troubleshooting
 

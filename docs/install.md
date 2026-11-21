@@ -32,12 +32,7 @@ Install [`minisign`](https://jedisct1.github.io/minisign/) first. Without it, th
 curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh
 ```
 
-To inspect the script before running it, download it first and run `sh install.sh`. To test against a local build with no network:
-
-```sh
-just release-dry-run
-sh dist/install.sh --from dist
-```
+To inspect the script before running it, download it first and run `sh install.sh`.
 
 Example output (first without `minisign`, then with it):
 
@@ -56,7 +51,7 @@ If the binary's checksum fails, nothing is installed:
 install.sh: writ-linux-amd64 has SHA-256 eafe950cb49f9769424fc2971bd176aa5c1e22b7d881ffbe94836bf80f1849cf, but SHA256SUMS says 7fb400623abfa4cac138255ff762b4c8483331aed9369c59cd4659b9720d28bd; nothing installed
 ```
 
-The script also refuses to overwrite a symlink or directory at the target path, rejects `--version` values outside `[A-Za-z0-9._-]`, and renames via `mv -T` (GNU) or `mv -h` (macOS/BSD) so symlinks are never followed.
+The script also refuses to overwrite a symlink or directory at the target path, rejects `--version` values outside `[A-Za-z0-9._-]`, and installs atomically without following symlinks.
 
 | Flag | Env var | Meaning |
 | --- | --- | --- |
@@ -86,19 +81,15 @@ On macOS, replace `sha256sum` with `shasum -a 256`.
 
 ## The container image
 
-`ghcr.io/mr-karan/writ:0.1.8` is a multi-architecture (`amd64`, `arm64`) image built with Nix's `dockerTools`. It contains `writ`, OpenTofu 1.13.9 at `/bin/tofu`, CA certificates, tzdata, and user `writ` (UID 65532). It has no shell and no `git`.
+`ghcr.io/mr-karan/writ:0.1.8` is a multi-architecture (`amd64`, `arm64`) image containing `writ`, OpenTofu 1.13.9 at `/bin/tofu`, CA certificates, tzdata, and user `writ` (UID 65532). It has no shell and no `git`.
 
 ```sh
 podman pull ghcr.io/mr-karan/writ:0.1.8
 ```
 
-To build or load an archive locally instead:
+To build and load the image locally with Nix:
 
 ```sh
-just release-dry-run
-podman load -i dist/writ-image-linux-amd64.tar.gz
-
-# Or with Nix:
 nix build .#image && podman load -i result
 ```
 
@@ -138,7 +129,7 @@ nix run github:mr-karan/writ -- version
 nix profile install github:mr-karan/writ
 ```
 
-The Nix package wraps the static binary (at `bin/.writ-wrapped`) with `gitMinimal` appended to `PATH`, so your own `git` takes precedence and `git` is always available if missing. Supported flake systems: `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin` (Intel Macs use the release binary).
+The Nix package wraps the static binary with `gitMinimal` appended to `PATH`, so your own `git` takes precedence and `git` is always available if missing. Supported flake systems: `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin` (Intel Macs use the release binary).
 
 In your own flake, add `inputs.writ.url = "github:mr-karan/writ";` and reference `writ.packages.${system}.writ`. For NixOS servers, the flake exports `nixosModules.writ-serve`; see [Run a server: On NixOS](run.md#on-nixos).
 

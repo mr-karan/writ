@@ -19,9 +19,9 @@ Writ plans, approves, and applies OpenTofu 1.13.9 stacks on your own Linux serve
 
 End-to-end suites build `writ` and run real OpenTofu 1.13.9 and real providers inside isolated Linux namespaces, offline once providers are cached:
 
-- `hashicorp/random`, `hashicorp/tls`, and `hashicorp/local` through `writ serve` on its `http` backend (`just e2e`, `just verify-mask`, `just policy-parity`).
-- `hashicorp/random` and `terraform_data` through `writ serve` on `backend "s3"` against local `versitygw` and an STS stand-in (`just e2e-tofu-s3`).
-- `hashicorp/nomad` against a local dev agent and `hashicorp/aws` against local stand-ins and AWS Emulator for `writ import bulk` and `writ import accept` (`just e2e-import`, `just e2e-import-hcl`, `just e2e-aws-emulator`).
+- `hashicorp/random`, `hashicorp/tls`, and `hashicorp/local` through `writ serve` on its `http` backend (including differential secret-masking and `conftest` policy-parity suites).
+- `hashicorp/random` and `terraform_data` through `writ serve` on `backend "s3"` against local S3 and STS stand-ins.
+- `hashicorp/nomad` against a local dev agent and `hashicorp/aws` against local stand-ins and AWS Emulator for `writ import bulk` and `writ import accept`.
 
 No test contacts a live cloud account or real GitLab instance.
 
@@ -61,6 +61,6 @@ No test contacts a live cloud account or real GitLab instance.
 ### Repositories and policy
 
 - Deleting a repository via the HTTP API (pinned `repo` blocks reconcile automatically on config reload).
-- Garbage collection of unreferenced Git blobs in the `blobs` table.
+- Garbage collection of unreferenced Git blobs in the control database.
 - Dynamically raising `approval.need` from Rego at plan time (an apply-point Rego rule can inspect `count(input.writ.approvals)` and deny until enough approvals exist).
 - Overriding a mandatory policy `deny`, loading Rego policies from application Git repos, or `writ policy test`/`eval` subcommands (use `conftest verify` and `conftest test`).

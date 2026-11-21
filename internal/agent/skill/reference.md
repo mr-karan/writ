@@ -71,7 +71,7 @@ Plan: 1 to import, 1 to add, 0 to change, 0 to destroy.
 Plan 3bfba7e24b278285e32b8063bee56f89 for dev (app), by root (dev), is refused.
 ```
 
-Output of `plan` from `TestTofuMCP`, 2026-11-16.
+Output of a real run, 2026-11-16.
 
 In `writ.remote-plan/v0`, `policy` holds `outcome` (`pass`, `warn`, `deny`), `point`, and `results` (`set`, `level`, `rule`, `outcome`, `message`, all masked). Oversized truncated JSON responses still preserve `policy` (up to `32 KiB` plus `omitted_results`).
 

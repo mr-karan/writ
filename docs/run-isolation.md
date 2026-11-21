@@ -88,7 +88,7 @@ Every `tofu` step (`init`, `plan`, `show`, `apply`, plugin cache fill) runs in f
 | `tofu` binary, dynamic loader, shared libraries (and `tofu.git` + `git-remote-http`/`https` if configured) | read-only |
 | `/etc/resolv.conf`, `/etc/hosts`, `/etc/ld.so.cache`, `/etc/ssl/certs/ca-certificates.crt`, minimal `/etc/nsswitch.conf` | read-only |
 | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/fd`, PID-scoped `/proc` | standard / read-only |
-| Saved plan for `show` and `apply` at `/dev/fd/8` (sealed in-memory file) | read-only |
+| Saved plan for `show` and `apply` (sealed in-memory file) | read-only |
 
 No `/home`, `data`, `/tmp`, `/bin/sh`, `ssh`, or `hg` exists in the view. Each step's System V IPC objects end with its IPC namespace, and Writ kills all processes owned by the run's UID before returning the UID to the pool.
 
@@ -119,7 +119,7 @@ tofu init stopped at a limit: the run reached limits.run_pids, 64 processes and 
 tofu init stopped at a limit: the run's directory held more than limits.run_scratch, 16MiB, on disk
 ```
 
-Output of `TestRunLimits`, 2026-11-20. When a host-level OOM kills a step before its own or shared cgroup limit, the diagnostic reports that rather than `run_memory`. On step exit, Writ terminates remaining processes via `cgroup.kill` and deletes the cgroup.
+Output of a real run, 2026-11-20. When a host-level OOM kills a step before its own or shared cgroup limit, the diagnostic reports that rather than `run_memory`. On step exit, Writ terminates remaining processes via `cgroup.kill` and deletes the cgroup.
 
 ### How writ serve makes the cgroups
 
@@ -145,7 +145,7 @@ Delegate=yes
 
 ### Under Nomad's exec driver
 
-Run the task as `root` with `writ` as the task command (sole process in the task cgroup). A root task gets Nomad's legacy capability set, which includes `CAP_SYS_ADMIN`. If Nomad mounts a read-only `/sys` without cgroupfs, `writ serve` mounts cgroup v2 at an empty `/sys/fs/cgroup` and creates per-step cgroups inside the task's limits. (Verified in namespace tests from Nomad's exec driver source, 2026-11-20; not yet run under a live Nomad agent.)
+Run the task as `root` with `writ` as the task command (sole process in the task cgroup). A root task gets Nomad's legacy capability set, which includes `CAP_SYS_ADMIN`. If Nomad mounts a read-only `/sys` without cgroupfs, `writ serve` mounts cgroup v2 at an empty `/sys/fs/cgroup` and creates per-step cgroups inside the task's limits. (Not yet verified under a live Nomad agent.)
 
 ### Check that the limits hold
 

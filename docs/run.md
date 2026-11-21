@@ -30,7 +30,7 @@ teams: dev
 
 Output of a real run, 2026-11-16, with a `tofu` block setting the binary, plugin cache, and scratch directory.
 
-Remote CLI commands discover `writ serve --dev` automatically ([How a CLI finds its control plane](sign-in.md#how-a-cli-finds-its-control-plane)). No command starts a dev server implicitly. Dev mode defines no approval rules, so plans end `approved` and apply immediately with `writ apply --remote ID`. Startup median is 8.5 ms on tmpfs ([`bench/RESULTS.md`](../bench/RESULTS.md#a-dev-control-plane-2026-11-10)).
+Remote CLI commands discover `writ serve --dev` automatically ([How a CLI finds its control plane](sign-in.md#how-a-cli-finds-its-control-plane)). No command starts a dev server implicitly. Dev mode defines no approval rules, so plans end `approved` and apply immediately with `writ apply --remote ID`.
 
 ### What the dev control plane does
 
@@ -82,7 +82,7 @@ warning[usage]
   isolation not checked: run writ as provider uid 61000: fork/exec /nix/store/a3k9grqxjk9dxgmzrvs2v57yx454ygqw-writ-f5f8f09/bin/.writ-wrapped: operation not permitted; writ serve checks its capabilities at start
 ```
 
-Output of `just check-nixos`, 2026-11-16.
+Output of a real run, 2026-11-16.
 
 At startup, `writ serve` runs schema migrations, fetches every OIDC issuer's discovery document and JWKS (failing if any is unreachable), and logs JSON decisions to stdout. On `SIGTERM`, it stops accepting new requests, drains in-flight requests for up to 30 seconds, and marks unfinished plans `failed`.
 
@@ -121,14 +121,12 @@ Import `nixosModules.writ-serve` from the flake (or `deploy/nixos/writ-serve.nix
 
 When `providerUids` is set, the module grants `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL`, creates `/var/lib/writ-tofu`, installs the EC2 metadata firewall rule (into `networking.nftables` when the host enables it, which flushes every other table when it loads, or else via the `writ-serve-metadata-firewall` unit), enables `Delegate=yes` (leaving `ProtectControlGroups` off for per-run cgroups), allows user, mount, PID, and IPC namespaces, plus network namespaces for `egress_mode` `report` and `enforce` (enabling `ProtectKernelTunables` only on Linux 7.2+), puts Nix's `git` on `PATH`, and runs `writ serve --check` in `ExecStartPre`.
 
-`just check-nixos` evaluates the module, checks that its `RestrictNamespaces` allows `net`, and validates its sample config against the built `writ` and OpenTofu 1.13.9 packages, including a run in its own network namespace.
-
-**Limits:** The NixOS module has been validated by `just check-nixos`, not yet booted on a live NixOS host. See [Install](install.md) for standalone binaries and containers.
+**Limits:** The NixOS module has been validated against a sample config and built packages, not yet booted on a live NixOS host. See [Install](install.md) for standalone binaries and containers.
 
 ## Back up and upgrade
 
 - Back up Postgres (`pg_dump`) and store encrypted offline copies of every `env.*.key` file (losing a key makes sealed states, saved plans, and secret sets unreadable).
-- Hourly pruning expires plans past `plan_ttl`, removes expired CI token `jti`s, and prunes closed `apply_requests` rows after 25 hours. Set `retention.plans` and `retention.audit` to prune historical data.
+- Hourly pruning expires plans past `plan_ttl`, removes expired CI token `jti`s, and prunes closed apply idempotency keys after 25 hours. Set `retention.plans` and `retention.audit` to prune historical data.
 - Upgrade by stopping the single node and starting the new binary (which runs migrations atomically; downgrades are refused).
 
 See [Back up and upgrade](upgrades.md) for the full runbook.

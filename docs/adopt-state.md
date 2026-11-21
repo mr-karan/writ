@@ -31,7 +31,7 @@ The state index holds its 3 resources.
 warning: the secret set holds each value the state marks sensitive and the environment's provider_env values; a secret the state holds where nothing marks it, as an address keyed by nonsensitive() of a variable before writ serve planned the stack, is not in it, and later plans and drift checks may show it
 ```
 
-Output of `just e2e-tofu-s3`, 2026-11-15.
+Output of a real run against a local S3 stand-in, 2026-11-15.
 
 After adoption, plan the stack again; the new plan can be approved and applied (the earlier failed plan stays failed). The control UI also prints the exact `writ state adopt` command on affected stack and failed-plan pages.
 

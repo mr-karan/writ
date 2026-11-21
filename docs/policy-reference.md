@@ -32,7 +32,7 @@ environment := object.get(input, ["writ", "environment"], "")
 
 ## Built-ins
 
-Policies may call only the built-ins below (kept in sync with `internal/policy/builtins.go` by a test). Calling any other built-in fails compilation at startup.
+Policies may call only the built-ins below. Calling any other built-in fails compilation at startup.
 
 | Family | Built-ins | Purpose |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ Policies may call only the built-ins below (kept in sync with `internal/policy/b
 | Time | `time.parse_rfc3339_ns`, `time.parse_ns`, `time.parse_duration_ns`, `time.date`, `time.clock`, `time.weekday`, `time.add_date`, `time.diff`, `time.format` | Change windows over `input.writ.now` (`"Local"` is UTC) |
 | Encoding | `json.marshal` | Formatting input values in messages |
 
-All other OPA v1.22.4 built-ins are excluded:
+All other OPA built-ins are excluded:
 
 - `http.send`, `net.lookup_ip_addr`, `providers.aws.sign_req`, and `opa.runtime`: access network, host, or environment.
 - `time.now_ns`, `rand.intn`, and `uuid.rfc4122`: non-deterministic (use `input.writ.now`).
@@ -57,7 +57,7 @@ All other OPA v1.22.4 built-ins are excluded:
 
 ## Bounds and failures
 
-`writ serve` evaluates every set for a decision in an isolated child process (`writ` itself) with `TZ=UTC`, empty environment, closed inherited file descriptors, and stdin/stdout only. GC pressure ramps from half of `memory`, Linux address space is bounded to `memory` above startup mapping, execution is killed at `timeout`, and input is capped at 16 MiB.
+`writ serve` evaluates every set for a decision in an isolated child process with `TZ=UTC`, empty environment, closed inherited file descriptors, and stdin/stdout only. Memory is bounded to `memory`, execution is killed at `timeout`, and input is capped at 16 MiB.
 
 Each set keeps up to 100 messages. Messages are masked whole and truncated to 1,000 bytes (cutting before any `(sensitive)` marker that would be split).
 

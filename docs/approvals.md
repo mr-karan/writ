@@ -54,7 +54,7 @@ Renaming an issuer's `identity` changes every person ID under it. Sessions or pl
 
 ## Track a plan's status
 
-Each plan has one status updated conditionally in the control database, with every transition logged to `plan_events` (`history` in `GET /v1/plans/{id}`).
+Each plan has one status with every transition recorded in `history` on `GET /v1/plans/{id}`:
 
 | Status | Meaning |
 | --- | --- |
@@ -71,7 +71,7 @@ Each plan has one status updated conditionally in the control database, with eve
 
 For live plans, Writ computes effective status (`pending` vs `approved`) against your current config whenever plans are read, listed, or applied. Config changes take effect immediately without rewriting database rows; the stored status updates at the next approval, withdrawal, or run.
 
-Allowed state transitions (enforced in `internal/control/lifecycle.go`):
+Allowed state transitions:
 
 | From | To | When |
 | --- | --- | --- |
@@ -114,7 +114,7 @@ Before starting an apply, Writ verifies the plan still matches current code and 
   error: state: plan 767f1426f30110318fdd547324fe200b is stale: plan d695de3fbecf1d88f2f865938cd7ca00 of app@prod is newer; plan again
   ```
 
-  Output of `TestTofuApproveApply` in `e2e/`, 2026-11-16.
+  Output of a real run against a local GitLab stand-in, 2026-11-16.
 
   ```
   $ writ apply --remote 545df270380c53e2f138f94a8af47c27
@@ -126,7 +126,7 @@ Before starting an apply, Writ verifies the plan still matches current code and 
 - **State version moved (`state`):** On Writ's HTTP backend, the newest state version must match what the plan read. On S3, `tofu apply` itself refuses if serial or lineage moved.
 - **OpenTofu's check:** If state changed after planning, OpenTofu refuses the saved plan and the run fails with `OpenTofu refused plan ID: the state of STACK@ENV changed after the plan was made; plan again`.
 
-Starting a run happens in one transaction: check token reuse, lock the plan, verify status/expiry/approvals/runs, update status to `applying`, and insert the run. Refusals don't spend the caller's CI token (even when committing `expired` or `superseded`, Writ deletes the token-use and idempotency rows before commit). Unique indexes guarantee at most one run per plan and at most one `applying` run per `stack@env`.
+Starting a run is atomic: Writ verifies token reuse, status, expiry, approvals, and active runs before setting status to `applying`. Refusals never spend the caller's CI token, and at most one run can execute per plan and at most one `applying` run per `stack@env`.
 
 ## What a run records
 
@@ -200,7 +200,7 @@ Apply: 4 added, 0 changed, 0 destroyed.
 State version 1 of app@prod.
 ```
 
-Output of `TestTofuApproveApply`, 2026-11-16.
+Output of a real run against a local GitLab stand-in, 2026-11-16.
 
 Past `limits.apply_timeout`, Writ sends `SIGINT` to OpenTofu so running operations finish and write state without starting new ones, then fails the run. If OpenTofu hasn't exited 2 hours later, Writ kills it.
 
