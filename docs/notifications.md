@@ -1,8 +1,8 @@
 # Get notified
 
-`writ serve` can send Slack messages or signed JSON webhooks when a stack drifts, a plan or apply fails, an apply succeeds, a state is written outside Writ, or a plan needs approval. Add one `notify` block per destination in `/etc/writ/serve`.
+Send a Slack message or a JSON webhook when a stack drifts, a plan or apply fails, an apply succeeds, a state is written outside Writ, or a plan needs approval. Add one `notify` block per destination to `/etc/writ/serve`.
 
-Notifications never include secrets, plan diffs, diagnostic text, or credentials. Summaries use only Writ's fixed phrasing, stack/environment names, counts, and error classes (such as `provider` or `usage`), plus a link to the control UI page.
+Notifications never include secrets, plan diffs, diagnostic text, or credentials. They carry only Writ's fixed wording, stack and env names, counts, error classes (such as `provider` or `usage`), and a link to the control UI page.
 
 ## Send to Slack
 
@@ -25,7 +25,7 @@ notify "ops-slack" {
 }
 ```
 
-Writ escapes `<`, `>`, and `&`, collapses newlines to spaces, and wraps display names in inline code so untrusted names can't trigger channel mentions or inject formatting:
+Writ escapes `<`, `>`, and `&`, collapses newlines to spaces, and wraps display names in inline code, so untrusted names cannot trigger mentions or inject formatting:
 
 ```json
 {
@@ -42,11 +42,11 @@ Writ escapes `<`, `>`, and `&`, collapses newlines to spaces, and wraps display 
 }
 ```
 
-Output of a real run, 2026-11-20 (no control UI URL because the control UI was disabled).
+Real run, 2026-11-20. It has no control UI link because the control UI was disabled.
 
 ## Send to your own webhook
 
-A `webhook` notifier sends a JSON `POST` to `url_file`. Set `secret_file` (at least 32 random bytes, such as `openssl rand -hex 32`) to sign requests with HMAC-SHA256:
+A `webhook` notifier sends a JSON `POST` to `url_file`. Signing is optional: set `secret_file` (at least 32 random bytes, such as `openssl rand -hex 32`) to sign requests with HMAC-SHA256:
 
 ```hcl
 notify "pager" {
@@ -112,7 +112,9 @@ Output of a real run, 2026-11-20 (body indented; `url` omitted because the contr
 
 ### Verify the signature
 
-With `secret_file` set, Writ adds `X-Writ-Signature-256`; without it, deliveries are unsigned. The header is `sha256=` plus lowercase hex HMAC-SHA256 of `<X-Writ-Timestamp>.<raw body>`. Each retry updates `X-Writ-Timestamp` and its signature. Verify over raw bytes in constant time before parsing JSON, and reject timestamps more than 5 minutes off:
+- With `secret_file` set, Writ adds `X-Writ-Signature-256`. Without it, deliveries are unsigned.
+- The header is `sha256=` plus the lowercase hex HMAC-SHA256 of `<X-Writ-Timestamp>.<raw body>`. Each retry updates `X-Writ-Timestamp` and the signature.
+- Verify over the raw bytes, in constant time, before parsing JSON, and reject timestamps more than 5 minutes off:
 
 ```go
 func verify(secret []byte, r *http.Request, body []byte) bool {
@@ -151,7 +153,7 @@ notify: ops (webhook) hears applied drift in prod for payments/**, drift on-chan
 notify: ops: test message sent
 ```
 
-Output of a real run, 2026-11-20. If `--check` can't read delivery counts (unreachable database, missing permissions, or unmigrated schema), it prints a notice without failing.
+Real run, 2026-11-20. If `--check` cannot read delivery counts (unreachable database, missing permissions, or unmigrated schema), it prints a notice and does not fail.
 
 In the control UI, **Settings > Notifications** (and `GET /v1/config` under `notifiers`) shows each notifier's kind, events, delivered/failed counts, last delivery, and last error, never URLs, secrets, or file paths.
 

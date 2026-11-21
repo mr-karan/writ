@@ -1,12 +1,12 @@
 # Get changes in seconds with a webhook
 
-By default, `writ serve` polls each repository's default branch every `poll_every` (60 seconds). Add a GitLab webhook so `writ serve` reads a pushed or merged head within seconds. Polling continues every `poll_every_with_hook` (5 minutes by default) as a backstop, because GitLab temporarily disables a webhook after 4 consecutive failures and permanently disables it after 40.
+Add a GitLab webhook so `writ serve` reads a pushed or merged head within seconds, instead of at the next poll (`poll_every`, 60 seconds by default). Polling continues every `poll_every_with_hook` (5 minutes by default) as a backstop, because GitLab disables a webhook for a while after 4 consecutive failures, and for good after 40.
 
-A webhook only triggers an early read of the default branch through GitLab's API with the forge's read token. It never starts a plan or apply, and `writ serve` never trusts or parses fields from the webhook body: the repository comes from the URL path, and the commit comes from GitLab's API.
+A webhook only triggers an early read of the default branch through GitLab's API, with the forge's read token. It never starts a plan or apply. `writ serve` never trusts or parses the webhook body: the repository comes from the URL path, and the commit from GitLab's API.
 
 ## Before you begin
 
-- The repository is pinned with a `repo` block in `/etc/writ/serve`. Only pinned repositories support webhooks because the secret path is governed by server config. Repositories added via `writ repo add` use polling only.
+- The repository is pinned with a `repo` block in `/etc/writ/serve`. Only pinned repositories take webhooks, because server config governs the secret path. Repositories added with `writ repo add` only poll.
 - GitLab can reach `writ serve`'s `url` over HTTPS.
 - You have Maintainer or Owner access on the GitLab project.
 
@@ -37,7 +37,7 @@ repo {
 }
 ```
 
-`writ serve` reads the file on each delivery and trims surrounding whitespace, so you can rotate the secret without restarting. Update GitLab and the file together; any delivery during the gap is refused and the poll catches up.
+`writ serve` reads the file on each delivery and trims surrounding whitespace, so you can rotate the secret without a restart. Update GitLab and the file together; a delivery in the gap is refused, and the poll catches up.
 
 ### 3. Add the webhook in GitLab
 
@@ -50,7 +50,7 @@ In the project, open **Settings > Webhooks > Add new webhook** and configure:
 | Trigger | **Push events**, **Wildcard pattern** set to the default branch (for example `main`) |
 | SSL verification | Enabled |
 
-Leave other triggers off. Merging to the default branch fires a push event, so **Merge request events** isn't needed; pushes to other branches would only cause redundant reads of the default branch.
+Leave other triggers off. A merge to the default branch fires a push event, so **Merge request events** is not needed, and pushes to other branches only cause redundant reads.
 
 ### 4. Test it
 
@@ -111,9 +111,11 @@ GitLab treats any 4xx response as a failure. Normal project traffic stays far be
 
 ## Troubleshooting
 
-- **GitLab shows 401**: Run `writ audit --remote --op hook` and check the `check` column for the exact cause (wrong secret, wrong URL, missing `webhook_secret_file`, or unreadable file).
-- **GitLab disabled the webhook**: Fix the error, then click **Test > Push events**. A 2xx response re-enables it.
-- **Head updates only every few minutes**: Check **Recent events** in GitLab. If no delivery fired, verify the push trigger's branch wildcard. Polling still updates the head every `poll_every_with_hook`.
+| Problem | Fix |
+| --- | --- |
+| GitLab shows 401 | Run `writ audit --remote --op hook`. The `check` column names the cause: wrong secret, wrong URL, missing `webhook_secret_file`, or an unreadable file. |
+| GitLab disabled the webhook | Fix the error, then click **Test > Push events**. A 2xx response re-enables it. |
+| The head updates only every few minutes | Check **Recent events** in GitLab. If nothing fired, check the push trigger's branch wildcard. Polling still updates the head every `poll_every_with_hook`. |
 
 ## Limits
 
