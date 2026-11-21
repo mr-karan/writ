@@ -32,7 +32,7 @@ No test contacts a live cloud account or real GitLab instance.
 - **Single-node server**: Run one `writ serve` process per Postgres database. A second process marks the first process's in-flight runs as `failed` and releases their locks.
 - **GitLab only**: GitLab is the only remote Git host Writ polls or accepts webhooks from, and bundled CI components target GitLab CI (`writ serve --dev` also reads local Git repos).
 - **AWS STS roles only**: Built-in `plan_role` and `apply_role` assumption supports AWS IAM roles. Other cloud providers read credentials from `provider_env` secret files.
-- **Pending login slots**: At most 1,000 device logins and 1,000 browser logins can wait in memory (10 per client IP, 10-minute expiry). [Sign-ins that wait](sign-in.md#sign-ins-that-wait)
+- **Pending login slots**: At most 1,000 device logins and 1,000 browser logins can wait in memory, and 10 of both flows together per client IP. A browser sign-in expires after 10 minutes; a device sign-in follows the issuer's expiry, capped at 30 minutes. [Sign-ins that wait](sign-in.md#sign-ins-that-wait)
 - **Stand-in verification**: S3 state, STS assumption, GitLab CI components, GitLab OIDC sign-in, webhooks, and bulk imports are verified against local stand-ins rather than live cloud or GitLab accounts.
 - **Bulk import scope**: `writ import bulk` covers the AWS and Nomad patterns it has been tested against; see [Import existing objects](import-bulk.md).
 

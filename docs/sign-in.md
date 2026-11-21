@@ -1,6 +1,6 @@
 # Sign in
 
-People sign in from the terminal with `writ login` or in the browser through `/ui/`. `writ serve` acts as the OAuth client for both, so laptops hold only a Writ session token (no client secret, refresh token, access token, or ID token).
+People sign in from the terminal with `writ login` or in the browser through `/ui/`. `writ serve` acts as the OAuth client for both, so a laptop holds only a Writ session token, never a client secret, refresh token, access token, or ID token, and a browser holds only its session cookie.
 
 `writ login` uses the OAuth device flow when the identity provider publishes `device_authorization_endpoint`, and falls back to the PKCE browser loopback flow otherwise (as on GitLab.com). CI jobs authenticate directly with OIDC tokens ([Set up GitLab CI](set-up-gitlab-ci.md)); `writ serve --dev` needs no sign-in.
 
@@ -60,7 +60,7 @@ $ writ logout
 Signed out of http://127.0.0.1:44701: session 3VGMLAJ2CWONYGAD3SG56GEP4S of bob ended.
 ```
 
-Output of an end-to-end run against a test issuer, 2026-11-11. After `writ logout`, the old session token is immediately refused with `auth`.
+Output of an end-to-end test against a test issuer, 2026-11-11. That test has since been removed; `TestLoginWhoamiLogout` in `internal/cli` covers the same flow. After `writ logout`, the old session token is refused with `auth`.
 
 ### What happens when you sign in
 
@@ -93,7 +93,7 @@ Output of `TestTofuApproveApply` in `e2e/`, 2026-11-16, with a test issuer and s
 4. The local listener accepts one request (rejecting non-loopback peers, mismatched `Host` headers against DNS rebinding, wrong paths, or mismatched `state`) and closes, or times out after 10 minutes.
 5. `writ login` submits the handle, code, state, and verifier to `POST /v1/auth/browser/token` (consuming the handle). `writ serve` verifies state and PKCE, exchanges the code with its client secret, validates the ID token and nonce, and issues a `cli` session.
 
-Over SSH, forward the loopback port or pass `--device` if your IdP supports device auth.
+Over SSH, forward the loopback port or pass `--device` if your IdP supports device auth. A `writ serve` too old for browser sign-in has no `POST /v1/auth/browser`; `writ login --browser` then says so and suggests `--device`.
 
 ### Sign-ins that wait
 
@@ -104,13 +104,13 @@ Unauthenticated pending logins in server memory are bounded:
 - Audit write failure returns `503` and frees the slot.
 - All login routes count toward `limits.requests_per_second`.
 
-**Limits:** Behind a reverse proxy not listed in `trusted_proxies`, all users share one address and the 10-slot per-address cap.
+**Limits:** Many addresses together can still fill the 1,000. Then every new sign-in gets `429` until theirs run out, after 10 minutes for a browser sign-in or the device code's life. Behind a reverse proxy not listed in `trusted_proxies`, all users share one address and the 10-slot per-address cap.
 
 ### Sessions
 
-- Sessions expire after `session_ttl` (default `12h`) with no refresh; teams stay fixed until re-login.
+- Sessions expire after `session_ttl` (default `12h`) with no refresh. Teams are fixed for the session's life: a person removed from an IdP group keeps the team until the session ends.
 - `cli` sessions work as bearer tokens on `/v1/*` (`via = cli session`) and can't open `/ui/`. Browser sessions can't be used as `/v1/*` bearer tokens.
-- `writ logout` calls `DELETE /v1/auth/session` and deletes the local entry (deleting locally even if the server is unreachable, with an error).
+- `writ logout` calls `DELETE /v1/auth/session` and deletes the local entry. When the server can't be reached, it still deletes the local entry and fails, because the session stays live on the server until it ends.
 - Any principal with `admin` on any grant can list sessions (`GET /v1/sessions`, filter `?person=`) and revoke them immediately (`DELETE /v1/sessions/{id}`).
 - Session tokens never appear in logs, audit rows, UI pages, or subsequent API responses.
 - The CLI never follows HTTP redirects from `writ serve` so `Authorization` headers can't leak across schemes or ports.
@@ -146,9 +146,11 @@ Unauthenticated pending logins in server memory are bounded:
 
 1. Register `https://URL/ui/callback` with scopes `openid profile email` on your confidential OAuth app.
 2. Unauthenticated `/ui/*` requests redirect (`303`) to `/ui/login?next=PATH` (`next` is restricted to `/ui/`).
-3. `/ui/login/start` stores `state`, `nonce`, and a PKCE verifier in a 10-minute `HttpOnly` cookie and redirects to the IdP with an S256 challenge.
+3. `/ui/login/start` stores `state`, `nonce`, and a PKCE verifier in a 10-minute `HttpOnly` cookie and redirects to the IdP with an S256 challenge. Writ sends the challenge even when the discovery document doesn't list S256, and logs a warning at start.
 4. `/ui/callback` checks `state` in constant time, clears the cookie, exchanges the code with verifier and client secret, validates the ID token and nonce, resolves teams, and stores a `browser` session in `sessions`.
 5. `POST /ui/logout` ends the server session (without signing out of the IdP).
+
+If a page's own audit row can't be written, the page answers `503`, sets no cookie, and redirects nowhere. A sign-out that can't end its session shows that page too: the cookie and the session stay.
 
 ### What every page sends
 
