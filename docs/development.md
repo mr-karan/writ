@@ -15,9 +15,9 @@ Read [`AGENTS.md`](../AGENTS.md) for repository rules, [Architecture](architectu
 | `just e2e-aws-emulator-providers` | Populate OpenTofu's plugin cache (`TF_PLUGIN_CACHE_DIR` or `writ-e2e/tofu-plugins`) with `hashicorp/aws` 6.70.0 with all `AWS_*` vars unset. |
 | `just e2e` | Full end-to-end suite with OpenTofu 1.13.9, Postgres, and real `hashicorp/random`, `local`, and `tls` in loopback-only namespaces: `--dev` commit plans + policy, team approve/apply/stale plans/drift (needs Nix, `unshare` with subordinate UIDs, `ip`). |
 | `just e2e-tofu-s3` | Team `writ serve` with `backend "s3"` against local `versitygw` + STS stand-in: read-only plans, approved applies, state index, outside-write drift, and adoption. |
-| `just test-serve` | `control`, `tfstate`, `server`, `ui`, and `awsrole` tests with `-race` against scratch Postgres, plus UID isolation tests in namespaces. |
-| `just test-tfstate` | OpenTofu 1.13.9 against `internal/tfstate`: plan, apply, read-only plan tokens, lock contention, stale write refusal. |
-| `just test-tofu` | `internal/tofu` against OpenTofu 1.13.9 in namespaces as `writ` and as a run UID. |
+| `just test-serve` | `control`, `tfstate`, `server`, `ui`, and `awsrole` tests with `-race` against scratch Postgres, plus UID isolation tests in namespaces (needs Nix, `unshare` with subordinate UIDs, and `systemd-run --user` for a delegated cgroup). |
+| `just test-tfstate` | OpenTofu 1.13.9 against `internal/tfstate`: plan, apply, read-only plan tokens, lock contention, stale write refusal (needs Nix, `unshare`, and `ip`). |
+| `just test-tofu` | `internal/tofu` against OpenTofu 1.13.9 in namespaces as `writ` and as a run UID (needs Nix and `unshare` with subordinate UIDs). |
 | `just fuzz-oidc` | Fuzz OIDC token/JWKS parsers and refusals (`2m` each by default; `just fuzz-oidc 5m`). |
 | `just lint-gitlab-ci` | Lint `ci/gitlab/` with `yamllint`. |
 | `just verify-mask` | Differential canary test + `FuzzPlan` (`just verify-mask STACKS FUZZTIME`, default `6` stacks / `30s`). |
