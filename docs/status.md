@@ -1,81 +1,66 @@
 # Supported platforms and limits
 
-Writ plans, approves, and applies OpenTofu 1.13.9 stacks from Git repositories, with server-enforced OPA/Rego policy, Linux run isolation, scheduled drift checks, bulk imports, and a single secret-masking boundary across plans, run output, and state index rows.
+Writ plans, approves, and applies OpenTofu 1.13.9 stacks on your own Linux server, with Rego policy enforcement, Linux run isolation, scheduled drift checks, Slack and webhook notifications, a synchronous audit log, bulk imports, and an MCP server for coding agents.
 
-This page lists what ships today, how it is verified, and current platform and feature limits so you can plan your deployment around them.
+## What ships today
 
-## What you can use today
-
-- A control plane, `writ serve`, for OpenTofu 1.13.9 stacks in a Git repository: a plan of each commit you or your CI job sends it, approvals bound to one exact plan, and an apply of the saved plan that was approved. See [How the control plane works](serve.md) and [Approvals](approvals.md).
-- State on the `http` backend that `writ serve` provides, sealed and versioned, or on a stack's own `backend "s3"`, where a plan runs with a plan role that can't write the state.
-- One mask over everything `writ serve` stores or shows, checked by `just verify-mask`. See [Secrets and the mask](secrets.md).
-- A private filesystem view and its own provider uid for each `tofu` process on a team's control plane, and an allow-list of module sources.
-- OPA policy, checked at the plan and again before the apply, with the same verdict as `conftest`. See [Policy](policy.md) and the [Policy cookbook](policy-cookbook.md).
-- Drift checks on a schedule, the state index of what each stack manages, and `writ state adopt` for a state that `writ serve` didn't write.
-- `writ import bulk`, for many existing objects into an OpenTofu stack, with references between them and a `for_each` for objects of one shape, and `writ import accept` of the plan that imports them.
-- `writ mcp` and the writ skill, so your agent plans a commit, reads the masked plan and its policy verdict, and imports objects. See [Use Writ with an agent](agents.md).
-- `--json` on every command but `serve`, `mcp`, `ci`, and `help`.
-
-For every command, see the [commands page](commands.md).
+- **Control plane (`writ serve`)**: Plans OpenTofu 1.13.9 stacks by Git commit, binds approvals to one SHA-256 plan ID, excludes plan authors from approving, and applies the exact sealed saved plan. [Control plane internals](serve.md), [Approvals](approvals.md)
+- **State backends**: Built-in sealed and versioned `http` backend in Postgres (or SQLite under `--dev`), or existing `backend "s3"` buckets with read-only plan roles and `writ state adopt` for out-of-band state. [AWS roles and credentials](aws-credentials.md), [Adopt existing state](adopt-state.md)
+- **Secret masking**: `internal/mask` strips secrets from plans, run logs, diagnostics, egress records, and the state index, verified with `just verify-mask`. [Secrets and the mask](secrets.md)
+- **Run isolation and egress**: Dedicated `provider_uids`, Linux user/mount/PID/IPC namespaces, cgroup v2 resource limits, a seccomp filter, `nftables` EC2 metadata blocking, module-source allow-listing, and an opt-in per-run egress proxy. [Run isolation and egress](run-isolation.md)
+- **OPA Rego policy**: Evaluated at plan and apply time with `conftest` parity and no override for mandatory denials. [Policy](policy.md)
+- **Drift checks and notifications**: Scheduled drift checks (`drift` block) and asynchronous Slack or HMAC-signed JSON webhook notifications (`notify` block) for drift, failures, applies, outside writes, and pending approvals. [Drift checks](drift-checks.md), [Notifications](notifications.md)
+- **GitLab webhooks**: Verified push webhooks (`POST /v1/hooks/{forge}/{repo}`) to trigger immediate default-branch reads with periodic polling as a backstop. [Webhooks](webhooks.md)
+- **Control UI and audit log**: Built-in web UI at `/ui/` (overview, plan review, approvals, stack resources and drift, runs, repos, access, settings, and `/ui/audit`) backed by a synchronous audit log. [Configure sign-in](sign-in.md), [Read the audit log](audit-log.md)
+- **Bulk import and coding agents**: `writ import bulk` and `writ import accept` for existing objects, plus `writ mcp` and `writ agent init`. [Import existing objects](import-bulk.md), [Use Writ with a coding agent](agents.md)
+- **Structured output**: `--json` on every command except `serve`, `mcp`, `ci`, and `help`. [Commands](commands.md)
 
 ## How it's tested
 
-Writ's end-to-end suites build `writ` and run it against real OpenTofu 1.13.9 and real provider binaries inside isolated namespaces, offline once the providers are cached:
+End-to-end suites build `writ` and run real OpenTofu 1.13.9 and real providers inside isolated Linux namespaces, offline once providers are cached:
 
-- `hashicorp/random`, `hashicorp/tls`, and `hashicorp/local`, through `writ serve` on its `http` backend.
-- `hashicorp/random` and the built-in `terraform_data`, through `writ serve` on a stack's `backend "s3"`, against an S3 stand-in with per-key policies.
-- `hashicorp/nomad`, against a local dev agent, for `writ import bulk`.
-- `hashicorp/aws`, offline, against a stand-in and against AWS Emulator, for `writ import bulk` and `writ import accept`.
+- `hashicorp/random`, `hashicorp/tls`, and `hashicorp/local` through `writ serve` on its `http` backend (`just e2e`, `just verify-mask`, `just policy-parity`).
+- `hashicorp/random` and `terraform_data` through `writ serve` on `backend "s3"` against local `versitygw` and an STS stand-in (`just e2e-tofu-s3`).
+- `hashicorp/nomad` against a local dev agent and `hashicorp/aws` against local stand-ins and AWS Emulator for `writ import bulk` and `writ import accept` (`just e2e-import`, `just e2e-import-hcl`, `just e2e-aws-emulator`).
 
-None of these tests reaches a real cloud host.
+No test contacts a live cloud account or real GitLab instance.
 
-## What you'll run into today
+## Platform requirements and limits
 
-- **OpenTofu 1.13.9 on Linux for `writ serve`**: `writ serve` requires OpenTofu `1.13.9` and, for a team's server, Linux user, mount, PID, and IPC namespaces with `provider_uids` and `nftables`. The CLI (`writ plan --remote`, `writ approve --remote`, `writ apply --remote`, `writ login`) runs on Linux and macOS (`amd64` and `arm64`).
-- **Single-node server**: `writ serve` runs as a single process against Postgres (or local files under `--dev`). A second `writ serve` on the same database fails the other's in-flight runs.
-- **Pending sign-in capacity**: Many client addresses together can fill the 1,000 slots for `writ login` sign-ins waiting on browser completion and block new sign-ins for up to 10 minutes. One client address can hold at most 10 slots. See [Sign-ins that wait](sign-in.md#sign-ins-that-wait).
-- **AWS STS credential broker**: Per-environment `plan_role` and `apply_role` assume AWS IAM roles via STS. Providers for other clouds read credentials from `provider_env`.
-- **Stand-in test verification**: S3 state, STS role assumption, GitLab CI components, and bulk imports are verified against local stand-ins and emulators in CI rather than live cloud accounts.
-- **Focused scope**: Writ does not include chat notifications, a `test` wrapper command, editor plugins, or cloud cost estimation.
-- **Bulk import coverage**: `writ import bulk` covers the AWS and Nomad resource types it has been measured against; see [Import many objects](import-bulk.md).
+- **OpenTofu 1.13.9 only**: Writ runs OpenTofu 1.13.9 and doesn't run Terraform. Each stack has one state (no `tofu workspace`).
+- **Linux required for `writ serve`**: Team servers require Linux namespaces, `provider_uids`, `nftables` (on hosts with metadata services), and cgroup v2 on Linux 5.14+ for per-step memory/PID/CPU limits. The CLI builds for Linux and macOS (`amd64`, `arm64`), though macOS binaries are cross-built on Linux and haven't been tested on macOS.
+- **Single-node server**: Run one `writ serve` process per Postgres database. A second process marks the first process's in-flight runs as `failed` and releases their locks.
+- **GitLab only**: GitLab is the only remote Git host Writ polls or accepts webhooks from, and bundled CI components target GitLab CI (`writ serve --dev` also reads local Git repos).
+- **AWS STS roles only**: Built-in `plan_role` and `apply_role` assumption supports AWS IAM roles. Other cloud providers read credentials from `provider_env` secret files.
+- **Pending login slots**: At most 1,000 device logins and 1,000 browser logins can wait in memory (10 per client IP, 10-minute expiry). [Sign-ins that wait](sign-in.md#sign-ins-that-wait)
+- **Stand-in verification**: S3 state, STS assumption, GitLab CI components, GitLab OIDC sign-in, webhooks, and bulk imports are verified against local stand-ins rather than live cloud or GitLab accounts.
+- **Bulk import scope**: `writ import bulk` covers the AWS and Nomad patterns it has been tested against; see [Import existing objects](import-bulk.md).
 
 ## Not built yet
 
-These features are not implemented today. If your workflow depends on one, plan around it.
+### Server and CI
 
-### writ serve
-
+- Multi-node active-active `writ serve`.
+- GitHub repository polling (GitHub App) and GitHub webhooks (`X-Hub-Signature-256`).
+- Automatic GitHub Actions OIDC token fetching in the CLI (workflows must fetch the token and set `WRIT_ID_TOKEN`) and a bundled GitHub Actions workflow template.
+- Built-in STS role brokers for clouds other than AWS.
+- Merge request plan comments and commit status publishing (`write_token_file` warns and has no effect).
+- Multi-stack atomic plans and `--changed` stack detection on the server.
 - `writ login --print-token` and `writ serve --init`.
-- Automatic GitHub Actions OIDC token requests inside the CLI. In GitHub Actions, your workflow fetches the OIDC token and sets `WRIT_ID_TOKEN` itself.
-- Built-in STS role brokers for clouds other than AWS. For other providers, pass credentials through `provider_env`.
-- Multi-stack plans and `--changed` on the server.
-- Under `writ serve --dev`: the issuers, teams, grants, approval rules, and environments of a full config. `--config` takes only `forge`, `repo`, `tofu`, and `policy` blocks and `poll_every`.
-- `GET /v1/plans/{id}/events`, `POST /v1/lookups`, drift alerts, and merge request notes.
-- Console to code: generating HCL and a merge request for an object created in a cloud console.
-- Multi-node active-active `writ serve`. Sign-ins of `writ login` waiting for browser completion live in one process's memory. If two `writ serve` processes share one Postgres database, each fails the plans and runs the other is executing and releases their state locks.
+- Full server config blocks under `writ serve --dev` (`--dev --config` accepts only `forge`, `repo`, `tofu`, `policy`, `poll_every`, and `poll_every_with_hook`).
+- Console-to-code automatic MR generation, cloud cost estimation, editor plugins, or a `test` wrapper command.
 
-### Approvals and applies
+### Approvals, applies, and UI
 
-- Streaming run events and run cancellation: `GET /v1/runs/{id}/events`, `writ.event/v0` streams, and `POST /v1/runs/{id}/cancel`. Clients poll `GET /v1/runs/{id}` until completion.
-- Withdrawing approvals, starting applies, and cancelling runs from the control UI. The control UI supports reviewing plans and approving them; read the audit log with `GET /v1/audit` or `writ audit --remote`.
-- Refusal reasons in `GET /v1/audit`. Because a refusal reason may echo untrusted request input, `GET /v1/audit` withholds refusal reasons (`reason_withheld: true`) and writes the full text to server stderr logs.
-- Merge request notes and multi-stack atomic plans.
-- `tofu destroy` through the control plane, and a bundled GitHub Actions workflow template.
-- A separate hardware second-factor prompt at apply time beyond the caller's session or OIDC token.
+- Streaming plan or run events (`GET /v1/plans/{id}/events`, `GET /v1/runs/{id}/events`) and run cancellation (`POST /v1/runs/{id}/cancel`). Clients poll `GET /v1/runs/{id}` and the UI reloads every 5 seconds while applying.
+- Starting applies, withdrawing approvals, or cancelling runs from the control UI (the UI reviews and approves plans; apply via CLI or CI).
+- `tofu destroy` through the control plane.
+- Refusal reasons in `GET /v1/audit` or `/ui/audit` (withheld by design to prevent echoing untrusted request input; stored in Postgres and stderr logs).
+- Step-up hardware second-factor prompts at apply time beyond the caller's session or OIDC token.
 
-### Repositories
+### Repositories and policy
 
-- GitHub repository polling via a GitHub App (use `git_token_file` over HTTPS or local repositories).
-- Multi-stack change detection across a merge request base branch.
-- Merge request notes, commit status publishing, and `write_token_file` usage.
-- Webhook hints to trigger an immediate repository poll ahead of `poll_every`.
-- Pre-plan stack source digest discovery (plans record their own commit and source blobs).
-- Deleting a repository record through the HTTP API (pinned `repo` blocks reconcile automatically when removed from config).
-- Garbage collection of unreferenced Git blobs in the database.
-
-### Policy
-
-- Dynamically raising the plan-point `approval` block's `count` from a Rego rule (note: an apply-point rule in Rego *can* inspect `count(input.writ.approvals)` and deny an apply until enough approvals are present; see the [Policy cookbook](policy-cookbook.md)).
-- Overriding a mandatory policy `deny` (`--override` bypasses approval rules only).
-- Loading Rego policies from an application Git repository (`writ serve` loads policies exclusively from host paths in the server config).
-- `writ policy test` and `writ policy eval` subcommands (use `conftest verify` and `conftest test`).
+- Deleting a repository via the HTTP API (pinned `repo` blocks reconcile automatically on config reload).
+- Garbage collection of unreferenced Git blobs in the `blobs` table.
+- Dynamically raising `approval.need` from Rego at plan time (an apply-point Rego rule can inspect `count(input.writ.approvals)` and deny until enough approvals exist).
+- Overriding a mandatory policy `deny`, loading Rego policies from application Git repos, or `writ policy test`/`eval` subcommands (use `conftest verify` and `conftest test`).

@@ -1,27 +1,25 @@
 # Install
 
-The latest release is v0.1.5. For Linux and macOS, on amd64 and arm64, it has a static `writ` binary, a container image of `writ serve`, an install script, `SHA256SUMS`, and its minisign signature. You can also use Nix or build from source.
+The current release is **v0.1.8**. Releases include static binaries for Linux and macOS (`amd64` and `arm64`), a multi-arch `writ serve` container image, an install script, `SHA256SUMS`, and its minisign signature. There is no Windows build.
 
-| Way | For |
+| Method | Best for |
 | --- | --- |
-| [The install script](#the-install-script) | One person on a laptop |
-| [The container image](#the-container-image) | A team's `writ serve`, and CI jobs |
-| [Nix](#nix) | Nix users, and NixOS hosts with the module |
-| [Build from source](#build-from-source) | People who change Writ |
+| [The install script](#the-install-script) | Local CLI on a laptop |
+| [The container image](#the-container-image) | Team `writ serve` and CI jobs |
+| [Nix](#nix) | Nix users and NixOS servers |
+| [Build from source](#build-from-source) | Contributors |
 
-Writ runs on Linux and macOS, on amd64 and arm64. There's no Windows build.
-
-**Limits.** The macOS binaries are cross-built on Linux, and nobody has run them on a Mac yet. The arm64 binary carries the ad hoc signature that Go's linker adds, which Apple silicon requires, and the amd64 binary has none. They aren't notarized, so macOS blocks a binary that a browser downloaded. The install script downloads with `curl`, so macOS doesn't block what it installs.
+**Limits.** macOS binaries are cross-built on Linux and haven't been tested on macOS. The `arm64` binary carries Go's ad hoc signature; `amd64` has none. Neither is notarized, so browser downloads trigger macOS quarantine (downloading with `curl` or the install script does not).
 
 ## The install script
 
-From one release, the script downloads the binary for your machine, `SHA256SUMS`, and the minisign signature of `SHA256SUMS`. Then it checks the signature against the release key that the script carries, checks the binary's SHA-256 against `SHA256SUMS`, and runs the binary. Only after all three pass does it put `writ` in `~/.local/bin`, and you don't need `sudo`.
+The script downloads the release binary for your OS and architecture, `SHA256SUMS`, and `SHA256SUMS.minisig`. It verifies the minisign signature against the embedded release key, checks the binary's SHA-256, runs `writ version` to confirm the version matches, and atomically installs `~/.local/bin/writ` without `sudo`.
 
 ### Before you begin
 
-You need [`minisign`](https://jedisct1.github.io/minisign/); without it, the script stops before any download. That's because a SHA-256 match shows only that a file is whole, while the signature shows that the Writ release key signed the list of checksums. Install minisign first:
+Install [`minisign`](https://jedisct1.github.io/minisign/) first. Without it, the script stops before downloading anything because a checksum alone doesn't prove the Writ release key signed the file:
 
-| System | Command |
+| OS / Manager | Command |
 | --- | --- |
 | macOS | `brew install minisign` |
 | Debian, Ubuntu | `sudo apt install minisign` |
@@ -30,20 +28,18 @@ You need [`minisign`](https://jedisct1.github.io/minisign/); without it, the scr
 
 ### Run it
 
-Run:
-
-```
-curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.5/install.sh | sh
+```sh
+curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh
 ```
 
-Replace `v0.1.5` with the release you want. To try the script on a local build instead, with no download:
+To inspect the script before running it, download it first and run `sh install.sh`. To test against a local build with no network:
 
-```
+```sh
 just release-dry-run
 sh dist/install.sh --from dist
 ```
 
-Here's a dry run stamped `v9.9.9`, for a user whose home is `/home/dev`. On the first run, `minisign` wasn't on `PATH`. On the second, it was.
+Example output (first without `minisign`, then with it):
 
 ```
 install.sh: minisign is not installed, so the signature of SHA256SUMS cannot be checked; nothing installed. Install minisign and run this again: brew install minisign (macOS), apt install minisign (Debian, Ubuntu), dnf install minisign (Fedora), nix profile install nixpkgs#minisign, or see https://jedisct1.github.io/minisign/
@@ -54,80 +50,73 @@ installed writ v9.9.9 to /home/dev/.local/bin/writ (SHA-256 checked, signature c
 
 Output of a real run, 2026-11-10.
 
-If a binary doesn't match `SHA256SUMS`, the install stops, and nothing changes:
+If the binary's checksum fails, nothing is installed:
 
 ```
 install.sh: writ-linux-amd64 has SHA-256 eafe950cb49f9769424fc2971bd176aa5c1e22b7d881ffbe94836bf80f1849cf, but SHA256SUMS says 7fb400623abfa4cac138255ff762b4c8483331aed9369c59cd4659b9720d28bd; nothing installed
 ```
 
-In these cases too, the script refuses and changes nothing: when `writ` in the install directory is a symlink or a directory, when the new binary doesn't run, or when it reports a version other than the release's. To install, it writes the new binary to a new file with a random name next to `writ` and renames it over `writ`, so a running `writ` is never half written. For the rename it uses `mv -T` (GNU) or `mv -h` (macOS and BSD), so a symlink that appears at `writ` during the install is replaced, not followed, and nothing lands outside the install directory. With neither, the script stops before any download. If you pass a `--version` with a character outside `A-Z a-z 0-9 . _ -`, the script refuses it.
+The script also refuses to overwrite a symlink or directory at the target path, rejects `--version` values outside `[A-Za-z0-9._-]`, and renames via `mv -T` (GNU) or `mv -h` (macOS/BSD) so symlinks are never followed.
 
-| Option | Variable | What it does |
+| Flag | Env var | Meaning |
 | --- | --- | --- |
-| `--version V` | `WRIT_VERSION` | The release to install. The script from a release sets its own version. |
-| `--dir DIR` | `WRIT_INSTALL_DIR` | Where to put `writ`. Default `~/.local/bin`. |
-| `--from DIR` | | Takes the files from a local directory, with no network. |
-| `--insecure-skip-signature` | | Skips the signature check. The script still checks the SHA-256 and prints a warning, but nothing then shows that the Writ release key signed what you install. |
-| | `WRIT_MINISIGN_PUBKEY` | Checks the signature with this public key in place of the one the script carries. |
-| | `WRIT_BASE_URL` | Downloads from this `https://` URL in place of the GitHub release. |
+| `--version V` | `WRIT_VERSION` | Release tag to install (stamped into each release's script). |
+| `--dir DIR` | `WRIT_INSTALL_DIR` | Install directory. Default `~/.local/bin`. |
+| `--from DIR` | | Install from a local directory with no network. |
+| `--insecure-skip-signature` | | Skip signature verification (still checks SHA-256 and warns). |
+| | `WRIT_MINISIGN_PUBKEY` | Override the release public key. |
+| | `WRIT_BASE_URL` | Override the download base URL (`https://`). |
 
-To pass an option through a pipe, use `sh -s --`, as in `curl -fsSL .../install.sh | sh -s -- --dir /opt/writ/bin`.
+Pass flags through a pipe with `sh -s --`:
 
-**Warning:** When you pipe to `sh`, you run whatever the server sends. To read the script first, download it, read it, and run it with `sh install.sh`.
+```sh
+curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh -s -- --dir /opt/writ/bin
+```
 
 ### Check a download by hand
 
-With each release you get `SHA256SUMS`, `SHA256SUMS.minisig`, and `minisign.pub`. Check the signature with the release key from this page, not with the `minisign.pub` that came with the download, then check the files:
+Verify `SHA256SUMS` against the release public key from this page (or [`release/minisign.pub`](../release/minisign.pub), key ID `D2D9A37AF1098999`), not the copy shipped alongside the download:
 
-```
+```sh
 minisign -Vm SHA256SUMS -P RWSZiQnxeqPZ0uwAJ6eSbsg1B0acHb5UvdJMfAWvUM+dya+188xWcOHf
 sha256sum -c --ignore-missing SHA256SUMS
 ```
 
-On macOS, use `shasum -a 256 -c --ignore-missing SHA256SUMS`. The release key is also in [`release/minisign.pub`](../release/minisign.pub), with the key id `D2D9A37AF1098999`. [release/README.md](../release/README.md) explains why the signature uses minisign.
+On macOS, replace `sha256sum` with `shasum -a 256`.
 
 ## The container image
 
-Use the image for a team's `writ serve`. Inside you'll find `writ`, OpenTofu 1.13.9 at `/bin/tofu`, CA certificates, the time zone database, and a passwd file with the user `writ` (uid 65532), and no shell and no `git`. Its `PATH` is `/bin`, so `binary = "tofu"` in the config's [`tofu` block](config.md#tofu) finds that OpenTofu.
+`ghcr.io/mr-karan/writ:0.1.8` is a multi-architecture (`amd64`, `arm64`) image built with Nix's `dockerTools`. It contains `writ`, OpenTofu 1.13.9 at `/bin/tofu`, CA certificates, tzdata, and user `writ` (UID 65532). It has no shell and no `git`.
 
-On a team's `writ serve`, repositories come from a Git host and local ones are refused, so you need `git` only for a module source that `tofu init` clones, such as `git::https://...`, through the `tofu` block's `git`. Since the image has none, such a module source fails in it.
-
-Nix's `dockerTools` builds the image, so no Docker daemon takes part. For each release there's one image archive for amd64 and one for arm64, and each contains the same `writ` bytes as the release binary for that architecture. The release workflow publishes them as one multi-architecture image, `ghcr.io/mr-karan/writ:0.1.5`:
-
-```
-podman pull ghcr.io/mr-karan/writ:0.1.5
+```sh
+podman pull ghcr.io/mr-karan/writ:0.1.8
 ```
 
-To use an image without the registry, load an archive from the release or from `dist/`, or build one with Nix:
+To build or load an archive locally instead:
 
-```
+```sh
 just release-dry-run
 podman load -i dist/writ-image-linux-amd64.tar.gz
 
+# Or with Nix:
 nix build .#image && podman load -i result
 ```
 
-Mount your config at `/etc/writ/serve` and a volume at `/var/lib/writ`, then run the image. By default it starts a team's `writ serve` with its config at `/etc/writ/serve`. That volume is its home and work directory. Because the container's user isn't root, set `listen` in your config to a port above 1024, such as `"0.0.0.0:7340"`:
+By default the container runs `writ serve --config /etc/writ/serve` with `/var/lib/writ` as its work directory. Because it runs as non-root UID 65532, set `listen` to a port above 1024 (such as `"0.0.0.0:7340"`):
 
-```
+```sh
 podman run -d --name writ \
   -v ./serve:/etc/writ/serve:ro \
   -v writ-data:/var/lib/writ \
   -p 7340:7340 \
-  ghcr.io/mr-karan/writ:0.1.5
+  ghcr.io/mr-karan/writ:0.1.8
 ```
 
-[Run a control plane](run.md) and the [server config](config.md) explain the config and its Postgres database. To check a config, run the same image with `serve --config /etc/writ/serve --check`.
+Validate a config with `serve --config /etc/writ/serve --check`. You can also run dev mode on the host network:
 
-You can also run `writ serve --dev` in the image. Because it listens on loopback only, the container shares the host's network:
-
+```sh
+podman run --rm --network host ghcr.io/mr-karan/writ:0.1.8 serve --dev
 ```
-podman run --rm --network host ghcr.io/mr-karan/writ:0.1.5 serve --dev
-```
-
-Without `git`, the image can't read a local repository. To try `writ serve --dev` with a local repository, use the release binary or the Nix package on a machine with `git`, as [Git](#git) explains.
-
-From `/healthz` you get the same answer as from `writ serve --dev` outside the image:
 
 ```
 $ curl -sS http://127.0.0.1:7340/healthz
@@ -136,52 +125,45 @@ $ curl -sS http://127.0.0.1:7340/healthz
 
 Output of a real run, 2026-11-16.
 
-To test the image, `just release-test-image` runs `writ serve --dev` with rootless podman and requires `/healthz` to answer. Next it mounts a repository created on the host, and requires `writ repo add` inside the container to fail with the message about the missing `git`, and `/healthz` to answer again. Then it prints the image, the `/healthz` document, that message, and a line that says the image has no `git`. Its last recorded output, of 2026-11-10, predates the removal of the change watchers from `/healthz`, so it isn't shown.
+Because the image omits `git`, it can't read local repositories under `--dev` or clone `git::https://` modules. Team servers fetch GitLab repos over HTTPS without `git`.
 
-**Limits.** Nobody has tested a team's `writ serve` with `provider_uids` inside a container. If you try it, it needs `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL`, and the metadata firewall rule on the host, as [How providers are kept from the keys](serve.md#how-providers-are-kept-from-the-keys) explains.
+**Limits.** Running a team server with `provider_uids` inside a container hasn't been tested. Doing so requires `CAP_SETUID`, `CAP_SETGID`, `CAP_KILL`, and the host `nftables` metadata rule; see [Run isolation and egress](run-isolation.md).
 
 ## Nix
 
-With Nix, you can use the repository as a flake. Its package builds `writ` with the Go of one pinned nixpkgs, static, with the commit as its version. These commands use the flake on the repository's main branch:
+Run or install from the repository flake:
 
-```
+```sh
 nix run github:mr-karan/writ -- version
 nix profile install github:mr-karan/writ
 ```
 
-Inside, the package wraps `writ` so that `gitMinimal` from the same nixpkgs is at the end of its `PATH`. If you have your own `git`, it comes first, and the commands in [Git](#git) work when you have none. That wrapper is a compiled program, not a shell script, and the static binary is unchanged inside the package, as `bin/.writ-wrapped`. With git, the package's closure is 194 MiB.
+The Nix package wraps the static binary (at `bin/.writ-wrapped`) with `gitMinimal` appended to `PATH`, so your own `git` takes precedence and `git` is always available if missing. Supported flake systems: `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin` (Intel Macs use the release binary).
 
-In a flake of your own, add `inputs.writ.url = "github:mr-karan/writ";` and use `writ.packages.${system}.writ`. You can build the flake for `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin`. Its nixpkgs dropped `x86_64-darwin`, so on an Intel Mac you take the release binary.
-
-For a server, the flake also exports `nixosModules.writ-serve`, the NixOS module that runs a team's `writ serve` with Postgres on the same host. Its `package` defaults to the flake's `writ`. [writ serve on NixOS](run.md#on-nixos) has the configuration.
+In your own flake, add `inputs.writ.url = "github:mr-karan/writ";` and reference `writ.packages.${system}.writ`. For NixOS servers, the flake exports `nixosModules.writ-serve`; see [Run a server: On NixOS](run.md#on-nixos).
 
 ## Build from source
 
-You need:
+Requirements: Go 1.27.3+ (matching `go.mod`) and [`just`](https://github.com/casey/just).
 
-- Go 1.27.3 or later, the version in `go.mod`.
-- [`just`](https://github.com/casey/just), to run the build recipe.
-
-From the root of the repository, build the binary into `bin/writ` and put it on your `PATH`:
-
-```
+```sh
 just build
 export PATH="$PWD/bin:$PATH"
 writ version
 ```
 
-You get one static binary, built with `CGO_ENABLED=0`. If you use `go install github.com/mr-karan/writ/cmd/writ@COMMIT` instead, it builds with no version flag, and `writ version` then prints the module version that Go records in the binary.
+`just build` compiles a static binary (`CGO_ENABLED=0`) to `bin/writ`. `go install github.com/mr-karan/writ/cmd/writ@COMMIT` also works and embeds the Go module version.
 
 ## Git
 
-Some commands run the `git` binary on `PATH`:
+`git` on `PATH` is required only for:
 
-- To read the commits of a local repository, `writ serve --dev` uses it.
-- `writ repo add .` finds the work tree with it.
-- `writ plan --remote` finds the commit of a clean work tree with it. Without `git`, set the commit with `--repo`, `--commit`, and `--stack`.
-- A team's `writ serve` gives each OpenTofu run the `git` that its config's `tofu.git` points to, a path or a name on `PATH`, for module sources that `tofu init` clones.
+- `writ serve --dev` reading local Git repositories,
+- `writ repo add .` finding the local work tree,
+- `writ plan --remote` reading the current commit from a clean work tree (not needed when passing `--repo`, `--commit`, and `--stack`), and
+- `tofu.git` on a team server if stacks clone remote `git::https://` modules.
 
-Neither the install script nor the container image gives you `git`, but the Nix package brings its own. Other commands run no `git`. Install it with `apt install git`, `dnf install git`, `brew install git`, or `nix profile install nixpkgs#gitMinimal`. Without it, the first two commands stop, and a module source that needs `git` fails. Here's `writ repo add .` from the release binary with no `git` on `PATH`:
+Neither the install script nor the container image bundles `git`; the Nix package does. Without `git`, `writ repo add .` exits with:
 
 ```
 writ: git is not installed: writ reads local Git repositories with the git binary, and none is on PATH; install git, such as apt install git, dnf install git, brew install git, or nix profile install nixpkgs#gitMinimal
@@ -189,20 +171,20 @@ writ: git is not installed: writ reads local Git repositories with the git binar
 
 Output of a real run, 2026-11-10.
 
-## Where Writ keeps files
+## Cache location
 
-| Path | What it contains |
-| --- | --- |
-| `WRIT_CACHE_DIR` | Provider binaries and cached provider schemas. It defaults to `writ` inside your user cache directory. On Linux that's `~/.cache/writ`, unless `XDG_CACHE_HOME` is set. In the container image it's `/var/lib/writ/cache`. |
+| Env var | Purpose | Default |
+| --- | --- | --- |
+| `WRIT_CACHE_DIR` | Provider binaries and cached schemas for `writ import bulk` and `writ mcp` | `$XDG_CACHE_HOME/writ` (`~/.cache/writ` on Linux; `/var/lib/writ/cache` in the container image) |
 
 ## Troubleshooting
 
-- **`install.sh: minisign is not installed`**: Install `minisign` using your package manager (listed under [Before you begin](#before-you-begin)) and rerun the install script.
-- **`writ: command not found` after running the install script**: Add `~/.local/bin` to your shell profile (`export PATH="$HOME/.local/bin:$PATH"`).
-- **`writ repo add .` fails inside the container image**: The container image omits `git` on purpose because a team's `writ serve` reads repositories over the GitLab API. Use the binary or Nix package to try `writ serve --dev` with local repositories.
-- **Container exits with permission denied on port 443**: The container runs as non-root user `writ` (uid 65532). Listen on a port above 1024 (such as `"0.0.0.0:7340"`) and terminate TLS at a reverse proxy.
+- **`install.sh: minisign is not installed`**: Install `minisign` (see [Before you begin](#before-you-begin)) and rerun the install script.
+- **`writ: command not found`**: Add `~/.local/bin` to `PATH`.
+- **`writ repo add .` fails in the container image**: The image omits `git`. Use the release binary or Nix package for local repositories under `--dev`.
+- **Container exits with permission denied on port 443**: The container runs as UID 65532. Listen above port 1024 and terminate TLS at a reverse proxy.
 
 ## Next steps
 
-- [Quick start](quick-start.md): start `writ serve --dev` and apply your first stack in four steps.
-- [Run a server](run.md): deploy a team's `writ serve` with Postgres, containers, or NixOS.
+- [Quick start](quick-start.md): run `writ serve --dev` and apply your first stack.
+- [Run a server](run.md): deploy a team server with Postgres or NixOS.
