@@ -238,6 +238,19 @@ env "prod" {
 
 Files are read once at startup (restart after edits). Subscribing to `drift` without a `drift` block emits a warning.
 
+### Notification delivery
+
+Each notifier has its own 128-event queue and background sender, so slow receivers never block plans or applies:
+
+- **Retries:** Timeouts, connection errors, temporary DNS failures, `429`, and `5xx` retry at 1s, 4s, 16s, 1m, and 3m. A `Retry-After` header on `429` extends the delay up to 5 minutes (and paces the next queued event if retries exhaust). Other 4xx statuses fail immediately.
+- **Immediate operator errors:** Untrusted/expired/mismatched TLS certificates, plaintext HTTP on an HTTPS URL, and nonexistent hostnames fail immediately with explicit `tls:` or `dns:` errors.
+- **Bounds:** 10-second per-attempt timeout, 16 KiB max request body, 4 KiB max response read (discarded).
+- **Target rules:** URLs must be `https://` (or loopback `http://` for tests) with no embedded credentials. Redirects (`3xx`) fail.
+- **Queue overflow:** When all 128 slots are full, new events drop with a log warning and count as failed on the next flush.
+- **Restarts:** `url_file` and `secret_file` are read once at startup; restart `writ serve` after changing them. Unsent queued events don't persist across restarts.
+
+`writ serve --check` verifies that `provider_uids` can't read `url_file` or `secret_file`. Notifications originate from `writ serve` itself (not OpenTofu runs), so environment `egress` allow-lists don't apply and `HTTPS_PROXY` is honored.
+
 ### tofu
 
 - `binary`: OpenTofu 1.13.9 path or name on `PATH`.

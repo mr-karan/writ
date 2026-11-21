@@ -122,7 +122,7 @@ Remote plan `document` holds the masked OpenTofu plan ([Policy input](policy-ref
 | `writ.audit/v0` | `GET /v1/audit` | `writ audit --remote --json` |
 | `writ.apply-outcome/v0` | `POST /v1/apply-requests/{key}/outcome` | `writ show --remote --request KEY --json` (and lost `writ apply --remote --json`) |
 | `writ.config/v0` | `GET /v1/config` | |
-| `writ.notification/v0` | Outbound `webhook` notifier `POST` ([The payload](notifications.md#the-payload)) | |
+| `writ.notification/v0` | Outbound `webhook` notifier `POST` ([Notification payload](#notification-payload-writnotificationv0)) | |
 | `writ.policy/v0` | `GET /v1/policy` | `writ mcp` `policy` tool |
 | `writ.repo-request/v0` | `POST /v1/repos` request | |
 | `writ.repo/v0` | `POST /v1/repos`, `GET /v1/repos/{name}` | `writ repo add --json`, `writ repo show --json` |
@@ -172,6 +172,25 @@ Key document fields:
 - `writ.overview/v0`: authorized per-environment counts (`envs`; when `plans_more` is true, the plan counts are lower bounds), up to 200 stacks (`stacks`, `stacks_more`), active/pending plans (`applying`, `pending`, `planning`), `alerts` (`alerts_more`), and `repos`.
 - `writ.state-adopt-request/v0` / `writ.state-adopt/v0`: request (`env`, `stack`, `reason`, `version` or `serial`); response (`stack`, `env`, `backend`, `version`, `serial`, `lineage`, `repo`, `commit`, `resources`, `indexed`, plus warning diagnostic).
 - `writ.tofu-apply/v0`: `format`, `ok`, `applied`, `status` (`applied`/`apply-failed`), `summary` (`add`, `change`, `import`, `remove`), masked `events` (`type`, `address`, `action`, `elapsed_seconds`), masked `diagnostics`.
+
+## Notification payload (`writ.notification/v0`)
+
+A `webhook` notifier sends a JSON `POST` with headers `X-Writ-Event`, `X-Writ-Delivery`, `X-Writ-Timestamp`, and, when `secret_file` is set, `X-Writ-Signature-256` ([Verify the signature](notifications.md#verify-the-signature)).
+
+| Field | Meaning |
+| --- | --- |
+| `format` | `writ.notification/v0`. |
+| `id` | Stable delivery ID across retries (use for deduplication; trust the signed body over `X-Writ-Delivery`). |
+| `event` | One of the [events](notifications.md#events) (trust the signed body over `X-Writ-Event`). |
+| `at` | Event timestamp (UTC). |
+| `server` | Server config's `url`. |
+| `stack`, `env` | Target `stack@env`. |
+| `status` | `pending`, `failed`, `refused`, `applied`, `drifted`, `clean`, or `outside-write`. |
+| `summary` | One-line Writ summary. |
+| `started_by` | `kind` (`person`, `ci`, `drift`, or `outside`), plus `display` and `person`. |
+| `plan`, `run` | Plan ID (or ref if failed before save) and run ID. |
+| `counts` | Non-zero event counts (`changes`/`need` for `approval-needed`; `added`/`changed`/`destroyed`/`imported` for `applied`; `outside`/`code` for `drift`; `serial` for `outside-write`). |
+| `url` | Control UI link (omitted when the control UI is disabled). |
 
 ## On-disk JSON files
 
