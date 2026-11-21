@@ -10,7 +10,7 @@ The mask produces every output stored or shown from a run:
 
 - Masked plan documents (API, control UI, CLI, policy input).
 - Plan text, apply text, and apply events.
-- [State index](plan-to-apply.md#the-state-index) rows.
+- [State index](plan-lifecycle.md#the-state-index) rows.
 - Failure diagnostics from plans and applies.
 - Recorded hostnames under [egress](run-isolation.md#egress).
 
@@ -76,4 +76,4 @@ Declare every secret variable `sensitive = true`, and avoid `nonsensitive()` on 
 - [Adopt a state](adopt-state.md): establish secret sets for externally written state.
 - [Security model](security-model.md): how masking fits with credential isolation and audit logging.
 - [Run isolation and egress](run-isolation.md): run execution and filesystem view.
-- [Approvals](approvals.md#how-an-opentofu-plan-is-approved-and-applied): masked plan review and apply.
+- [Approvals](plan-lifecycle.md#apply-point-checks-and-execution): masked plan review and apply.

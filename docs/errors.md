@@ -114,7 +114,7 @@ Common messages:
 - `state version N of STACK@ENV is not its newest, version N: adopt the newest`
 - `an apply of STACK@ENV runs, which may write a newer state: adopt after it ends`
 
-**Recovery:** Plan again, wait for the active apply, or adopt the newest state. For a speculative plan, push the commit and plan it ([Why an approved plan can still be refused](approvals.md#why-an-approved-plan-can-still-be-refused)).
+**Recovery:** Plan again, wait for the active apply, or adopt the newest state. For a speculative plan, push the commit and plan it ([Why an approved plan can still be refused](plan-lifecycle.md#why-an-approved-plan-can-still-be-refused)).
 
 ## `saved-plan`
 

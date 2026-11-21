@@ -98,7 +98,7 @@ Returns `GET /v1/audit` ([API: Read the audit log](api.md#read-the-audit-log)).
 
 ## Documents of `writ serve`
 
-Remote plan `document` holds the masked OpenTofu plan ([Policy input](policy-reference.md#input)), or `writ.plan.json/v2` (`ok: false`) if planning failed before producing one. Remote run `document` holds `writ.tofu-apply/v0` ([Approvals](approvals.md#what-the-runs-document-contains)), or `writ.apply/v0` (`status: "apply-failed"`) if the run couldn't start or was lost.
+Remote plan `document` holds the masked OpenTofu plan ([Policy input](policy-reference.md#input)), or `writ.plan.json/v2` (`ok: false`) if planning failed before producing one. Remote run `document` holds `writ.tofu-apply/v0` ([Approvals](plan-lifecycle.md#what-the-runs-document-contains)), or `writ.apply/v0` (`status: "apply-failed"`) if the run couldn't start or was lost.
 
 | Format | Route | CLI command |
 | --- | --- | --- |

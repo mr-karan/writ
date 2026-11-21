@@ -370,7 +370,7 @@ Apply: 4 added, 0 changed, 0 destroyed.
 State version 1 of app@prod.
 ```
 
-Real runs, 2026-11-16. If `alice` pushes another commit, a new plan is made and the old approved plan can no longer apply ([Why an approved plan can still be refused](approvals.md#why-an-approved-plan-can-still-be-refused)).
+Real runs, 2026-11-16. If `alice` pushes another commit, a new plan is made and the old approved plan can no longer apply ([Why an approved plan can still be refused](plan-lifecycle.md#why-an-approved-plan-can-still-be-refused)).
 
 ## Troubleshooting
 

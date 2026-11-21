@@ -128,6 +128,67 @@ Output of a real run, 2026-11-10.
 
 Direct apply of a `no-changes` plan by ID returns `409 state`. Merged applies return `200` (`run: null`, `plan: ID`) when a current `no-changes` plan matches or when the newest run already applied those sources and wrote the current HTTP state version (after checking the caller's `apply` grant).
 
+## Apply request keys
+
+The rules behind [When an answer is lost](apply.md#when-an-answer-is-lost).
+
+### How the key works
+
+Each `writ apply --remote` invocation makes one `Idempotency-Key`: Unix seconds, a dash, and 26 random characters, for example `1794405508-IDTB4TY5M2Z4M4RFR773KN4BKQ`. If a client omits the header, `writ serve` makes one. Once recorded, a key's outcome is final:
+
+| Outcome | Meaning |
+| --- | --- |
+| `started` | A run started. The same request from the same principal returns `202` with that run, without a second run or a second CI token. The key on a different request returns `usage`. Another principal gets `denied`. |
+| `none` | Closed with no run, by the outcome route or after a rolled-back commit. Any later apply with the key returns `state` with `key_closed: true`. |
+| Unrecorded | No run started and no refusal committed the key. The client may reuse it. |
+
+### Ask whether a run started
+
+`POST /v1/apply-requests/{key}/outcome` returns `started` (with the run) or `none`. Asking about an unused key closes it to `none` atomically, so no delayed retry with that key can start a run.
+
+### What writ apply does for you
+
+After a transport error, a timeout, or a `503` whose `outcome` is not `none`, `writ apply --remote` asks the outcome route up to 5 times:
+
+| Answer | CLI |
+| --- | --- |
+| `started` | Prints and follows the run. |
+| `none` | Prints that no run started and exits 1. Rerun the command to use a new key. |
+| Unreachable | Prints the key and `writ show --remote --request KEY`, then exits 1. |
+
+- After a `429`, or a `503` with `outcome: "none"` and `key_closed: false`, it retries with the same key.
+- After a `503` or `409` with `key_closed: true`, it retries with a new key.
+- All retries share the 5-attempt cap. A `503` with `outcome: "unknown"` never rotates the key.
+
+Messages it prints (real runs against a local stand-in, 2026-11-16):
+
+| Case | Message |
+| --- | --- |
+| No answer, run had started | `The apply request got no answer: POST http://127.0.0.1:41971/v1/runs: EOF`, then `Asking writ serve whether it started a run.`, then the run as usual |
+| No run started | `error: state-io: no run started: writ serve closed the key KEY of this command's requests with no run; run the command again` |
+| Outcome route failed | `error: state-io: writ serve did not say whether the apply request with the key KEY started a run; ask later with: writ show --remote --request KEY` |
+| Server rolled back, `503` with `key_closed: true` | `writ serve closed the key KEY with no run. Sending the request again with a new key.` |
+
+### What each 503 means
+
+- A `503` from `POST /v1/runs` sets `outcome: "none"` if no run started, or `outcome: "unknown"` if the server cannot tell. A `503` from the outcome route always sets `outcome: "unknown"`.
+- Only `outcome: "none"` from the outcome route, or `key_closed: true` on `POST /v1/runs`, guarantees the key can never start a run.
+- A `503` with `outcome: "none"` and no `key_closed` failed before commit, so the same key can be retried.
+- If a database commit error leaves the outcome unknown, `writ serve` returns `503` with `outcome: "unknown"` and reconciles the run in the background, or marks an orphaned `applying` run `failed` on its minute sweep (see [What a run records](plan-lifecycle.md#what-a-run-records)).
+
+### Who can learn a key's outcome
+
+- A `started` key: only the principal that started the run (same issuer and subject) or a global `admin`. Anyone else gets `403 denied`, which is audited.
+- An unused key: any authenticated principal can query it and close it to `none`.
+- Keys have 130 random bits and cannot be guessed, but anyone who reads a key from a log before the apply runs can close it.
+- In GitLab CI, a job's subject names the project and branch, so jobs on the same branch share a principal here.
+
+### How long a key lives
+
+- A key is accepted for 24 hours after its embedded Unix timestamp, and at most 5 minutes ahead of server time.
+- `started` rows live as long as their run.
+- Hourly pruning deletes `none` rows older than 25 hours and, in the same transaction, records a monotonic prune floor. A key at or below the floor is refused as `state` with `key_closed: true`, so a clock rollback cannot reopen pruned keys.
+
 ## Repository routes
 
 | Method and path | Grant | Response |

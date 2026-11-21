@@ -26,7 +26,7 @@ Each Writ term has one meaning across the docs, CLI, and UI. Where Terraform or 
 | serial | OpenTofu's monotonic state counter, incremented on each write. Used to identify S3 states. | Serial |
 | state token | A per-run token sent via HTTP Basic auth (`TF_HTTP_USERNAME=writ`) for the `http` state backend. Plan tokens are read-only; apply tokens can also lock and write. Revoked when the run ends; only its SHA-256 is stored. | |
 | lock | OpenTofu's exclusive claim on state during an apply (`LOCK` on the `http` backend, or lockfile/DynamoDB on S3). | State lock |
-| state index | Control-database rows recording each managed resource's address, type, provider, and allow-listed identifying attributes (`id`, `arn`, `identifier`, `region`, `namespace`, `modify_index`). Written only by the mask. See [The state index](plan-to-apply.md#the-state-index). | |
+| state index | Control-database rows recording each managed resource's address, type, provider, and allow-listed identifying attributes (`id`, `arn`, `identifier`, `region`, `namespace`, `modify_index`). Written only by the mask. See [The state index](plan-lifecycle.md#the-state-index). | |
 | row | One record in a control database table. | |
 | plan | The changes OpenTofu proposes for one commit of `stack@env`, or `writ plan --remote`. | Plan |
 | commit plan | A plan generated from a Git commit fetched by `writ serve`. | |

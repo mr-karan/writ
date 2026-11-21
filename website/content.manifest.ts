@@ -255,6 +255,12 @@ export const pages: Page[] = [
     parts: whole('docs/plan-to-apply.md'),
   },
   {
+    slug: 'plan-lifecycle',
+    title: 'Plan lifecycle reference',
+    description: 'Plan statuses, staleness checks, merged-apply matching, apply steps, risk classes, plan IDs, run records, the state index, and apply limits.',
+    parts: whole('docs/plan-lifecycle.md'),
+  },
+  {
     slug: 'security-model',
     title: 'Security model',
     description: 'Credential boundaries, OIDC verification, run sandboxing, secret masking, policy isolation, and explicit limits.',
@@ -309,6 +315,7 @@ export const nav: NavEntry[] = [
   'glossary',
   { separator: 'Concepts' },
   'plan-to-apply',
+  'plan-lifecycle',
   'security-model',
   'how-run-isolation-works',
 ];
@@ -350,6 +357,7 @@ export const fileRoutes: Record<string, string> = {
   'docs/agent-reference.md': '/docs/agent-reference',
   'docs/glossary.md': '/docs/glossary',
   'docs/plan-to-apply.md': '/docs/plan-to-apply',
+  'docs/plan-lifecycle.md': '/docs/plan-lifecycle',
   'docs/security-model.md': '/docs/security-model',
   'docs/how-run-isolation-works.md': '/docs/how-run-isolation-works',
 };
