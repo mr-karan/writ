@@ -9,7 +9,7 @@ export default function NotFound() {
           <Wordmark />
         </Link>
         <h1>This page is not in the plan.</h1>
-        <p className="lede mt-6 max-w-[36rem]">Nothing lives at this address. The docs have a search, and the home page has the short version.</p>
+        <p className="lede mt-6 max-w-[36rem]">Nothing lives at this address. Search the docs or start from the home page.</p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link href="/docs" className="btn btn-primary">
             Open the docs
