@@ -296,6 +296,12 @@ export const pages: Page[] = [
     description: 'The four rules of Writ's mask, what it learns from each run, and when it drops a whole document rather than risk a leak.',
     parts: whole('docs/how-the-mask-works.md'),
   },
+  {
+    slug: 'how-aws-credentials-work',
+    title: 'How AWS credentials work',
+    description: 'How writ serve gives each run short-lived AWS credentials, what CloudTrail records, the S3 backend rules, and how S3 serials and outside writes are tracked.',
+    parts: whole('docs/how-aws-credentials-work.md'),
+  },
 ];
 
 export const nav: NavEntry[] = [
@@ -346,6 +352,7 @@ export const nav: NavEntry[] = [
   'how-import-bulk-works',
   'how-writ-mcp-works',
   'how-the-mask-works',
+  'how-aws-credentials-work',
 ];
 
 // Where a link to a source file lands on the site.
@@ -392,4 +399,5 @@ export const fileRoutes: Record<string, string> = {
   'docs/how-import-bulk-works.md': '/docs/how-import-bulk-works',
   'docs/how-writ-mcp-works.md': '/docs/how-writ-mcp-works',
   'docs/how-the-mask-works.md': '/docs/how-the-mask-works',
+  'docs/how-aws-credentials-work.md': '/docs/how-aws-credentials-work',
 };

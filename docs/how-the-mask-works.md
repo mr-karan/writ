@@ -14,7 +14,7 @@ Each run gets its own mask, loaded with:
 
 - the run's environment values (`provider_env`, dev `TF_VAR_*`);
 - the state version's sealed secret set;
-- every temporary AWS `SecretAccessKey` and `SessionToken` the [credential broker](aws-credentials.md#how-credentials-reach-providers-and-cloudtrail) issued, refreshed before each sweep. `AccessKeyId` stays visible for CloudTrail lookups, and temporary credentials are never saved in state secret sets.
+- every temporary AWS `SecretAccessKey` and `SessionToken` the [credential broker](how-aws-credentials-work.md#how-credentials-reach-providers-and-cloudtrail) issued, refreshed before each sweep. `AccessKeyId` stays visible for CloudTrail lookups, and temporary credentials are never saved in state secret sets.
 
 It then applies four rules.
 
