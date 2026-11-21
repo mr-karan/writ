@@ -133,8 +133,8 @@ var update = flag.Bool("update", false, "rewrite the token fixtures in testdata/
 // tokenFixture is one file in testdata/tokens: a token, the key set that
 // signed it, and the clock and audience to check it with. The fixtures in
 // the repository were signed in a test, in the shapes GitLab's and GitHub's
-// documents show. A token recorded from a real job goes in the same format;
-// see docs/development.md for how to record one.
+// documents show. A token recorded from a real job goes in the same format,
+// paired with the issuer's JWKS and a timestamp inside its lifetime.
 type tokenFixture struct {
 	Comment  string          `json:"comment"`
 	Kind     Kind            `json:"kind"`

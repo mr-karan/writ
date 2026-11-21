@@ -255,12 +255,6 @@ export const pages: Page[] = [
 
   // Concepts
   {
-    slug: 'architecture',
-    title: 'Architecture',
-    description: 'The package map, data flow, enforced invariants, and dependencies.',
-    parts: whole('docs/architecture.md'),
-  },
-  {
     slug: 'plan-to-apply',
     title: 'How a plan becomes an apply',
     description: 'End-to-end lifecycle from commit fetch and sealed plan to approvals, apply-point policy, state indexing, and crash recovery.',
@@ -289,12 +283,6 @@ export const pages: Page[] = [
     title: 'How policy works',
     description: 'Plan-point and apply-point Rego evaluation, mandatory vs advisory sets, and how policy handles secrets.',
     parts: whole('docs/policy.md'),
-  },
-  {
-    slug: 'development',
-    title: 'Contributing and testing',
-    description: 'Build and test commands, hosted CI, Nix hash checks, and the test plan for a real GitLab instance.',
-    parts: whole('docs/development.md'),
   },
 ];
 
@@ -339,13 +327,11 @@ export const nav: NavEntry[] = [
   'agent-reference',
   'glossary',
   { separator: 'Concepts' },
-  'architecture',
   'plan-to-apply',
   'security-model',
   'serve',
   'repos',
   'policy',
-  'development',
 ];
 
 // Where a link to a source file lands on the site.
@@ -385,11 +371,9 @@ export const fileRoutes: Record<string, string> = {
   'docs/policy-reference.md': '/docs/policy-reference',
   'docs/agent-reference.md': '/docs/agent-reference',
   'docs/glossary.md': '/docs/glossary',
-  'docs/architecture.md': '/docs/architecture',
   'docs/plan-to-apply.md': '/docs/plan-to-apply',
   'docs/security-model.md': '/docs/security-model',
   'docs/serve.md': '/docs/serve',
   'docs/repos.md': '/docs/repos',
   'docs/policy.md': '/docs/policy',
-  'docs/development.md': '/docs/development',
 };

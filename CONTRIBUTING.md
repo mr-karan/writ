@@ -1,6 +1,6 @@
 # Contributing to Writ
 
-Thank you for looking at Writ. This page says how to build it, how to test a change, and how to send one. [Development](docs/development.md) has every command in full, and [Architecture](docs/architecture.md) has the package map.
+Thank you for looking at Writ. This page says how to build it, how to test a change, and how to send one. The [`justfile`](justfile) has every command in full, and [Architecture](docs/architecture.md) has the package map.
 
 ## Before you start
 
@@ -32,7 +32,7 @@ bin/writ version
 | `just website` | For any change to `docs/`, `README.md`, or `website/`. |
 | `just ci` | Every local gate in order. |
 
-Writ has no hosted CI yet, so `just ci` is the CI. [Development](docs/development.md#commands) lists the other gates and what each needs.
+Writ has no hosted CI yet, so `just ci` is the CI. Run `just --list` or read [`justfile`](justfile) for the other gates and what each needs.
 
 ## Rules for code
 

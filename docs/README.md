@@ -53,10 +53,8 @@ Writ ships as a single Go binary under Apache 2.0 with no limits on users, runs,
 
 ## Concepts
 
-- [Architecture](architecture.md): package map, data flow, enforced import boundaries, and dependencies.
 - [How a plan becomes an apply](plan-to-apply.md): end-to-end lifecycle from commit fetch to state index.
 - [Security model](security-model.md): credential boundaries, isolation layers, masking, and limits.
 - [Control plane internals](serve.md): OpenTofu execution, S3 state tracking, drift checks, teams, grants, and egress mechanics.
 - [How repositories work](repos.md): GitLab fetching, blob verification, caching, and stack discovery.
 - [How policy works](policy.md): plan-point and apply-point evaluation, mandatory vs advisory sets, and secret handling.
-- [Contributing and testing](development.md): build recipes, local test gates, hosted CI, and manual GitLab/host test plans.

@@ -96,4 +96,3 @@ When applying by ID or via `--merged`:
 - [Plan and apply](apply.md): CLI and CI commands.
 - [Approvals](approvals.md): approval rules and staleness checks.
 - [Security model](security-model.md): trust boundaries across every stage.
-- [Architecture](architecture.md): Go packages implementing this flow.

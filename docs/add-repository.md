@@ -32,7 +32,7 @@ Run `writ repo add NAME FORGE/PROJECT`, where `FORGE` is a `forge` block name or
 
 `writ serve` resolves the project path to its numeric project ID, reads the default branch's head using the forge's read-only token, lists its files, and discovers stacks. The output matches the local command above (showing the Git host, project path, and project ID) and suggests `writ ci gitlab --repo NAME` as the next step.
 
-No real-project output is shown here yet: GitLab forge reads have been exercised against the test stand-in, not a live GitLab instance ([test plan](development.md#test-plan-for-a-real-gitlab-forge)).
+No real-project output is shown here yet: GitLab forge reads have been exercised against a local GitLab stand-in, not a live GitLab instance.
 
 ## Add one from the control UI
 

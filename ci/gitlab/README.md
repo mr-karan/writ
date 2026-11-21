@@ -12,7 +12,7 @@ These are sketches. No GitLab pipeline has run them. `just lint-gitlab-ci` check
 
 ## Not verified yet
 
-Each item needs a real GitLab project. The [test plan](../../docs/development.md#test-plan-for-a-real-gitlab-project) in `docs/development.md` says how to check it.
+Each item needs a real GitLab project to verify end to end.
 
 - GitLab interpolates `$[[ inputs.stack ]]` and `$[[ inputs.env ]]` in a job name, and takes a stack name with `/` there.
 - A job's token carries every claim writ serve requires, as strings, including `ref_protected` as `"true"` or `"false"`, and its `sha` is `$CI_COMMIT_SHA`.
