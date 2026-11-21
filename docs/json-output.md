@@ -61,7 +61,7 @@ Output of a real run, 2026-11-16 (`writ import bulk SELECTION.json --json` witho
 - `refusals`: list of `{address, reason}` (`ok` is true when empty; JSON plan inputs refuse any in-place update; attribute names containing secrets appear as `(sensitive)`).
 - `settings`: accepted allow-listed provider-only settings (`address`, `attribute`, `value`, `provider`, `version`); empty when refused.
 
-Pre-start CLI errors under `writ import` use `writ.import-bulk/v0` for `bulk`, `writ.import-accept/v0` for `accept` with an argument, and `writ.error/v0` otherwise.
+A `writ import` command line that fails before the command reports prints `writ.import-bulk/v0` when its first non-flag argument is `bulk` and the next is a `.json` file, `-`, or nothing; `writ.import-accept/v0` when it's `accept` and one more argument follows; and `writ.error/v0` otherwise. So `writ import bulk wrong.txt --json` exits 2 with `writ.error/v0`.
 
 ## The `schema` tool of `writ mcp` (`writ.provider-schema/v0`)
 
@@ -152,8 +152,9 @@ Key document fields:
 - `writ.browser/v0`: `issuer`, `auth_url`, `handle`, `expires_at`.
 - `writ.session/v0`: `status` (`pending`, `signed-in`, `ended`), `interval_seconds` (when `pending`), `session`, and `token` (set only on the response that creates the session).
 - `writ.sessions/v0`: `sessions` (`id`, `carrier`, `person`, `display`, `issuer`, `subject`, `teams`, `created_at`, `ends_at`, `last_seen_at`; never tokens).
-- `writ.login/v0` / `writ.logout/v0`: `server`, `session` (without token), and `ended` on logout (login prompts go to stderr).
-- `writ.config/v0`: `url`, `issuers`, `teams`, `grants`, `envs`, `forges`, `notifiers` (with delivery/failure counts and last error, no URLs/paths/secrets), `poll_every`, `poll_every_with_hook`, `plan_ttl`, `session_ttl`, `ui`, and `admin` (`limits` and `retention` for admins, else `null`).
+- `writ.login/v0`: `server` and `session`, an object as in `writ.session/v0` without the token. Login prompts go to stderr.
+- `writ.logout/v0`: `server`, `session` (the session id, a string), and `ended` (`false` when the session had already ended on the server).
+- `writ.config/v0`: `url`, `issuers`, `teams`, `grants`, `envs`, `forges`, `notifiers` (`name`, `kind`, `events`, `envs`, `stacks`, `drift_mode`, `delivered`, `failed`, `last_event`, `last_ok_at`, `last_error_at`, `error`; no URLs/paths/secrets), `poll_every`, `poll_every_with_hook`, `plan_ttl`, `session_ttl`, `ui`, and `admin` (`limits` and `retention` for admins, else `null`).
 - `writ.policy/v0`: `sets` (`name`, `level`, `files` with relative `name` and `.rego` `text`; no host paths).
 - `writ.plan-request/v1`: `env`, `stacks` (one stack), `hints`, `source` (`repo`, `ref`, `commit`; `{}` allowed in CI). Unknown fields are refused.
 - `writ.remote-plan/v0`: `plan` (`ref`, `id`, `status`, `started_by`, `env`, `stacks`, `author`, `origin`, `source` with `ref_check`, `risks`, `superseded_by`, `superseded_why`, `approvals`, `run`, `history` on `GET /v1/plans/{id}`), `document`, `text`, `policy` (`writ.policy-decision/v1` or `null`), `network` (`writ.network/v1` or `null`), `diagnostics`.
@@ -163,10 +164,12 @@ Key document fields:
 - `writ.run-request/v1` / `writ.remote-run/v0`: request sets `plan` (+ optional `override`) or `env` + `stacks` + `merged`. Response holds `run` (`id`, `plan`, `status`, `env`, `stack`, `actor`, `approved_by`, `override`, `named_by`, `merged_commit`, `role_session`, `started_at`, `ended_at`), `document`, `text`, `policy`, `network`, plus `outcome` on 503 and `key_closed: true` on closed-key refusals (`run: null` + `plan` on 200 no-op merged applies).
 - `writ.audit/v0`: `rows` (`at`, `request`, `kind`, `method`, `route`, `status`, `principal`, `principal_kind`, `person`, `issuer`, `subject`, `via`, `teams`, `op`, `env`, `stacks`, `plan`, `run`, `risks`, `decision`, `check`, `reason`, `reason_withheld`, `grants`, `elapsed_ms`; no client IP or state SHA-256) and `next`.
 - `writ.apply-outcome/v0`: `key`, `outcome` (`started`, `none`, `unknown`), `run`.
-- `writ.repo/v0` / `writ.repos/v0` / `writ.hook/v0` / `writ.ui-link/v0`: repository metadata (`hook`, `hook_at`, `pinned`, discovered `stacks`), webhook status (`repo`, `queued`, `duplicate`), and dev UI sign-in links (`url`, `expires_at`).
-- `writ.drift/v0` / `writ.drift-check/v0`: `every`, `stacks` (`backend`, `resources`, `indexed_version`, `indexed_at`, `outside_write`, `checking`, `check` with `ref`, `status`, `outside`, `code`, `drifted_since`, `changes` without values, `error`), `checks`, and `more`.
+- `writ.repo/v0`: `repo`, `commit`, `stacks`, `diagnostics`. `repo` has `name`, `forge`, `kind` (`gitlab` or `dir`), `forge_url`, `project`, `project_id`, `path`, `prefix`, `default_branch`, `web_url`, `origin` (`api` or `config`), `added_by`, `added_at`, `head`, `head_read_at`, `polled_at`, `error`, `hook`, and `hook_at` (left out before the first delivery). `commit` is the head read (`sha`, `read_at`, `files`, `bytes`) or `null`. Each of `stacks` has `stack`, `dir`, `served`, `not_served`, and `providers` (`source`, `version`, `runs`).
+- `writ.repos/v0` / `writ.hook/v0` / `writ.ui-link/v0`: repository list, webhook status (`repo`, `queued`, `duplicate`), and dev UI sign-in links (`url`, `expires_at`).
+- `writ.drift/v0`: `every`, `stacks`, `more`, and `checks`. Each of `stacks` has `stack`, `env`, `backend`, `resources`, `indexed_version`, `indexed_at`, `outside_write` (`serial`, `seen_at`, or `null`), `checking`, and `check`, the newest check that ended, or `null`. `check` has `ref`, `started_by`, `plan`, `status` (`clean`, `drifted`, `failed`), `started_at`, `checked_at`, `repo`, `commit`, `outside`, `code`, `drifted_since`, `changes` (at most 200, each `address`, `kind`, `action`, optional `attributes`; never values), and `error`. `checks` (`ref`, `plan`, `status`, `started_at`, `checked_at`, `commit`, `outside`, `code`) lists the kept checks newest first, and appears only when the request names both `env` and `stack`.
+- `writ.drift-check/v0`: top-level `env`, `stack`, `backend`, `every`, and `check`, shaped as in `writ.drift/v0`.
 - `writ.state-index/v0`: `stack`, `env`, `backend`, `indexed_version`, `lineage`, `indexed_at`, `outside_write`, `resources` (`address`, `type`, `provider`, plus allow-listed `id`, `arn`, `identifier`, `region`, `namespace`, `modify_index`).
-- `writ.overview/v0`: authorized per-environment counts (`envs`), up to 200 stacks (`stacks`, `stacks_more`), active/pending plans (`applying`, `pending`, `planning`), `alerts` (`alerts_more`), and `repos`.
+- `writ.overview/v0`: authorized per-environment counts (`envs`; when `plans_more` is true, the plan counts are lower bounds), up to 200 stacks (`stacks`, `stacks_more`), active/pending plans (`applying`, `pending`, `planning`), `alerts` (`alerts_more`), and `repos`.
 - `writ.state-adopt-request/v0` / `writ.state-adopt/v0`: request (`env`, `stack`, `reason`, `version` or `serial`); response (`stack`, `env`, `backend`, `version`, `serial`, `lineage`, `repo`, `commit`, `resources`, `indexed`, plus warning diagnostic).
 - `writ.tofu-apply/v0`: `format`, `ok`, `applied`, `status` (`applied`/`apply-failed`), `summary` (`add`, `change`, `import`, `remove`), masked `events` (`type`, `address`, `action`, `elapsed_seconds`), masked `diagnostics`.
 
