@@ -14,6 +14,8 @@ For approval rules and stale-plan checks, see [Approvals](approvals.md) and [How
 
 From a clean Git working tree of a registered repository:
 
+`writ plan --remote` sends the checked-out commit when the repository is registered, the stack sits under `path`, no file under `path` differs from `HEAD`, and, for remote forges, the commit is pushed to a remote branch.
+
 ```sh
 writ plan --remote --env prod
 ```
@@ -230,7 +232,7 @@ writ apply --remote ID --override "bob on leave, rotate leaked key, OPS-112"
 
 ## Limits
 
-- `limits.applies` (default `4`): concurrent applies; excess requests get `429`. Applies share `provider_uids` with plans and wait for a free UID.
+- `limits.applies` (default `4`): concurrent applies; excess requests get `429`. Applies share `provider_uids` with plans and wait for a free UID. Settling a failed state commit holds an apply slot for at most 2 minutes (5-second retries).
 - `limits.apply_start_timeout` (default `10m`): max wait for a free UID. `limits.apply_timeout` (default `4h`): sends `SIGINT` to OpenTofu so running changes finish without starting new ones ([Time limits](api.md#time-limits)).
 - Request keys live 24 hours (max 5 minutes future skew); closed `none` keys prune after 25 hours.
 - `writ apply --remote` uses a 30-second per-request timeout, up to 5 apply attempts and 5 outcome queries (backoff 2s, 4s, 8s, 16s), and follows a run for up to 30 minutes from attach time.

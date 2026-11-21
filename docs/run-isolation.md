@@ -92,6 +92,8 @@ Every `tofu` step (`init`, `plan`, `show`, `apply`, plugin cache fill) runs in f
 
 No `/home`, `data`, `/tmp`, `/bin/sh`, `ssh`, or `hg` exists in the view. Each step's System V IPC objects end with its IPC namespace, and Writ kills all processes owned by the run's UID before returning the UID to the pool.
 
+These namespaces, the filesystem view, and the run's network namespace don't fall back. If Writ can't create the view or the run's network, the step fails with the reason and `tofu` doesn't run.
+
 ## System calls a run can't make
 
 A process in the view has no capabilities, but it can still reach parts of the kernel no OpenTofu run needs, and it could make a user namespace of its own and hold every capability inside it again. So before execing `tofu`, Writ installs a seccomp filter that every process of the run inherits. It needs Linux 4.14+ on amd64 or arm64; elsewhere runs proceed without it, and `--check` and the start log say so.

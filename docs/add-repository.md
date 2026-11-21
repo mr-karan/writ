@@ -11,6 +11,8 @@ You can add a local repository to `writ serve --dev` or a GitLab project to a te
 
 ## Forges and their tokens
 
+Writ never echoes raw forge response text in API answers, logs, or database rows. Read tokens are redacted from errors and refused if a forge echoes them back.
+
 Configure a `forge` block in `/etc/writ/serve` pointing to a token file with `read_api` scope:
 
 ```hcl
@@ -96,7 +98,7 @@ Pinned repositories can also receive GitLab webhooks for near-instant updates. S
 
 ## What a stack can contain
 
-Any directory under `path` containing `.terraform.lock.hcl` and `.tf` or `.tofu` files is discovered as an OpenTofu stack. Adding a repository with zero stacks under `path` is refused. Inspect discovered stacks with `writ repo list` and `writ repo show NAME`:
+Any directory under `path` containing `.terraform.lock.hcl` and `.tf` or `.tofu` files is discovered as an OpenTofu stack. When `tofu` is configured, every discovered stack is served in every configured environment, limited only by grants. Adding a repository with zero stacks under `path` is refused. Inspect discovered stacks with `writ repo list` and `writ repo show NAME`:
 
 ```
 $ writ repo list

@@ -116,6 +116,8 @@ Output of a real run against a local STS stand-in, 2026-11-10.
 3. Long runs refresh credentials 15 minutes before expiry.
 4. When the run finishes, its bearer token is revoked. The run's [mask](secrets.md) tracks every issued `SecretAccessKey` and `SessionToken` (including refreshes) and scrubs them from stored outputs and logs.
 
+If an environment has no `plan_role`, its providers get no AWS credential. A provider's environment holds only the credential endpoint and its token, the `provider_env` values, `PATH`, `AWS_EC2_METADATA_DISABLED=true`, `HOME` and `TMPDIR` set to the provider's own directory, and the plugin settings. Nothing comes from the environment of `writ serve`, so a variable such as `AWS_REGION` or a proxy setting in its unit doesn't reach providers; set it in `provider_env`.
+
 CloudTrail session attribution:
 
 | Field | Value |

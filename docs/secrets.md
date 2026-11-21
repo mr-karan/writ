@@ -54,7 +54,7 @@ The mask is an output filter. It catches a secret only if OpenTofu marks it, the
 - **Unmarked provider return value after apply:** Sealed in state, but visible in the state index if the provider puts it in an indexed attribute such as `id`.
 - **Refused S3 plan against a state with no secret set:** The mask knows nothing of a state with no secret set. If a refused plan's summary quotes a value from such a state outside a quoted instance key (for example an attribute set through `nonsensitive()`, an attribute marked sensitive in state, or a name built from `each.key`), or quotes a key three times or more, that value shows.
 
-Declare all secret variables `sensitive = true` and avoid `nonsensitive()` on derived values. The mask is verified by differential and fuzz tests, not formally proven.
+Declare all secret variables `sensitive = true` and avoid `nonsensitive()` on derived values. The mask is verified by differential and fuzz tests, not formally proven. Those tests don't cover policy messages, notifications, or control UI HTML.
 
 ## Troubleshooting
 
