@@ -246,6 +246,29 @@ Files are read once at startup (restart after edits). Subscribing to `drift` wit
 
 Requires `provider_uids` so OpenTofu never executes as `writ serve`'s OS user.
 
+## writ serve --dev defaults
+
+| Area | Behavior |
+| --- | --- |
+| Store | SQLite `control.db` under `$XDG_DATA_HOME/writ/dev` (or `~/.local/share/writ/dev`). `--data DIR` moves it. `--database postgres://...` uses Postgres instead. |
+| Listen | `127.0.0.1:7340` by default. `--listen` takes loopback addresses only; `:0` picks an ephemeral port. |
+| Identity | A 32-byte random token made at start, written with the URL to `client.json` (`0600` in a `0700` directory). Full permissions: team `dev`, principal `dev/USER`. |
+| Environments | Any valid name (`[a-z][a-z0-9_-]{0,62}`) works on demand and gets `keys/ENV.key`. `--env` defaults to `dev`. |
+| Credentials | No AWS role assumption. Runs get `PATH=/usr/local/bin:/usr/bin:/bin` (prefixed with `tofu.git`'s directory if set), `AWS_EC2_METADATA_DISABLED=true`, the starting shell's `TF_VAR_*`, and a per-run `HOME`. |
+| Isolation | No `provider_uids`: OpenTofu runs as your user. On Linux, runs use the read-only filesystem view, so they cannot read your other files, but they share your network. Elsewhere, OpenTofu has your user's filesystem access, and `--data` must keep `TMPDIR` short enough for macOS's 103-byte Unix socket paths. Plan only stacks you trust with that access. |
+| Single instance | Refuses to start if another dev server answers for the same data directory. A clean shutdown removes `client.json`. |
+| Control UI | `/ui/`, with a one-time 10-minute sign-in link printed at startup and by `writ ui`. |
+| Repositories | `writ repo add .` registers a local Git repository. With `--config FILE`, dev mode also accepts `forge`, `repo`, `poll_every`, `poll_every_with_hook`, `tofu`, and `policy` ([Add a repository](add-repository.md)). |
+
+## Database
+
+`writ serve` keeps all control plane records and HTTP-backend state (the newest 20 versions per `stack@env`) in the Postgres schema `writ_control`. S3-backend stacks keep their state in S3. Never put a Postgres password in the `database` URL: use Unix-socket peer authentication, `?passfile=/path/to/pgpass`, or `PGPASSFILE`.
+
+| Database | Timeouts |
+| --- | --- |
+| Postgres | 5s connect, 10s statement, 5s lock, 15s idle in transaction |
+| SQLite (`--dev`) | 5s busy |
+
 ## Repository and stack rules
 
 The rules [Add a repository](add-repository.md) applies.
