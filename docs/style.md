@@ -10,7 +10,7 @@ Write like an engineer on the team explaining Writ to another engineer who knows
 
 - Every claim must match the code at this commit. Check flags, config keys, defaults, and error messages against `cmd/` and `internal/`.
 - Every terminal output block must come from a real run. Put a one-line source caption under the block (for example: `Output of TestTofuApproveApply, 2026-11-16.`).
-- Never include employer names, internal hostnames, internal domains, or organization data.
+- Never include company names, private hostnames, or real account IDs in docs or examples.
 - Every number needs a source and what it measured. Speed numbers come only from `bench/RESULTS.md`. Facts about other tools need a source and date.
 - State limits on the page for the feature they limit, and roll them up in [Supported platforms and limits](status.md). Leave roadmap items out of user docs.
 - Use one term per concept from the [glossary](glossary.md) and the [Terms](#terms) table. Write commands and flags as typed (`writ plan --remote`, `--remote`). Write dates as `2026-11-16`.
