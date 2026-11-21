@@ -1,8 +1,10 @@
 # How the control plane works
 
-`writ serve` is a single-process control plane with a REST API and control UI that plans and applies OpenTofu stacks. CI jobs authenticate with OIDC tokens, teams and grants in host config decide permissions, every request commits a synchronous audit row ([API](api.md#every-answer-waits-for-its-audit-row)), and cloud credentials and state keys never leave the server.
+`writ serve` is the control plane: one process with a REST API and a control UI that plans and applies OpenTofu stacks. CI jobs prove who they are with OIDC tokens, and the teams and grants in the host config decide what each token can do.
 
-This page documents internal mechanics for OpenTofu execution, lock-file translation, S3 state tracking, drift checks, authorization, credentials, isolation, and egress. For setup guides, see [Run a control plane](run.md), [AWS roles and credentials](aws-credentials.md), [Run isolation and egress](run-isolation.md), and [Enable drift checks](drift-checks.md).
+Cloud credentials and state keys never leave the server. Almost every request writes an audit row before it gets its answer ([API](api.md#every-answer-waits-for-its-audit-row) lists the exceptions).
+
+This page documents internal mechanics for OpenTofu execution, lock-file translation, S3 state tracking, drift checks, teams, grants, credentials, isolation, and egress. For setup guides, see [Run a control plane](run.md), [AWS roles and credentials](aws-credentials.md), [Run isolation and egress](run-isolation.md), and [Enable drift checks](drift-checks.md).
 
 ## How a remote plan runs
 
@@ -10,7 +12,7 @@ This page documents internal mechanics for OpenTofu execution, lock-file transla
 2. `writ serve` verifies the OIDC/session token before reading the body, maps claims to teams, checks `plan` on `stack@env`, verifies the commit exists on the ref at the Git host, fetches uncached blobs, and checks every blob's Git SHA-1 ID.
 3. `writ serve` assumes the environment's `plan_role` via AWS STS tagged with `SourceIdentity` ([Roles and credentials](#roles-and-credentials)).
 4. OpenTofu runs `init -lockfile=readonly`, `plan -lock=false`, and `show -json` under a dedicated UID from `provider_uids` inside isolated Linux namespaces ([How providers are kept from the keys](#how-providers-are-kept-from-the-keys)).
-5. `internal/mask` strips secrets, `policy` evaluates the masked document, Writ seals the saved plan under the environment key, and returns the SHA-256 plan ID.
+5. `internal/mask` strips secrets, `policy` evaluates the masked document, Writ seals the saved plan under the environment key, and returns the plan ID: the first 32 hex digits of a SHA-256 over the masked plan, the saved plan, the commit, the stack, and the environment.
 
 ## OpenTofu stacks
 
@@ -20,7 +22,7 @@ An OpenTofu stack is a directory containing `.terraform.lock.hcl`, `.tf`/`.tofu`
 2. **Validate backend:** Accepts only empty `backend "http" {}` (served by `writ serve` at `/v1/tfstate/` with per-run tokens) or `backend "s3"` ([Stacks on S3](#stacks-on-s3)). Missing backends, `cloud {}`, non-empty `http`, or other backends are refused.
 3. **Fill plugin cache:** `writ serve` installs pinned providers into `tofu.plugin_cache` from a synthetic config as its own OS user (stack code never writes the cache).
 4. **Run OpenTofu:** Runs `tofu init -lockfile=readonly` with no cloud credentials, then `tofu plan -lock=false` and `tofu show -json` with `provider_env` and `plan_role`. (S3 stacks run offline `init -backend=false`, then `init -get=false` with `plan_role` to configure the bucket.)
-5. **Mask and seal:** Stores only the masked plan document, formatted text, and AES-256-GCM sealed saved plan; deletes the run's scratch directory.
+5. **Mask and seal:** Stores only the masked plan document, formatted text, and AES-256-GCM sealed saved plan; deletes the run's scratch directory. No API route returns the saved plan.
 
 ### What a stack can contain
 
@@ -52,23 +54,33 @@ States written outside Writ (or prior to secret sets) have no sealed secret set.
 
 ### How an apply runs
 
-Applies re-fetch and verify the commit's files, run `tofu init -lockfile=readonly` without cloud credentials, then run `tofu show -json` and `tofu apply` against the sealed saved plan (mounted via a sealed in-memory file at `/dev/fd/7`) under a provider UID with `provider_env` and `apply_role`. See [Approvals: How the apply runs](approvals.md#how-the-apply-runs).
+Applies re-fetch and verify the commit's files, run `tofu init -lockfile=readonly` without cloud credentials, then run `tofu show -json` and `tofu apply` against the sealed saved plan (mounted via a sealed in-memory file at `/dev/fd/8`) under a provider UID with `provider_env` and `apply_role`. See [Approvals: How the apply runs](approvals.md#how-the-apply-runs).
 
 ### What a run can see
 
-Every `tofu` process (`init`, `plan`, `show`, `apply`, cache fill, `--check` `tofu version`) executes on Linux inside private user, mount, PID, and IPC namespaces with `pivot_root` onto a read-only `tmpfs`, `no_new_privs`, empty capabilities, seccomp, and per-step cgroups. See [Run isolation and egress](run-isolation.md#what-each-run-can-see-on-disk) for the exact mount table and limits.
+Every `tofu` process (`init`, `plan`, `show`, `apply`, cache fill, `--check` `tofu version`) executes on Linux inside private user, mount, PID, and IPC namespaces with `pivot_root` onto a read-only `tmpfs`, `no_new_privs`, and empty capabilities. Where the host allows them, each step also runs under Writ's seccomp filter and in a cgroup of its own; otherwise `writ serve` logs a warning at start and runs steps without them. See [Run isolation and egress](run-isolation.md#what-each-run-can-see-on-disk) for the exact mount table and limits.
+
+If Writ can't create the view, or the run's network, the step fails with the reason, and `tofu` doesn't run.
 
 Additional execution details:
 
 - `tofu.git` runs with `GIT_ALLOW_PROTOCOL=https:ssh`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`, no `ssh` binary, and `submodule` aliased to `submodule--helper` so HTTPS submodules work without `/bin/sh`.
 - When a step fails before producing plan JSON, Writ keeps only masked diagnostic severity, summary, file, line, and column (never details or snippets). On S3 stacks, quoted instance keys (`["KEY"]` and `[\"KEY\"]`) in failure summaries are redacted to `["(sensitive)"]` to protect unmarked keys from un-adopted states.
-- Under `writ serve --dev`, runs use the starting user (still inside namespaces on Linux; without namespaces on macOS, where `--data` must keep `TMPDIR` short enough for 103-byte Unix socket paths).
+- On S3, a refused plan saved no plan, so Writ doesn't know which serial it read. Its mask starts from every secret set Writ keeps for the `stack@env`. If the distinct secrets of those sets pass the mask's 4 MiB, the plan fails with that reason.
+
+**Limits of a refused S3 plan.** The mask knows nothing of a state with no secret set. If a refused plan's summary quotes a value from such a state outside a quoted instance key, the value shows. Examples are an attribute set through `nonsensitive()`, an attribute the state marks sensitive, or a name built from `each.key`. So does a key quoted three times or more.
+
+### Under `writ serve --dev`
+
+OpenTofu comes from your `PATH`. A run gets `PATH=/usr/local/bin:/usr/bin:/bin`, `AWS_EC2_METADATA_DISABLED=true`, and the `TF_VAR_` variables of the shell that started `writ serve --dev`, and no other variable from that shell.
+
+Dev mode needs no `provider_uids`: tofu and its providers run as the user who started `writ serve --dev`. On Linux they run in the filesystem view, so they read none of that user's files but the run's own, and still reach the network as that user. Elsewhere tofu runs with that user's files, and `--data` must keep `TMPDIR` short enough for macOS's 103-byte Unix socket paths. Plan only stacks you trust with that access.
 
 ## The state index
 
 Writ maintains a queryable resource index per `stack@env` (`GET /v1/index`, [Resources view](#the-resources-view)) storing only `address`, `type`, `provider`, and allow-listed identifying columns: `id`, `arn`, `identifier`, `region`, plus `namespace` and `modify_index` for `nomad_job`. Sensitive or masked values are stored empty. `internal/archtest` enforces that raw state JSON flows only into `mask.Index`.
 
-Rows replace atomically per `stack@env` and never regress to an older state version. The index refreshes immediately after a successful apply (offline `tofu show -json`, non-fatal on error) and via a 5-minute background sweep (up to 50 lagging stacks per cycle). States without a sealed secret set aren't indexed until adopted or overwritten by a Writ apply.
+Rows replace atomically per `stack@env` and never regress to an older state version. The index refreshes immediately after a successful apply (offline `tofu show -json`, non-fatal on error) and via a 5-minute background sweep (up to 50 lagging stacks per cycle). On the HTTP backend, a sweep's run gets the stored state as a file, and no cloud credential, no `provider_env`, and no state token. States without a sealed secret set aren't indexed until adopted or overwritten by a Writ apply.
 
 ### The Resources view
 
@@ -94,6 +106,8 @@ Requirements for `backend "s3"` (see [AWS roles and credentials](aws-credentials
 - Custom `endpoints = { s3 = "..." }` must match `env.s3_endpoints` exactly.
 - Requires `plan_role` / `apply_role` (not supported under `writ serve --dev`). OpenTofu state/plan encryption isn't supported because Writ reads serials from the plan/state.
 
+The plan and apply roles, not Writ's grants, keep one stack's S3 state from another's: see [AWS roles and credentials](aws-credentials.md).
+
 ### How Writ reads the serial
 
 Writ tracks up to 20 Writ-applied serials and 20 external serials per `stack@env` in `state_serials`:
@@ -101,6 +115,8 @@ Writ tracks up to 20 Writ-applied serials and 20 external serials per `stack@env
 - **Plans** read the serial from the saved plan.
 - **Applies** run `tofu state pull` and `tofu show -json` after `tofu apply` finishes. If the apply succeeded (or failed after beginning resource changes) and the serial increased on the same lineage, Writ claims the serial, seals its secret set, and refreshes the index.
 - **Background refresh** (startup + every 5 minutes, up to 50 stacks oldest-first) runs `tofu state pull` with `plan_role` (`RoleSessionName` `writ-index-...`).
+
+Reads are ordered. Each read of a serial, by a plan, an apply, or a refresh, takes the next number among the reads of its `stack@env`. Writ stores an index only from the newest read. When a later read follows, the older read's index is dropped and logged at `DEBUG`, and the next refresh indexes the state again.
 
 **Limit:** Between `tofu apply` releasing the S3 lock and `tofu state pull` reading the serial, an external same-lineage write could be attributed to the apply.
 
@@ -213,7 +229,9 @@ Un-adopted outside S3 write example (`just e2e-tofu-s3`, 2026-11-15):
 
 ## Teams and grants
 
-Teams match OIDC claims from a single issuer (all `match` keys must match; list claims match any element; trailing `/*` matches one path segment and `/**` matches any depth; missing claims never match). Grants are additive over `teams`, `stacks`, `envs`, `can` (`read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`), and `risks` (`create`, `update`, `replace`, `delete`, `data-loss`). Run `writ whoami` to inspect effective grants.
+Teams match OIDC claims from a single issuer (all `match` keys must match; list claims match any element; numbers and booleans compare as their JSON text; trailing `/*` matches one path segment and `/**` matches any depth; missing claims never match; a team with no rule has no members). Grants are additive over `teams`, `stacks`, `envs`, `can` (`read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`), and `risks` (`create`, `update`, `replace`, `delete`, `data-loss`). Grants match a stack by its name: its path from the Git work tree that contains it, or its directory's name outside one. Set it with `--stack NAME`.
+
+When a job is refused, run `writ whoami`. It prints the control plane and where it was found, who the token speaks for and where the token came from, the teams, and one line per grant with its environments, stacks, operations, and risk classes.
 
 ### Stack patterns
 
@@ -221,13 +239,15 @@ Stack patterns split on `/`. Within a segment, `*`, `?`, and `[...]` follow Go's
 
 ### Who a person is
 
-Every issuer declares a lowercase `identity` name (never `dev`). Writ identifies people as `IDENTITY/user/ID` using `user_id` (GitLab CI), `actor_id` (GitHub Actions), or `sub` (`people` ID token). Issuers for the same Git host share one `identity` so a person's CI jobs and CLI/UI sessions collapse to one ID, preventing URL-spelling bypasses and cross-channel self-approval. Separate Git hosts must use separate identities (`writ serve --check` warns if different identities point to the same normalized host). Renaming an identity invalidates old sessions and stops old approvals from counting until re-approved or reverted.
+Every issuer declares a lowercase `identity` name (never `dev`). Writ identifies people as `IDENTITY/user/ID` using `user_id` (GitLab CI), `actor_id` (GitHub Actions), or `sub` (`people` ID token). Issuers for the same Git host share one `identity` so a person's CI jobs and CLI/UI sessions collapse to one ID, preventing URL-spelling bypasses and cross-channel self-approval. Separate Git hosts must use separate identities (`writ serve --check` warns if different identities point to the same normalized host). Renaming an identity renames every person in it. Writ refuses an approval from a session, or for a plan's author, whose identity the config no longer defines: sign in again and plan again. Approvals kept under the old identity count nowhere, not toward a plan's approvals, its status, or an apply. The control database keeps them on record, and rolling back the rename makes them count again.
 
 ## Roles and credentials
 
 For setup instructions and trust policies, see [AWS roles and credentials](aws-credentials.md).
 
-`writ serve` assumes `plan_role` or `apply_role` using its own AWS SDK default chain and serves credentials to each run over a loopback container credentials endpoint (`AWS_CONTAINER_CREDENTIALS_FULL_URI` + random `AWS_CONTAINER_AUTHORIZATION_TOKEN`, refreshing 15 minutes before expiry and revoking the token on run end). `provider_env` maps non-reserved env vars (`TF_VAR_*` allowed; `AWS_*`, non-`TF_VAR_` `TF_*`, `PLUGIN_*`, `WRIT_*`, `HOME`, `TMPDIR` refused) from host secret files.
+`writ serve` assumes `plan_role` or `apply_role` using its own AWS SDK default chain and serves credentials to each run over a loopback container credentials endpoint (`AWS_CONTAINER_CREDENTIALS_FULL_URI` + random `AWS_CONTAINER_AUTHORIZATION_TOKEN`, refreshing 15 minutes before expiry and revoking the token on run end; credentials a provider already fetched stay valid, as [AWS roles and credentials](aws-credentials.md#how-credentials-reach-providers-and-cloudtrail) explains). If an environment has no `plan_role`, its providers get no AWS credential. `provider_env` maps non-reserved env vars (`TF_VAR_*` allowed; `AWS_*`, non-`TF_VAR_` `TF_*`, `PLUGIN_*`, `WRIT_*`, `HOME`, `TMPDIR` refused) from host secret files.
+
+A provider's environment holds the credential endpoint and its token, the `provider_env` values, `PATH`, `AWS_EC2_METADATA_DISABLED=true`, `HOME` and `TMPDIR` set to the provider's own directory, and the plugin settings. Nothing comes from the environment of `writ serve`.
 
 Verified STS request and log (`just test-serve`, 2026-11-10):
 
@@ -243,7 +263,7 @@ signed by AKIACONTROLPLANE0001 for us-east-1/sts, Action=AssumeRole&DurationSeco
 
 For setup, firewall rules, seccomp, and cgroup limits, see [Run isolation and egress](run-isolation.md).
 
-With `provider_uids` set, `writ serve` requires `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL` (clearing inheritable and ambient capabilities at startup), marks itself non-dumpable (temporarily toggling dumpability only while writing a child user namespace's UID map), assigns one exclusive UID per concurrent run, kills all processes of every range UID on startup and after each run, and enforces `no_new_privs` + empty capabilities on every child.
+With `provider_uids` set, `writ serve` requires `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL` (clearing inheritable and ambient capabilities at startup), marks itself non-dumpable, so no process of its own UID can trace it or read its memory, and a crash writes no core dump, only the Go traceback on stderr (it is dumpable only for the moment it writes a child user namespace's UID map), assigns one exclusive UID per concurrent run, kills all processes of every range UID on startup and after each run, and enforces `no_new_privs` + empty capabilities on every child.
 
 ### Check the isolation
 
@@ -285,7 +305,7 @@ the provider saw: key "open /tmp/TestProviderIsolation3679868081/001/keys/prod.k
 
 For rollout steps and operational limits, see [Run isolation and egress](run-isolation.md#egress).
 
-Under `egress_mode` `report` or `enforce`, each step starts in a loopback-only network namespace with no external interface, route, or DNS. Before execing `tofu`, the view helper binds three loopback listeners and hands them to `writ serve` over a socket pair so `writ serve` serves them from the host namespace and identifies each run by listener:
+Under `egress_mode` `report` or `enforce`, each step starts in a loopback-only network namespace with no external interface, route, or DNS. Before execing `tofu`, the view helper binds three loopback listeners and hands them to `writ serve` over a socket pair so `writ serve` serves them from the host namespace and identifies each run by listener. The ports are taken before `tofu` starts, so the run can't listen in Writ's place:
 
 | Run loopback port | Service | Environment variable |
 | --- | --- | --- |
@@ -293,9 +313,9 @@ Under `egress_mode` `report` or `enforce`, each step starts in a loopback-only n
 | `127.0.0.1:3129` | Loopback STS credential endpoint | `AWS_CONTAINER_CREDENTIALS_FULL_URI` |
 | `127.0.0.1:3130` | HTTP state backend (`/v1/tfstate/` only, per-run rate bucket, strips `X-Forwarded-For`) | `TF_HTTP_ADDRESS` |
 
-`NO_PROXY` is set to `127.0.0.1,localhost,::1`. Each port caps at 256 connections (10s header timeout); the proxy caps at 128 connections per run (10m idle, 1h max) and closes all sockets when the step exits.
+`NO_PROXY` is set to `127.0.0.1,localhost,::1`. Each port caps at 256 connections (10s header timeout); the proxy caps at 128 connections per run (10m idle, 1h max) and closes all sockets when the step exits. The proxy keeps only the host and port of each request, never a path, a header, or a body. It connects directly and doesn't use a proxy of `writ serve`'s own.
 
-The proxy decides on `host:port` before dialing: always drops loopback, link-local (including `169.254.169.254`), multicast, broadcast, unspecified, `fd00:ec2::254`, and NAT64 equivalents (`64:ff9b::/96`, `64:ff9b:1::/48`); blocks unlisted names before DNS lookup under `enforce`; resolves listed names on the host and dials only the checked IP (defeating DNS rebinding); and allows private IPs (RFC 1918, ULA, CGNAT) only via exact host/IP match, never wildcards.
+The proxy decides on `host:port` before dialing: always drops loopback, link-local (including `169.254.169.254`), multicast, broadcast, unspecified, and `fd00:ec2::254`; counts a NAT64 address as the IPv4 address it embeds, because a translator connects there (`64:ff9b::a9fe:a9fe` is the metadata service), and treats every address of `64:ff9b:1::/48` as private; blocks unlisted names before DNS lookup under `enforce`; resolves listed names on the host and dials only the checked IP (defeating DNS rebinding); and allows private IPs (RFC 1918, ULA, CGNAT) only via exact host/IP match, never wildcards.
 
 Every plan and run records masked `host:port` verdicts (`allowed`, `unlisted`, `refused`, `unresolved`; `(withheld)` if the mask couldn't read the plan) in `network` and logs a `run egress` summary:
 
@@ -317,6 +337,8 @@ Providers come from `tofu.plugin_cache` (filled before the run), so `env.egress`
 ### The provider install
 
 Under `egress_mode` `report` or `enforce`, provider cache fills verify every lock-file registry against `provider_registries` (default `registry.opentofu.org`, `registry.terraform.io`) and run in a dedicated network namespace behind a public-only install proxy (refusing private, loopback, link-local, and metadata IPs). Install destinations appear first in `network` with `step: "install"`. Private provider registries aren't supported under `report`/`enforce`.
+
+Under `egress_mode = "off"`, the install runs on the host's network as `writ`'s own UID. The stack's lock file chooses each provider's registry, and the registry chooses the download hosts, so a stack can send the install to any host `writ serve` reaches. No firewall rule of the provider UIDs holds `writ`'s UID, so that includes the metadata service, and the error text of a request it sends ends up in the plan's diagnostics.
 
 ## Next steps
 
