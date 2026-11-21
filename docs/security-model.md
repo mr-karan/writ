@@ -1,115 +1,108 @@
 # Security model
 
-Writ is designed around one rule: **cloud credentials and state encryption keys stay on the control plane server, never in CI pipelines or on developer laptops.**
+Writ is built around one rule: **cloud credentials and state encryption keys stay on `writ serve`, never in CI pipelines or on developer laptops.**
 
-Because an OpenTofu plan on an unmerged branch executes provider and module code, Writ enforces thirteen independent layers of defense across identity, secret handling, sandboxing, policy, and state integrity.
+Because planning an unmerged branch executes provider and module code, Writ enforces thirteen layers of defense across identity, secret masking, sandboxing, policy, and state integrity.
 
 ## Thirteen layers Writ enforces
 
-1. **No cloud credentials in CI.** CI jobs authenticate to Writ with single-use platform OIDC tokens (`WRIT_ID_TOKEN`); AWS role credentials and state encryption keys never leave `writ serve`.
-2. **Short-lived, narrowly scoped STS sessions per run.** Each run receives a dedicated STS session for the environment's `plan_role` or `apply_role` over loopback, tagged with the caller's `SourceIdentity` for CloudTrail attribution.
-3. **Dedicated provider UIDs and metadata firewall.** Every concurrent OpenTofu run executes under its own Linux UID from `provider_uids`, blocked by `nftables` from the instance metadata endpoints (`169.254.169.254` and `fd00:ec2::254`).
-4. **Linux user, mount, PID, and IPC namespaces.** Runs execute inside a `pivot_root` read-only `tmpfs` filesystem view with all capabilities cleared (`no_new_privs`) and server keys, database credentials, and shells unmounted.
-5. **Secrets masked from every output and stored record.** `internal/mask` strips sensitive values, secret-named attributes, and the STS credentials served to a run before any plan, diagnostic, log, or state index row is stored or shown.
-6. **Sealed, immutable saved plans.** Saved plans and `http`-backend states are encrypted per environment with AES-256-GCM; `writ apply --remote` applies the exact approved plan binary and refuses if state moved or the plan expired (`plan_ttl`, default `24h`).
-7. **Server-enforced grants, approvals, and OPA/Rego policy.** Teams, grants, approval rules, and mandatory Rego policy sets live in `writ serve`'s host config, where no merge request or CI YAML change can weaken them.
-8. **Authors cannot approve their own plans.** Self-approval is refused whenever an approval rule applies, matched by a person's stable `IDENTITY/user/ID` across CI OIDC jobs, CLI tokens, and browser sessions.
-9. **Synchronous audit log of every request.** Every API, UI, and state request commits an audit row with the caller's verified identity before `writ serve` sends a response, readable via `GET /v1/audit` and `writ audit --remote`.
-10. **Scheduled drift checks and out-of-band state detection.** `writ serve` runs scheduled drift checks and detects S3 state versions written outside Writ, blocking approvals until an administrator reviews and runs `writ state adopt`.
-11. **Per-address and per-principal rate limits and execution timeouts.** Token-bucket rate limits per client IP and per authenticated principal, bounded concurrent runs (`limits.plans` and `limits.applies`), and hard plan (`30m`) and apply (`4h`) deadlines protect the server.
-12. **Per-run network egress control.** With `egress_mode = "enforce"`, each run gets a network namespace with only loopback and reaches the network only through Writ's egress proxy, which allows the hosts the environment's `egress` list names, never connects to metadata, loopback, or link-local addresses, and refuses private addresses a wildcard would reach. Provider installs are confined the same way, to the registries `provider_registries` lists. See [Run isolation and egress](run-isolation.md#egress).
-13. **Per-run resource limits and a seccomp filter.** Each OpenTofu step runs in a cgroup of its own, with `limits.run_memory` (no swap), `run_pids`, and `run_cpus`, and is killed whole with `cgroup.kill` when it ends, so one stack's providers can't starve `writ serve` or other runs; `run_scratch` bounds the run's directory on disk. Every `tofu` process runs under a seccomp filter that refuses the mount family, new namespaces, `ptrace`, `process_vm_readv`, `process_vm_writev`, `pidfd_getfd`, the keyrings, `bpf`, `perf_event_open`, `userfaultfd`, `io_uring_setup`, and loading kernel code. The cgroup limits need `writ serve` alone in a delegated cgroup; `writ serve --check` says when they're off, and why. See [Limit what each run uses](run-isolation.md#limit-what-each-run-uses).
+1. **No cloud credentials in CI.** CI jobs authenticate with single-use OIDC tokens (`WRIT_ID_TOKEN`); AWS credentials and state keys never leave `writ serve`.
+2. **Short-lived STS sessions per run.** Each run gets a dedicated loopback STS session for `plan_role` or `apply_role`, tagged with `SourceIdentity` for CloudTrail attribution.
+3. **Dedicated provider UIDs and metadata firewall.** Concurrent OpenTofu runs execute under distinct UIDs from `provider_uids`, blocked by `nftables` from `169.254.169.254` and `fd00:ec2::254`.
+4. **Linux user, mount, PID, and IPC namespaces.** Every step runs in a `pivot_root` read-only `tmpfs` view with `no_new_privs`, empty capabilities, and no server keys, database files, or shells mounted.
+5. **Single secret-masking boundary.** `internal/mask` scrubs marked values, learned secrets (plain and encoded), secret-named fields, and per-run STS credentials from every plan, diagnostic, log, and state index row.
+6. **Sealed, immutable saved plans.** Saved plans and HTTP-backend states are sealed per environment with AES-256-GCM; apply runs only the exact approved binary and refuses stale or expired (`plan_ttl`) plans.
+7. **Server-owned grants, approvals, and Rego policy.** Teams, grants, approval rules, and mandatory Rego policies live only in server config, out of reach of merge requests and CI YAML edits.
+8. **No self-approval.** Wherever an approval rule applies, the plan's author (by stable `IDENTITY/user/ID` across CI, CLI, and browser) can never approve their own plan.
+9. **Synchronous audit logging.** Every API, UI, and state request (except `/healthz`, `/v1/server`, and per-IP `429`s) commits an audit row before returning a response.
+10. **Scheduled drift checks and outside-write detection.** Drift checks detect cloud changes and out-of-band S3 state writes, blocking approvals until an admin runs `writ state adopt`.
+11. **Rate limits and execution deadlines.** Per-IP and per-principal rate limits, bounded concurrent plans/applies, and hard plan (`30m`) and apply (`4h`) timeouts protect the control plane.
+12. **Opt-in per-run network egress proxy.** Under `egress_mode = "enforce"`, each run executes in a loopback-only network namespace whose sole exit is Writ's egress proxy, restricted to `env.egress` and refusing metadata, loopback, link-local, and wildcard-matched private IPs ([Run isolation and egress](run-isolation.md#egress)).
+13. **Per-step cgroup limits and seccomp filter.** Each OpenTofu step is bounded by `run_memory` (no swap), `run_pids`, `run_cpus`, and `run_scratch`, cleaned up via `cgroup.kill`, and confined by a seccomp filter blocking mount, namespace, `ptrace`, keyring, `bpf`, `userfaultfd`, `io_uring`, and kernel module syscalls ([Limit what each run uses](run-isolation.md#limit-what-each-run-uses)).
 
 ## Who holds what
 
-| Party | Cloud credentials | State key & saved plans | Proof of identity |
+| Party | Cloud credentials | State key and saved plans | Proof of identity |
 | --- | --- | --- | --- |
-| Developer laptop | None (except local `writ import bulk`) | None | `writ login` session token (`cli` carrier, 12h default, no refresh) |
-| Browser (Control UI) | None | None | `HttpOnly` `SameSite=Lax` `__Host-` session cookie (`browser` carrier) |
-| CI job | None | None | Platform-issued OIDC JWT (`WRIT_ID_TOKEN`), single-use per write |
-| `writ serve` (plan) | Environment `plan_role` via STS | Reads state (sealed at rest) | Server's AWS identity + OIDC/session verification |
-| `writ serve` (apply) | Environment `apply_role` via STS | Locks & writes state, opens sealed saved plan | Approved plan ID + apply grant + policy pass |
+| Developer laptop | None (except local `writ import bulk`) | None | `writ login` bearer token (`cli` carrier, 12h default) |
+| Browser (Control UI) | None | None | `HttpOnly` `SameSite=Lax` `__Host-` cookie (`browser` carrier) |
+| CI job | None | None | Single-use OIDC JWT (`WRIT_ID_TOKEN`) |
+| `writ serve` (plan) | Environment `plan_role` via STS | Reads sealed state | Host AWS identity + verified OIDC/session |
+| `writ serve` (apply) | Environment `apply_role` via STS | Locks/writes sealed state, opens sealed plan | Approved plan ID + apply grant + policy pass |
 
 ## Identity and token verification
 
-- **Strict OIDC verification**: `internal/oidc` accepts only compact JWS tokens signed with `RS256` or `ES256`, requires `kid`, rejects embedded key headers (`jku`, `jwk`, `x5c`, etc.) and duplicate JSON keys, requires exact `iss` and single-element `aud` matching `writ serve`'s `url`, checks `exp`/`iat`/`nbf`, and records `jti` on writes to prevent replay.
-- **No identity provider text leaks**: `internal/oidc` never returns raw error strings from an identity provider or token. Failures are typed integer refusals (`oidc.Refusal`), enforced by `internal/archtest`, so a misbehaving proxy or IdP cannot reflect tokens or secrets into logs or API responses.
-- **Stable cross-issuer person IDs**: Issuers for the same Git host share a config-defined `identity` name (not a URL, preventing URL-spelling tricks). A person's CI job and CLI/UI session share one `IDENTITY/user/ID`, preventing self-approval across channels.
-- **Verified webhooks**: `POST /v1/hooks/{forge}/{repo}` takes no token. A delivery proves itself with the pinned repository's webhook secret, compared in constant time, or a GitLab signing token's signature with a 5-minute timestamp window. A delivery that fails gets 401 with the same words whatever the reason. One that passes only makes the poll read the default branch's head now, through the forge's read token: its body is never parsed, so no commit, branch, or URL in it is trusted, and it never plans or applies. See [Webhooks](webhooks.md#security-notes).
-- **Carrier separation**: Browser cookies are ignored on `/v1/` API routes, and CLI bearer tokens cannot open `/ui/` pages. All `/ui/` responses send a strict Content Security Policy (`default-src 'none'; script-src 'self'; ...`) and CSRF protection via `http.CrossOriginProtection`.
+- **Strict OIDC checks:** `internal/oidc` accepts only compact JWS tokens with `RS256` or `ES256`, requires `kid`, rejects header keys (`jku`/`jwk`/`x5u`/`x5c`) and duplicate JSON keys, enforces exact `iss` and single-element `aud`, requires `exp` and `iat`, and tracks `jti` on writes.
+- **No IdP text leaks:** Exported `internal/oidc` functions return typed integer `oidc.Refusal` values (enforced by `internal/archtest`), never raw IdP text.
+- **Cross-issuer person IDs:** Issuers for one Git host share a configured `identity`, mapping CI jobs and CLI/UI sessions to one `IDENTITY/user/ID`.
+- **Verified webhooks:** `POST /v1/hooks/{forge}/{repo}` verifies the pinned repo's secret in constant time (or `whsec_` HMAC-SHA256 with a 5-minute replay window), ignores the payload body completely, and returns uniform `401` on all verification failures ([Webhooks](webhooks.md#security-notes)).
+- **Carrier isolation:** Browser cookies aren't accepted on `/v1/`; CLI bearer tokens can't open `/ui/`. `/ui/` enforces strict CSP (`default-src 'none'; script-src 'self'; ...`) and `http.CrossOriginProtection`.
 
 ## Authorization and approval integrity
 
-- **Config-owned rules**: Teams, grants, approval rules, and Rego policies live only in `writ serve`'s config on the server. A merge request cannot edit CI YAML or repo files to weaken grants, skip approvals, or disable policies.
-- **No self-approval**: Whenever an approval rule applies, the plan's author can never approve it. `writ serve --check` refuses `approve` grants to CI teams that do not match a person claim, and refuses `override` or `adopt` grants to any CI team.
-- **Plan binding**: Approving a plan approves its SHA-256 plan ID (binding the masked plan, binary saved plan, commit SHA, stack, and environment). Applying a stale plan, a superseded plan, or a commit whose sources differ from the approved plan is refused. The masked plan is rendered from the saved plan that Writ seals: Writ reads the saved plan when `tofu plan` exits, and `tofu show` and `tofu apply` read it from a sealed in-memory file that no process of the run can write.
+- **Server-side config:** Teams, grants, approval rules, and Rego policies live only on the server; CI YAML and repository commits can't weaken them.
+- **No self-approval:** Authors can't approve their own plans under any approval rule. `writ serve --check` rejects CI `approve` grants without user-claim matching and rejects `override` / `adopt` grants for CI teams.
+- **Immutable plan binding:** Approvals sign off on the plan ID (hashing masked plan, saved plan, commit, stack, and env). `tofu show` and `tofu apply` read the saved plan from a sealed in-memory file unwritable by run processes.
 
 ## Run isolation
 
-Because OpenTofu plans execute code from unmerged branches, a team's `writ serve` isolates every run on Linux:
+On Linux, a team's `writ serve` isolates every run with:
 
-- **Per-run UIDs**: Each concurrent run gets a dedicated UID from `provider_uids` with no supplementary groups and all capabilities cleared (`no_new_privs`). Concurrent runs cannot read each other's `/proc/PID/environ` or temporary directories.
-- **Private filesystem view**: User, mount, and PID namespaces with `pivot_root` onto a read-only `tmpfs` hide `data`, state keys, TLS keys, `provider_env` files, shells, `ssh`, and `hg`.
-- **Seccomp filter**: Every `tofu` process runs under a seccomp filter, so no process of a run can mount, make a namespace, trace a process, or reach the keyrings, BPF, perf events, `userfaultfd`, or `io_uring`. See [System calls a run can't make](run-isolation.md#system-calls-a-run-cant-make).
-- **Resource limits**: Each step runs in a cgroup of its own with `limits.run_memory`, `run_pids`, and `run_cpus`, and `cgroup.kill` ends whatever the step left when it ends. `run_scratch` bounds the run's directory on disk.
-- **Metadata firewall**: An `nftables` rule drops traffic from `provider_uids` to `169.254.169.254` and `fd00:ec2::254`, preventing providers from stealing the control plane host's AWS identity. `writ serve --check` actively tests both file permissions and metadata blocking as a provider UID.
-- **Source hygiene**: Stack commits are verified against Git SHA-1 blob IDs. Symlinks, `.terraform` directories, `.tf.json`/`.tofu.json`, `file://` module sources, and dangerous `go-getter` query parameters are rejected before OpenTofu runs.
-- **Per-run credentials**: AWS credentials are served over loopback behind a per-run random token rather than copied from the host environment.
-- **Not dumpable**: With `provider_uids`, `writ serve` marks itself not dumpable at start, so no process of its own uid can trace it or read its memory, and it writes no core dump of its keys and secrets.
-- **Egress proxy (opt-in)**: Under `egress_mode` `report` or `enforce`, each run gets a network namespace with only loopback, and reaches the network only through Writ's egress proxy, which checks every host and port against the env's `egress` list before it connects. It never connects to loopback, link-local, or metadata addresses, connects only to an address it resolved and checked, and keeps a wildcard out of private addresses. `enforce` refuses what the list lacks. The provider install runs in a namespace of its own behind a proxy that refuses every private address, and installs only from the registries `provider_registries` lists. Every plan and run records the destinations it asked for. The default, `off`, leaves runs and the provider install on the host's network.
+- Dedicated `provider_uids` (no supplementary groups, `no_new_privs`, non-dumpable server process).
+- User, mount, PID, and IPC namespaces with read-only `pivot_root` `tmpfs` (no `data`, keys, shells, `ssh`, or `hg`).
+- Seccomp filter and per-step cgroup v2 limits (`run_memory`, `run_pids`, `run_cpus`, `cgroup.kill`) plus `run_scratch` monitoring.
+- `nftables` drop rule for `169.254.169.254` and `fd00:ec2::254` (tested by `writ serve --check`).
+- Git blob SHA-1 verification, symlink/JSON/`.terraform` rejection, and strict module-source allow-listing.
+- Per-run loopback STS credentials and optional `egress_mode = "enforce"` proxy.
 
 See [Run isolation and egress](run-isolation.md) for setup and verification.
 
 ## Secret masking and encryption at rest
 
-- **One masking boundary**: `internal/mask` produces every document leaving a run (masked plan, run text, events, diagnostics, state index rows). `internal/archtest` forbids any package outside `internal/tofu` from reading raw state JSON except through `mask.Index`.
-- **Four masking rules**: OpenTofu sensitive marks, value sweep (including URL, JSON, hex, and base64 encodings), secret-like attribute names, and a strict output key allow-list. The value sweep also includes the STS access key, secret key, and session token served to the run.
-- **Secret sets**: Each apply seals the secrets its mask knew alongside the state version or S3 serial so later plans and drift checks still mask old secrets (such as keys exposed via `nonsensitive()`). States without a secret set cannot be approved until explicitly [adopted](adopt-state.md).
-- **Per-environment sealing**: States on the `http` backend, saved plans, and secret sets are sealed with AES-256-GCM using HKDF-derived keys from each environment's 32-byte `key` file.
+- **Single masking boundary:** `internal/mask` writes every run output; `internal/archtest` prevents other packages from reading raw state JSON except via `mask.Index`.
+- **Four rules:** OpenTofu sensitive marks, value sweep (plain + URL/JSON/hex/base64 + run STS credentials), secret-like attribute names, and strict key allow-list.
+- **Secret sets:** Every apply seals its mask's known secrets alongside the state version or S3 serial; externally written states require explicit [adoption](adopt-state.md) before approval.
+- **Per-environment sealing:** HTTP states, saved plans, and secret sets use AES-256-GCM with HKDF-derived keys from each environment's 32-byte `key` file.
 
-See [Secrets and the mask](secrets.md) for the differential verification suite (`just verify-mask`) and known mask limits.
+See [Secrets and the mask](secrets.md) for `just verify-mask` and known gaps.
 
 ## Notifications
 
-- [Notifications](notifications.md) carry only Writ's own words, names, counts, and diagnostic classes: never a secret, a plan body, a diagnostic's text, or a policy's message. The URL and signing key stay in files that the isolation check holds out of a provider uid's reach, and no API, page, log line, or error shows them.
-- Delivery sends only to the configured `https://` URL, follows no redirect, and runs on bounded queues apart from plans and applies.
+- [Notifications](notifications.md) contain only Writ's fixed wording, stack/env names, counts, and error classes, never secrets, plan diffs, diagnostic text, or policy messages.
+- `url_file` and `secret_file` are checked unreadable by `provider_uids` and never appear in APIs, logs, or UI. Delivery targets `https://` only, follows no redirects, and uses bounded queues.
 
 ## Policy isolation
 
-- Rego policy sets run in a separate child process with no environment, closed inherited file descriptors, strict memory (`memory`, default 1 GiB) and wall-clock (`timeout`, default 10s) limits, and an explicit allow-list of pure Rego built-ins (no network, no filesystem, no clock/randomness, no `print`).
-- Policies only receive the masked plan document plus `input.writ`, and policy messages are swept through the mask before storage or display.
-- Every policy failure fails closed at a mandatory set's level.
+- Rego evaluates in a separate child process with empty environment, closed FDs, strict `memory` (`1GiB`) and `timeout` (`10s`) bounds, and a pure built-in allow-list (no network, filesystem, clock, randomness, or `print`).
+- Policies read only the masked plan document + `input.writ`, and all output messages pass through the mask. Errors fail closed at mandatory level.
 
 ## Mandatory audit logging
 
-- Every API, control UI, and state backend request (except `GET /healthz`, `GET /v1/server`, and per-address rate-limited `429`s) commits an audit row before `writ serve` sends a response. If the database cannot commit the row within 5 seconds, the request fails with `503`.
-- `GET /v1/audit` filters rows by the caller's grants, omits client IP addresses and state SHA-256 hashes, and withholds refusal reasons (`reason_withheld: true`) so secrets accidentally pasted into a request cannot be read back through the audit API.
+- Every API, UI, and state request (except `/healthz`, `/v1/server`, and per-IP `429`s) commits an audit row before responding (5-second timeout, else `503`).
+- `GET /v1/audit` filters by caller grants, hides client IPs and state SHA-256 hashes, and withholds refusal reasons (`reason_withheld: true`).
 
 ## Rate limits and execution bounds
 
-- **Per-address rate limit**: `limits.requests_per_address` (default 20 requests/second per client IP, or `/64` for IPv6) counted before the route, token, or body is read.
-- **Per-principal rate limit**: `limits.requests_per_second` (default 10 requests/second) per authenticated person or CI job.
-- **Webhook bounds**: 10 deliveries a second from one client address, counted first, 5 a second for one repository, a 1 MiB body, and the newest 4,096 delivery ids remembered to drop a resend.
-- **Sign-in queue bounds**: At most 10 pending `writ login` sign-ins per client IP and 1,000 across the server, expiring after 10 minutes.
-- **Run concurrency and deadlines**: Bounded by `limits.plans_per_principal` (default 4), `limits.plans` (default 8), `limits.applies` (default 4), `limits.plan_timeout` (default `30m`), `limits.apply_start_timeout` (default `10m`), and `limits.apply_timeout` (default `4h`).
-- **Per-step resources**: Each OpenTofu step is bounded by `limits.run_memory` (default `4GiB`), `limits.run_pids` (default 1024), `limits.run_cpus` (default 2), and `limits.run_scratch` (default `8GiB`), and each stdout and stderr by 64 MiB.
+- Per-IP `limits.requests_per_address` (`20`/s, IPv6 `/64`, before auth) and per-principal `limits.requests_per_second` (`10`/s).
+- Webhooks: `10`/s per IP, `5`/s per repo, `1 MiB` max body, 4,096 deduplicated delivery IDs.
+- Pending `writ login` handles: `10` per IP, `1,000` global, 10-minute expiry.
+- Concurrency and timeouts: `plans_per_principal` (`4`), `plans` (`8`), `applies` (`4`), `plan_timeout` (`30m`), `apply_start_timeout` (`10m`), `apply_timeout` (`4h`).
+- Per-step bounds: `run_memory` (`4GiB`), `run_pids` (`1024`), `run_cpus` (`2`), `run_scratch` (`8GiB`), stdout/stderr `64 MiB`.
 
 ## Known limits and assumptions
 
-Review these boundaries when deploying Writ:
+- **Host root and server operator are trusted:** Root access or access to `env.*.key` + Postgres exposes sealed states and configured IAM roles.
+- **IAM `plan_role` scope is your responsibility:** Keep `plan_role` strictly read-only in AWS IAM.
+- **S3 state isolation:** IAM policies (not Writ grants) isolate S3 keys across stacks within one environment.
+- **Egress defaults to `off`:** Under `off`, runs share host networking (aside from metadata blocking). Under `enforce`, allow-listed hosts like `*.amazonaws.com` aren't inspected past host and port ([What egress doesn't cover](run-isolation.md#what-egress-doesnt-cover)).
+- **Cgroup and scratch bounds:** Cgroup limits require a delegated cgroup; `run_scratch` is polled rather than kernel-enforced (use filesystem quotas for hard bounds; disk I/O bandwidth isn't capped).
+- **Mask limits:** Unmarked secrets in unmarked attributes, hashed values under `nonsensitive()`, and line-wrapped unmarked base64 aren't masked ([What the mask can't do](secrets.md#what-the-mask-cant-do)).
 
-- **Host root and server operator are trusted**: Anyone with root on the `writ serve` host or read access to `env.*.key` and Postgres can decrypt states and assume configured AWS roles.
-- **Plan role permissions are your responsibility**: Writ assumes whatever `plan_role` you configure. Make sure its IAM policy is strictly read-only.
-- **S3 state isolation**: On `backend "s3"`, IAM role permissions (not Writ grants) prevent stacks in the same environment from referencing each other's S3 state keys.
-- **Network egress is off by default**: Under the default `egress_mode = "off"`, runs share the host's network, apart from the metadata firewall rule, so code a commit chose can reach anything the host reaches. Under `enforce`, an allowed host can still carry data out: `*.amazonaws.com` allows any S3 bucket, and the proxy decides by host and port, not by URL or content. `report` records but doesn't restrict. See [What egress doesn't cover](run-isolation.md#what-egress-doesnt-cover).
-- **Run limits need a delegated cgroup, and scratch is measured**: `run_memory`, `run_pids`, and `run_cpus` hold only when `writ serve` runs alone in a cgroup delegated to its user, as systemd's `Delegate=yes` gives it; otherwise it warns and runs steps without them. `run_scratch` is a measure `writ serve` takes while a step runs, every half second for most directories, not a kernel limit. It bounds a runaway or careless run, not one that tries to hide what it uses on disk, and a filesystem quota on the scratch filesystem is the hard bound. Disk bandwidth isn't limited. See [What run limits don't cover](run-isolation.md#what-run-limits-dont-cover).
-- **Mask limits**: The mask is an output filter, not information-flow tracking. Unmarked secrets in unmarked attributes, hashed secrets passed to `nonsensitive()`, and multi-line base64 without sensitive marks are not caught. See [What the mask can't do](secrets.md#what-the-mask-cant-do).
-
-See [Supported platforms and limits](status.md) for current platform requirements and scope.
+See [Supported platforms and limits](status.md) for platform requirements.
 
 ## Next steps
 
-- [Run isolation and egress](run-isolation.md): configure `provider_uids`, the `nftables` firewall rule, and the egress proxy.
-- [Secrets and the mask](secrets.md): test the mask with `just verify-mask`.
-- [API: What the API refuses](api.md#what-the-api-refuses): threat-by-threat breakdown of API defenses.
-- [SECURITY.md](../SECURITY.md): how to report a security issue privately.
+- [Run isolation and egress](run-isolation.md): configure `provider_uids`, `nftables`, cgroups, and egress.
+- [Secrets and the mask](secrets.md): run `just verify-mask`.
+- [API: What the API refuses](api.md#what-the-api-refuses): threat-by-threat API defense table.
+- [`SECURITY.md`](../SECURITY.md): private security reporting.
