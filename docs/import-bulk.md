@@ -1,6 +1,6 @@
 # Import many objects
 
-`writ import bulk` reads existing cloud objects through OpenTofu providers and generates a `.tf` file containing `resource` and `import` blocks plus a manifest of selected objects. Run `tofu plan -out=PLAN` and verify the plan with `writ import accept` before applying:
+`writ import bulk` reads existing cloud objects through OpenTofu providers and writes a `.tf` file of `resource` and `import` blocks, plus a manifest of the selected objects. Save a plan with `tofu plan -out=PLAN` and check it with `writ import accept` before you apply:
 
 ```sh
 writ import bulk SELECTION.json [--out FILE] [--max-objects N] [--max-bytes N] [--json]
@@ -10,7 +10,7 @@ writ import accept --imports FILE PLAN [--json]
 
 ## How it works
 
-Run `writ import bulk` inside a stack directory containing `.terraform.lock.hcl`, `.tf` or `.tofu` files, and no `.writ` file. It writes `imported.tf` (or `--out`) and a companion manifest `imported.imports.json` (`--out` with `.imports.json` replacing `.tf`), without planning or writing state.
+Run it in a stack directory with `.terraform.lock.hcl`, `.tf` or `.tofu` files, and no `.writ` file. It writes `imported.tf` (or `--out`) and a manifest, `imported.imports.json` (the `--out` name with `.imports.json` for `.tf`). It neither plans nor writes state.
 
 - **Lock-file verified providers:** Runs the exact provider versions pinned in `.terraform.lock.hcl`, verifying `zh:` archive hashes before starting (downloading into Writ's cache if absent).
 - **Regular HCL files only:** Refuses stacks containing `.tf.json`, `.tofu.json`, or symlinked `.tf`/`.tofu` files to prevent declaration clashes.
@@ -37,7 +37,7 @@ Labels containing `arn:` or standalone 12-digit runs (AWS account IDs) are rejec
 
 ## Import and accept
 
-Example importing five `random` objects from a selection file:
+Import five `random` objects from a selection file:
 
 ```
 $ writ import bulk select.json
@@ -124,26 +124,25 @@ Any mismatch (wrong address, module import, duplicate import, wrong ID, missing 
 
 ### Provider-only settings
 
-Some providers omit provider-local settings during import, causing an in-place update on the first plan. `writ import accept` maintains a measured allow-list:
+Some providers leave provider-local settings out of an import, so the first plan updates them in place. `writ import accept` keeps a measured allow-list:
 
 | Provider | Version | Type | Settings |
 | --- | --- | --- | --- |
 | `registry.opentofu.org/hashicorp/nomad` | 2.6.1 | `nomad_job` | `deregister_on_destroy`, `deregister_on_id_change`, `detach`, `preserve_counts`, `read_allocation_ids`, `rerun_if_dead` |
 
-For saved plan files, Writ accepts an in-place update (no replace path) when every changed attribute is on that list for the provider address and resource type, with known, non-sensitive values:
+For a saved plan file, Writ accepts an in-place update (no replace path) when every changed attribute is on that list for the provider address and resource type, with known, non-sensitive values. Each setting prints one line:
 
 ```
 $ writ import accept --imports imported.imports.json import.plan
 ~ nomad_job.nomad_job_import_web_default: sets deregister_on_destroy = true, a setting that registry.opentofu.org/hashicorp/nomad 2.6.1 keeps and the cloud does not return
-~ nomad_job.nomad_job_import_web_default: sets deregister_on_id_change = true, a setting that registry.opentofu.org/hashicorp/nomad 2.6.1 keeps and the cloud does not return
-~ nomad_job.nomad_job_import_web_default: sets detach = true, a setting that registry.opentofu.org/hashicorp/nomad 2.6.1 keeps and the cloud does not return
-~ nomad_job.nomad_job_import_web_default: sets preserve_counts = false, a setting that registry.opentofu.org/hashicorp/nomad 2.6.1 keeps and the cloud does not return
-~ nomad_job.nomad_job_import_web_default: sets read_allocation_ids = false, a setting that registry.opentofu.org/hashicorp/nomad 2.6.1 keeps and the cloud does not return
-~ nomad_job.nomad_job_import_web_default: sets rerun_if_dead = false, a setting that registry.opentofu.org/hashicorp/nomad 2.6.1 keeps and the cloud does not return
+...
 Accepted: the plan imports 1 object, sets 6 provider-only settings that the cloud does not return, and changes nothing else.
 ```
 
-`--json` lists each setting under `settings` (`address`, `attribute`, `value`, `provider`, `version`). Writ inspects raw `tofu show -json` diffs before masking so two different sensitive values can't look equal, then masks all printed output. After applying, the next plan shows no changes. (Launch templates with `update_default_version = true` aren't allow-listed because updating moves the live default version.)
+- `--json` lists each setting under `settings` (`address`, `attribute`, `value`, `provider`, `version`).
+- Writ compares raw `tofu show -json` diffs before masking, so two different sensitive values cannot look equal, then masks everything it prints.
+- After the apply, the next plan shows no changes.
+- Launch templates with `update_default_version = true` are not allow-listed, because the update moves the live default version.
 
 ## Write a selection file
 
