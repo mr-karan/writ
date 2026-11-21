@@ -28,7 +28,7 @@ res.Saved = key.SealPlan(raw.File, res.ID, env, stack)
 
 Four constraints shape the codebase:
 
-- **Isolated execution:** Team servers refuse `tofu` without `provider_uids`; every run executes under its own UID, private namespaces, seccomp filter, cgroup limits, and step-scoped credentials.
+- **Isolated execution:** Team servers refuse `tofu` without `provider_uids`; every run executes under its own UID, private namespaces, and step-scoped credentials, plus the seccomp filter and cgroup limits where the host allows them.
 - **Single masking boundary:** Raw `tofu` output never leaves a run; `internal/mask` produces every stored or displayed document.
 - **Immutable plan binding:** Plan IDs hash the masked plan, saved plan binary, commit, stack, and environment; applies execute only that sealed plan.
 - **Wire-type containment:** Protobuf messages, cty values, and SQL rows stay inside the package that owns that boundary (`AGENTS.md`).
@@ -71,7 +71,20 @@ Four constraints shape the codebase:
 | `tfplugin5`, `tfplugin6` | Generated protobuf code (`just proto`) | none |
 | `archtest` | Automated import, wire-type, raw-state, and `oidc.Refusal` boundary enforcement | none |
 
-`internal/archtest` enforces all package boundaries on every `just check`: protobuf/gRPC stay in `provider`, `go-cty` stays in `provider`/`tfcode`/`mask`, SQL drivers stay in `sqldb`, AWS SDK stays in `awsrole`, MCP SDK stays in `mcp`, OPA stays in `policy` (no `lestrrat-go/jwx`), `runas`/`egress` import stdlib only, `runner` never imports DB/keys/mask/oidc/forge/policy, raw `tofu show -json` state flows only into `mask.Index`, and `oidc` exports never return `error` or leak `oidc.Refusal` as an interface value.
+`internal/archtest` fails `just check` when any of these rules breaks:
+
+- Only `provider` imports `tfplugin5`, `tfplugin6`, gRPC, or protobuf, and only `importer` and `cli` import `provider`.
+- Only `provider`, `tfcode`, and `mask` import go-cty.
+- Only `sqldb` imports `database/sql`, pgx, or the SQLite driver; only `awsrole` imports the AWS SDK; only `mcp` imports the MCP SDK; only `oidc` imports go-oidc, go-jose, or `x/oauth2`.
+- Only `policy` imports OPA, nothing imports `lestrrat-go/jwx`, and `policy` imports no package of Writ.
+- The pure packages `addr`, `diag`, `schema`, `types`, and `value` import none of `os`, `os/exec`, `os/signal`, `net`, `net/http`, `io/fs`, `path/filepath`, `syscall`, `time`, `math/rand`, or `crypto/rand`.
+- `ui` imports neither `control` nor pgx.
+- `tofu` imports only `runas` of Writ, and `runas` and `egress` import only the standard library.
+- `runner` imports none of `control`, `tfstate`, `mask`, `oidc`, `authz`, `sqldb`, `policy`, `forge`, or `awsrole`.
+- `cmd/writ` imports only `cli` of Writ's internal packages.
+- Outside `tofu`, a state's raw `tofu show -json` is read only as the input of `mask.Index`.
+- An exported function of `oidc` never returns an `error`, every field of `oidc.Refusal` is an integer, and `server`, `ui`, `cli`, and `cmd/writ` never turn an `oidc.Refusal` into an interface value.
+- A command that may run as another user starts only through `runas.Start` or `runas.StartMapped`.
 
 ## Data flow
 
@@ -95,7 +108,7 @@ commit ─ repo.TofuSources ─▶ stack files, lock file, backend block
 
 1. **One masking package:** `internal/mask` produces every stored/displayed run output; `internal/archtest` prevents raw state access elsewhere.
 2. **Content-addressed plan IDs:** `tofuPlanID` hashes length-prefixed masked plan, saved plan SHA-256, commit, stack, and env.
-3. **Per-environment sealing:** One key file per env seals HTTP state, saved plans, and secret sets (via separate HKDF labels).
+3. **Per-environment sealing:** One key file per env seals HTTP state, saved plans, and secret sets (via separate HKDF labels). No API route returns a saved plan or a secret set.
 4. **Single-run state tokens:** `tfstate` issues read-only plan tokens and read/write/lock apply tokens stored only as SHA-256 hashes and revoked on run end.
 5. **Trusted plugin cache fills:** `tofu.Runner.Fill` populates `tofu.plugin_cache` from a synthetic config as `writ` (behind a public-only install proxy under `egress_mode` `report`/`enforce`); run UIDs mount the cache read-only.
 6. **Single lifecycle table:** `internal/control/lifecycle.go` owns all valid plan status transitions.

@@ -46,7 +46,7 @@ If a plan fails before JSON output exists, Writ keeps only masked diagnostic sev
 
 ## What the mask can't do
 
-The mask is an output filter. It catches a secret only if OpenTofu marks it, the mask learned its value, or its attribute name matches Rule 3. Six cases remain outside its reach:
+The mask is an output filter. It catches a secret only if OpenTofu marks it, the mask learned its value, or its attribute name matches Rule 3. Seven cases remain outside its reach:
 
 - **Unmarked secret in an unmarked attribute:** A non-sensitive variable written to a non-sensitive attribute looks like plain text.
 - **Transformed secret passed to `nonsensitive()`:** `nonsensitive(sha256(var.token))` produces a derived value the mask can't invert.
@@ -54,6 +54,7 @@ The mask is an output filter. It catches a secret only if OpenTofu marks it, the
 - **Reformatted numbers:** Numbers match by literal text (`150000` matches `150000.0`, not `1.5e5` or `150,000`).
 - **Prior value of an unmarked `nonsensitive()` attribute:** On update, `before` is swept only against known secrets (the state's secret set, values marked in the plan, and run env).
 - **Unmarked provider return value after apply:** Sealed in state, but visible in the state index if the provider puts it in an indexed attribute such as `id`.
+- **Refused S3 plan against a state with no secret set:** A value from that state quoted outside a quoted instance key, or a key quoted three times or more, shows in the summary ([What a run can see](serve.md#what-a-run-can-see)).
 
 Declare all secret variables `sensitive = true` and avoid `nonsensitive()` on derived values.
 
@@ -74,7 +75,7 @@ just verify-mask 20 2m      # 20 stacks, 2 minutes of fuzzing
    - **Check 3:** Re-indexing state after restart leaks no sensitive variable defaults into index rows, output, or logs.
 4. Runs `FuzzPlan` with arbitrary JSON and sensitive marks to verify no marked value or canary survives.
 
-**Limits:** `just verify-mask` doesn't configure policies, notifications, or render control UI HTML. Control UI pages read only masked documents, and [notifications](notifications.md) send event metadata rather than raw plan diffs or secrets. The mask is tested, not mathematically guaranteed.
+**Limits:** `just verify-mask` doesn't configure policies, notifications, or render control UI HTML. Control UI pages read only masked documents, and [notifications](notifications.md) send event metadata rather than raw plan diffs or secrets. The mask is tested, not proven.
 
 ### Where to look
 
@@ -87,9 +88,9 @@ just verify-mask 20 2m      # 20 stacks, 2 minutes of fuzzing
 
 ## Troubleshooting
 
-- **Plan or run stores no document:** The run exceeded the 4 MiB secret set limit or 32 MiB string decode limit and failed closed. Move large sensitive blobs out of inline variables.
+- **Plan or run stores no document:** The run's distinct learned secrets exceeded 4 MiB, or one string cost more than 32 MiB to decode, and failed closed. Move large sensitive blobs out of inline variables.
 - **Non-secret field masked as `(sensitive)`:** Attribute name matched Rule 3 (`password`, `secret`, `token`, etc.). Intended to prevent leaks.
-- **`no secret set for state version N`:** State was written outside Writ; inspect the stack code and run [`writ state adopt`](adopt-state.md).
+- **`no secret set for state version N`:** State was written outside Writ, before secret sets, or by an apply whose mask couldn't read its plan; inspect the stack code and run [`writ state adopt`](adopt-state.md).
 - **Derived secret appeared in output:** Review [What the mask can't do](#what-the-mask-cant-do), remove `nonsensitive()` around hashed or multi-line base64 values, and mark source variables `sensitive = true`.
 
 ## Next steps
