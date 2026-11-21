@@ -10,68 +10,45 @@ web
 
 ## Users
 
-Platform and infrastructure engineers, and the teams they work in, who run OpenTofu today. They apply from CI jobs or laptops, or they're weighing a paid control plane such as Spacelift or HCP Terraform. They know OpenTofu, CI, and cloud roles well. They arrive from a link, a search, or the repository, and they're deciding whether to spend an hour trying Writ and whether to trust it with production later.
-
-They read like reviewers. They look for who holds the credentials, what isn't built, and how it's tested, and they leave when a page sounds like an advert.
+Platform and infrastructure engineers, and the teams they work in, who run OpenTofu today. They apply from CI jobs or laptops, or they are weighing a paid control plane such as Spacelift or HCP Terraform. They scan fast: they want to see the product UI, understand the trust boundary in seconds, verify how policy and isolation work, and jump straight into docs or `writ serve --dev`.
 
 ## Product Purpose
 
-Writ is an open-source control plane for OpenTofu that you host yourself. You or your CI job send it a commit. It plans that commit on your server, waits for your team to approve the plan, and applies the plan they approved.
+Writ is an open-source control plane for OpenTofu that you host yourself. You or your CI job send it a commit. It plans that commit on your server, enforces OPA Rego policy, waits for peer approval, and applies the approved saved plan.
 
-The website succeeds when a reader knows what Writ is from the first screen, and can start `writ serve --dev` on their own machine from the page or the quick start.
+The landing page succeeds when a visitor sees the real control UI immediately, understands the credential boundary at a glance, and can either try `writ serve --dev` locally or click into `/docs` for depth.
 
 ## Positioning
 
-The cloud credentials and the state keys stay on one server you run. For plans and applies, CI jobs and laptops hold a session or an OIDC token, and no cloud credential. The one local exception is `writ import bulk` (and `writ mcp --allow-providers`), which reads existing objects through providers with the caller's own credentials. An approval is for one plan id, and the apply runs the plan Writ kept. It's one Go binary under Apache 2.0, with no limit on users, runs, or resources.
+Cloud credentials and state keys stay on one server you run. For plans and applies, CI jobs and laptops authenticate with OIDC or a session and hold no cloud credentials. The local exceptions are `writ import bulk` and `writ mcp --allow-providers`, which read existing objects through providers with the caller's own credentials. Approvals bind to one saved plan ID, and apply runs that exact plan. Writ ships as one Apache 2.0 Go binary with no seat, run, or resource metering.
 
 ## Operating Context
 
-- A reader tries Writ with `writ serve --dev`: loopback, SQLite, no cloud account. They need Linux, minisign, Git, and OpenTofu 1.13.9.
-- A team runs `writ serve` with Postgres, sign-in through their identity provider, and approval rules. Requests come from `writ` on a laptop, from GitLab CI jobs, or from the control UI.
-- The control UI comes with `writ serve`. You can approve a plan in it. You apply with `writ apply --remote` or the CI job.
-- The docs are built from `docs/` in the repository. The site makes no request to another host and sets no cookie.
+- Local trial: `writ serve --dev` runs on loopback with SQLite and no cloud account (Linux, `minisign`, Git, and OpenTofu 1.13.9).
+- Team server: `writ serve` runs on Linux with Postgres, OIDC sign-in, approval rules, and optional run isolation (`provider_uids`, Linux namespaces, `nftables` metadata block, opt-in egress proxy, and cgroups/seccomp where host supports them).
+- Built-in control UI: served by `writ serve` under `/ui/` for reviewing masked plans, resources, drift, runs, and approvals. Applies run via `writ apply --remote` or CI.
+- Docs site: built from `docs/` in the repository. No third-party requests, no analytics, no cookies.
 
 ## Capabilities and Constraints
 
-What it does: plans on request, approvals for one plan id, a plan role and an apply role, a mask for secrets, policy in Rego at the plan and again before the apply, drift checks on a schedule, Slack and signed webhook notifications, a synchronous audit log (CLI, API, and `/ui/audit`), `writ import bulk`, and `writ mcp` for coding agents.
+What ships today: commit-based plans, plan-bound peer approvals, separate AWS STS plan/apply roles, secret masking across plans/logs/diagnostics/state index, OPA Rego policy at plan and apply, scheduled drift checks, Slack and signed webhook notifications, a synchronous database audit log, Linux run isolation with opt-in egress proxy, `writ import bulk`, and `writ mcp` for coding agents.
 
-Limits the site must keep stating:
+Key limits stated clearly (full list in `docs/status.md`):
 
-- A plan starts when you or your CI job ask for it, not on every commit.
-- The apply role is used only for an approved plan, or for one overridden by someone with the override grant, with a recorded reason.
-- The plan role is whatever the operator configures. They make it read-only.
-- The audit log records every request except `GET /healthz`, `GET /v1/server`, and per-address rate-limited requests.
-- OpenTofu 1.13.9 only, and no Terraform.
-- GitLab is the only remote Git host. The built-in STS roles are AWS IAM roles. One node, on Linux. Built-in notifications cover Slack and signed webhooks (no email).
-- End-to-end suites run against local stand-ins in isolated namespaces rather than live cloud accounts. The macOS binaries are cross-built on Linux.
-
-`docs/status.md` is the full list. A claim on the site is true at the commit it ships from, and the site adds no claim the code can't back.
+- OpenTofu 1.13.9 only; no Terraform.
+- Team `writ serve` requires Linux; single-node per Postgres database.
+- GitLab is the built-in remote Git host; built-in STS role assumption targets AWS IAM roles.
+- Egress control defaults to `off`; cgroup limits and seccomp apply where the host allows them (`writ serve --check` reports status).
+- End-to-end suites test against local stand-ins in isolated namespaces rather than live cloud accounts.
 
 ## Brand Commitments
 
-- The name is Writ. The mark is a proofreader's caret, laid in ochre slabs on an indigo square.
-- The voice is an engineer on the team explaining Writ to another engineer: plain, technical, direct, and honest about limits. No praise for Writ, no hype words, no em dashes, no exclamation marks.
-- Every claim names its limit on the same page.
-- Every output shown came from a real run, with a caption that says which. Every screenshot is a real capture of the control UI.
-- No organization's details, internal hosts, or account ids appear anywhere.
-
-## Evidence on Hand
-
-- Terminal output cut from the README and the docs by `scripts/gen-content.ts` into `content/landing.json`. A fence that no longer matches fails the build.
-- Screenshots of the control UI in `public/ui/`, shot by `just ui-shots`, in light and dark at 1280 and 390 px.
-- `docs/compare.md`, with a source and a date for each fact about another tool.
-- The end-to-end tests, described in `docs/status.md`.
-
-There are no customers, testimonials, benchmarks against other control planes, or logos. Don't invent any.
-
-## Product Principles
-
-1. Say what it is, then what it isn't.
-2. Show the real thing: output and screenshots, never a drawing of them.
-3. The reader checks. Give them the source, the test, and the date.
-4. The keys stay on the server. Every page that touches credentials says who holds what.
-5. One path to try it, and it works without a cloud account.
+- Name: Writ. Mark: a proofreader's caret in ochre slabs on an indigo square.
+- Voice: plain, technical, direct English. No hype filler, no em dashes, no exclamation marks.
+- Sparse landing page: keep landing prose under 250 words and paragraphs under 25 words; link to `/docs` for architecture, security layers, comparison tables, and FAQ.
+- Real evidence only: real control UI captures from `public/ui/` and real code/output from `content/landing.json`. No fake customer logos, testimonials, or user counts.
+- No organization details, private hostnames, or real account IDs anywhere.
 
 ## Accessibility & Inclusion
 
-Text contrast is at least 4.5:1 in both themes. The page reads and its tabs work without script. Motion stops under `prefers-reduced-motion`. Keyboard focus is visible on every control.
+Text contrast is at least 4.5:1 in both themes. The landing page reads cleanly and switches UI preview tabs without JavaScript. Motion stops under `prefers-reduced-motion`. Keyboard focus is visible on every interactive control.

@@ -47,9 +47,9 @@ The site makes no request to another host and sets no cookie. The theme choice i
 
 ## The landing page
 
-`app/page.tsx` puts the sections together. Each is a server component in `components/landing/`, and their copy is in `lib/landing.ts`. Two small client components run in the browser: `flow.tsx`, which plays the three steps, and `copy-button.tsx`. The page shows everything without them, and its tabs switch with CSS.
+`app/page.tsx` composes five visual-first sections (`Hero`, `Workflow`, `Features`, `Showcase`, `TryIt`) plus `Header` and `Footer` from `components/landing/`. Copy lives in `lib/landing.ts` and stays under 250 words of prose. The only landing client component is `copy-button.tsx`; the hero control UI tabs switch with pure CSS.
 
-Every terminal output and the list of what Writ is not yet come from `content/landing.json`, which `scripts/gen-content.ts` cuts from the README and the docs. Do not type an output into the page. A fence that no longer matches fails the build.
+Every code snippet and terminal output on the landing page comes from `content/landing.json`, which `scripts/gen-content.ts` cuts from the README and the docs. Do not type an output into the page. A fence that no longer matches fails the build.
 
 The screenshots in `public/ui/` are real captures of the control UI. After the UI changes, shoot them again with `just ui-shots` from the repository root. `DESIGN.md` says how.
 

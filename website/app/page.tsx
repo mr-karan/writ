@@ -1,15 +1,10 @@
-import { Benefits } from '@/components/landing/benefits';
-import { Compare } from '@/components/landing/compare';
+import { Features } from '@/components/landing/features';
 import { Footer } from '@/components/landing/footer';
 import { Header } from '@/components/landing/header';
 import { Hero } from '@/components/landing/hero';
-import { HowItWorks } from '@/components/landing/how-it-works';
-import { PolicySection } from '@/components/landing/policy-section';
-import { ProductTour } from '@/components/landing/product-tour';
-import { Questions } from '@/components/landing/questions';
-import { Security } from '@/components/landing/security';
+import { Showcase } from '@/components/landing/showcase';
 import { TryIt } from '@/components/landing/try-it';
-import { What } from '@/components/landing/what';
+import { Workflow } from '@/components/landing/workflow';
 
 export default function Home() {
   return (
@@ -17,14 +12,9 @@ export default function Home() {
       <Header />
       <main id="main-content">
         <Hero />
-        <What />
-        <HowItWorks />
-        <Security />
-        <PolicySection />
-        <ProductTour />
-        <Benefits />
-        <Compare />
-        <Questions />
+        <Workflow />
+        <Features />
+        <Showcase />
         <TryIt />
       </main>
       <Footer />
