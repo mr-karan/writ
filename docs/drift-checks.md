@@ -2,8 +2,6 @@
 
 Run scheduled drift checks so Writ surfaces out-of-band cloud changes and unapplied default-branch commits in the control UI, the API, and optional Slack or webhook notifications.
 
-For internal scheduling details, see [Control plane internals: Drift checks](serve.md#drift-checks) and [Glossary](glossary.md).
-
 ## Prerequisites
 
 - A team's `writ serve` with a [`tofu` block](config.md#tofu) and `provider_uids`.
@@ -126,7 +124,7 @@ A clean check clears the drifted flag. Writ keeps the newest 20 checks per `stac
 ## Limits
 
 - Built-in alert channels are Slack and signed HTTP webhooks ([Get notified](notifications.md)); email isn't built. Drift findings also appear in the control UI, `GET /v1/drift`, and server JSON logs (`drift found` at `WARN`).
-- [Policies](policy.md) don't evaluate drift checks.
+- [Policies](write-a-policy.md) don't evaluate drift checks.
 - Drift checks use the default branch head as last read by polling or webhooks.
 - Drift checks don't record per-run egress network lists.
 

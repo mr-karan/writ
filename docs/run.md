@@ -2,7 +2,7 @@
 
 Run `writ serve` in two modes: `writ serve --dev` for single-user local work with zero config, or `writ serve --config FILE` for a team server backed by Postgres and OIDC sign-in.
 
-For internal request, plan, and apply mechanics, see [Control plane internals](serve.md).
+For the end-to-end plan and apply lifecycle, see [How a plan becomes an apply](plan-to-apply.md).
 
 ## writ serve --dev
 
@@ -39,6 +39,7 @@ Remote CLI commands discover `writ serve --dev` automatically ([How a CLI finds 
 - **Identity:** Generates a 32-byte random token on start and writes URL + token to `client.json` (`0600` inside `0700`). Grants full permissions (`dev` team, principal `dev/USER`).
 - **Environments:** Any valid name (`[a-z][a-z0-9_-]{0,62}`) works on demand, creating `keys/ENV.key` automatically. `--env` defaults to `dev`.
 - **Credentials:** No AWS role assumption. Runs receive `PATH=/usr/local/bin:/usr/bin:/bin` (prefixed with `tofu.git`'s dir if set), `AWS_EC2_METADATA_DISABLED=true`, `TF_VAR_*` from the starting shell, and a per-run `HOME`.
+- **Isolation in dev mode:** Dev mode needs no `provider_uids` and runs OpenTofu as your user. On Linux, runs execute inside the read-only filesystem view so they can't read your other files (though they still share your network). On non-Linux hosts, OpenTofu runs with your user's filesystem access, and `--data` must keep `TMPDIR` short enough for macOS's 103-byte Unix socket paths. Plan only stacks you trust with that access.
 - **Single instance:** Refuses to start if another dev server answers for the same data directory; clean shutdown removes `client.json`.
 - **Control UI:** Serves `/ui/` with a one-time 10-minute sign-in link printed at startup and by `writ ui`.
 - **Repositories:** `writ repo add .` registers a local Git repo. With `--config FILE`, dev mode also accepts `forge`, `repo`, `poll_every`, `poll_every_with_hook`, `tofu`, and `policy` ([Add a repository](add-repository.md)).
@@ -84,6 +85,13 @@ warning[usage]
 Output of `just check-nixos`, 2026-11-16.
 
 At startup, `writ serve` runs schema migrations, fetches every OIDC issuer's discovery document and JWKS (failing if any is unreachable), and logs JSON decisions to stdout. On `SIGTERM`, it stops accepting new requests, drains in-flight requests for up to 30 seconds, and marks unfinished plans `failed`.
+
+### Database connection and timeouts
+
+`writ serve` stores all control plane records and HTTP-backend state (newest 20 versions per `stack@env`) in Postgres schema `writ_control` (S3-backend stacks keep their state in S3). Never embed Postgres passwords in `database` URLs; use Unix-socket peer authentication, `?passfile=/path/to/pgpass`, or `PGPASSFILE`.
+
+- **Postgres:** 5s connect timeout, 10s statement timeout, 5s lock timeout, 15s idle-in-transaction timeout.
+- **SQLite (`--dev`):** 5s busy timeout.
 
 ### On NixOS
 

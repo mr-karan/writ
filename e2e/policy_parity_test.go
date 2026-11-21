@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-// TestPolicyParity is the policy parity test of docs/policy.md: one .rego file gives the same
+// TestPolicyParity is the policy parity test of docs/write-a-policy.md: one .rego file gives the same
 // verdict in writ serve and under conftest. writ serve --dev judges each
 // stack's plan with examples/policy, and conftest judges the output of
 // `tofu show -json` of a plan of the same files, made with tofu alone,

@@ -16,8 +16,8 @@ Writ ships as one Go binary under the Apache 2.0 license, with no limits on user
 - **Server-side plans.** You or a CI job submit a commit SHA. `writ serve` fetches that commit from GitLab and runs `tofu plan -lock=false` in an isolated Linux namespace without modifying state.
 - **Plan-bound approvals.** Reviewers approve a plan by its plan ID, and `writ apply --remote` runs that exact saved plan. Wherever an approval rule applies, the plan's author can't approve it. [Approvals](docs/approvals.md)
 - **Split cloud roles.** Plans run with your `plan_role` (which you keep read-only). Only an approved apply, or an override with a recorded reason, gets `apply_role`. [AWS roles and credentials](docs/aws-credentials.md)
-- **Secret masking.** `internal/mask` strips secrets from every plan, run log, diagnostic, and state index row Writ stores or serves. [Secrets and the mask](docs/secrets.md)
-- **Rego policy.** Writ evaluates OPA Rego policy sets at plan time and again before apply. Mandatory denials can't be overridden. [Policy](docs/policy.md)
+- **Secret masking.** Writ strips secrets from every plan, run log, diagnostic, and state index row it stores or serves. [Secrets and the mask](docs/secrets.md)
+- **Rego policy.** Writ evaluates OPA Rego policy sets at plan time and again before apply. Mandatory denials can't be overridden. [Write and test policies](docs/write-a-policy.md)
 - **Drift checks and notifications.** Writ schedules drift plans and notifies Slack or webhooks, optionally signed, on drift, failed plans or applies, completed applies, out-of-band state writes, and pending approvals. [Drift checks](docs/drift-checks.md), [Notifications](docs/notifications.md)
 - **Run isolation and egress control.** On a team server, each OpenTofu step runs under a dedicated UID in private Linux namespaces, with an opt-in egress proxy. Cgroup resource limits and a seccomp filter apply where the host allows them, and `writ serve --check` says whether they do. [Run isolation and egress](docs/run-isolation.md)
 - **UI, CLI, API, imports, and MCP.** Review and approve plans in the built-in web UI or script everything with `--json`. Generate `resource` and `import` blocks with `writ import bulk`, or expose read-only planning to coding agents through `writ mcp`. [Import many objects](docs/import-bulk.md), [Use Writ with an agent](docs/agents.md)
@@ -118,7 +118,7 @@ Read the docs at [writ.mrkaran.dev/docs](https://writ.mrkaran.dev/docs) or in [`
 - [Run a server](docs/run.md) and [Server config](docs/config.md): deployment and configuration.
 - [Set up GitLab CI](docs/set-up-gitlab-ci.md): merge-request plan, blocking approve, and post-merge apply jobs.
 - [Commands](docs/commands.md), [API](docs/api.md), and [Errors](docs/errors.md): CLI, HTTP routes, and error classes.
-- [Control plane internals](docs/serve.md) and [Security model](docs/security-model.md): execution mechanics and trust boundaries.
+- [How a plan becomes an apply](docs/plan-to-apply.md) and [Security model](docs/security-model.md): execution lifecycle and trust boundaries.
 - [Writ vs other control planes](docs/compare.md) and [Writ vs plain GitLab CI](docs/compare-gitlab-ci.md).
 
 ## Contributing

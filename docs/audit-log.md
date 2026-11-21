@@ -2,7 +2,7 @@
 
 Query Writ's [audit log](glossary.md) from `/ui/audit`, the CLI, or the HTTP API to trace any change from plan through approvals, apply, and state writes without querying Postgres directly.
 
-For route parameters and JSON fields, see [API: Read the audit log](api.md#read-the-audit-log). For the database schema, see [Operate the database](database.md#audit-rows).
+For route parameters and JSON fields, see [API: Read the audit log](api.md#read-the-audit-log).
 
 ## Prerequisites
 
@@ -124,11 +124,11 @@ To avoid echoing untrusted input or leaking state:
 ## Limits
 
 - `/ui/audit` displays 50 entries per page; `writ audit --remote` supports up to `--limit 200`.
-- Full refusal reasons and client IPs require querying Postgres `audit` directly.
+- Full refusal reasons, client IPs, and state SHA-256 hashes require querying Postgres `writ_control.audit` directly. HTTP state backend operations (`state-read`, `state-lock`, `state-unlock`, `state-write`) generate roughly 2 rows per plan and 7 per apply.
 - Audit rows are kept indefinitely unless `retention.audit` is configured ([Config](config.md)).
 
 ## Next steps
 
 - [API: Read the audit log](api.md#read-the-audit-log): complete parameter and authorization rules.
-- [Operate the database](database.md): retention, backups, and table layout.
+- [Back up and upgrade](upgrades.md): retention and Postgres backups.
 - [Security model](security-model.md): how audit logging pairs with secret masking.

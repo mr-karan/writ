@@ -63,7 +63,7 @@ systemctl stop writ-serve
 systemctl start writ-serve
 ```
 
-On `SIGTERM`, `writ serve` drains in-flight requests for up to 30 seconds. On startup, the new binary runs pending SQL migrations in a single transaction and fetches OIDC issuer discovery/JWKS documents.
+On `SIGTERM`, `writ serve` drains in-flight requests for up to 30 seconds. On startup, the new binary applies pending schema migrations in Postgres schema `writ_control` in a single transaction (refusing to start against a database migrated by a newer version of Writ) and fetches OIDC issuer discovery/JWKS documents. HTTP-backend state retains the newest 20 versions per `stack@env`.
 
 ### 4. Verify health
 
@@ -97,6 +97,6 @@ Output of a real run, 2026-11-16 (a team server lists each issuer under `issuers
 
 ## Next steps
 
-- [Control database](database.md): tables, timeouts, and migrations.
-- [Run a control plane](run.md): systemd, container, and NixOS setup.
+- [Run a control plane](run.md): systemd, container, NixOS setup, and database timeouts.
+- [Read the audit log](audit-log.md): query audit rows via CLI, UI, and API.
 - [Supported platforms and limits](status.md): current limits and test coverage.

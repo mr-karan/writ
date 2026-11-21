@@ -1,6 +1,6 @@
 # Adopt a state
 
-When a stack's state wasn't written by `writ serve`, Writ has no secret set for it. Until a secret set exists, Writ withholds plan and drift details and refuses approval for plans against that state ([States with no secret set](serve.md#states-with-no-secret-set)).
+When a stack's state wasn't written by `writ serve`, Writ has no secret set for it. Until a secret set exists, Writ withholds plan and drift details (plans fail with `no secret set for state version N of stack@env`, and drift checks report `drift unknown`) and refuses approval for plans against that state.
 
 `writ state adopt` reads the state, seals a secret set for it, and populates the state index so plans can be approved again. Use it when:
 

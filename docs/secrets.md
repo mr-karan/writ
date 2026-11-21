@@ -10,11 +10,11 @@ Read [What the mask can't do](#what-the-mask-cant-do) before relying on it for s
 
 - Masked plan documents (API, control UI, CLI, policy input).
 - Plan text, apply text, and apply events.
-- [State index](serve.md#the-state-index) rows.
+- [State index](plan-to-apply.md#the-state-index) rows.
 - Failure diagnostics from plans and applies.
-- Recorded hostnames under [egress](serve.md#egress).
+- Recorded hostnames under [egress](run-isolation.md#egress).
 
-Each run gets its own mask initialized with the run's environment values (`provider_env`, dev `TF_VAR_*`) and every temporary AWS `SecretAccessKey` and `SessionToken` issued by the [credential broker](serve.md#roles-and-credentials) (refreshed before each sweep; `AccessKeyId` stays visible for CloudTrail lookup and temporary credentials are never saved in state secret sets). The mask then applies four rules.
+Each run gets its own mask initialized with the run's environment values (`provider_env`, dev `TF_VAR_*`), the state version's sealed secret set, and every temporary AWS `SecretAccessKey` and `SessionToken` issued by the [credential broker](aws-credentials.md#how-credentials-reach-providers-and-cloudtrail) (refreshed before each sweep; `AccessKeyId` stays visible for CloudTrail lookup and temporary credentials are never saved in state secret sets). The mask then applies four rules.
 
 ### Rule 1: OpenTofu's marks
 
@@ -40,7 +40,7 @@ Masked plan documents retain only explicitly allow-listed keys; unknown keys are
 
 Two fail-closed limits drop the entire document rather than risk a leak: distinct learned secrets exceeding 4 MiB, or decoding/matching a single string costing over 32 MiB.
 
-If a plan fails before JSON output exists, Writ keeps only masked diagnostic severity, summary, file, line, and column, never details or snippets, which `error_message` with `nonsensitive()` can populate. On S3 stacks, quoted instance keys in failure summaries also become `["(sensitive)"]` ([What a run can see](serve.md#what-a-run-can-see)).
+If a plan fails before JSON output exists, Writ keeps only masked diagnostic severity, summary, file, line, and column, never details or snippets, which `error_message` with `nonsensitive()` can populate. On S3 stacks, a refused plan saved no plan so Writ doesn't know which serial it read: its mask loads every secret set Writ keeps for that `stack@env` (failing the plan if distinct secrets exceed 4 MiB), and quoted instance keys (`["KEY"]` and `[\"KEY\"]`) in failure summaries become `["(sensitive)"]`.
 
 `internal/archtest` enforces that no code outside `internal/tofu` reads raw run state except as input to `mask.Index`.
 
@@ -54,7 +54,7 @@ The mask is an output filter. It catches a secret only if OpenTofu marks it, the
 - **Reformatted numbers:** Numbers match by literal text (`150000` matches `150000.0`, not `1.5e5` or `150,000`).
 - **Prior value of an unmarked `nonsensitive()` attribute:** On update, `before` is swept only against known secrets (the state's secret set, values marked in the plan, and run env).
 - **Unmarked provider return value after apply:** Sealed in state, but visible in the state index if the provider puts it in an indexed attribute such as `id`.
-- **Refused S3 plan against a state with no secret set:** A value from that state quoted outside a quoted instance key, or a key quoted three times or more, shows in the summary ([What a run can see](serve.md#what-a-run-can-see)).
+- **Refused S3 plan against a state with no secret set:** The mask knows nothing of a state with no secret set. If a refused plan's summary quotes a value from such a state outside a quoted instance key (for example an attribute set through `nonsensitive()`, an attribute marked sensitive in state, or a name built from `each.key`), or quotes a key three times or more, that value shows.
 
 Declare all secret variables `sensitive = true` and avoid `nonsensitive()` on derived values.
 
@@ -97,5 +97,5 @@ just verify-mask 20 2m      # 20 stacks, 2 minutes of fuzzing
 
 - [Adopt a state](adopt-state.md): establish secret sets for externally written state.
 - [Security model](security-model.md): how masking fits with credential isolation and audit logging.
-- [OpenTofu stacks](serve.md#opentofu-stacks): run execution and filesystem view.
+- [Run isolation and egress](run-isolation.md): run execution and filesystem view.
 - [Approvals](approvals.md#how-an-opentofu-plan-is-approved-and-applied): masked plan review and apply.

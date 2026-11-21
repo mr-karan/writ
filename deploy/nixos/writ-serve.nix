@@ -1,7 +1,7 @@
 # NixOS module for writ serve, the Writ control plane, with its Postgres on
 # the same host. Import it, set package and configFile, and enable it.
 # The flake's nixosModules.writ-serve imports this file with package set
-# to the flake's writ. docs/serve.md explains each setting.
+# to the flake's writ. docs/config.md explains each setting.
 { config, lib, pkgs, ... }:
 
 let

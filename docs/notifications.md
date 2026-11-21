@@ -140,7 +140,7 @@ func verify(secret []byte, r *http.Request, body []byte) bool {
 | `outside-write` | Plan, adoption, or state-index refresh reads an S3 serial Writ didn't write (reported once per serial). |
 | `approval-needed` | Plan ends `pending` and requires at least one approval. |
 
-Filter notifiers with `envs` (environment names or `"*"`) and `stacks` ([stack patterns](serve.md#stack-patterns)); omit either to match all.
+Filter notifiers with `envs` (environment names or `"*"`) and `stacks` ([stack patterns](config.md#stack-patterns)); omit either to match all.
 
 ## Check the setup
 

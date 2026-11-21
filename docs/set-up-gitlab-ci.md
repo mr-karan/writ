@@ -2,7 +2,7 @@
 
 With GitLab CI and Writ, every merge request plans each affected stack, a manual job blocks the merge until someone other than the author approves every plan, and the default-branch pipeline applies those exact approved plans.
 
-None of the jobs needs a Git checkout, cloud credentials, or state encryption keys. Each job authenticates with its GitLab OIDC token. See [How the control plane works](serve.md#how-a-remote-plan-runs) and [Approvals](approvals.md) for the server-side rules.
+None of the jobs needs a Git checkout, cloud credentials, or state encryption keys. Each job authenticates with its GitLab OIDC token. See [How a plan becomes an apply](plan-to-apply.md) and [Approvals](approvals.md) for the server-side rules.
 
 **Limits.** The CI templates are verified against a local GitLab stand-in, not a live GitLab instance. See [`ci/gitlab/README.md`](../ci/gitlab/README.md) for the OIDC claims (`user_access_level` and manual-job `user_id`) your GitLab instance must emit.
 

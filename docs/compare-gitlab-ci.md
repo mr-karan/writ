@@ -46,7 +46,7 @@ In plain CI, the runner executes `tofu` and holds cloud credentials, state acces
 - [Writ compared with other control planes](compare.md): Atlantis, OTF, Terrakube, and paid control planes.
 - [Quick start](quick-start.md): try Writ locally, then set it up for a team.
 - [Set up GitLab CI](set-up-gitlab-ci.md): Writ's GitLab CI jobs and server config.
-- [Roles and credentials](serve.md#roles-and-credentials): how `writ serve` assumes AWS roles per run.
+- [AWS roles and credentials](aws-credentials.md): how `writ serve` assumes AWS roles per run.
 
 [component]: https://gitlab.com/components/opentofu
 [state]: https://docs.gitlab.com/user/infrastructure/iac/terraform_state/

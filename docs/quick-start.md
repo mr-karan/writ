@@ -243,7 +243,7 @@ tofu {
 
 Prepare the three referenced files (all mode `0600`, owned by the `writ` service user):
 
-- `secrets/gitlab_read`: a GitLab token with `read_api` scope ([Repositories: Forges and their tokens](repos.md#forges-and-their-tokens)).
+- `secrets/gitlab_read`: a GitLab token with `read_api` scope ([Add a repository: Forges and their tokens](add-repository.md#forges-and-their-tokens)).
 - `secrets/oidc_client_secret`: the secret of your GitLab OAuth application (`client_id`) with scopes `openid profile email` and two redirect URIs: `https://writ.example.com/ui/callback` and `http://127.0.0.1/callback` ([Configure sign-in](sign-in.md#set-up-writ-login)).
 - `keys/prod.key`: 32 random bytes that [seal](glossary.md) state and saved plans (`head -c 32 /dev/urandom > keys/prod.key`). Back this key up offline.
 

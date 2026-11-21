@@ -46,9 +46,16 @@ For stacks storing state in S3 instead of Writ's HTTP backend:
 | `plan_role` | `s3:ListBucket`, `s3:GetObject` on the state key | `s3:PutObject`, `s3:DeleteObject` on the state key and `KEY.tflock` |
 | `apply_role` | `s3:ListBucket`, `s3:GetObject`, `s3:PutObject` on the state key and `KEY.tflock`, `s3:DeleteObject` on `KEY.tflock` | |
 
-`backend "s3"` blocks must use literal attributes only and set `use_lockfile = true` or a non-empty `dynamodb_table`. List custom S3 endpoint URLs in the environment's `s3_endpoints`.
+`backend "s3"` requirements:
+
+- Literal values only (no expressions or variables), with `use_lockfile = true` or a non-empty `dynamodb_table`.
+- Only allow-listed OpenTofu 1.13.9 attributes: `bucket`, `key`, `region`, `workspace_key_prefix`, `use_lockfile`, `dynamodb_table`, `encrypt`, `kms_key_id`, `use_path_style`, `force_path_style`, `use_dualstack_endpoint`, `use_fips_endpoint`, `skip_credentials_validation`, `skip_region_validation`, `skip_requesting_account_id`, `skip_s3_checksum`, `max_retries`, `retry_mode`, and `endpoints`. Inline credentials, roles, profiles, ACLs, proxies, and TLS overrides are refused.
+- Custom `endpoints = { s3 = "..." }` must match `env.s3_endpoints` exactly.
+- Requires `plan_role` and `apply_role` (not supported under `writ serve --dev`). OpenTofu state and plan encryption aren't supported because Writ reads serials from the plan and state.
 
 > **Security boundary for S3 state:** Writ grants don't stop one stack's `backend "s3"` from naming another stack's key in the same environment. Isolate mutually untrusted S3 stacks into separate environments with key-prefix-scoped IAM roles.
+
+Writ tracks up to 20 Writ-applied serials and 20 external serials per `stack@env`. Any S3 serial not written by a Writ apply is flagged as `outside_write` in the UI, `GET /v1/drift`, and `GET /v1/index`, logged at `WARN` (`state written outside writ`), and sent to matching `outside-write` [notifiers](notifications.md) once per serial. Writ refuses to index or approve plans against that serial until you run [`writ state adopt`](adopt-state.md) or apply a newer Writ plan.
 
 ### 3. Configure `aws` and `env` in your server config
 
@@ -128,7 +135,8 @@ CloudTrail session attribution:
 
 - Built-in role assumption supports AWS STS only; other providers use `provider_env` files.
 - Revoking the loopback token stops future refreshes; STS credentials already fetched remain valid until `aws.session` expires (though scrubbed from all Writ outputs).
-- S3 state and STS flows have been tested against local stand-ins (`versitygw`, STS stand-in, AWS Emulator), not a live AWS account.
+- Between `tofu apply` releasing an S3 state lock and Writ reading the resulting serial, an external same-lineage write could be attributed to that apply.
+- S3 state and STS flows have been tested against local stand-ins, not a live AWS account.
 
 ## Next steps
 

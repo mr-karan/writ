@@ -45,7 +45,7 @@ Output of a real run, 2026-11-15.
 2. Commit changes (Writ plans commits, never dirty working trees).
 3. Call `plan` in the stack directory (passing `env` on a team control plane).
 4. Read the masked plan. Fix errors, commit, and re-plan.
-5. On a [policy](policy.md) deny, inspect the rule via `policy`, update the code to satisfy it, commit, and re-plan.
+5. On a [policy](write-a-policy.md) deny, inspect the rule via `policy`, update the code to satisfy it, commit, and re-plan.
 6. Return the plan ID, summary of changes, and required approvers. Stop there.
 
 The skill prohibits running `tofu` / `terraform` locally and forbids applying or approving. Even if an agent ignores the skill, the control plane enforces the boundary: authors can't approve their own plans, and `writ mcp` exposes no approve or apply tool.

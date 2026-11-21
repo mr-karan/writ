@@ -35,7 +35,6 @@ Writ ships as a single Go binary under Apache 2.0 with no limits on users, runs,
 
 - [Run a server](run.md): start `writ serve --dev` or run a team server with Postgres, containers, or NixOS.
 - [Configure sign-in](sign-in.md): set up OIDC for `writ login` and the control UI.
-- [Operate the database](database.md): Postgres and SQLite tables, audit rows, timeouts, and migrations.
 - [AWS roles and credentials](aws-credentials.md): configure `plan_role`, `apply_role`, S3 state permissions, and `provider_env`.
 - [Run isolation and egress](run-isolation.md): configure `provider_uids`, namespaces, cgroup limits, seccomp, metadata firewall, and the egress proxy.
 - [Back up and upgrade](upgrades.md): back up Postgres and state keys, configure retention, and upgrade single-node servers.
@@ -55,6 +54,3 @@ Writ ships as a single Go binary under Apache 2.0 with no limits on users, runs,
 
 - [How a plan becomes an apply](plan-to-apply.md): end-to-end lifecycle from commit fetch to state index.
 - [Security model](security-model.md): credential boundaries, isolation layers, masking, and limits.
-- [Control plane internals](serve.md): OpenTofu execution, S3 state tracking, drift checks, teams, grants, and egress mechanics.
-- [How repositories work](repos.md): GitLab fetching, blob verification, caching, and stack discovery.
-- [How policy works](policy.md): plan-point and apply-point evaluation, mandatory vs advisory sets, and secret handling.

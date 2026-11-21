@@ -1,6 +1,6 @@
 # Policy input and built-ins
 
-Policies evaluate one input (the masked plan document plus `input.writ`) using a fixed allow-list of Rego built-ins inside a bounded child process. See [Policy](policy.md), [Write and test a policy](write-a-policy.md), and the [Policy cookbook](policy-cookbook.md).
+Policies evaluate one input (the masked plan document plus `input.writ`) using a fixed allow-list of Rego built-ins inside a bounded child process. See [Write and test policies](write-a-policy.md) and the [Policy cookbook](policy-cookbook.md).
 
 ## Input
 

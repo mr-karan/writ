@@ -94,7 +94,7 @@ verify-mask stacks="6" fuzztime="30s":
 	nix shell --inputs-from . nixpkgs#opentofu -c go test -tags e2e,e2e_tofu -count=1 -v -timeout 20m -run '^TestVerifyMask$' ./e2e -args -verify-mask.stacks={{stacks}}
 	go test -run '^$' -fuzz '^FuzzPlan$' -fuzztime {{fuzztime}} ./internal/mask
 
-# The policy parity test, docs/policy.md: one
+# The policy parity test, docs/write-a-policy.md: one
 # .rego file gives the same verdict in writ serve and under conftest.
 # conftest verify runs the tests of examples/policy. Then TestPolicyParity
 # plans three OpenTofu stacks through writ serve --dev, which judges them

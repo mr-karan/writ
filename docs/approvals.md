@@ -26,7 +26,7 @@ approval {
 
 Writ takes the highest `need` (1 to 10) across all matching rules. A plan with no risk classes needs no approval; a plan that changes nothing becomes [`no-changes`](#a-plan-that-changes-nothing). With no `approval` blocks, no plan requires approval. Run `writ serve --check` to print active rules.
 
-`stacks` uses the same glob syntax as [grants](serve.md#stack-patterns): `*` matches within one path segment and `**` matches any number of segments (`data/**` matches `data` and everything under it).
+`stacks` uses the same glob syntax as [grants](config.md#stack-patterns): `*` matches within one path segment and `**` matches any number of segments (`data/**` matches `data` and everything under it).
 
 Writ records the required count at plan time and re-evaluates current rules at apply time, taking the larger number. Stricter config rules apply immediately to existing plans.
 
@@ -34,7 +34,7 @@ Writ records the required count at plan time and re-evaluates current rules at a
 
 Any person with `approve` on the plan's `stack@env` can approve it, except the plan's author.
 
-Writ identifies each person by `IDENTITY/user/ID` (for example `gitlab/user/2002`), combining the issuer's configured `identity` with the user ID. Issuers sharing an `identity` (such as GitLab login and GitLab CI) map to the same person, so a user can't approve their own CI plan from the CLI or browser. See [Who a person is](serve.md#who-a-person-is).
+Writ identifies each person by `IDENTITY/user/ID` (for example `gitlab/user/2002`), combining the issuer's configured `identity` with the user ID. Issuers sharing an `identity` (such as GitLab login and GitLab CI) map to the same person, so a user can't approve their own CI plan from the CLI or browser. See [Who a person is](config.md#who-a-person-is).
 
 Once a plan has enough approvals, extra approve requests succeed as no-ops (so a pipeline's approve job passes if re-run after approval).
 
@@ -185,10 +185,10 @@ After apply, the run page shows status, timing, per-resource events, and masked 
 
 1. Writ fetches the commit files from the Git host, verifies them against the plan's source digest, and writes them to a fresh scratch directory.
 2. `tofu init -input=false -lockfile=readonly` and `tofu show -json PLAN` run without cloud credentials inside the [run sandbox](run-isolation.md).
-3. The mask loads the state's [secret set](serve.md#policy-and-the-mask) plus secrets learned from `tofu show -json PLAN` so unmarked values (such as `nonsensitive()` `for_each` keys or rotated secrets) are still scrubbed.
+3. The mask loads the state's [secret set](secrets.md) plus secrets learned from `tofu show -json PLAN` so unmarked values (such as `nonsensitive()` `for_each` keys or rotated secrets) are still scrubbed.
 4. `tofu apply -input=false -json PLAN` runs with `provider_env` and `apply_role` as an isolated UID.
    - **HTTP backend:** Receives a single-run token scoped to `LOCK`, `POST`, and `UNLOCK` for that `stack@env`, revoked when the run ends.
-   - **S3 backend:** Runs a second offline `init` with `apply_role`, lets `tofu apply` manage the bucket lock file, and runs `tofu state pull` to record the resulting serial ([Stacks on S3](serve.md#stacks-on-s3)).
+   - **S3 backend:** Runs a second offline `init` with `apply_role`, lets `tofu apply` manage the bucket lock file, and runs `tofu state pull` to record the resulting serial ([AWS roles and credentials](aws-credentials.md#2-grant-s3-state-permissions-if-using-backend-s3)).
 
 ```
 OpenTofu apply of app@prod
@@ -210,8 +210,8 @@ Completed applies store a `writ.tofu-apply/v0` document containing `ok`, `applie
 
 ### What else an apply does
 
-- **Refreshes the state index:** Runs `tofu show -json` with no cloud credentials after a successful apply to update the [state index](serve.md#the-state-index). A refresh error doesn't fail the apply; background refresh retries within 5 minutes.
-- **Re-evaluates policy:** Policies run again at apply time with `input.writ.decision = "apply"`, the caller, and active approvals. A deny returns `403 policy`, leaves the plan approved, and can't be overridden. See [Policy](policy.md).
+- **Refreshes the state index:** Runs `tofu show -json` with no cloud credentials after a successful apply to update the [state index](plan-to-apply.md#the-state-index). A refresh error doesn't fail the apply; background refresh retries within 5 minutes.
+- **Re-evaluates policy:** Policies run again at apply time with `input.writ.decision = "apply"`, the caller, and active approvals. A deny returns `403 policy`, leaves the plan approved, and can't be overridden. See [Write and test policies](write-a-policy.md).
 - **Writes audit rows:** Every state backend read, write (`state-write` with version, serial, lineage, SHA-256), lock, and unlock is audited, plus `apply-finished`.
 - **Requires a secret set:** Plans against state versions without a sealed secret set fail so they can't be approved. Run `writ state adopt` with an `adopt` grant and a 10 to 500 character reason to establish one ([Adopt a state](adopt-state.md)).
 
@@ -223,5 +223,5 @@ State locks don't expire on their own. When a run or plan ends, Writ revokes its
 
 - [Plan and apply](apply.md): commands, merged applies, lost-response recovery, and overrides.
 - [How a plan becomes an apply](plan-to-apply.md): end-to-end lifecycle from commit to state index.
-- [Control plane internals](serve.md): teams, grants, and roles.
-- [How repositories work](repos.md): commit resolution and polling.
+- [Server config](config.md): teams, grants, and stack patterns.
+- [Add a repository](add-repository.md): stack rules, forge tokens, and polling.

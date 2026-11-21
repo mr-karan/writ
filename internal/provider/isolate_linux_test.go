@@ -31,7 +31,7 @@ const (
 	testBinsEnv       = "WRIT_TEST_BINS"
 )
 
-// metadataRules is the firewall rule that docs/serve.md asks for, with the
+// metadataRules is the firewall rule that docs/run-isolation.md asks for, with the
 // uid range the test uses.
 const metadataRules = `table inet writ {
   chain out {
@@ -123,7 +123,7 @@ func tryGet(addr string) string {
 	return "reached: " + string(b)
 }
 
-// TestProviderIsolation proves on this machine what docs/serve.md says of
+// TestProviderIsolation proves on this machine what docs/run-isolation.md says of
 // providers that run as their own users: the user switch works for a
 // process like writ serve under systemd, the handshake works across the
 // two users, and the provider cannot read the state key, read writ's
