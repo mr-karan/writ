@@ -244,7 +244,7 @@ If the document cannot be parsed, the page disables approval. After an apply, th
 | --- | --- |
 | `limits.applies` | Default `4` concurrent applies. Excess requests get `429`. Applies share `provider_uids` with plans and wait for a free UID. |
 | Settling a failed state commit | Holds an apply slot for at most 2 minutes (5-second retries). |
-| `limits.apply_start_timeout` | Default `10m`: bounds the wait for the saved plan, the role's credentials, and a free provider UID before the first change ([Time limits](api.md#time-limits)). |
+| `limits.apply_start_timeout` | Default `10m`: bounds the wait for the commit fetch, the provider install, the saved plan, the role's credentials, and a free provider UID before the first change ([Time limits](api.md#time-limits)). |
 | `limits.apply_timeout` | Default `4h`: then OpenTofu gets `SIGINT`, so running changes finish and no new ones start ([Time limits](api.md#time-limits)). |
 | Request keys | Live 24 hours, at most 5 minutes ahead of server time. Closed `none` keys are pruned after 25 hours. |
 | `writ apply --remote` | 30-second timeout per request, up to 5 apply attempts and 5 outcome queries (backoff 2s, 4s, 8s, 16s). Follows a run for up to 30 minutes from attach. |

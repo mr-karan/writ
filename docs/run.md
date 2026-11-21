@@ -110,7 +110,7 @@ When `providerUids` is set, the module:
 
 ## Back up and upgrade
 
-Back up Postgres and every `env.*.key`, prune with `retention`, and upgrade one node at a time: see [Back up and upgrade](upgrades.md).
+Back up Postgres and every `env.*.key`, prune with `retention`, and upgrade by stopping the single node and starting the new binary (it runs migrations atomically; downgrades are refused): see [Back up and upgrade](upgrades.md).
 
 ## Troubleshooting
 

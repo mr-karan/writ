@@ -210,7 +210,7 @@ Unknown fields (such as tokens) are refused; forge tokens never appear in respon
 | Delivery | Response |
 | --- | --- |
 | Verified `Push Hook` | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never parsed, stored, or logged. |
-| Duplicate `webhook-id` or `Idempotency-Key` | `200`, `duplicate: true` |
+| Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0) | `200`, `duplicate: true` |
 | Verified, not a push | `200`, `queued: false` |
 | Any verification failure: unknown repository or webhook, missing or wrong secret, bad signature or timestamp, body over 1 MiB (`check: hook-body`) | `401`, `auth`: `the delivery failed verification` |
 | Over 10 deliveries/s from one client IP | `429`, `Retry-After: 1`. Dropped before the body is read; no audit row. |
@@ -355,7 +355,7 @@ Two token-bucket limiters, each with a 1-second burst and up to 10,000 buckets:
 | Limit | Default | Covers | On expiry |
 | --- | --- | --- | --- |
 | `limits.plan_timeout` | `30m` | Commit fetch, UID wait, `init`, `plan` | Kills the process group and marks the plan `failed`. |
-| `limits.apply_start_timeout` | `10m` | The wait before an apply's first change: the saved plan, the role's credentials, and a provider UID | The apply fails as `usage` before any change starts, so state is left as it was. |
+| `limits.apply_start_timeout` | `10m` | The wait before an apply's first change: the commit fetch, the provider install, the saved plan, the role's credentials, and a provider UID | The apply fails as `usage` before any change starts, so state is left as it was. |
 | `limits.apply_timeout` | `4h` | `tofu apply` | Sends OpenTofu `SIGINT` so running changes finish and no new ones start, fails the run, and kills OpenTofu if it is still alive 2 hours later. |
 
 If a run's processes do not exit after termination, its UID is withheld until restart:

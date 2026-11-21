@@ -50,7 +50,7 @@ For stacks storing state in S3 instead of Writ's HTTP backend:
 
 > **Security boundary for S3 state:** Writ grants don't stop one stack's `backend "s3"` from naming another stack's key in the same environment. Isolate mutually untrusted S3 stacks into separate environments with key-prefix-scoped IAM roles.
 
-A serial Writ did not write is flagged as an outside write and blocks approvals until you run [`writ state adopt`](adopt-state.md) or apply a newer Writ plan ([S3 serials and outside writes](how-aws-credentials-work.md#s3-serials-and-outside-writes)).
+A serial Writ did not write is flagged as an outside write: Writ refuses to index that serial and blocks approvals until you run [`writ state adopt`](adopt-state.md) or apply a newer Writ plan ([S3 serials and outside writes](how-aws-credentials-work.md#s3-serials-and-outside-writes)).
 
 ### 3. Configure `aws` and `env` in your server config
 

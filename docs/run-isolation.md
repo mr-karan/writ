@@ -8,6 +8,7 @@ Isolate every `tofu` step on a team's `writ serve` from its OS user, keys, datab
 - An unused numeric UID range at least as large as `limits.plans`, for example `61000-61063`. It needs no `/etc/passwd` entries.
 - `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL` on the `writ serve` service. The [NixOS module](run.md#on-nixos) sets them.
 - `nftables`, or an equivalent firewall, on hosts with a cloud metadata service.
+- For Writ's seccomp filter: Linux 4.14+ on amd64 or arm64. Elsewhere runs proceed without it, and `writ serve --check` and the start log say so.
 - For per-step memory, PID, and CPU limits: cgroup v2, Linux 5.14+, and `writ serve` alone in a delegated cgroup (`Delegate=yes`).
 - For `egress_mode` `report` or `enforce`: a `tofu` block, a unit that allows network namespaces (systemd `RestrictNamespaces` must include `net`, as the NixOS module sets), and no `http://` loopback URLs in `env.s3_endpoints`. `writ serve --check` fails when the unit refuses network namespaces.
 
@@ -139,6 +140,8 @@ error: writ's egress proxy refused 192.0.2.11:8080 (an IP address the list does 
 ```
 
 > **Warning:** `report` is not a security boundary, and an allowed host such as `*.amazonaws.com` can still carry data out. See [What egress doesn't cover](how-run-isolation-works.md#what-egress-doesnt-cover).
+
+> **Warning:** the egress proxy blocks private provider registries (it refuses private IPs) and connects directly, with no upstream proxy. `writ serve --dev` and `writ import bulk` don't use it.
 
 ### Roll it out
 

@@ -97,7 +97,7 @@ demo  /home/alice/demo  the root  main    42bf997f  1       2026-11-16T03:29:49Z
 | Prefix overlap refused | Prefixes cannot nest (`payments/` and `payments/eu/`). Pick disjoint ones. |
 | `writ repo add .` fails with a Git ownership error | `writ serve --dev` ignores global `safe.directory`. The repository must be owned by the user running it. |
 | Commit refused for symlinks or a missing lock file | Remove symlinks under the repository path, and commit `.terraform.lock.hcl` in every stack directory. |
-| `404` adding a GitLab project | The project is missing on the forge. Check `FORGE/PROJECT`. |
+| `404` adding a GitLab project | The project is missing on the forge, or the read token cannot see it (it needs Reporter and `read_api`). Check `FORGE/PROJECT` and the token's access. |
 
 ## Next steps
 

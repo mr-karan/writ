@@ -6,7 +6,7 @@
 
 ## Keep secrets out of output
 
-1. Declare every secret variable `sensitive = true`. The mask learns its value and scrubs it everywhere, in plain and encoded forms.
+1. Declare every secret variable `sensitive = true`. The mask learns every string value, and every number of 6 or more characters, and scrubs it in plain and encoded forms. Shorter numbers and booleans are hidden only where marked, and strings under 6 bytes are replaced only on a whole-value match ([Rule 1](how-the-mask-works.md#rule-1-opentofus-marks), [Rule 2](how-the-mask-works.md#rule-2-a-sweep-by-value)).
 2. Pass provider credentials and other secrets through `provider_env` files, not literals. The mask learns those values too ([AWS roles and credentials](aws-credentials.md)).
 3. Do not wrap hashed, encoded, or derived secret values in `nonsensitive()`. The mask cannot invert them.
 4. Review a plan: a secret the mask knows shows as `(sensitive)`, and changed sensitive paths are listed so reviewers see that a secret changed.
@@ -41,4 +41,4 @@ Declare every secret variable `sensitive = true`, and avoid `nonsensitive()` on 
 - [Adopt a state](adopt-state.md): establish secret sets for externally written state.
 - [Security model](security-model.md): how masking fits with credential isolation and audit logging.
 - [Run isolation and egress](run-isolation.md): run execution and filesystem view.
-- [Approvals](plan-lifecycle.md#apply-point-checks-and-execution): masked plan review and apply.
+- [Apply-point checks](plan-lifecycle.md#apply-point-checks-and-execution): masked plan review and apply.

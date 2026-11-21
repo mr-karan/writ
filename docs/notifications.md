@@ -114,7 +114,7 @@ In the control UI, **Settings > Notifications** (and `GET /v1/config` under `not
 
 | Problem | Fix |
 | --- | --- |
-| A delivery fails with `tls:` or `dns:` | The certificate is untrusted, expired, or mismatched, the HTTPS URL answers in plaintext, or the host does not exist. These fail at once, without retries. |
+| A delivery fails with `tls:` or `dns:` | The certificate is untrusted, expired, or mismatched, the HTTPS URL answers in plaintext, or the host does not exist. TLS errors and `dns: no such host` fail at once, without retries; DNS timeouts and temporary lookup failures are retried. |
 | A delivery fails on a redirect | Redirects (`3xx`) fail. Point `url_file` at the final URL. |
 | Changed `url_file` or `secret_file` has no effect | Both are read once at startup. Restart `writ serve`. |
 | Events go missing under load | A full 128-event queue drops new events, counted as failed. Check **Settings > Notifications**. |
