@@ -8,13 +8,13 @@ Plan and apply an OpenTofu stack locally in four steps with no cloud account, th
 
 ### Before you begin
 
-- Linux and [`minisign`](https://jedisct1.github.io/minisign/) (required by the install script)
-- Git with `user.name` and `user.email` configured
-- [OpenTofu 1.13.9](https://opentofu.org/docs/intro/install/) on `PATH` and network access to `registry.opentofu.org`
+- Linux and [`minisign`](https://jedisct1.github.io/minisign/), which the install script needs.
+- Git with `user.name` and `user.email` set.
+- [OpenTofu 1.13.9](https://opentofu.org/docs/intro/install/) on `PATH`, and network access to `registry.opentofu.org`.
 
 ### 1. Install writ
 
-Install `writ` v0.1.8 to `~/.local/bin` (verifies the minisign signature and SHA-256 checksum):
+The script installs `writ` v0.1.8 to `~/.local/bin` and verifies its minisign signature and SHA-256 checksum:
 
 ```sh
 curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh
@@ -22,11 +22,11 @@ export PATH="$HOME/.local/bin:$PATH"
 writ version
 ```
 
-Or build from source with Go 1.27.3+ and `just` (`just build`), or enter `nix develop` for Go, `just`, and OpenTofu 1.13.9. See [Install](install.md) for container and Nix options.
+Or build from source with Go 1.27.3+ and `just build`, or run `nix develop` for Go, `just`, and OpenTofu 1.13.9. [Install](install.md) covers the container image and Nix.
 
 ### 2. Start the dev control plane
 
-Run in one terminal and leave it running:
+Leave this running in one terminal:
 
 ```
 $ writ serve --dev
@@ -37,13 +37,11 @@ control UI: http://127.0.0.1:7340/ui/login/dev?code=KLBC-ZBYU (works once, for 1
 ready in 102 ms
 ```
 
-Output of a real run, 2026-11-16.
-
-Open the `control UI` link to view plans and runs in your browser. OpenTofu runs get an isolated `HOME` and only `PATH` and `TF_VAR_` variables from your shell, so providers won't pick up local cloud credentials.
+Open the `control UI` link to see plans and runs. OpenTofu runs get an isolated `HOME` and only `PATH` and `TF_VAR_` variables from your shell, so providers do not pick up local cloud credentials.
 
 ### 3. Create a stack and add its repository
 
-In a second terminal (with `writ` on `PATH`), create a Git repo containing one [stack](glossary.md) with `backend "http" {}` and a committed `.terraform.lock.hcl`:
+In a second terminal, with `writ` on `PATH`, create a Git repository with one [stack](glossary.md) that uses `backend "http" {}` and a committed `.terraform.lock.hcl`:
 
 ```sh
 mkdir -p ~/writ-demo/app
@@ -71,7 +69,7 @@ git add .
 git commit -m "one stack"
 ```
 
-Register the repository with the dev server:
+Register it with the dev server:
 
 ```
 $ writ repo add .
@@ -84,7 +82,7 @@ Next: in a clean work tree of it, writ plan --remote plans the commit you are on
 
 ### 4. Plan and apply
 
-Plan the commit, then apply that plan ID. The first plan downloads `hashicorp/random` into the plugin cache.
+Plan the commit, then apply the plan ID. The first plan downloads `hashicorp/random` into the plugin cache.
 
 ```
 $ cd app
@@ -108,9 +106,7 @@ State version 1 of app@dev.
 Run I3EP3I6DTYNC5PMVULSW6JYINL of plan 7ff2ad97b106fcbf4b4633baee25626a for dev (app), by alice (dev): applied at 2026-11-16T05:32:19Z.
 ```
 
-Output of a real run, 2026-11-16.
-
-Running `writ plan --remote` again returns `no-changes` because nothing is left to change. List completed runs with `writ runs --remote`:
+Real run, 2026-11-16. A second `writ plan --remote` returns `no-changes`. List runs with `writ runs --remote`:
 
 ```
 $ writ runs --remote --stack app
@@ -122,19 +118,17 @@ Press Ctrl-C in the first terminal when done.
 
 ## Set up Writ for a team
 
-A team `writ serve` adds Postgres, OIDC sign-in for CI jobs and people, teams, grants, approval rules, and per-run `provider_uids`. This walkthrough connects one GitLab project (`acme/infra`, project ID `4242`) with one stack (`app`) in one environment (`prod`).
+A team `writ serve` adds Postgres, OIDC sign-in for CI jobs and people, teams, grants, approval rules, and per-run `provider_uids`. This walkthrough connects one GitLab project (`acme/infra`, ID `4242`) with one stack (`app`) in one env (`prod`). Its transcripts come from a real run against Postgres, a local OIDC test issuer, and a local GitLab stand-in.
 
 ### Before you begin
 
-- A Linux host with Postgres, `writ`, and OpenTofu 1.13.9 behind a TLS-terminating proxy for `https://writ.example.com`
-- A GitLab project (`acme/infra`, numeric ID `4242`)
-- A `writ` container image reachable by your GitLab runners (for example `registry.example.com/writ:0.1.8`, copied from [`ghcr.io/mr-karan/writ:0.1.8`](install.md#the-container-image))
-
-The transcripts below come from a real run against Postgres, a local OIDC test issuer, and a local GitLab stand-in.
+- A Linux host with Postgres, `writ`, and OpenTofu 1.13.9, behind a TLS-terminating proxy for `https://writ.example.com`.
+- A GitLab project (`acme/infra`, numeric ID `4242`).
+- A `writ` container image your GitLab runners can pull, for example `registry.example.com/writ:0.1.8` copied from [`ghcr.io/mr-karan/writ:0.1.8`](install.md#the-container-image).
 
 ### 1. Commit the stack to the default branch
 
-Commit `app/` (its `.tf` files and `.terraform.lock.hcl`) to `main`. `writ serve` discovers stacks from the default branch, and `writ ci gitlab` requires at least one discovered stack.
+Commit `app/` (its `.tf` files and `.terraform.lock.hcl`) to `main`. `writ serve` discovers stacks on the default branch, and `writ ci gitlab` needs at least one discovered stack.
 
 ### 2. Write the server config
 
@@ -241,17 +235,19 @@ tofu {
 }
 ```
 
-Prepare the three referenced files (all mode `0600`, owned by the `writ` service user):
+Create the three files it names, each mode `0600` and owned by the `writ` service user:
 
-- `secrets/gitlab_read`: a GitLab token with `read_api` scope ([Add a repository: Forges and their tokens](add-repository.md#forges-and-their-tokens)).
-- `secrets/oidc_client_secret`: the secret of your GitLab OAuth application (`client_id`) with scopes `openid profile email` and two redirect URIs: `https://writ.example.com/ui/callback` and `http://127.0.0.1/callback` ([Configure sign-in](sign-in.md#set-up-writ-login)).
-- `keys/prod.key`: 32 random bytes that [seal](glossary.md) state and saved plans (`head -c 32 /dev/urandom > keys/prod.key`). Back this key up offline.
+| File | Content |
+| --- | --- |
+| `secrets/gitlab_read` | A GitLab token with `read_api` scope ([Forges and their tokens](add-repository.md#forges-and-their-tokens)). |
+| `secrets/oidc_client_secret` | The secret of your GitLab OAuth application (`client_id`), with scopes `openid profile email` and two redirect URIs, `https://writ.example.com/ui/callback` and `http://127.0.0.1/callback` ([Configure sign-in](sign-in.md#set-up-writ-login)). |
+| `keys/prod.key` | 32 random bytes that [seal](glossary.md) state and saved plans: `head -c 32 /dev/urandom > keys/prod.key`. Back it up offline. |
 
-Both issuers share `identity = "gitlab"`, so a person's browser/CLI session and the CI jobs they start count as one person and can't self-approve. To let people approve in the control UI as well as CI, add `"approve"` to the `acme` grant. For S3 state and AWS roles, see [AWS roles and credentials](aws-credentials.md).
+Both issuers share `identity = "gitlab"`, so a person's browser or CLI session and the CI jobs they start count as one person, who cannot self-approve. To let people approve in the control UI too, add `"approve"` to the `acme` grant. For S3 state and AWS roles, see [AWS roles and credentials](aws-credentials.md).
 
 ### 3. Check the config and start the server
 
-Run `--check` before starting. It parses the config, prints grants and approval rules, verifies `tofu version` is 1.13.9, and (when run with user-switching capabilities) tests that provider UIDs can't read secret files or reach EC2 metadata endpoints:
+`--check` parses the config, prints grants and approval rules, and verifies `tofu version` is 1.13.9. Run with user-switching capabilities, it also tests that provider UIDs cannot read secret files or reach EC2 metadata endpoints:
 
 ```
 $ writ serve --config serve --check
@@ -274,13 +270,13 @@ warning[usage]
   isolation not checked: run writ as provider uid 61000: fork/exec /var/tmp/writ-landing2/qs/bin/writ: operation not permitted; writ serve checks its capabilities at start
 ```
 
-Output of a real run, 2026-11-16 (run without `CAP_SETUID`, so isolation warned).
+Real run, 2026-11-16, without `CAP_SETUID`, so isolation warned.
 
-Start the server with `writ serve --config serve`. On NixOS, [the module](run.md#on-nixos) configures Postgres, capabilities, the metadata firewall, and `--check` automatically.
+Start the server with `writ serve --config serve`. On NixOS, [the module](run.md#on-nixos) sets up Postgres, capabilities, the metadata firewall, and `--check`.
 
 ### 4. Sign in from your terminal
 
-Run `writ login https://writ.example.com`. Because GitLab.com doesn't publish an OAuth device endpoint, `writ login` opens a browser sign-in flow and receives the callback on `127.0.0.1`:
+Run `writ login https://writ.example.com`. GitLab.com publishes no OAuth device endpoint, so `writ login` uses a browser sign-in and receives the callback on `127.0.0.1`:
 
 ```
 $ writ login http://127.0.0.1:35309
@@ -296,13 +292,11 @@ teams: acme
 prod  app  read  -
 ```
 
-Output of a real run, 2026-11-16.
-
-You can also open `https://writ.example.com/ui/repos/infra` directly in a browser and sign in through GitLab.
+Or open `https://writ.example.com/ui/repos/infra` in a browser and sign in through GitLab.
 
 ### 5. Add the GitLab CI jobs
 
-Add these jobs to `.gitlab-ci.yml` in a merge request (or generate them with `writ ci gitlab --repo infra --image registry.example.com/writ:0.1.8`):
+Add these jobs to `.gitlab-ci.yml` in a merge request, or generate them with `writ ci gitlab --repo infra --image registry.example.com/writ:0.1.8`:
 
 ```yaml
 stages: [writ-plan, writ-approve, writ-apply]
@@ -325,7 +319,7 @@ include:
       image: registry.example.com/writ:0.1.8
 ```
 
-Host the components from [`ci/gitlab`](../ci/gitlab/README.md) at `platform/writ-ci` (or adjust the path). Protect `main` and enable **Pipelines must succeed** in GitLab project settings. None of the jobs checks out code or holds cloud credentials; see [Set up GitLab CI](set-up-gitlab-ci.md).
+Host the components from [`ci/gitlab`](../ci/gitlab/README.md) at `platform/writ-ci`, or change the path. Protect `main` and enable **Pipelines must succeed** in the project settings. No job checks out code or holds cloud credentials ([Set up GitLab CI](set-up-gitlab-ci.md)).
 
 ### 6. Plan, approve, and apply
 
@@ -343,23 +337,21 @@ Plan: 4 to add, 0 to change, 0 to destroy.
 Outputs that change: pet.
 ```
 
-Output of a real run, 2026-11-16.
-
-If `alice` (the author) tries to approve the plan, Writ refuses:
+If `alice`, the author, tries to approve it, Writ refuses:
 
 ```
 $ writ approve --remote 927b69ec7af23641c68c3ce3cce370ec
 error: denied: gitlab acme/infra #1849401 (alice) made plan 927b69ec7af23641c68c3ce3cce370ec and cannot approve it: it needs 1 approval from someone else
 ```
 
-If the MR merges without approval, the `main` apply job refuses:
+If the merge request merges without approval, the `main` apply job refuses:
 
 ```
 $ writ apply --remote --merged --env prod --stack app
 error: denied: plan 927b69ec7af23641c68c3ce3cce370ec of app@prod matches the sources at 3008b0c3 and needs 1 approval; approve it with writ approve --remote 927b69ec7af23641c68c3ce3cce370ec
 ```
 
-`bob` (a maintainer) approves the plan:
+`bob`, a maintainer, approves it:
 
 ```
 $ writ approve --remote 927b69ec7af23641c68c3ce3cce370ec
@@ -378,18 +370,18 @@ Apply: 4 added, 0 changed, 0 destroyed.
 State version 1 of app@prod.
 ```
 
-Output of a real run, 2026-11-16.
-
-If `alice` pushes another commit to the MR, a new plan is created and the old approved plan can no longer apply; see [Why an approved plan can still be refused](approvals.md#why-an-approved-plan-can-still-be-refused).
+Real runs, 2026-11-16. If `alice` pushes another commit, a new plan is made and the old approved plan can no longer apply ([Why an approved plan can still be refused](approvals.md#why-an-approved-plan-can-still-be-refused)).
 
 ## Troubleshooting
 
-- **`writ: no control plane`**: Start `writ serve --dev` in another terminal, or verify `XDG_DATA_HOME` matches in both terminals.
-- **`writ: git is not installed`**: Install `git` on `PATH` ([Install: Git](install.md#git)).
-- **OpenTofu version error**: Writ requires OpenTofu `1.13.9`. Check `tofu version`.
-- **Dirty work tree refused**: Commit your changes first; Writ plans commits only.
-- **Dev UI sign-in link expired**: Links work once for 10 minutes. Run `writ ui` to print a new one.
-- **GitLab redirect URI mismatch**: List both `https://writ.example.com/ui/callback` and `http://127.0.0.1/callback` on separate lines in your GitLab OAuth application.
+| Problem | Fix |
+| --- | --- |
+| `writ: no control plane` | Start `writ serve --dev` in another terminal, or make `XDG_DATA_HOME` match in both terminals. |
+| `writ: git is not installed` | Put `git` on `PATH` ([Install: Git](install.md#git)). |
+| OpenTofu version error | Writ requires OpenTofu `1.13.9`. Check `tofu version`. |
+| Dirty work tree refused | Commit first. Writ plans commits only. |
+| Dev UI sign-in link expired | A link works once, for 10 minutes. `writ ui` prints a new one. |
+| GitLab redirect URI mismatch | List `https://writ.example.com/ui/callback` and `http://127.0.0.1/callback` on separate lines in the GitLab OAuth application. |
 
 ## Next steps
 

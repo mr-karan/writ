@@ -1,25 +1,25 @@
 # Sign in
 
-People sign in from the terminal with `writ login` or in the browser through `/ui/`. `writ serve` acts as the OAuth client for both, so a laptop holds only a Writ session token, never a client secret, refresh token, access token, or ID token, and a browser holds only its session cookie.
+People sign in from the terminal with `writ login`, or in the browser at `/ui/`. `writ serve` is the OAuth client for both. A laptop holds only a Writ session token, never a client secret, refresh token, access token, or ID token. A browser holds only its session cookie.
 
-`writ login` uses the OAuth device flow when the identity provider publishes `device_authorization_endpoint`, and falls back to the PKCE browser loopback flow otherwise (as on GitLab.com). CI jobs authenticate directly with OIDC tokens ([Set up GitLab CI](set-up-gitlab-ci.md)); `writ serve --dev` needs no sign-in.
+CI jobs authenticate with OIDC tokens instead ([Set up GitLab CI](set-up-gitlab-ci.md)). `writ serve --dev` needs no sign-in.
 
 ## How a CLI finds its control plane
 
-Remote commands, `writ login`, and `writ logout` pick the first server configured:
+Remote commands, `writ login`, and `writ logout` use the first server found:
 
-1. `--server URL` (or `--server dev`; implies `--remote`).
+1. `--server URL`, or `--server dev`. Either implies `--remote`.
 2. `WRIT_SERVER`.
-3. Your sole active `writ login` session (if multiple exist, the command stops and lists them).
-4. A running `writ serve --dev` found via `client.json` in the default data directory.
+3. Your only active `writ login` session. With several, the command stops and lists them.
+4. A running `writ serve --dev`, found through `client.json` in the default data directory.
 
-Server URLs must be `https://` (or loopback `http://`) with no path, credentials, query, or fragment. For the selected server, `writ` sends the first available credential:
+A server URL must be `https://` (or loopback `http://`) with no path, credentials, query, or fragment. For that server, `writ` sends the first credential it has:
 
-1. `WRIT_ID_TOKEN` (CI OIDC token).
+1. `WRIT_ID_TOKEN` (a CI OIDC token).
 2. The `writ login` session in `~/.config/writ/sessions.json`.
-3. The dev token from `client.json` (dev servers only).
+3. The dev token from `client.json`, for dev servers only.
 
-Missing server exits 2; missing token prints sign-in instructions:
+With no server, `writ` exits 2. With no token, it prints how to sign in:
 
 ```
 $ writ whoami
@@ -30,16 +30,18 @@ writ: no token for http://127.0.0.1:41093: sign in with writ login http://127.0.
 run writ help for usage
 ```
 
-Output of a real run, 2026-11-16. Run `writ whoami` to inspect which server and token `writ` selected. If `writ serve --dev` used a custom `--data` directory, set `XDG_DATA_HOME` to its grandparent so CLI discovery finds `client.json`.
+`writ whoami` shows which server and token `writ` chose. If `writ serve --dev` runs with a custom `--data` directory, set `XDG_DATA_HOME` to its grandparent so the CLI finds `client.json`.
 
 ## People: writ login
 
-`writ login` works against a `kind = "people"` issuer:
+`writ login` signs in through a `kind = "people"` issuer. `--issuer NAME` picks one when there are several.
 
-- **Device flow (RFC 8628):** used when the issuer publishes `device_authorization_endpoint`.
-- **Browser PKCE flow (RFC 8252 / RFC 7636):** used otherwise ([Sign in through a browser](#sign-in-through-a-browser)).
+| Flow | Used when | Standard |
+| --- | --- | --- |
+| Device | The issuer publishes `device_authorization_endpoint` | RFC 8628 |
+| Browser PKCE on a loopback port | Otherwise, as on GitLab.com | RFC 8252, RFC 7636 |
 
-Pass `--device` or `--browser` to force a flow. Both issue the same `cli` session.
+`--device` or `--browser` forces a flow. Both issue the same `cli` session.
 
 ### Sign in with the device flow
 
@@ -60,20 +62,20 @@ $ writ logout
 Signed out of http://127.0.0.1:44701: session 3VGMLAJ2CWONYGAD3SG56GEP4S of bob ended.
 ```
 
-Output of a real run against a local test issuer, 2026-11-11. After `writ logout`, the old session token is refused with `auth`.
+Real run against a local test issuer, 2026-11-11. After `writ logout`, the old session token is refused with `auth`.
 
-### What happens when you sign in
+How it works:
 
-1. `writ login` checks `GET /v1/server`, then calls `POST /v1/auth/device`. `writ serve` starts device auth with the IdP and returns `writ.device/v0` (user code, verification URL, poll interval, expiry, and a 32-byte random handle; the device code stays on the server).
-2. `writ login` polls `POST /v1/auth/device/token`. One background goroutine per pending login polls the IdP (honoring `slow_down`).
-3. On completion, `writ serve` verifies the ID token (issuer, signature, expiry, audience), fetches `groups` from userinfo if configured, resolves teams, stores a `cli` session (SHA-256 of a 32-byte token), and returns `writ.session/v0` once.
-4. `writ` saves the session in `$XDG_CONFIG_HOME/writ/sessions.json` (`~/.config/writ/sessions.json`), mode `0600` in a `0700` directory, refusing symlinks or loose permissions. Signing in again revokes the previous session for that server.
+1. `writ login` checks `GET /v1/server`, then calls `POST /v1/auth/device`. `writ serve` starts device auth with the IdP and returns `writ.device/v0`: user code, verification URL, poll interval, expiry, and a 32-byte random handle. The device code stays on the server.
+2. `writ login` polls `POST /v1/auth/device/token`. One background goroutine per pending login polls the IdP, honoring `slow_down`.
+3. `writ serve` verifies the ID token (issuer, signature, expiry, audience), fetches `groups` from userinfo if configured, resolves teams, stores a `cli` session (SHA-256 of a 32-byte token), and returns `writ.session/v0` once.
+4. `writ` saves the session in `$XDG_CONFIG_HOME/writ/sessions.json` (`~/.config/writ/sessions.json`), mode `0600` in a `0700` directory. It refuses symlinks and loose permissions. Signing in again revokes your previous session on that server.
 
-Pending login handles live in memory and drop on server restart.
+Pending login handles live in memory and are lost on server restart.
 
 ### Sign in through a browser
 
-Because GitLab.com's discovery document omits `device_authorization_endpoint` (checked 2026-11-16), `writ login` opens a browser on the same machine and receives the OAuth callback on an ephemeral loopback port:
+GitLab.com's discovery document omits `device_authorization_endpoint` (checked 2026-11-16), so `writ login` opens a browser on the same machine and receives the OAuth callback on an ephemeral loopback port:
 
 ```
 $ writ login http://127.0.0.1:35309
@@ -85,76 +87,79 @@ Teams: acme
 Session ends 2026-11-16T20:39:54Z.
 ```
 
-Output of a real run against a local test issuer, 2026-11-16.
+Real run against a local test issuer, 2026-11-16.
 
-1. `writ login` binds `127.0.0.1:0`, generates `state` and a PKCE verifier, and posts the `http://127.0.0.1:PORT/callback` redirect URI and S256 challenge to `POST /v1/auth/browser`.
-2. `writ serve` validates the exact loopback callback format and 43-char S256 challenge, creates a nonce, stores a 10-minute in-memory handle, and returns the IdP authorization URL (`writ.browser/v0`).
-3. The CLI prints the URL (and opens it via `xdg-open`, `open`, or `rundll32` on a TTY; refuses non-`https://` URLs).
-4. The local listener accepts one request (rejecting non-loopback peers, mismatched `Host` headers against DNS rebinding, wrong paths, or mismatched `state`) and closes, or times out after 10 minutes.
-5. `writ login` submits the handle, code, state, and verifier to `POST /v1/auth/browser/token` (consuming the handle). `writ serve` verifies state and PKCE, exchanges the code with its client secret, validates the ID token and nonce, and issues a `cli` session.
+How it works:
 
-Over SSH, forward the loopback port or pass `--device` if your IdP supports device auth. A `writ serve` too old for browser sign-in has no `POST /v1/auth/browser`; `writ login --browser` then says so and suggests `--device`.
+1. `writ login` binds `127.0.0.1:0`, makes `state` and a PKCE verifier, and posts the `http://127.0.0.1:PORT/callback` redirect URI and S256 challenge to `POST /v1/auth/browser`.
+2. `writ serve` checks the exact loopback callback format and the 43-character S256 challenge, makes a nonce, stores a 10-minute in-memory handle, and returns the IdP authorization URL (`writ.browser/v0`).
+3. The CLI prints the URL and, on a TTY, opens it with `xdg-open`, `open`, or `rundll32`. It refuses non-`https://` URLs.
+4. The local listener accepts one request and closes, or times out after 10 minutes. It rejects non-loopback peers, a `Host` header that does not match (against DNS rebinding), wrong paths, and a mismatched `state`.
+5. `writ login` sends the handle, code, state, and verifier to `POST /v1/auth/browser/token`, which consumes the handle. `writ serve` verifies state and PKCE, exchanges the code with its client secret, validates the ID token and nonce, and issues a `cli` session.
+
+Over SSH, forward the loopback port, or pass `--device` if your IdP supports device auth. A `writ serve` too old for browser sign-in has no `POST /v1/auth/browser`; `writ login --browser` then says so and suggests `--device`.
 
 ### Sign-ins that wait
 
-Unauthenticated pending logins in server memory are bounded:
+Pending, unauthenticated logins in server memory are bounded:
 
-- At most 1,000 pending device logins and 1,000 pending browser logins globally.
-- At most 10 pending logins combined per client address (IPv6 `/64`), returning `429` beyond that.
-- Audit write failure returns `503` and frees the slot.
+- At most 1,000 pending device logins and 1,000 pending browser logins in total.
+- At most 10 pending logins of both kinds per client address (IPv6 `/64`). Beyond that: `429`.
+- If the audit write fails, the request gets `503` and the slot is freed.
 - All login routes count toward `limits.requests_per_second`.
 
-**Limits:** Many addresses together can still fill the 1,000. Then every new sign-in gets `429` until theirs run out, after 10 minutes for a browser sign-in or the device code's life. Behind a reverse proxy not listed in `trusted_proxies`, all users share one address and the 10-slot per-address cap.
+**Limits:** many addresses together can still fill the 1,000. Every new sign-in then gets `429` until theirs run out: 10 minutes for a browser sign-in, or the device code's life. Behind a reverse proxy not listed in `trusted_proxies`, all users share one address and its 10-slot cap.
 
 ### Sessions
 
-- Sessions expire after `session_ttl` (default `12h`) with no refresh. Teams are fixed for the session's life: a person removed from an IdP group keeps the team until the session ends.
-- `cli` sessions work as bearer tokens on `/v1/*` (`via = cli session`) and can't open `/ui/`. Browser sessions can't be used as `/v1/*` bearer tokens.
-- `writ logout` calls `DELETE /v1/auth/session` and deletes the local entry. When the server can't be reached, it still deletes the local entry and fails, because the session stays live on the server until it ends.
-- Any principal with `admin` on any grant can list sessions (`GET /v1/sessions`, filter `?person=`) and revoke them immediately (`DELETE /v1/sessions/{id}`).
-- Session tokens never appear in logs, audit rows, UI pages, or subsequent API responses.
-- The CLI never follows HTTP redirects from `writ serve` so `Authorization` headers can't leak across schemes or ports.
+- A session expires after `session_ttl` (default `12h`). There is no refresh.
+- Teams are fixed for the session's life. A person removed from an IdP group keeps the team until the session ends.
+- A `cli` session works as a bearer token on `/v1/*` (`via = cli session`) and cannot open `/ui/`. A browser session cannot be a `/v1/*` bearer token.
+- `writ logout` calls `DELETE /v1/auth/session` and deletes the local entry. If the server is unreachable, it still deletes the local entry and fails, because the session stays live on the server until it ends.
+- Any principal with `admin` on any grant can list sessions (`GET /v1/sessions`, filter `?person=`) and revoke one at once (`DELETE /v1/sessions/{id}`).
+- Session tokens never appear in logs, audit rows, UI pages, or later API responses.
+- The CLI never follows HTTP redirects from `writ serve`, so `Authorization` headers cannot leak across schemes or ports.
 
 ### Set up writ login
 
-`writ login` works with any `kind = "people"` issuer (`--issuer NAME` chooses among multiple).
-
-- **Device flow:** Issuer must publish `device_authorization_endpoint` in `/.well-known/openid-configuration` and enable device auth on the OAuth app.
-- **Browser flow:** Register `http://127.0.0.1/callback` alongside `https://URL/ui/callback` in the confidential OAuth app. The IdP must allow arbitrary loopback ports per RFC 8252 §7.3 (Doorkeeper 5.1+ supports this, though live GitLab hasn't been tested end-to-end yet).
+- **Device flow:** the issuer must publish `device_authorization_endpoint` in `/.well-known/openid-configuration`, and the OAuth app must enable device auth.
+- **Browser flow:** register `http://127.0.0.1/callback` next to `https://URL/ui/callback` in the confidential OAuth app. The IdP must allow any loopback port, per RFC 8252 §7.3. Doorkeeper 5.1+ does, but live GitLab has not been tested end to end.
 
 ## The control UI
 
-`writ serve` renders server-side HTML pages under `/ui/` (`GET /` redirects to `/ui/`). Each page calls the same `/v1` handlers in-process using your browser session, enforcing identical grants and writing audit rows (`via = browser session`), plus an audit row for the page request itself. Every page footer shows the matching API paths, CLI commands, and a `?as=json` link.
+`writ serve` renders server-side HTML under `/ui/`, and `GET /` redirects there. Each page calls the same `/v1` handlers in-process with your browser session, so it enforces the same grants and writes the same audit rows (`via = browser session`), plus one audit row for the page request. Every page footer shows the matching API paths, CLI commands, and a `?as=json` link.
 
 | Page | Documents | Contents |
 | --- | --- | --- |
-| `/ui/` | `writ.overview/v0` | Counts (pending approvals, active applies, 24h failures, drifted stacks), alerts (drift, failed checks, outside writes, failed runs, expiring plans, failed polls), active/pending plans, and up to 200 OpenTofu stacks |
+| `/ui/` | `writ.overview/v0` | Counts (pending approvals, active applies, 24h failures, drifted stacks), alerts (drift, failed checks, outside writes, failed runs, expiring plans, failed polls), active and pending plans, and up to 200 OpenTofu stacks |
 | `/ui/stack?stack=&env=` | `writ.state-index/v0`, `writ.drift/v0`, `writ.remote-runs/v0`, `writ.remote-plans/v0` | State index resources (never raw state values), latest drift check, outside-write markers, runs, and plans |
-| `/ui/runs`, `/ui/runs/{run}` | `writ.remote-runs/v0`, `writ.remote-run/v0` | Apply history and per-resource masked apply events or failure diagnostics |
-| `/ui/plans`, `/ui/plans/{id}` | `writ.remote-plans/v0`, `writ.remote-plan/v0` | Masked plan diff by module/address, risk classes, sensitive markers, drift, outputs, policy results, and Approve button |
-| `/ui/drift/{ref}` | `writ.drift-check/v0` | Single drift check: outside vs code changes, commit, timing, or error with `writ state adopt` command |
+| `/ui/runs`, `/ui/runs/{run}` | `writ.remote-runs/v0`, `writ.remote-run/v0` | Apply history, per-resource masked apply events or failure diagnostics |
+| `/ui/plans`, `/ui/plans/{id}` | `writ.remote-plans/v0`, `writ.remote-plan/v0` | Masked plan diff by module and address, risk classes, sensitive markers, drift, outputs, policy results, and the Approve button |
+| `/ui/drift/{ref}` | `writ.drift-check/v0` | One drift check: outside and code changes, commit, timing, or an error with the `writ state adopt` command |
 | `/ui/approvals` | `writ.remote-plans/v0` | Pending plans waiting on others or on you |
-| `/ui/access`, `/ui/whoami` | `writ.config/v0`, `writ.whoami/v0` | Configured teams/grants and your effective permissions |
+| `/ui/access`, `/ui/whoami` | `writ.config/v0`, `writ.whoami/v0` | Configured teams and grants, and your effective permissions |
 | `/ui/audit` | `writ.audit/v0` | Filterable audit log ([Read the audit log](audit-log.md#4-read-the-audit-log-in-the-control-ui)) |
 | `/ui/settings` | `writ.server/v0`, `writ.health/v0`, `writ.config/v0` | Server status, forges, notifier delivery counts, and browser theme |
 | `/ui/start` | `writ.server/v0`, `writ.repos/v0`, `writ.repo/v0`, `writ.remote-plans/v0` | Onboarding checklist and next step |
-| `/ui/repos`, `/ui/repos/{name}`, `/ui/repos/new` | `writ.repos/v0`, `writ.repo/v0` | Registered repositories, poll/webhook status, stacks, and Add repository form |
+| `/ui/repos`, `/ui/repos/{name}`, `/ui/repos/new` | `writ.repos/v0`, `writ.repo/v0` | Registered repositories, poll and webhook status, stacks, and the Add repository form |
 
-**Limits:** Active run pages refresh every 5 seconds rather than streaming live events. Browser sign-in has been tested against a local test issuer, not a live GitLab instance.
+**Limits:** active run pages refresh every 5 seconds instead of streaming live events. Browser sign-in has been tested against a local test issuer, not a live GitLab instance.
 
 ### Signing in
 
 1. Register `https://URL/ui/callback` with scopes `openid profile email` on your confidential OAuth app.
-2. Unauthenticated `/ui/*` requests redirect (`303`) to `/ui/login?next=PATH` (`next` is restricted to `/ui/`).
-3. `/ui/login/start` stores `state`, `nonce`, and a PKCE verifier in a 10-minute `HttpOnly` cookie and redirects to the IdP with an S256 challenge. Writ sends the challenge even when the discovery document doesn't list S256, and logs a warning at start.
-4. `/ui/callback` checks `state` in constant time, clears the cookie, exchanges the code with verifier and client secret, validates the ID token and nonce, resolves teams, and stores a `browser` session.
-5. `POST /ui/logout` ends the server session (without signing out of the IdP).
+2. An unauthenticated `/ui/*` request redirects (`303`) to `/ui/login?next=PATH`. `next` must be under `/ui/`.
+3. `/ui/login/start` stores `state`, `nonce`, and a PKCE verifier in a 10-minute `HttpOnly` cookie and redirects to the IdP with an S256 challenge. Writ sends the challenge even when the discovery document does not list S256, and logs a warning at start.
+4. `/ui/callback` checks `state` in constant time, clears the cookie, exchanges the code with the verifier and client secret, validates the ID token and nonce, resolves teams, and stores a `browser` session.
+5. `POST /ui/logout` ends the server session. It does not sign you out of the IdP.
 
-If a page's own audit row can't be written, the page answers `503`, sets no cookie, and redirects nowhere. A sign-out that can't end its session shows that page too: the cookie and the session stay.
+If a page cannot write its own audit row, it answers `503`, sets no cookie, and redirects nowhere. A sign-out that cannot end its session shows that page too, and the cookie and session stay.
 
 ### What every page sends
 
-Session cookies use `HttpOnly`, `SameSite=Lax`, and on `https://` URLs `Secure` plus the `__Host-` prefix. Forms are protected by cross-origin request checks (`Sec-Fetch-Site` and `Origin`). Every `/ui/` response enforces a strict CSP with no inline scripts/styles or third-party origins:
+- Session cookies are `HttpOnly` and `SameSite=Lax`, and on `https://` URLs also `Secure` with the `__Host-` prefix.
+- Forms are protected by cross-origin request checks (`Sec-Fetch-Site` and `Origin`).
+- Every `/ui/` response sets a strict CSP: no inline scripts or styles, no third-party origins.
 
 ```
 Cache-Control: no-store
@@ -168,18 +173,20 @@ Transfer-Encoding: chunked
 
 Headers from `/ui/whoami`, 2026-11-16.
 
-Pages work with JavaScript disabled (JavaScript adds local-timezone tooltips, relative timestamps, menu toggles, and copy buttons), use system fonts with no external assets, and support light and dark themes.
+Pages work with JavaScript disabled. JavaScript adds local-timezone tooltips, relative timestamps, menu toggles, and copy buttons. Pages use system fonts, load no external assets, and support light and dark themes.
 
 ## Troubleshooting
 
-- **Redirect URI mismatch in GitLab**: Register both `https://writ.example.com/ui/callback` and `http://127.0.0.1/callback` on separate lines.
-- **`writ login` fails over SSH**: Forward the loopback port or use `--device` if your IdP supports device auth.
-- **`429` starting sign-in behind a reverse proxy**: Add the proxy's CIDR to `trusted_proxies` so users don't share the 10-pending-login per-address limit.
-- **`sessions.json` refused**: File must be a regular file owned by you (`0600` in `0700`). Delete it and run `writ login` again.
-- **Offboarded user still has access**: Revoke active sessions immediately via `GET /v1/sessions?person=PERSON_ID` and `DELETE /v1/sessions/{id}`.
+| Problem | Fix |
+| --- | --- |
+| Redirect URI mismatch in GitLab | Register `https://writ.example.com/ui/callback` and `http://127.0.0.1/callback` on separate lines. |
+| `writ login` fails over SSH | Forward the loopback port, or use `--device` if your IdP supports device auth. |
+| `429` when starting sign-in behind a reverse proxy | Add the proxy's CIDR to `trusted_proxies`, so users do not share one address's limit of 10 pending logins. |
+| `sessions.json` refused | It must be a regular file you own, `0600` in a `0700` directory. Delete it and run `writ login` again. |
+| An offboarded user still has access | Revoke their sessions at once: `GET /v1/sessions?person=PERSON_ID`, then `DELETE /v1/sessions/{id}`. |
 
 ## Next steps
 
 - [Set up GitLab CI](set-up-gitlab-ci.md): OIDC auth for CI jobs.
 - [API: Token checks](api.md#token-checks): bearer and OIDC validation rules.
-- [Plan and apply](apply.md): plan, approve, and apply workflows.
+- [Plan and apply](apply.md): plan, approve, and apply.
