@@ -260,6 +260,12 @@ export const pages: Page[] = [
     description: 'Credential boundaries, OIDC verification, run sandboxing, secret masking, policy isolation, and explicit limits.',
     parts: whole('docs/security-model.md'),
   },
+  {
+    slug: 'how-run-isolation-works',
+    title: 'How run isolation works',
+    description: 'The filesystem view, seccomp filter, cgroup limits, scratch measurement, and egress proxy around each OpenTofu step, and what each does not cover.',
+    parts: whole('docs/how-run-isolation-works.md'),
+  },
 ];
 
 export const nav: NavEntry[] = [
@@ -304,6 +310,7 @@ export const nav: NavEntry[] = [
   { separator: 'Concepts' },
   'plan-to-apply',
   'security-model',
+  'how-run-isolation-works',
 ];
 
 // Where a link to a source file lands on the site.
@@ -344,4 +351,5 @@ export const fileRoutes: Record<string, string> = {
   'docs/glossary.md': '/docs/glossary',
   'docs/plan-to-apply.md': '/docs/plan-to-apply',
   'docs/security-model.md': '/docs/security-model',
+  'docs/how-run-isolation-works.md': '/docs/how-run-isolation-works',
 };
