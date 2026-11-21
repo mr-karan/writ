@@ -252,25 +252,16 @@ Both issuers share `identity = "gitlab"`, so a person's browser or CLI session a
 ```
 $ writ serve --config serve --check
 config serve: ok
-url: https://writ.example.com
-issuers: gitlab (gitlab-ci, https://gitlab.com), sso (people, https://gitlab.com, client 8f1c0b7e4d2a)
-control UI: https://writ.example.com/ui/, sign-in redirects to https://writ.example.com/ui/callback, sessions last 12h0m0s
-envs: prod, state in postgres://writ@/writ
-trusted proxies: 127.0.0.1/32; X-Forwarded-For names the client only when one of them sends it
-providers run as: uids 61000-61063, one for each running plan
-tofu: tofu, plugin cache /var/lib/writ-tofu/plugins, scratch directories in /var/lib/writ-tofu/runs
 approvals: rule 1: app in prod with create update replace delete data-loss needs 1
 TEAM             ENV   STACKS  CAN         RISKS
-acme             prod  app     read        -
 infra_main       prod  app     read apply  create update replace delete
-infra_mr         prod  app     read plan   -
 infra_reviewers  prod  app     approve     -
 tofu: /nix/store/60vqi4v8n11afd5ks89j1kn7pgwfrww5-opentofu-1.13.9/bin/tofu is OpenTofu 1.13.9: ok
 warning[usage]
   isolation not checked: run writ as provider uid 61000: fork/exec /var/tmp/writ-landing2/qs/bin/writ: operation not permitted; writ serve checks its capabilities at start
 ```
 
-Real run, 2026-11-16, without `CAP_SETUID`, so isolation warned.
+Excerpt of a real run, 2026-11-16, without `CAP_SETUID`, so isolation warned.
 
 Start the server with `writ serve --config serve`. On NixOS, [the module](run.md#on-nixos) sets up Postgres, capabilities, the metadata firewall, and `--check`.
 
@@ -280,16 +271,11 @@ Run `writ login https://writ.example.com`. GitLab.com publishes no OAuth device 
 
 ```
 $ writ login http://127.0.0.1:35309
-Signing in to http://127.0.0.1:35309 through issuer sso.
-To sign in, open https://127.0.0.1:36093/oauth/authorize?client_id=writ-e2e&code_challenge=QqueYeHu6tMmOgOABEnQeLVDZ4E2tW41WqKkByO5AdM&code_challenge_method=S256&nonce=BV_F4WYQLxLGVMYFi9phIfQaGZKgk6l7-QCRw0TZzEU&redirect_uri=http%3A%2F%2F127.0.0.1%3A36443%2Fcallback&response_type=code&scope=openid+profile+email&state=BGX7AJ5XD2T6KK7AUC6OMKYHR2 in a browser on this computer.
+To sign in, open https://127.0.0.1:36093/oauth/authorize?client_id=writ-e2e&... in a browser on this computer.
 The sign-in expires in 10 minutes.
 Signed in to http://127.0.0.1:35309 as bob (gitlab/user/2002).
-Teams: acme
-Session ends 2026-11-16T20:39:54Z.
 $ writ whoami
 http://127.0.0.1:35309 (from your session), session of bob (gitlab/user/2002, issuer sso), ends 2026-11-16T20:39:54Z
-teams: acme
-prod  app  read  -
 ```
 
 Or open `https://writ.example.com/ui/repos/infra` in a browser and sign in through GitLab.
