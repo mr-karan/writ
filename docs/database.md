@@ -23,7 +23,7 @@ The control database stores all control plane state: configs, repositories, plan
 | `apply_key_floor` | Monotonic highest timestamp of pruned `none` keys so clock rollback can't reopen closed keys |
 | `role_sessions` | Assumed AWS STS role sessions linked to plans and runs |
 | `tfstate_tokens` | Active HTTP-backend run tokens (SHA-256 only, run ID, `stack@env`, `plan`/`apply`, expiry); deleted on run end |
-| `tfstate_versions` | Versioned HTTP-backend states: serial, lineage, SHA-256, run ID, timestamp, sealed state bytes, and sealed secret set |
+| `tfstate_versions` | Versioned HTTP-backend states: serial, lineage, SHA-256, run ID, timestamp, sealed state bytes, and sealed secret set. Only the newest 20 versions of each `stack@env` are kept |
 | `tfstate_locks` | Active HTTP-backend locks per `stack@env` (lock ID, run ID, OpenTofu lock payload) |
 | `state_index`, `state_index_stacks` | [State index](serve.md#the-state-index) resources (allow-listed attributes only) and per-`stack@env` backend, indexed version/serial, lineage, outside-write serial, and last adoption time |
 | `state_s3_stacks` | Per-`stack@env` S3 state tracking metadata |
