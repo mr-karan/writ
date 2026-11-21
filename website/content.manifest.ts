@@ -293,7 +293,7 @@ export const pages: Page[] = [
   {
     slug: 'how-the-mask-works',
     title: 'How the mask works',
-    description: 'The four rules of Writ's mask, what it learns from each run, and when it drops a whole document rather than risk a leak.',
+    description: 'The four rules of Writ’s mask, what it learns from each run, and when it drops a whole document rather than risk a leak.',
     parts: whole('docs/how-the-mask-works.md'),
   },
   {
