@@ -32,7 +32,7 @@ Each Writ term has one meaning across the docs, CLI, and UI. Where Terraform or 
 | commit plan | A plan generated from a Git commit fetched by `writ serve`. | |
 | speculative plan | Legacy plan created from client-uploaded files. Team servers never approve or apply one. | Speculative plan |
 | saved plan | Binary output of `tofu plan -out`, sealed with the environment key. Applied by `tofu apply`; never served by any API route. | Saved plan |
-| risk class | Change category used by grants and approval rules: `create`, `update`, `replace`, `delete`, or `data-loss`. In OpenTofu plans, `forget` maps to `delete`, `import` adds `create`, and no change maps to `data-loss`. | |
+| risk class | Change category used by grants and approval rules: `create`, `update`, `replace`, `delete`, or `data-loss`. In OpenTofu plans, `forget` maps to `delete` and `import` adds `create`. `data-loss` is a valid class for grants and approval rules, but no OpenTofu change produces it today. | |
 | apply | Running an approved saved plan on `writ serve`, or `writ apply --remote`. | Apply |
 | run | One apply started by `writ serve`, listed by `writ runs --remote`. | Run |
 | actor | The principal recorded as starting a run. | |
