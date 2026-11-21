@@ -75,7 +75,7 @@ env "prod" {
 }
 ```
 
-Use `provider_env` (variable name to secret file path) for non-AWS providers or `TF_VAR_*` inputs. Keys prefixed with `AWS_`, `TF_` (other than `TF_VAR_`), `PLUGIN_`, `WRIT_`, `HOME`, or `TMPDIR` are refused.
+Use `provider_env` (variable name to secret file path) for non-AWS providers or `TF_VAR_*` inputs. Writ refuses names that start with `AWS_`, `TF_` (other than `TF_VAR_`), `PLUGIN_`, or `WRIT_`, and the names `HOME` and `TMPDIR`.
 
 ### 4. Check the configuration
 
@@ -120,7 +120,7 @@ CloudTrail session attribution:
 ## Troubleshooting
 
 - **Immediate `denied` naming the role**: Confirm the trust policy allows both `sts:AssumeRole` and `sts:SetSourceIdentity` and that the role's max session duration >= `aws.session`.
-- **`--check` refuses a `provider_env` key**: Remove reserved prefixes (`AWS_`, non-`TF_VAR_` `TF_`, `PLUGIN_`, `WRIT_`, `HOME`, `TMPDIR`).
+- **`--check` refuses a `provider_env` key**: Rename it. Names that start with `AWS_`, `TF_` (other than `TF_VAR_`), `PLUGIN_`, or `WRIT_` are reserved, and so are `HOME` and `TMPDIR`.
 - **S3 stack refused**: Use literal values only, set `use_lockfile = true` or `dynamodb_table`, remove inline credentials/profiles/roles, and match any custom `endpoints.s3` to `env.s3_endpoints`.
 - **S3 stack fails under `--dev`**: Dev mode has no credential broker; use `backend "http" {}`.
 
