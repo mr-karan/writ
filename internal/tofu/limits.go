@@ -223,7 +223,7 @@ func (sc *scratch) overScratch(max int64, cg *stepCgroup) string {
 	case errors.Is(err, errScratchMaps):
 		return fmt.Sprintf("the step's processes map more than writ reads of them, %s of /proc/PID/maps, to measure the removed files they hold for limits.run_scratch, so it stopped the step", formatSize(heldMapsMax))
 	case errors.Is(err, errScratchFiles):
-		return fmt.Sprintf("the step's processes hold more than 65,536 removed files, past which writ does not count them for limits.run_scratch, so it stopped the step")
+		return "the step's processes hold more than 65,536 removed files, past which writ does not count them for limits.run_scratch, so it stopped the step"
 	case errors.Is(err, errScratchDeep):
 		return fmt.Sprintf("the run's directory nests more than %d directories deep, past which writ does not measure it for limits.run_scratch, so it stopped the step", scratchDepth)
 	case err != nil:
