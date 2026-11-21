@@ -1,10 +1,8 @@
 # Import many objects
 
-`writ import bulk` brings objects that someone created by hand, in a console or with a script, under an OpenTofu stack. Writing a `resource` and an `import` block for each one is slow and easy to get wrong, so it writes them for many objects in one run.
+`writ import bulk` reads existing cloud objects through OpenTofu providers and generates a `.tf` file containing `resource` and `import` blocks plus a manifest of selected objects. Run `tofu plan -out=PLAN` and verify the plan with `writ import accept` before applying:
 
-It reads your objects from their providers and writes one new file of `resource` and `import` blocks that declare them. Then `tofu plan` plans their import, and `writ import accept` checks that plan:
-
-```
+```sh
 writ import bulk SELECTION.json [--out FILE] [--max-objects N] [--max-bytes N] [--json]
 writ import bulk --type TYPE --id ID... [--provider ADDR] [--out FILE] [--max-objects N] [--max-bytes N] [--json]
 writ import accept --imports FILE PLAN [--json]
@@ -12,44 +10,34 @@ writ import accept --imports FILE PLAN [--json]
 
 ## How it works
 
-Run `writ import bulk` in a directory that has a `.terraform.lock.hcl`, `.tf` or `.tofu` files, and no `.writ` file; it refuses any other. From there it reads your objects through their providers, and writes `resource` blocks and `import` blocks into one new file, `imported.tf` by default.
+Run `writ import bulk` inside a stack directory containing `.terraform.lock.hcl`, `.tf` or `.tofu` files, and no `.writ` file. It writes `imported.tf` (or `--out`) and a companion manifest `imported.imports.json` (`--out` with `.imports.json` replacing `.tf`), without planning or writing state.
 
-Beside that file, in `imported.imports.json` (the name of `--out` with `.imports.json` in place of `.tf`), it records each object it selected: the resource address the import block adopts it as, and its import id. You get no state written and nothing planned.
-
-Your `tofu plan` reads the objects again and adopts them. Writ accepts the import when that plan imports exactly the recorded objects and changes nothing but the provider-only settings below.
-
-Here's what to expect from the run:
-
-- **Your lock file decides the providers.** Writ reads each object through the version the lock pins, and starts it only when the archive in Writ's provider cache has one of the lock's `zh:` hashes. If the cache lacks a provider, Writ downloads it first.
-- **Writ reads your code from regular files.** It reads the stack's code from its regular `.tf` and `.tofu` files. If your stack has a `.tf.json` or `.tofu.json` file, or a `.tf` or `.tofu` file that's a symlink, Writ refuses it, because OpenTofu reads those too, and a name they declare could clash with the code Writ writes.
-- **Your provider blocks configure the providers.** Writ reads literal values only: if an argument refers to a variable or calls a function, the run is refused before any read. Set such a value in the environment the provider reads.
-- **You name types as OpenTofu does.** A selection lists types such as `random_uuid`, and a provider configuration as `NAME.ALIAS`, such as `aws.west`.
-- **Objects of one shape share a resource.** They become one `resource` with `for_each`, and one `import` block over the same keys. A nested block takes no expression, so objects whose nested blocks differ don't share a resource.
-- **Resources get readable names.** Writ never puts an ARN or an account id in a resource name or a `for_each` key. See [How resources are named](#how-resources-are-named).
-- **Secrets become variables.** A secret becomes a `variable` with `sensitive = true`. Set it with `TF_VAR_NAME`.
-- **Some objects can't be imported safely.** OpenTofu refuses an import id that's sensitive, and prints every import id in its plan. So if an object's import id is one of its own secrets, such as a `random_password`, it's `not imported`, and nothing is written.
-- **Runtime-owned fields are ignored.** A field that a runtime usually owns goes into `lifecycle { ignore_changes = [...] }`.
-- **Long strings are heredocs.** A string of several lines, such as a Nomad jobspec, is a heredoc.
-- **Strings must be NFC.** OpenTofu keeps every string of its code in Unicode normal form C (NFC), so an id of `e` and a combining accent would import the precomposed `é`, and tofu would plan to replace the object. If an object's import id, or any string or map key of its code, is in another form, it's `not imported`, and nothing is written.
-- **`--out` must be a new file.** It sets a new `.tf` file. Writ refuses it when it or its `.imports.json` file exists, or when `X.tofu`, `X.tf.json`, or `X.tofu.json` exists for `--out X.tf`: OpenTofu ignores `X.tf` beside `X.tofu`, and reads the JSON forms with it. Writ also refuses `override.tf` and a name that ends in `_override.tf`, which OpenTofu reads as an override of other files.
+- **Lock-file verified providers:** Runs the exact provider versions pinned in `.terraform.lock.hcl`, verifying `zh:` archive hashes before starting (downloading into Writ's cache if absent).
+- **Regular HCL files only:** Refuses stacks containing `.tf.json`, `.tofu.json`, or symlinked `.tf`/`.tofu` files to prevent declaration clashes.
+- **Literal provider blocks:** Provider configuration blocks must contain literal values only; supply dynamic settings via provider environment variables.
+- **OpenTofu naming:** Resource types use OpenTofu names (`random_uuid`), and alternate provider configs use `NAME.ALIAS` (`aws.west`).
+- **Grouping:** Objects of identical shape share one `for_each` `resource` and `import` block (objects with differing nested blocks stay separate).
+- **Readable names:** Resource names and `for_each` keys never contain ARNs or 12-digit AWS account IDs ([How resources are named](#how-resources-are-named)).
+- **Sensitive attributes:** Secrets become `variable` blocks with `sensitive = true` (set via `TF_VAR_*`). Objects whose import ID is itself sensitive (such as `random_password`) are marked `not imported` and skipped because OpenTofu refuses sensitive import IDs.
+- **Runtime fields and heredocs:** Runtime-owned attributes go into `lifecycle { ignore_changes = [...] }`; multiline strings (such as Nomad jobspecs) format as heredocs.
+- **Unicode NFC required:** OpenTofu normalizes strings to NFC; non-NFC import IDs or attribute strings are marked `not imported` to avoid replacement diffs.
+- **Safe output target:** `--out` must be a new `.tf` file (refused if it, its `.imports.json`, `X.tofu`, `X.tf.json`, or `X.tofu.json` exists, or if named `override.tf` / `*_override.tf`).
 
 ### How resources are named
 
-Writ names each resource after what you'd call the object: its `name` attribute, else its `Name` tag, else its import id. A `for_each` key comes from the same places, when every object in the resource has a different one.
-
-Some types have an ARN for an import id and no `name` attribute. An ARN contains your account id, so Writ builds their names from the object's settings instead, under its parent's name when the run imports the parent too:
+Names and `for_each` keys come from `name`, then the `Name` tag, then the import ID. Types whose import ID is an ARN without a `name` attribute derive names from configuration (and their parent if imported in the same run):
 
 | Type | Built from | Example |
 | --- | --- | --- |
 | `aws_lb_listener` | load balancer, protocol, port | `aws_lb_listener_web_http_80` |
-| `aws_lb_listener_rule` | listener, then the `Name` tag or the priority | `aws_lb_listener_rule_web_http_80_priority_10` |
+| `aws_lb_listener_rule` | listener, then `Name` tag or priority | `aws_lb_listener_rule_web_http_80_priority_10` |
 | `aws_acm_certificate` | domain name | `aws_acm_certificate_example_com` |
 
-Without its load balancer in the run, that listener is `aws_lb_listener_http_80`. Writ never uses a label that contains `arn:`, or a run of exactly 12 digits, as an AWS account id is, in a name or a `for_each` key. The one exception is the last group of a whole UUID: 36 characters of hex digits in groups of 8, 4, 4, 4 and 12, with no letter or digit right before or after them. A UUID that a letter or digit touches gets no exception. An object with nothing else to go by gets a number, such as `aws_acm_certificate_1`.
+Labels containing `arn:` or standalone 12-digit runs (AWS account IDs) are rejected, except for the 12-hex-digit final group of a standalone 36-character UUID. Fallback names use a sequence number (`aws_acm_certificate_1`).
 
 ## Import and accept
 
-Here's a run with a selection file of random objects that `tofu apply` created in another stack:
+Example importing five `random` objects from a selection file:
 
 ```
 $ writ import bulk select.json
@@ -63,7 +51,7 @@ wrote imported.imports.json: the objects that tofu plan should import
 Read 5 objects and wrote no state. tofu plan should show 5 to import, 0 to add, 0 to change, 0 to destroy; save it with tofu plan -out=PLAN and check it with writ import accept --imports imported.imports.json PLAN.
 ```
 
-Part of what `imported.tf` has:
+Excerpt from `imported.tf`:
 
 ```hcl
 # 2 random_integer objects
@@ -88,7 +76,7 @@ import {
 }
 ```
 
-And part of what `imported.imports.json` has:
+Excerpt from `imported.imports.json`:
 
 ```json
 {
@@ -110,9 +98,7 @@ And part of what `imported.imports.json` has:
 }
 ```
 
-In that file, each import refers to a resource of the root module by `type`, `name`, and `key`, the `for_each` key, `null` for a resource without `for_each`, and `id` is its import id. Keep the file next to your code until the import is accepted.
-
-In the stack's empty state, `tofu plan` printed `Plan: 5 to import, 0 to add, 0 to change, 0 to destroy.` Then save the plan and check it:
+Save the plan and verify it with `writ import accept`:
 
 ```
 $ tofu plan -out import.plan
@@ -120,38 +106,31 @@ $ writ import accept --imports imported.imports.json import.plan
 Accepted: the plan imports 5 objects and changes nothing else.
 ```
 
-Here `PLAN` is the plan file that `tofu plan -out` saved.
-
 ### How writ import accept reads the plan
 
-When you run `writ import accept`, it reads `PLAN` with `tofu show -json PLAN`, which it runs itself, with the `tofu` on `PATH`. That runs in the directory of the imports file, or in `--dir` when that isn't `.`. That directory must be your stack's, initialized, because `tofu show` reads the providers' schemas from its `.terraform`.
+When `PLAN` is a saved OpenTofu plan file, `writ import accept` runs `tofu show -json PLAN` in the imports file's directory (or `--dir`), which must already be initialized. If `tofu show` fails, stderr is withheld so unmasked secrets don't leak; run `tofu show` directly to diagnose.
 
-If `tofu show` fails, `writ import accept` fails without printing what `tofu` wrote to stderr, which the mask hasn't read. To see why, run the same command there yourself.
-
-You can also pass a JSON document of the plan as `PLAN`, or `-` to read one from stdin: the masked plan document, the output of `writ plan --remote --json`, or the output of `tofu show -json`, which it masks first. Nothing proves that a JSON document shows the plan that will be applied. So from one, `writ import accept` accepts only imports that plan no update, and it refuses an import update with a reason that tells you to pass the saved plan file.
+You can also pass a JSON plan file or `-` on stdin (a masked plan, `writ plan --remote --json`, or raw `tofu show -json`, which Writ masks first). Because JSON doesn't prove which saved plan will apply, JSON input accepts no-op imports only and refuses plans with provider-only in-place updates.
 
 ### What it accepts
 
-Writ accepts your plan when all of these are true:
+A plan is accepted only when:
 
-- Your plan didn't error.
-- It imports each object that `--imports` records exactly once, at its address and by its import id, as a no-op or as an update of provider-only settings alone.
-- It imports nothing else.
-- Every other resource change is a no-op. If a no-op imports nothing, it's a resource your state already has.
+- The plan didn't error.
+- Every object in `--imports` is imported once at its exact root-module address and import ID, as a no-op or an allow-listed provider-only update.
+- No extra imports or resource changes exist (existing state resources must be `no-op`).
 
-You get a refusal, with the address, for any of these: an import at another address, an import in a module, an import whose `address` isn't the one its `type`, `name`, and `index` make, a second import at one address, an import with another id, a recorded object the plan doesn't import, and any other change.
+Any mismatch (wrong address, module import, duplicate import, wrong ID, missing object, or non-allow-listed change) is refused with the offending address.
 
 ### Provider-only settings
 
-Some providers keep a setting that the object doesn't have, and OpenTofu plans it in place on the first plan after the import. So `writ import accept` has a fixed list of such provider-only settings, each measured on the provider and version it lists:
+Some providers omit provider-local settings during import, causing an in-place update on the first plan. `writ import accept` maintains a measured allow-list:
 
 | Provider | Version | Type | Settings |
 | --- | --- | --- | --- |
 | `registry.opentofu.org/hashicorp/nomad` | 2.6.1 | `nomad_job` | `deregister_on_destroy`, `deregister_on_id_change`, `detach`, `preserve_counts`, `read_allocation_ids`, `rerun_if_dead` |
 
-For example, if you import a Nomad job that `tofu` registered with `hashicorp/nomad` 2.6.1, the plan is `1 to import, 0 to add, 1 to change`, and the update sets each of those six settings from null to its default (measured with `just e2e-import-hcl` on 2026-11-14). Since the provider gives each setting a default and its importer sets none of them, your code that sets the defaults plans the same update.
-
-Writ accepts an import that updates in place, with no replace path, when every attribute that the update changes is on the list for its provider and type, and the value that each sets is known and not sensitive. You see each setting printed:
+For saved plan files, Writ accepts an in-place update (no replace path) when every changed attribute is on that list for the provider address and resource type, with known, non-sensitive values:
 
 ```
 $ writ import accept --imports imported.imports.json import.plan
@@ -164,43 +143,24 @@ $ writ import accept --imports imported.imports.json import.plan
 Accepted: the plan imports 1 object, sets 6 provider-only settings that the cloud does not return, and changes nothing else.
 ```
 
-With `--json`, the report's `settings` lists each setting with its `address`, `attribute`, `value`, `provider`, and `version`.
-
-Writ refuses an update that also changes another attribute, such as the jobspec, adds or removes one, even as null, changes its sensitive marks, or makes a value unknown until apply. You'll see each attribute that isn't on the list in the refusal. Writ also refuses an update of a listed setting whose value is unknown until apply, or sensitive, anywhere in it, and the refusal gives the setting.
-
-To see what the update changes, `writ import accept` reads the values of `tofu show -json` of the saved plan before it masks them. That's because the mask can replace two different values, such as two jobspecs that sensitive variables contain, with one placeholder. Everything it prints, values, attribute names, and refusals, passes the mask of that plan, so if an attribute name contains a sensitive value, you see `(sensitive)` in its place.
-
-Only from the saved plan file is an import that plans an update accepted. Because the list matches the provider's address in the plan, a fork of a provider isn't on it. Writ doesn't check the provider's version, because the plan has only the version constraint.
-
-When you apply the plan, the settings are stored in state. For Nomad, the `hashicorp/nomad` update registers the jobspec again, and the Nomad agent keeps the job's version and modify indexes because the spec didn't change. Your next plan has no changes (measured the same way). Note that `writ import bulk` doesn't use the list yet: for such a job it reports that the provider couldn't prove a no-change plan, and still expects `0 to change`.
-
-Launch templates aren't on the list. With `hashicorp/aws` 6.70.0, a launch template's import reads `update_default_version` as null and `writ import bulk` leaves it out, so the plan only imports. If your code sets it to `true` instead of `default_version`, the plan has `default_version` as unknown, because the provider's update moves the default version to the latest one. That's a change to the object, and `writ import accept` refuses it (measured against a stand-in of the AWS API with `just e2e-import-hcl` on 2026-11-14).
+`--json` lists each setting under `settings` (`address`, `attribute`, `value`, `provider`, `version`). Writ inspects raw `tofu show -json` diffs before masking so two different sensitive values can't look equal, then masks all printed output. After applying, the next plan shows no changes. (Launch templates with `update_default_version = true` aren't allow-listed because updating moves the live default version.)
 
 ## Write a selection file
 
-You write a selection file in JSON, because an id can contain commas, quotes, and newlines. Pass `-` to read it from stdin. In it you list entries under `objects`, and each entry selects objects of one `type` in one of four ways:
+Pass a JSON selection file (or `-` for stdin) with an `objects` array. Each entry targets one `type` (plus optional `provider` alias like `aws.west`):
 
 | Field | Selects |
 | --- | --- |
-| `ids` | The objects with these import ids. |
-| `values` and `id` | One object for each record in `values`. `id` is a template: `{b}` is the record's field `b`. |
-| `from` and `id`, with `over` | One object for each object of type `from` that an earlier entry read. `{parent.ATTR}` reads that object. With `over: "route"`, one object for each element of the parent's `route` list, and `{item.ATTR}` reads the element. |
-| `list` | The objects that the provider lists, with the record as the list config of the type. See [Listing objects](#listing-objects). |
+| `ids` | Explicit import IDs. |
+| `values` and `id` | One object per record in `values`, expanding template `id` (`{field}`). |
+| `from` and `id` (with `over`) | One object per earlier `from` object (`{parent.ATTR}`), or per element of its `over` list (`{item.ATTR}`). |
+| `list` | Objects returned by the provider's `ListResource` call ([Listing objects](#listing-objects)). |
 
-Keep these rules in mind:
-
-- Set `type` as OpenTofu does, such as `aws_subnet`. To read an entry's objects through another provider configuration, set `provider` on the entry, written `NAME.ALIAS`, such as `aws.west`, and the code sets `provider`.
-- In a template, `{{` and `}}` write a brace. If a placeholder's value is null or missing, Writ skips that one object. If a placeholder's value is a secret, Writ refuses it.
-- Your template can be at most 2,048 bytes, and so can the id it builds. Your run expands templates at most 10 times `--max-objects`, counting the expansions skipped for a missing value.
-- Entries run in order, so `from` refers to a type that an earlier entry selects.
-
-For a few objects, you don't need a file. With `--type TYPE --id ID`, you select objects the same as one entry with `ids`. Repeat `--id` for each object.
+Template rules: escape braces with `{{` / `}}`; null/missing placeholders skip that object; secret placeholders are refused; templates and built IDs cap at 2,048 bytes; total expansions cap at `10 * --max-objects`. Entries execute in order. For small sets, skip the file and pass `--type TYPE --id ID...`.
 
 ## Listing objects
 
-With a `list` entry, you ask the provider for the objects of a type through `ListResource`, a call of plugin protocol versions 5.10 and 6.10. Your record is the type's list config, which the provider defines separately from the resource's attributes.
-
-In `hashicorp/aws` 6.70.0, for example, the list config of `aws_subnet` has `region`, `subnet_ids`, and a `filter` block, and no `vpc_id`. This entry selects the subnets of one VPC:
+`list` entries call the plugin protocol's `ListResource` RPC using the resource type's list configuration schema. Example for `aws_subnet` in `hashicorp/aws` 6.70.0:
 
 ```json
 {
@@ -210,64 +170,53 @@ In `hashicorp/aws` 6.70.0, for example, the list config of `aws_subnet` has `reg
 }
 ```
 
-Here's how a listing behaves:
-
-- If you give a field that the list config doesn't have, Writ refuses the entry before it calls the provider, and the reason gives the field. Writ then asks the provider to validate the query with `ValidateListResourceConfig`, and an error refuses the entry before the listing, such as a `filter` without its required `name`.
-- The provider returns a resource identity for each object. For the import id, Writ uses the one identity attribute that the provider requires for import, such as `id` for `aws_subnet` and `aws_instance`, `name` for `aws_iam_role`, and `bucket` for `aws_s3_bucket`. Writ then reads each id as an `ids` entry does, with the same refusals and skips. If an earlier entry selected an object, Writ skips it.
-- `--max-objects` bounds a listing. Only ids that no earlier entry selected count against it. Writ asks the provider for one more object than the room left, plus one for each id the run already selected of the type, and stops reading at that count. If the provider has more new objects than the room, the run stops and writes nothing.
-- A provider can list one object more than once. So Writ asks for 4 times as many objects as it needs plus 16, and keeps each id once. If the provider sends that many before Writ has the distinct ids it needs, the list may have more objects than it showed, so the entry is `not imported`.
-- A listing keeps at most 20 warnings and 16 KiB of their text and attribute paths, cuts each path to 1 KiB, and counts the rest. If an identity is larger than 16 KiB, or an import id longer than 2,048 bytes, the entry fails.
-- If the provider returns an error for any object, the whole entry fails, so a part of a list never passes for all of it.
-- A secret in your query is a secret of the run, so no problem prints it. When the query contains a secret, Writ withholds the text of a refusal of the listing, because a provider may quote or escape the secret it echoes.
-- Writ reads each id through the entry's provider configuration. For the objects of another region, set `provider` on the entry to a configuration for that region.
-
-Some types can't be listed. You get `not imported`, with a reason, when the type's provider has no list resource for it, or when its identity has more than one attribute required for import, or none.
-
-In `hashicorp/aws` 6.70.0, 259 types have a list resource, and 179 of them have exactly one identity attribute required for import, a string. Those other 80 include `aws_ecs_service`, whose identity is `cluster` and `name`, and `aws_route53_record`. We counted them in a scratch run from the provider's `GetProviderSchema` and `GetResourceIdentitySchemas` answers on 2026-11-12. Neither `random` 3.9.1, `tls` 4.4.2, nor `local` 2.9.1 has a list resource.
-
-For example, this problem is from the JSON report of a `list` entry for `random_uuid`:
+- Unknown fields or `ValidateListResourceConfig` errors refuse the entry before listing.
+- Writ extracts the single required string import attribute from each returned identity (for example `id` for `aws_subnet`, `name` for `aws_iam_role`, `bucket` for `aws_s3_bucket`), skips already-selected IDs, and reads each object through the entry's provider configuration.
+- Listings respect `--max-objects` (counting only newly selected IDs), deduplicate up to `4 * needed + 16` raw items before marking `not imported`, fail the whole entry on any item error, cap warnings at 20 / 16 KiB, and cap identities at 16 KiB / IDs at 2,048 bytes.
+- Secrets inside a `list` query are masked and withhold provider refusal details.
+- Types without a `ListResource` implementation (such as `random`, `tls`, `local`), or with zero or multiple required identity attributes (such as `aws_ecs_service` or `aws_route53_record`), report `not imported`:
 
 ```json
 {"kind":"not imported","from":"objects[0]","reason":"provider hashicorp/random does not list objects of random_uuid; select them by ids, values, or from"}
 ```
 
+(In `hashicorp/aws` 6.70.0, 259 types implement `ListResource` and 179 have a single required string identity attribute.)
+
 ## Refusals and skips
 
 | Case | Result |
 | --- | --- |
-| The file set by `--out` exists. | A `usage` error before any read. |
-| The file set by `--out` appears while the objects are read. | A `usage` error. The file is kept, and nothing is written. |
-| An id is empty or longer than 2,048 bytes. | A `usage` error before any read. |
-| The provider finds no object, or rejects the id. | The object is `not imported`, and nothing is written. |
-| The templates expand more than 10 times `--max-objects`. | A `usage` error, and nothing is written. |
-| An `ids` or `values` entry selects an object that an earlier id selected. | A `usage` error that names both entries, and nothing is written. One object is the same type, provider configuration, and import id, or two import ids that the provider reads as the same object. |
-| A `from` entry derives an id for an object that an earlier id selected. | The object is `skipped`, because the run imports it once. |
-| A placeholder has no value, or `from` refers to a type the run read no object of. | That object, or that entry, is `skipped`. |
-| No object is left to import. | A `usage` error, and nothing is written. |
+| `--out` exists before or appears during the run | `usage` error; nothing written |
+| Empty ID or ID > 2,048 bytes | `usage` error before reads |
+| Provider finds no object or rejects ID | `not imported`; nothing written |
+| Template expansions exceed `10 * --max-objects` | `usage` error; nothing written |
+| Duplicate object in `ids` or `values` (by ID or resolved object) | `usage` error naming both entries; nothing written |
+| `from` derives an already-selected object | `skipped` |
+| Missing placeholder or empty `from` parent type | `skipped` |
+| Zero objects left to import | `usage` error; nothing written |
 
 ## Limits
 
-- `--max-objects N`, 500 by default, bounds the objects that one run reads. That count includes the objects that the entries expand to, and the ids whose reads fail. Your run counts each entry's ids before it reads any of them. When the count passes the limit, the run stops and writes nothing.
-- `--max-bytes N`, 1 MiB by default, bounds the file after formatting. A larger file is refused, and nothing is written.
-- A selection file is at most 4 MiB.
-- The secrets that the check compares values against are at most 64 MiB, counting each distinct secret of 8 or more bytes once, without its line breaks. Their index uses about 5 bytes of memory for each byte of secret. If they contain private keys, their key text has a second index, of the same size or smaller. When the limit is passed, the run stops before it builds an index, and writes nothing.
-- The time that the check takes grows with the size of each value that it compares. When a secret contains a PEM private key, a value of 16 MiB of random base64 took 2.2 s to check, and 0.15 s when no secret contains a key. We measured both with a `go test` run on 2026-11-12, on a 16-core x86-64 machine. Writ has no limit of its own on the size of a value that the check compares. A provider sends at most 64 MiB in one message, so one value is at most 64 MiB.
-- Reads run at most 10 at a time.
+- `--max-objects` (default `500`): max expanded objects per run (checked before reads; excess aborts without writing).
+- `--max-bytes` (default `1 MiB`): max formatted output size.
+- Selection file max: `4 MiB`.
+- Secret comparison index max: `64 MiB` of distinct secrets >= 8 bytes (about 5 bytes memory per byte of secret, plus a second index for PEM keys).
+- Provider message max: `64 MiB` per value; up to `10` concurrent reads.
 
 ## What it doesn't do
 
-- It doesn't import by resource identity. If you write a `list` entry for a type whose identity has more than one attribute required for import, it's `not imported`. Select those objects by `ids`, `values`, or `from`.
-- It doesn't keep the object that a provider lists. It reads each listed id again, so a listing of 50 objects is one list call and 50 reads.
-- It doesn't derive ids from resources that the stack had before the run. `from` reads objects of the same run.
-- It doesn't group objects whose attributes differ in shape.
-- It can't read a type whose provider refuses import, such as `local_file` and every `tls` type.
+- Doesn't import by multi-attribute resource identity (`ids`, `values`, or `from` required).
+- Re-reads each listed object by ID (50 listed objects = 1 list call + 50 reads).
+- `from` references only objects read in the same run, not existing stack state.
+- Doesn't merge objects with differing nested block shapes into one `for_each`.
+- Can't import types whose provider doesn't support import (`local_file`, `tls_*`).
 
 ## JSON
 
-With `--json`, you get one `writ.import-bulk/v0` document, and from `writ import accept --json` one `writ.import-accept/v0` document. [JSON output](json-output.md) gives their fields.
+`writ import bulk --json` outputs `writ.import-bulk/v0`, and `writ import accept --json` outputs `writ.import-accept/v0` ([JSON output](json-output.md)).
 
 ## Next steps
 
-- [Commands](commands.md): every command and flag.
-- [Plan and apply](apply.md): plan and apply the generated import blocks on the control plane.
+- [Commands](commands.md): full CLI reference.
+- [Plan and apply](apply.md): plan and apply generated imports on the control plane.
 - [How a plan becomes an apply](plan-to-apply.md): how Writ seals and approves the resulting plan.
