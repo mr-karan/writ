@@ -1,31 +1,29 @@
 # Adopt a state
 
-Sometimes Writ can't vouch for a state it didn't write. When a state has no secret set, Writ keeps no detail of its plans and drift checks, and no one can approve a plan against it. [States with no secret set](serve.md#states-with-no-secret-set) explains why.
+When a stack's state wasn't written by `writ serve`, Writ has no secret set for it. Until a secret set exists, Writ withholds plan and drift details and refuses approval for plans against that state ([States with no secret set](serve.md#states-with-no-secret-set)).
 
-`writ state adopt` fixes that. It seals a secret set with such a state, so plans and drift checks of the stack keep their detail again and you can approve a plan.
+`writ state adopt` reads the state, seals a secret set for it, and populates the state index so plans can be approved again. Use it when:
 
-You need it in three cases:
-
-- for a state that an apply outside Writ wrote to a stack's bucket,
-- for the state a bucket had before `writ serve` first planned the stack,
-- or for a version on the http backend written before `writ serve` kept secret sets.
+- Someone applied directly to a stack's S3 bucket outside Writ.
+- You imported a pre-existing S3 state before Writ ever planned the stack.
+- You upgraded from state versions written before secret sets existed.
 
 ## Before you begin
 
-- You're a person, not a CI job, with `adopt` on the `stack@env`. `writ serve --check` refuses a grant of `adopt` to a team of a CI issuer, and `POST /v1/state/adopt` refuses a CI job's token, as it does for `override`.
-- You've read the stack's code for `nonsensitive()`, `external` data sources, and provisioners. See [The risk you take](#the-risk-you-take).
-- If your stack is on S3 and `writ serve` never planned it, it has no read serial yet. Plan it first, and the failed plan shows you the serial.
+- You're a signed-in person (not a CI job) with `adopt` on `stack@env`. `writ serve --check` and `POST /v1/state/adopt` refuse `adopt` for CI tokens.
+- You've inspected the stack's code for `nonsensitive()`, `external` data sources, and provisioners ([The risk you take](#the-risk-you-take)).
+- For an S3 stack Writ has never planned, run `writ plan --remote` once first so Writ records its current serial.
 
 ## Adopt the state
 
-Run `writ state adopt` with the state version on the http backend, or the serial on S3, and a reason of 10 to 500 characters:
+Pass the newest HTTP state `--version` or S3 `--serial` along with a 10 to 500 character `--reason`:
 
-```
+```sh
 writ state adopt app --env prod --serial 3 --reason "a tofu apply from a laptop, OPS-311"
 writ state adopt app --env prod --version 7 --reason "state from before secret sets, OPS-312"
 ```
 
-Here's bob adopting serial 3, which a `tofu apply` with the bucket owner's keys wrote outside Writ:
+Example adopting S3 serial 3 written outside Writ:
 
 ```
 Adopted serial 3 of app@prod, lineage b7937cd1-a438-5711-a2f6-1ce954513d64: writ serve sealed a secret set with it, read with the providers of infra at 08d5592b.
@@ -35,53 +33,41 @@ warning: the secret set holds each value the state marks sensitive and the envir
 
 Output of `just e2e-tofu-s3`, 2026-11-15.
 
-Once you've adopted it, plan the stack again. That new plan is approvable, and its apply writes serial 4. The plan that failed stays failed.
-
-You don't have to remember the command. In the [control UI](sign-in.md#the-control-ui), the page of a stack whose drift check found no secret set, and the page of a plan that failed for that reason, show the command that adopts the state.
+After adoption, plan the stack again; the new plan can be approved and applied (the earlier failed plan stays failed). The control UI also prints the exact `writ state adopt` command on affected stack and failed-plan pages.
 
 ### If the adoption is refused
 
-`writ serve` refuses the request before anything runs when:
+`writ serve` refuses before running OpenTofu when:
 
-- The state isn't the newest it knows: the newest stored version on the http backend, or the serial of its newest read on S3.
-- The state already has a secret set.
-- An apply of the stack is running.
-- The stack has no state that `writ serve` knows.
+- The given version or serial isn't the newest known for that `stack@env`.
+- That version or serial already has a secret set.
+- An apply is running on that `stack@env`.
+- `writ serve` knows no state for the stack.
 
 ## What an adoption does
 
-An adoption gathers its code the way a [drift check](serve.md#drift-checks) does, with the stack's files at the head of its repository's default branch. Then it reads the state the way the [state index](serve.md#the-state-index) does:
+Adoption fetches the stack's files from the repository's default branch head, runs inside a `provider_uids` sandbox taking a plan slot, and reads state without mutating it:
 
-- **On the http backend**, `tofu init -backend=false` and `tofu show -json` of the stored version as a file, with no cloud credential, no `provider_env`, and no state token.
-- **On S3**, the two `init` steps and `tofu state pull` with the plan role, and `tofu show -json` of the pulled file with no credential. The pulled serial must be the one you gave, of the lineage `writ serve` read it in. The run records its read of the serial, as a refresh does.
+- **HTTP backend:** `tofu init -backend=false` and `tofu show -json` on the stored version with no cloud credentials, no `provider_env`, and no state token.
+- **S3 backend:** offline `init`, `tofu state pull` with `plan_role` (verifying the pulled serial and lineage match), then `tofu show -json` with no credentials.
 
-Both run as one of `provider_uids` in the filesystem view, and take one of your plan slots.
+The mask (seeded with `provider_env`) reads the state into state-index rows and collects every value marked sensitive in `sensitive_values` or sensitive outputs. In a single serialized transaction, `writ serve` seals that secret set under the environment's key, writes the index rows, and records a `state-adopt` audit row (person, `stack@env`, version/serial, lineage, reason). If a newer state, secret set, or apply arrived concurrently, nothing is committed.
 
-Next, the mask, seeded with `provider_env`'s values, reads the state into rows of the index. It learns each value the state marks sensitive, in a resource's `sensitive_values` or a sensitive output. Writ seals that set under the environment's key with the version or serial, as an apply seals its own.
-
-Nothing else of the state is kept. In one transaction, `writ serve` writes the set, the index rows, and one audit row of kind `state-adopt`. That audit row has the person, the `stack@env`, the version or serial, its lineage, and your reason.
-
-That transaction first takes the `stack@env`'s turn, which each apply also takes as it begins, so an apply that begins meanwhile waits for it to commit. Writ refuses the adoption when a newer state or a set arrived while the run read the state, or when an apply of the stack is running. If it fails, `writ serve` keeps none of the three, and you can run the adoption again.
-
-If `show` or `pull` fails, Writ keeps only the step and its exit code, because its output can contain a value of the state that the mask hasn't learned.
-
-After an adoption, the stack's drift check is due. Your whole request must end within 120 seconds, and if it runs longer, Writ keeps nothing.
+If `pull` or `show` fails, Writ logs only the step and exit code so unmasked state never leaks. After a successful adoption, the stack's drift check becomes due. The request times out after 120 seconds.
 
 ## The risk you take
 
-Adoption doesn't learn a secret that the state contains where nothing marks it. For example, a resource keyed by `nonsensitive()` of a sensitive variable before `writ serve` planned the stack keeps that key in its address, and no mark covers it. Later plans and drift checks of the stack may show such a value.
-
-So adopt only a state whose code you've read for `nonsensitive()`, `external` data sources, and provisioners. `writ state adopt` prints this limit as a warning.
+Adoption can learn only values marked sensitive in state plus `provider_env`. An unmarked secret already embedded in state (such as a resource address keyed by `nonsensitive()` of a sensitive variable before Writ ran) won't be in the secret set and may appear in later plans or drift checks. Audit the stack's code for `nonsensitive()`, `external` data sources, and provisioners before adopting.
 
 ## Troubleshooting
 
-- **`403 denied` when running `writ state adopt` from CI**: Only a signed-in person (`writ login`) with an `adopt` grant on the `stack@env` can adopt a state. CI tokens are refused.
-- **`409 state: state version N is not its newest`**: A newer state version or S3 serial exists. Plan the stack once to read the latest S3 serial (or check the stack page in the control UI) and adopt that newest version or serial.
-- **`409 state: an apply of STACK@ENV runs`**: Wait for the active apply to finish, then re-run `writ state adopt`.
-- **Adoption times out after 120 seconds**: `POST /v1/state/adopt` must finish within 120 seconds. Check that the S3 bucket and OpenTofu plugin cache are reachable from `writ serve`, then retry.
+- **`403 denied` from CI**: Only a signed-in person (`writ login`) with `adopt` can run `writ state adopt`.
+- **`409 state: state version N is not its newest`**: Run a plan to record the newest S3 serial (or check the control UI) and adopt that latest version or serial.
+- **`409 state: an apply of STACK@ENV runs`**: Wait for the active apply to finish and retry.
+- **Timeout after 120 seconds**: Verify S3 bucket and OpenTofu plugin cache connectivity from `writ serve`, then retry.
 
 ## Next steps
 
-- [Handle secrets and masking](secrets.md): how secret sets protect future plans and drift checks.
-- [Migrate from Terraform](migrate-from-terraform.md): bring existing Terraform stacks and state into Writ.
-- [Enable drift checks](drift-checks.md): detect future writes outside Writ on S3.
+- [Secrets and the mask](secrets.md): how secret sets protect future plans and drift checks.
+- [Migrate from Terraform](migrate-from-terraform.md): move existing Terraform stacks onto Writ.
+- [Drift checks](drift-checks.md): catch future outside writes on S3.

@@ -33,16 +33,16 @@ The cloud credentials and the state keys stay on one server you run. For plans a
 
 ## Capabilities and Constraints
 
-What it does: plans on request, approvals for one plan id, a plan role and an apply role, a mask for secrets, policy in Rego at the plan and again before the apply, drift checks on a schedule, an audit log, `writ import bulk`, and `writ mcp` for coding agents.
+What it does: plans on request, approvals for one plan id, a plan role and an apply role, a mask for secrets, policy in Rego at the plan and again before the apply, drift checks on a schedule, Slack and signed webhook notifications, a synchronous audit log (CLI, API, and `/ui/audit`), `writ import bulk`, and `writ mcp` for coding agents.
 
 Limits the site must keep stating:
 
 - A plan starts when you or your CI job ask for it, not on every commit.
 - The apply role is used only for an approved plan, or for one overridden by someone with the override grant, with a recorded reason.
 - The plan role is whatever the operator configures. They make it read-only.
-- The audit log records every request except `GET /healthz`, `GET /v1/server`, and rate-limited requests.
+- The audit log records every request except `GET /healthz`, `GET /v1/server`, and per-address rate-limited requests.
 - OpenTofu 1.13.9 only, and no Terraform.
-- GitLab is the only remote Git host. The built-in STS roles are AWS IAM roles. One node, on Linux. No notifications.
+- GitLab is the only remote Git host. The built-in STS roles are AWS IAM roles. One node, on Linux. Built-in notifications cover Slack and signed webhooks (no email).
 - End-to-end suites run against local stand-ins in isolated namespaces rather than live cloud accounts. The macOS binaries are cross-built on Linux.
 
 `docs/status.md` is the full list. A claim on the site is true at the commit it ships from, and the site adds no claim the code can't back.

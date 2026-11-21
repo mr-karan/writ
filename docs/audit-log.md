@@ -1,62 +1,58 @@
 # Read the audit log
 
-Query Writ's [audit log](glossary.md) from the control UI, the CLI, or the HTTP API to trace a change from plan creation through approvals, apply, and state writes, without connecting directly to Postgres.
+Query Writ's [audit log](glossary.md) from `/ui/audit`, the CLI, or the HTTP API to trace any change from plan through approvals, apply, and state writes without querying Postgres directly.
 
-For the full route specification and grant rules, see [API: Read the audit log](api.md#read-the-audit-log). For the database schema behind it, see [Operate the database](database.md#audit-rows).
+For route parameters and JSON fields, see [API: Read the audit log](api.md#read-the-audit-log). For the database schema, see [Operate the database](database.md#audit-rows).
 
 ## Prerequisites
 
-- A running `writ serve` (or `writ serve --dev`) and a valid token from `writ login` or CI.
-- Appropriate grants for the rows you want to inspect:
-  - Rows for a specific `stack@env` require `read` on every stack listed in that row.
-  - Rows for an environment with no specific stack require `read` on at least one stack in that environment.
-  - A [webhook](webhooks.md) delivery's row requires `read` on at least one stack of the pinned repository in any environment. Its Git host and project id must match the current repository. The control UI shows the repository as the target.
-  - Server-wide rows (server starts, sign-ins, sign-outs, `GET /v1/whoami`, failed auth attempts, repository additions, and webhook deliveries with a missing or different project identity) require `admin` on every stack in every environment (`envs = ["*"]`, `stacks = ["**"]`).
+- A running `writ serve` (or `writ serve --dev`) and a token from `writ login` or CI.
+- Grants matching the rows you want to read:
+  - Rows naming stacks require `read` on every stack in the row.
+  - Environment-only rows require `read` on at least one stack in that environment.
+  - [Webhook](webhooks.md) delivery rows require `read` on at least one stack of that pinned repository's current default branch (matching Git host and project ID).
+  - Server-wide rows (server starts, sign-ins/sign-outs, `GET /v1/whoami`, failed auth, repository additions, and unmatched webhooks) require global `admin` (`envs = ["*"]`, `stacks = ["**"]`).
 
 ## Steps
 
 ### 1. List the newest audit rows
 
-Run `writ audit --remote` to print the newest 50 rows your token can read:
-
 ```sh
 writ audit --remote
 ```
 
+Prints the newest 50 rows your token can read.
+
 ### 2. Narrow the log with filters
 
-Combine flags to trace a single change, person, stack, or time window:
-
 ```sh
-# Follow one plan, including its approvals, apply run, and state writes
+# Follow one plan through approvals, apply, and state writes
 writ audit --remote --plan 927b69ec7af23641c68c3ce3cce370ec
 
 # Follow one apply run
 writ audit --remote --run I3EP3I6DTYNC5PMVULSW6JYINL
 
-# Filter by stack and environment (requires --env with --stack)
+# Filter by stack and environment (--stack requires --env)
 writ audit --remote --env prod --stack app
 
-# Filter by person id (as printed by writ whoami)
+# Filter by person ID (from writ whoami)
 writ audit --remote --person gitlab/user/1001
 
 # Filter by operation and RFC 3339 time window
 writ audit --remote --op apply --since 2026-11-19T00:00:00Z --until 2026-11-19T23:59:59Z
 ```
 
-Leave out the reads with `--changes`. It drops the rows of op `read` and `state-read`, and the requests by `GET` or `HEAD` that name no op and were allowed or needed no decision, such as `GET /v1/whoami`, a control UI page, and its static files. Every other row stays: plans, approvals, applies, overrides, adoptions, admin actions, state writes and locks, webhook deliveries, sign-ins, the server's start, and a refused request of no op, such as a failed token. Without `--changes` every row prints, as before.
+Pass `--changes` to hide routine reads (`op` of `read` or `state-read`, and allowed/no-decision `GET`/`HEAD` requests without an op, such as `/v1/whoami` or UI page loads) while keeping all writes, webhooks, sign-ins, server starts, and refused requests:
 
 ```sh
 writ audit --remote --changes
 ```
 
-`--changes` takes no `--op read` or `--op state-read`.
-
-Valid `--op` values are `read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`, `state-read`, `state-write`, `state-lock`, `state-unlock`, and `hook`, a Git host's [webhook delivery](webhooks.md#what-writ-serve-answers).
+`--changes` can't be combined with `--op read` or `--op state-read`. Valid `--op` values are `read`, `plan`, `apply`, `approve`, `override`, `adopt`, `admin`, `state-read`, `state-write`, `state-lock`, `state-unlock`, and `hook`.
 
 ### 3. Page through older rows
 
-Use `--limit` (1 to 200, default 50) to control page size. When more rows match, the last line prints a `--cursor` value you pass to the next command:
+Set `--limit` (1 to 200, default 50). When more rows match, the last line prints a `--cursor` value for the next page:
 
 ```sh
 writ audit --remote --limit 2
@@ -65,17 +61,14 @@ writ audit --remote --limit 2 --cursor CURSOR_FROM_PREVIOUS_OUTPUT
 
 ### 4. Read the audit log in the control UI
 
-Open Audit in the control UI's sidebar, `/ui/audit`. It shows the same rows `GET /v1/audit` gives your session, newest first, one row an entry: its decision, the method, route, and status, the operation, the `stack@env`, who sent it, with a person or a CI icon, and when.
+Open `/ui/audit` from the sidebar. It displays the same rows `GET /v1/audit` authorizes, newest first:
 
-- The page shows only the changes, as `writ audit --remote --changes` does, so the reads of its own pages, their static files, and CI polls don't drown the plans, approvals, applies, and webhook deliveries. Show reads, beside the pickers, shows every row (`?reads=1`), and Changes goes back. Both are links, so they work with scripts off, and the pickers, the filter form, and Older entries keep the one you chose. With an Op picked, the page shows that op's rows, reads too.
-- The Env, Op, and Time pickers, and More filters, narrow the page by environment, stack, person, operation, plan, run, and time. Each is a GET parameter of the page (`?env=prod&stack=app`, `?person=gitlab/user/1001`, `?since=2026-11-19T00:00:00Z`), so the page works with scripts off and its URL can be shared.
-- Older entries opens the next page with the API's encrypted cursor.
-- Each plan's and run's page has an Audit trail button, which opens `/ui/audit?plan=ID` or `/ui/audit?run=ID`.
-- A refused row shows a `reason withheld` chip, apart from a row whose reason is empty. The page shows no client address and no state hash, as the API doesn't.
+- Defaults to **Changes** (`writ audit --remote --changes`); click **Show reads** (`?reads=1`) to include read requests. Selecting a specific **Op** shows all rows for that op.
+- Filters use GET query parameters (`?env=prod&stack=app`, `?person=...`, `?since=...`), work without JavaScript, and produce shareable URLs.
+- Plan and run pages include an **Audit trail** link to `/ui/audit?plan=ID` or `/ui/audit?run=ID`.
+- Refused rows show a `reason withheld` chip; client IPs and state hashes aren't displayed.
 
 ### 5. Read the audit log as JSON or over HTTP
-
-Pass `--json` for machine-readable `writ.audit/v0` output, or call `GET /v1/audit` directly:
 
 ```sh
 writ audit --remote --env prod --stack app --json
@@ -87,8 +80,6 @@ curl -sS "https://writ.example.com/v1/audit?env=prod&stack=app&limit=50" \
 ```
 
 ### What you should see
-
-Here is a real run of `writ audit --remote`, pagination with `--limit` and `--cursor`, and `GET /v1/audit`:
 
 ```
 $ writ audit --remote
@@ -107,37 +98,37 @@ $ curl -sS "$SERVER/v1/audit?env=dev&stack=app&limit=1" -H "Authorization: Beare
 {"format":"writ.audit/v0","ok":true,"rows":[{"at":"2026-11-19T15:54:09Z","kind":"request","route":"/v1/applies","status":200,"principal":"root (dev)","op":"read","env":"dev","stacks":["app"],"decision":"allowed","reason":"","reason_withheld":false}],"next":""}
 ```
 
-Output under `writ serve --dev` run as root of a user namespace with only loopback, 2026-11-19.
+Output under `writ serve --dev` in a loopback-only user namespace, 2026-11-19.
 
 ## What every row guarantees
 
-`writ serve` writes an audit row before sending any response, across the API, the control UI, and the `http` state backend. If the control database cannot commit the audit row within 5 seconds, `writ serve` returns `503` instead of the response.
+`writ serve` commits an audit row before sending any HTTP response across the API, control UI, and HTTP state backend. If the audit write doesn't commit within 5 seconds, `writ serve` returns `503`.
 
-Only three kinds of requests write no row: `GET /healthz`, `GET /v1/server`, and requests rejected with `429` by the per-client-address rate limit.
+Only three categories write no row: `GET /healthz`, `GET /v1/server`, and requests rejected with `429` by per-client-address rate limits (server-wide or webhook per-address).
 
-For privacy and secret hygiene, `GET /v1/audit` holds back fields that could echo untrusted request input:
+To avoid echoing untrusted input or leaking state:
 
-- Refused rows (`refused`, `denied`, `auth-failed`, `error`) show `(withheld)` (`reason: ""`, `reason_withheld: true`) because refusal messages can quote fields from the request. Postgres still stores the full reason.
-- `state-write` rows omit the state's SHA-256 hash in the API response so a reader cannot test guesses against the full state.
+- Refused rows (`refused`, `denied`, `auth-failed`, `error`) return `reason: ""` and `reason_withheld: true` in the API (the full reason stays in Postgres).
+- `state-write` rows omit the state SHA-256 hash from API responses.
 - Client IP addresses are omitted from API responses.
 - Reading the audit log writes its own `read` audit row.
 
 ## Troubleshooting
 
-- **Empty page with no error when filtering by `--env` or `--stack`**: Your token does not have `read` on that stack or environment. Run `writ whoami` to inspect your grants.
-- **Cursor rejected with `400 usage`**: Cursors are encrypted with an ephemeral key created when `writ serve` starts. If the server restarted since the previous page, run the query again without `--cursor`.
-- **Fewer rows than `--limit` even though `--cursor` is printed**: Each API call scans at most 5,000 database rows and skips rows your token cannot read. Pass the returned `--cursor` to continue scanning older rows.
-- **`--stack` rejected without `--env`**: Always pass `--env` alongside `--stack`.
-- **Missing `GET /healthz` or rate-limited 429 requests**: Those are exempt by design so bad-token floods cannot fill the audit table.
+- **Empty result when filtering by `--env` or `--stack`**: Your token lacks `read` on that target. Check `writ whoami`.
+- **`400 usage` on `--cursor`**: Cursors are encrypted with an ephemeral per-process key; restart queries without `--cursor` after a server restart.
+- **Fewer rows than `--limit` with `--cursor` returned**: Each request scans at most 5,000 database rows and skips unauthorized rows; pass `--cursor` to continue scanning.
+- **`--stack` rejected without `--env`**: Always specify `--env` with `--stack`.
+- **Missing `/healthz` or per-IP `429` rows**: Exempt by design so floods can't fill the audit table.
 
 ## Limits
 
-- The control UI's audit page shows 50 entries a page; `writ audit --remote --limit 200` reads more at once.
-- Refusal reasons and client addresses are only available by querying the `audit` table in Postgres directly.
-- Set `retention.audit` in your [server config](config.md) if you want old audit rows pruned; by default they are kept forever.
+- `/ui/audit` displays 50 entries per page; `writ audit --remote` supports up to `--limit 200`.
+- Full refusal reasons and client IPs require querying Postgres `audit` directly.
+- Audit rows are kept indefinitely unless `retention.audit` is configured ([Config](config.md)).
 
 ## Next steps
 
 - [API: Read the audit log](api.md#read-the-audit-log): complete parameter and authorization rules.
-- [Operate the database](database.md): retention, backups, and the `audit` table layout.
-- [Security model](security-model.md): how Writ prevents request secrets from leaking through audit reads.
+- [Operate the database](database.md): retention, backups, and table layout.
+- [Security model](security-model.md): how audit logging pairs with secret masking.

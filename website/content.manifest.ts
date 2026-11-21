@@ -149,7 +149,7 @@ export const pages: Page[] = [
   {
     slug: 'audit-log',
     title: 'Read the audit log',
-    description: 'Query Writ’s synchronous audit log with writ audit --remote and GET /v1/audit.',
+    description: 'Query Writ’s synchronous audit log from /ui/audit, writ audit --remote, and GET /v1/audit.',
     parts: whole('docs/audit-log.md'),
   },
   {

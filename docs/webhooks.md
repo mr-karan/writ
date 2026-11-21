@@ -1,31 +1,31 @@
 # Get changes in seconds with a webhook
 
-`writ serve` polls each repository's default branch every `poll_every`, 60 seconds by default. Add a GitLab webhook and GitLab tells `writ serve` the moment you push or merge, so it reads the new head within seconds. The poll keeps running, every 5 minutes for that repository, as a backstop: GitLab turns off a webhook that fails four times in a row, for a while, and for good after 40, so a delivery can be lost.
+By default, `writ serve` polls each repository's default branch every `poll_every` (60 seconds). Add a GitLab webhook so `writ serve` reads a pushed or merged head within seconds. Polling continues every `poll_every_with_hook` (5 minutes by default) as a backstop, because GitLab temporarily disables a webhook after 4 consecutive failures and permanently disables it after 40.
 
-A delivery only makes `writ serve` read the default branch's head sooner, through the forge's API and its read token, exactly as the poll does. It never plans or applies. `writ serve` doesn't parse the delivery's body: the repository is the one the URL names, and the head is whatever GitLab's API says, never a commit, branch, project, or URL from the payload.
+A webhook only triggers an early read of the default branch through GitLab's API with the forge's read token. It never starts a plan or apply, and `writ serve` never trusts or parses fields from the webhook body: the repository comes from the URL path, and the commit comes from GitLab's API.
 
 ## Before you begin
 
-- The repository is pinned with a `repo` block in your config. Only a pinned repository can have a webhook, because its secret lives in a file the config points to, and the config's review covers it. A repository added with `writ repo add` is polled and has no webhook.
-- GitLab can reach `writ serve` at its `url` over HTTPS.
-- You can change the project's webhooks in GitLab: the Maintainer role or above.
+- The repository is pinned with a `repo` block in `/etc/writ/serve`. Only pinned repositories support webhooks because the secret path is governed by server config. Repositories added via `writ repo add` use polling only.
+- GitLab can reach `writ serve`'s `url` over HTTPS.
+- You have Maintainer or Owner access on the GitLab project.
 
 ## Set up a webhook
 
 ### 1. Create the secret
 
-Make a long random secret in a file that only `writ serve`'s user can read:
+Generate a random secret readable only by the `writ serve` user:
 
-```
+```sh
 openssl rand -hex 32 > /run/secrets/writ/infra_hook
 chmod 0400 /run/secrets/writ/infra_hook
 ```
 
-On NixOS, deliver it with sops-nix or agenix like the forge's read token.
+On NixOS, deliver it with `sops-nix` or `agenix`, like the forge read token.
 
 ### 2. Point the repository at it
 
-Add `webhook_secret_file` to the repository's `repo` block, and restart `writ serve`:
+Add `webhook_secret_file` to the `repo` block and restart `writ serve`:
 
 ```hcl
 repo {
@@ -37,93 +37,91 @@ repo {
 }
 ```
 
-`writ serve` reads the file for each delivery and trims the whitespace around the secret, so you can rotate the secret without a restart. Change it in GitLab and in the file together: a delivery between the two changes is refused, and the poll catches up.
+`writ serve` reads the file on each delivery and trims surrounding whitespace, so you can rotate the secret without restarting. Update GitLab and the file together; any delivery during the gap is refused and the poll catches up.
 
 ### 3. Add the webhook in GitLab
 
-In the project, open **Settings > Webhooks > Add new webhook**, and set:
+In the project, open **Settings > Webhooks > Add new webhook** and configure:
 
 | Field | Value |
 | --- | --- |
-| URL | `https://writ.example.com/v1/hooks/gitlab/infra`: your `url`, then `/v1/hooks/`, the `forge` block's name, `/`, and the `repo` block's name |
-| Secret token | The secret in `webhook_secret_file` |
-| Trigger | **Push events**, with **Wildcard pattern** set to the default branch, such as `main` |
-| SSL verification | On |
+| URL | `https://writ.example.com/v1/hooks/gitlab/infra` (`url` + `/v1/hooks/{forge}/{repo}`) |
+| Secret token | Contents of `webhook_secret_file` |
+| Trigger | **Push events**, **Wildcard pattern** set to the default branch (for example `main`) |
+| SSL verification | Enabled |
 
-Leave every other trigger off. A merge to the default branch is a push event, so you don't need **Merge request events**. A push to another branch would only make `writ serve` read the default branch's head once more for nothing.
+Leave other triggers off. Merging to the default branch fires a push event, so **Merge request events** isn't needed; pushes to other branches would only cause redundant reads of the default branch.
 
 ### 4. Test it
 
-On the webhook's row, select **Test > Push events**. GitLab shows the answer under **Recent events**: `202` when `writ serve` checked the secret and queued a read. The Repositories page then shows a `webhook` chip with the time of the last delivery, and the repository's page shows **Webhook** with `last delivery`. `GET /v1/repos` has `hook: true` and `hook_at`.
+Click **Test > Push events** on the webhook row. Under **Recent events**, GitLab should show `202`. In the control UI, `/ui/repos` displays a `webhook` chip with the last delivery time, and `GET /v1/repos` returns `hook: true` and `hook_at`.
 
 ## Use a signing token instead
 
-GitLab 19.1 and later can sign each delivery with a signing token, which GitLab shows starting with `whsec_`. Put that token in `webhook_secret_file` in place of a secret token. When the file starts with `whsec_`, `writ serve` checks the delivery's `webhook-signature` header, the HMAC-SHA256 of `webhook-id`, `webhook-timestamp`, and the raw body under the token's key, and refuses a delivery whose `webhook-timestamp` is more than 5 minutes from its clock. It then ignores `X-Gitlab-Token`. A secret token you chose yourself must not start with `whsec_`, or every delivery fails verification.
+GitLab 19.1+ supports HMAC signing tokens starting with `whsec_`. Put that token in `webhook_secret_file` instead of a plain secret token. When the file starts with `whsec_`, `writ serve` verifies `webhook-signature` (HMAC-SHA256 of `webhook-id`, `webhook-timestamp`, and the raw body), rejects timestamps more than 5 minutes from its clock, and ignores `X-Gitlab-Token`.
 
-A signing token proves the body too, and the timestamp stops a recorded delivery from being sent again later. `writ serve` doesn't read the body, so for Writ the gain is the replay window, not the body.
+Don't start a self-chosen plain secret token with `whsec_`, or every delivery will fail verification. Because `writ serve` ignores the payload body, the main benefit of a signing token is the 5-minute replay window.
 
 ## How often the poll runs with a webhook
 
-A repository with a webhook is polled every `poll_every_with_hook`, 5 minutes by default. A repository without one keeps `poll_every`. Any read, by a delivery or the poll, starts the wait again.
+Repositories with a webhook poll every `poll_every_with_hook` (5 minutes by default); repositories without one use `poll_every`. Any read, from a webhook or a poll, resets the timer.
 
 ```hcl
 poll_every           = "60s"
 poll_every_with_hook = "10m"
 ```
 
-`poll_every_with_hook` is never shorter than `poll_every`: a webhook only makes the poll rarer. Unset, it's 5 minutes, or `poll_every` when that's longer. See [Config](config.md#forge-and-repo).
+`poll_every_with_hook` can't be shorter than `poll_every`. Unset, it defaults to 5 minutes (or `poll_every` if longer). See [Config: Forge and repo](config.md#forge-and-repo).
 
 ## What writ serve answers
 
-Every delivery gets an audit row with op `hook`. When the path names a pinned repository with a webhook, the row's `via` says `webhook of repository NAME`. You can read a row for the repository's current Git host and project id if you have `read` on one of its stacks in any environment. The stack names come from the head of the default branch, with the repository's prefix.
-
-Only principals with `admin` on every stack in every environment can read rows for an earlier project, an unknown webhook, or a row without a stored project identity. Read webhook rows with `writ audit --remote --op hook` or set the audit page's Op picker to `hook`.
+Deliveries that pass the per-address rate limit write an audit row with `op = hook`. When the URL matches a pinned repository with a webhook, `via` is `webhook of repository NAME`. Principals with `read` on any stack at the repository's current default branch can read its webhook rows; rows for earlier projects, unknown webhooks, or missing project identities require global `admin`. Query them with `writ audit --remote --op hook` or filter by `hook` in `/ui/audit`.
 
 | Status | Body | When |
 | --- | --- | --- |
-| 202 | `writ.hook/v0`, `queued: true` | The delivery passed its check and is a push event. A read of the default branch's head is queued. |
-| 200 | `writ.hook/v0`, `duplicate: true` | GitLab sent this delivery already: the same `webhook-id`, or `Idempotency-Key` before GitLab 19.0. It's not acted on again. |
-| 200 | `writ.hook/v0`, `queued: false` | The delivery passed its check, but isn't a push event, so nothing is read. |
-| 401 | class `auth`: `the delivery failed verification` | The delivery didn't prove it came from the repository's Git host, for any reason, a body over 1 MiB included. |
-| 429 | class `usage`, `Retry-After: 1` | More than 10 deliveries a second from one client address, or more than 5 for one repository. |
+| 202 | `writ.hook/v0`, `queued: true` | Verified push event; a read of the default branch is queued. |
+| 200 | `writ.hook/v0`, `duplicate: true` | Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0); not acted on again. |
+| 200 | `writ.hook/v0`, `queued: false` | Verified delivery, but not a push event. |
+| 401 | class `auth`: `the delivery failed verification` | Verification failed for any reason, including a body over 1 MiB. |
+| 429 | class `usage`, `Retry-After: 1` | Over 10 deliveries/s from one client IP (no audit row), or over 5 deliveries/s for one repository (audited). |
 
-A 401 says the same words whatever the reason, so a sender learns nothing. The audit row's `check` says which:
+Every 401 returns the same message so senders learn nothing. Inspect `check` in the audit row to diagnose failures:
 
 | `check` | Reason |
 | --- | --- |
-| `hook-body` | The body is over 1 MiB, or couldn't be read |
-| `hook-unknown` | No pinned repository of that name has a webhook at that forge |
-| `hook-no-token` | No `X-Gitlab-Token` header |
-| `hook-token` | `X-Gitlab-Token` isn't the secret |
-| `hook-secret-file` | `writ serve` couldn't read the secret file, it isn't a regular file of at most 4 KiB, or a `whsec_` token in it isn't base64. The log says why. |
-| `hook-no-signature` | Under a signing token, no `webhook-id`, `webhook-timestamp`, or `webhook-signature` |
-| `hook-timestamp` | Under a signing token, `webhook-timestamp` is more than 5 minutes from now |
-| `hook-signature` | Under a signing token, the signature isn't the body's |
+| `hook-body` | Body exceeds 1 MiB or failed to read |
+| `hook-unknown` | No pinned repository with a webhook matches that forge and repo name |
+| `hook-no-token` | Missing `X-Gitlab-Token` header |
+| `hook-token` | `X-Gitlab-Token` doesn't match the secret |
+| `hook-secret-file` | Secret file is unreadable, not a regular file <= 4 KiB, or has invalid base64 after `whsec_` (see server log) |
+| `hook-no-signature` | Missing `webhook-id`, `webhook-timestamp`, or `webhook-signature` under a signing token |
+| `hook-timestamp` | `webhook-timestamp` is more than 5 minutes from server time |
+| `hook-signature` | Signature doesn't match the raw body |
 
-GitLab counts every 4xx answer as a failure. The limits are well above what one project sends, so a 429 means something else sends to the URL.
+GitLab treats any 4xx response as a failure. Normal project traffic stays far below these rate limits, so a 429 indicates unexpected traffic to the endpoint.
 
 ## Security notes
 
-- The secret is compared in constant time: `writ serve` compares the SHA-256 digests of what came and of the secret, so the time a comparison takes says nothing of either, not even the length.
-- The secret, and any wrong token a sender tries, never appear in a log line, an audit row, an API answer, or the control UI. `TestHookSecretNeverLeaks` and the control UI's page walk search all four.
-- A delivery is unauthenticated by token: the secret is its proof. The rate limit on its client address comes first, before the body is read.
-- `writ serve` never stores or logs a delivery's body. It reads at most 1 MiB of it, to bound it and to check a signature.
-- Delivery ids are kept in memory, the newest 4,096. After a restart, GitLab's resend of an earlier delivery is acted on once more, which costs one read of the branch's head and changes nothing else.
-- A delivery never starts a plan or an apply, and never changes what `writ serve` reads: the read uses the repository's project id and default branch from the control database, and the forge's read token.
+- Secret tokens are compared in constant time via SHA-256 digests, hiding both value and length.
+- Secrets and failed candidate tokens never appear in logs, audit rows, API responses, or the control UI.
+- Webhooks are unauthenticated by bearer token; the per-IP rate limit runs before reading the body.
+- Bodies are capped at 1 MiB and never stored or logged.
+- The newest 4,096 delivery IDs are deduplicated in memory. After a restart, a resent delivery triggers at most one extra head read.
+- A delivery never triggers plans or applies and never chooses what to fetch; `writ serve` always reads the stored project ID and default branch using the forge's read token.
 
 ## Troubleshooting
 
-- **GitLab shows 401.** The secret token in GitLab differs from the file, the URL names another forge or repository, or the `repo` block has no `webhook_secret_file`. Find the row with `writ audit --remote --op hook` and read its `check`.
-- **GitLab disabled the webhook.** Fix the cause, then select **Test > Push events**: a 2xx answer turns it back on.
-- **The head moves only every few minutes.** Look for the delivery in GitLab's **Recent events**. With no event, check the trigger's branch pattern. The poll still reads the head every `poll_every_with_hook`.
+- **GitLab shows 401**: Run `writ audit --remote --op hook` and check the `check` column for the exact cause (wrong secret, wrong URL, missing `webhook_secret_file`, or unreadable file).
+- **GitLab disabled the webhook**: Fix the error, then click **Test > Push events**. A 2xx response re-enables it.
+- **Head updates only every few minutes**: Check **Recent events** in GitLab. If no delivery fired, verify the push trigger's branch wildcard. Polling still updates the head every `poll_every_with_hook`.
 
 ## Limits
 
-- GitLab is the only Git host with webhooks, as it's the only one Writ reads. GitHub's `X-Hub-Signature-256` isn't built.
-- A repository added with `writ repo add` can't have a webhook.
+- GitLab only; GitHub's `X-Hub-Signature-256` isn't implemented.
+- Repositories added with `writ repo add` can't use webhooks.
 
 ## Next steps
 
-- [How repositories work](repos.md#how-the-control-plane-learns-about-commits): how polls and CI jobs bring commits in.
-- [API: webhook route](api.md#webhook-route): the route and its answers.
-- [Read the audit log](audit-log.md).
+- [How repositories work](repos.md#how-the-control-plane-learns-about-commits): how polls, webhooks, and CI jobs bring commits in.
+- [API: webhook route](api.md#webhook-route): route reference.
+- [Read the audit log](audit-log.md): query webhook and other audit events.

@@ -1,14 +1,12 @@
 # Architecture
 
-Read this before you change Writ's code: it's the package map, and the reasons behind it.
+Read this before changing Writ's code: it maps every package, data flow, and boundary enforced by `internal/archtest`.
 
 ## How a plan runs
 
-Here's one plan of an OpenTofu stack, followed through the code, as `writ serve` runs it for `writ plan --remote`.
-
 ### How `writ serve` plans an OpenTofu stack
 
-`createPlan` in `internal/server/plans.go` records the request as `planning` and starts `runPlan`, which fetches the commit and calls `planTofu` in `internal/server/tofuplan.go`. A short form of what it runs:
+`createPlan` (`internal/server/plans.go`) inserts the `planning` row and launches `runPlan`, which fetches the commit and invokes `planTofu` (`internal/server/tofuplan.go`):
 
 ```go
 // internal/server/tofuplan.go, planTofu
@@ -24,56 +22,69 @@ res.ID, res.Status = tofuPlanID(body, raw.File, in.source.Commit, stack, env), c
 res.Saved = key.SealPlan(raw.File, res.ID, env, stack)
 ```
 
-A run is a job: `run.job` builds a `runner.Job`, plain data with no key, handler, or uid in it, and `run.run` hands it to the run's slot of a `runner.Executor`, which returns tofu's raw result and the network record. The only executor is `runner.Local`, which runs the job in `writ serve`'s own process. `runPlan` then records the plan with `control.Store.FinishPlan`.
+`run.job` builds a data-only `runner.Job` (no keys, handlers, or UIDs) executed by `runner.Local` inside `writ serve`. `runPlan` then commits the result through `control.Store.FinishPlan`.
 
 ## Constraints
 
-`writ serve` runs OpenTofu on code from any commit it plans, for many teams, and has the keys of their states. Four constraints shape the code:
+Four constraints shape the codebase:
 
-- OpenTofu and its providers run the commit's code. On a team's control plane they never run as `writ`'s own user: the config refuses a `tofu` block without `provider_uids`. Each run gets a provider uid, a private view of the filesystem, and only the credentials of its step.
-- `tofu plan` and `tofu apply` print secrets. Nothing of a run's raw output is stored or shown: one mask writes every document that leaves it.
-- An apply applies the saved plan that people approved, and nothing else. A plan's id binds the masked plan, the saved plan, the commit, the stack, and the environment.
-- The repository's `AGENTS.md` keeps wire types inside the package that owns that boundary: protobuf messages, cty values, and SQL rows.
+- **Isolated execution:** Team servers refuse `tofu` without `provider_uids`; every run executes under its own UID, private namespaces, and step-scoped credentials, plus the seccomp filter and cgroup limits where the host allows them.
+- **Single masking boundary:** Raw `tofu` output never leaves a run; `internal/mask` produces every stored or displayed document.
+- **Immutable plan binding:** Plan IDs hash the masked plan, saved plan binary, commit, stack, and environment; applies execute only that sealed plan.
+- **Wire-type containment:** Protobuf messages, cty values, and SQL rows stay inside the package that owns that boundary (`AGENTS.md`).
 
 ## Package map
 
-| Package | Owns | Imports (internal) |
+| Package | Owns | Internal imports |
 | --- | --- | --- |
 | `diag` | `Span`, `Diagnostic`, classes, fixes | none |
-| `addr` | `Addr`, the canonical address of an object an import names, and quoting for messages and shell words | none |
-| `types` | the static types of provider schemas, `Assign`, printing | addr |
-| `value` | the values the importer and the provider client pass: known values, `Unknown`, secret marks, canonical encodings and keyed digests, redaction, secret-aware path printing | addr, schema |
-| `schema` | annotated provider schemas, the annotation table | types |
-| `provider` | registry install, the lock of installed providers, schema cache, processes, gRPC, cty, and starting a process with its own environment as another uid, for the importer's provider client and the isolation check | schema, types, value, tfplugin5, tfplugin6, runas |
-| `runas` | acting as a run's uid: starting a process as it with no groups, file work as it through the thread's filesystem ids, starting a process in a user namespace whose id maps writ writes, checking that a started process holds no uid, group, or capability of writ's, and killing every process of a uid after its run, never of root or of writ's own uids. It imports only the standard library | none |
-| `tofu` | starting OpenTofu, the one pinned version: init, a saved plan, its JSON, and the apply of a saved plan, each in a scratch directory of its own under a scratch root that no other user can change, which it opens once and reaches only through that descriptor, in a process group that a timeout or too much output kills and that's killed when tofu exits, as the run's uid, never root or writ's own, with no groups or capabilities, whose every process is killed after each step, and with a run's own network, in a network namespace that holds only loopback, whose listeners on the ports writ serves the view hands to writ before tofu starts; and the fill of the shared plugin cache with a lock file's providers, as writ, from a configuration it writes itself, with a network of its own when given one, which then leaves the cache writable by writ alone | runas |
-| `sqldb` | the SQL drivers: opening SQLite and Postgres, the `?` placeholder rewrite, `*IOError`, transactions, and the numbered migrations of the control schema | none |
-| `confine` | reading and writing files by path, anywhere or only beneath one directory through an `os.Root`, and refusing a file that isn't a regular file without blocking on it | none |
-| `tfcode` | reading the resource, provider, and import blocks of OpenTofu code, and writing HCL literals | schema, types, value |
-| `importer` | taking existing objects into an OpenTofu stack: reading each through its provider, inferring the configuration that plans no change, and writing resource and import blocks with a variable for each secret (`bulk.go`, `hcl.go`); refusing an object that would write a secret in the clear (`secrets.go`); and checking a saved plan that adopts them (`accept.go`) | addr, diag, mask, provider, schema, tfcode, tofu, types, value |
-| `oidc` | checking OIDC tokens through go-oidc with Writ's checks around it: compact JWS with RS256 or ES256, discovery, cached key sets; people's sign-in and the device flow through x/oauth2. A failure is a typed `Refusal` that holds no text from the identity provider or the token | none |
-| `authz` | teams as rules over token claims, and grants over `stack@env` | none |
-| `forge` | reading a repository where it's hosted: GitLab's REST API with a read-only token, and a local Git repository through the `git` binary for `writ serve --dev`; Git blob ids. `forgetest` serves GitLab's API shapes in a test's process. | none |
-| `repo` | one commit's files, fetched only where the store lacks the blob and checked against its id; OpenTofu stacks found by their committed `.terraform.lock.hcl`, and one gathered for a plan with the local modules it calls, its lock file, moved to OpenTofu's registry if Terraform wrote it, and its backend block, within bounds of its own (`tofu.go`) | forge, tofu, diag |
-| `egress` | a run's egress under `egress_mode` report or enforce: the env's list and how it matches, the decision on a host and port, the proxy that takes CONNECT and plain HTTP, resolves on the host, connects only to an address it checked, and bounds a run's connections, and the record of each destination. It imports only the standard library | none |
-| `awsrole` | `sts:AssumeRole` for `writ serve`'s runs, the loopback endpoint that serves each run's credentials to its providers behind a token, and the `Keeper` of one long-lived session | none |
-| `runner` | `writ serve`'s OpenTofu runs as jobs: the job and its result as plain data, the `Executor` that reserves a slot and runs a job in it, and `Local`, the executor in `writ serve`'s own process, with the pool of provider uids, the job's files in a work directory, the egress proxy, the provider install with its registry check and its own proxy, and the ports of the run's own network, whose state and credential ports reach `writ serve` through a relay. It imports nothing that holds a key, the database, the forge, or the mask | egress, runas, tofu |
-| `control` | `writ serve`'s store, one schema on SQLite and Postgres: configs, teams, grants, plans, approvals, runs, overrides, sessions, token ids, the audit log, repositories, the commits read and their blobs, the state index, and the tokens, sealed state versions, and locks of the http state backend (`tfstate.go`) | authz, sqldb |
-| `mask` | what leaves an OpenTofu run for storage or display: the masked plan document, the state index rows, and each event line, with marked values, sensitive variables, secret-named keys, and secrets behind up to two URL, JSON, hex, or base64 encodings replaced; it refuses input past its size limits | value |
-| `tfstate` | OpenTofu's `http` state backend for `writ serve`'s runs: the `GET`, `POST`, `LOCK`, and `UNLOCK` routes under `/v1/tfstate/`, a token for each run kept as its hash, a plan's token that only reads, and each state sealed under its environment's key. It reads only a state's serial and lineage. `server` mounts it | control |
-| `policy` | Rego policies on the masked plan document of an OpenTofu plan, at the plan point and the apply point: it compiles each set against the input's schema and evaluates every set of a decision in a child `writ` with a deadline and a memory limit. It's the only package that imports OPA, and it imports no package of writ | none |
-| `server` | `writ serve`'s REST API, its config, the dev identity and environments of `writ serve --dev` (`dev.go`), limits, remote plans of a commit, repositories and the poll of their default branches (`repos.go`), verified forge webhooks that make the poll read a pinned repository's head now (`hooks.go`), each run's role session, the relay of its own network to the state backend and the credential endpoint, and its network record (`egress.go`), and the isolation check; plans of OpenTofu stacks by commit as jobs of a `runner.Executor`, with a plan token on the http state backend it mounts, and only the masked plan kept (`tofuplan.go`), judged by the config's policies at the plan and apply points (`policy.go`) | oidc, authz, awsrole, control, forge, repo, runas, runner, diag, egress, mask, tfstate, tofu, policy |
-| `ui` | the control UI under `/ui/`: pages that render the API's documents, which it reaches only through `server`, and plan review of the masked OpenTofu plan | mask, server |
-| `agent` | the writ skill for OpenTofu repositories and the section of `AGENTS.md` that `writ agent init` writes, embedded in the binary, and the merge that rewrites that section and nothing else | none |
-| `mcp` | `writ mcp`: the Model Context Protocol and its SDK, the tools, `import_bulk` only with `--allow-providers`, their input schemas, and the bounds on what a result holds, behind a `Tools` interface that `cli` implements | none |
-| `cli` | commands, human output, stable JSON, `writ import bulk` and `writ import accept` of an OpenTofu stack, the tools of `writ mcp`, `writ serve --dev` (`servedev.go`), and the `--remote` client with the order it finds a control plane in | everything above |
-| `servetest` | a dev control plane inside a test's process: the real server and runner on `httptest`, SQLite in the test's directory | cli, control, server |
-| `cmd/writ` | flag parsing, signals, exit codes, and asking `cli` for the failure document when a command stops without printing one | cli only |
-| `tfplugin5`, `tfplugin6` | generated protobuf code (`just proto`) | none |
-| `archtest` | tests that enforce the import rules and the `oidc` refusal boundary below | none |
+| `addr` | Canonical resource addresses and safe quoting | none |
+| `types` | Static provider schema types and `Assign` | `addr` |
+| `value` | Importer/provider values, `Unknown`, secret marks, canonical encodings, redaction | `addr`, `schema` |
+| `schema` | Annotated provider schemas | `types` |
+| `provider` | Registry install, schema cache, gRPC plugin client (v5/v6), cty, provider subprocesses | `schema`, `types`, `value`, `tfplugin5`, `tfplugin6`, `runas` |
+| `runas` | UID switching, user namespace ID maps, capability checks, UID process cleanup (stdlib only) | none |
+| `tofu` | Pinned OpenTofu execution (`init`, `plan`, `show`, `apply`, plugin cache fill), scratch dir confinement, namespaces, cgroups, seccomp, per-step loopback network sockets | `runas` |
+| `sqldb` | SQLite/Postgres drivers, `?` placeholder rewrite, `*IOError`, transactions, migrations | none |
+| `confine` | Confined regular-file reads/writes via `os.Root` | none |
+| `tfcode` | Reading OpenTofu resource/provider/import blocks and formatting HCL literals | `schema`, `types`, `value` |
+| `importer` | `writ import bulk` (read, infer, generate HCL/manifest, secret guard) and `writ import accept` | `addr`, `diag`, `mask`, `provider`, `schema`, `tfcode`, `tofu`, `types`, `value` |
+| `oidc` | Compact JWS (`RS256`/`ES256`), discovery, JWKS cache, `go-oidc`/`oauth2` flows, typed integer `Refusal` | none |
+| `authz` | Claim-matching teams and `stack@env` grants | none |
+| `forge` | GitLab REST read client, local `git` reader for `--dev`, Git SHA-1 blob verification, `forgetest` | none |
+| `repo` | Commit blob caching, stack discovery, lock-file translation, backend/module validation | `forge`, `tofu`, `diag` |
+| `egress` | Per-run egress allow-list matching, CONNECT/HTTP proxy, connection bounds, destination recording (stdlib only) | none |
+| `awsrole` | AWS STS `AssumeRole`, loopback container credential endpoint, session refresh `Keeper` | none |
+| `notify` | Outbound Slack and HMAC-signed webhook notifications, bounded queues, retries, TLS/DNS classification | none |
+| `runner` | Data-only `Job`/`Executor` interface and `Local` executor (UID pool, scratch dir, egress proxy, install proxy, loopback relay); holds no keys, DB, forge, or mask | `egress`, `runas`, `tofu` |
+| `control` | Control database store on SQLite/Postgres (configs, teams, grants, repos, blobs, plans, approvals, runs, sessions, audit, state index, HTTP state backend) | `authz`, `sqldb` |
+| `mask` | Single masking boundary for plan JSON, plan/apply text, events, diagnostics, state index, and egress hostnames | `value` |
+| `tfstate` | OpenTofu `http` backend (`/v1/tfstate/`), per-run hashed tokens, sealed state storage | `control` |
+| `policy` | Host-side Rego compilation against input schema and bounded child-process OPA evaluation (sole OPA importer) | none |
+| `server` | REST API, config parsing/validation, `--dev` mode, repo polling, webhooks, credential/state relay, OpenTofu plan/apply orchestration, drift checks, policy and notification wiring | `oidc`, `authz`, `awsrole`, `control`, `forge`, `repo`, `runas`, `runner`, `diag`, `egress`, `mask`, `notify`, `tfstate`, `tofu`, `policy` |
+| `ui` | Server-rendered `/ui/` HTML pages delegating exclusively to `server` handlers | `mask`, `server` |
+| `agent` | Embedded skill files and marker-based `AGENTS.md` merge for `writ agent init` | none |
+| `mcp` | Stdio MCP server, tool schemas, response truncation bounds behind `Tools` interface | none |
+| `cli` | Subcommands, human/JSON formatting, `writ import`, `writ mcp` backend, `writ serve --dev`, remote client | all above |
+| `servetest` | In-process dev control plane (`httptest` + SQLite) for tests | `cli`, `control`, `server` |
+| `cmd/writ` | Flag dispatch, signal handling, exit codes | `cli` only |
+| `tfplugin5`, `tfplugin6` | Generated protobuf code (`just proto`) | none |
+| `archtest` | Automated import, wire-type, raw-state, and `oidc.Refusal` boundary enforcement | none |
 
-`internal/archtest` fails the build when: anything but `provider` imports `tfplugin5`, `tfplugin6`, grpc, or protobuf, or anything but `importer` and `cli` imports `provider`, or anything but `provider`, `tfcode`, and `mask` imports go-cty; anything but `sqldb` imports `database/sql`, pgx, or the SQLite driver, or anything but `awsrole` imports the AWS SDK, or anything but `mcp` imports the MCP SDK; `addr`, `diag`, `schema`, `types`, or `value` import `os`, `net`, `io/fs`, `time`, or `crypto/rand`; `cmd/writ` imports any internal package other than `cli`; the control UI imports `control` or pgx; `tofu` imports a package of writ other than `runas`, or `runas` or `egress` imports anything outside the standard library; `runner` imports `control`, `tfstate`, `mask`, `oidc`, `authz`, `sqldb`, `policy`, or `forge`; anything but `policy` imports OPA, anything imports `lestrrat-go/jwx`, which OPA links, or `policy` imports a package of writ; outside `tofu`, a state's raw `tofu show -json` is read anywhere but as the input of the mask's index; an exported function of `oidc` returns an `error`, a field of `oidc.Refusal` isn't an integer, or `server`, `ui`, `cli`, or `cmd/writ` turn an `oidc.Refusal` into an interface value, such as an argument to `fmt` or `log/slog`. So a test enforces the wire-type rule and the boundaries around secrets, and neither is a convention a contributor can miss.
+`internal/archtest` fails `just check` when any of these rules breaks:
 
+- Only `provider` imports `tfplugin5`, `tfplugin6`, gRPC, or protobuf, and only `importer` and `cli` import `provider`.
+- Only `provider`, `tfcode`, and `mask` import go-cty.
+- Only `sqldb` imports `database/sql`, pgx, or the SQLite driver; only `awsrole` imports the AWS SDK; only `mcp` imports the MCP SDK; only `oidc` imports go-oidc, go-jose, or `x/oauth2`.
+- Only `policy` imports OPA, nothing imports `lestrrat-go/jwx`, and `policy` imports no package of Writ.
+- The pure packages `addr`, `diag`, `schema`, `types`, and `value` import none of `os`, `os/exec`, `os/signal`, `net`, `net/http`, `io/fs`, `path/filepath`, `syscall`, `time`, `math/rand`, or `crypto/rand`.
+- `ui` imports neither `control` nor pgx.
+- `tofu` imports only `runas` of Writ, and `runas` and `egress` import only the standard library.
+- `runner` imports none of `control`, `tfstate`, `mask`, `oidc`, `authz`, `sqldb`, `policy`, `forge`, or `awsrole`.
+- `cmd/writ` imports only `cli` of Writ's internal packages.
+- Outside `tofu`, a state's raw `tofu show -json` is read only as the input of `mask.Index`.
+- An exported function of `oidc` never returns an `error`, every field of `oidc.Refusal` is an integer, and `server`, `ui`, `cli`, and `cmd/writ` never turn an `oidc.Refusal` into an interface value.
+- A command that may run as another user starts only through `runas.Start` or `runas.StartMapped`.
 
 ## Data flow
 
@@ -95,86 +106,72 @@ commit ─ repo.TofuSources ─▶ stack files, lock file, backend block
 
 ## Decisions
 
-1. **One package writes what leaves a run.** `internal/mask` produces the masked plan, the text and events of a plan and an apply, the state index rows, and the diagnostics of a failed run. Each run's mask starts from the values of `provider_env` and the secret set of the state it reads, and follows the role credentials `awsrole.Broker` serves the run, refreshes included. `internal/archtest` refuses code outside `tofu` that reads a state's raw `tofu show -json` other than as the input of `mask.Index`. [Secrets and the mask](secrets.md) has the rules.
-2. **A plan's id is a hash of what an apply relies on.** `tofuPlanID` is a SHA-256 over the masked plan, the SHA-256 of the saved plan, the commit, the stack, and the environment, each prefixed with its length. An approval is for that id, so it covers exactly one saved plan.
-3. **Keys are per environment.** An environment's key seals its states on the http backend, its saved plans, and the secret set of each state version. No API route returns a saved plan or a secret set.
-4. **A run's tokens end with the run.** `tfstate` gives each run a token on the http backend: a plan's token reads its stack's state, and an apply's token also locks and writes it. `control` keeps only each token's SHA-256.
-5. **writ fills the plugin cache, and the run only reads it.** `tofu.Runner.Fill` installs the providers a lock file pins, as `writ`, from a configuration it writes itself, so no code of the stack runs as `writ`. The lock file still chooses the registry, so under `egress_mode` report or enforce `runner.Local` refuses a registry `provider_registries` lacks, and Fill runs in a network namespace of its own behind a proxy that allows only public addresses. A provider uid can read the cache and can't write it. Fill returns the lock file the run's init reads: for a provider pinned with no hashes, as `tofu.FromTerraform` leaves a `hashicorp/` provider of a lock file Terraform wrote, it adds the hashes tofu recorded as it installed it, because a run's init trusts the cache only through them.
-6. **The lifecycle of a plan is one table.** `internal/control/lifecycle.go` lists every move of a plan's status, and the store refuses any other. [Approvals](approvals.md#track-a-plans-status) has the table.
-7. **Both plugin protocols, for the importer.** `writ import bulk` reads objects through `provider`, Writ's own client of the plugin protocol. `random`, `tls`, and `local` serve only protocol 5, and the OpenTofu registry lists only protocol 5 for every `hashicorp/aws` release. `provider` speaks both. `install` accepts a release that lists protocol `5.x` or `6.x`, and the handshake accepts `5` or `6`. A private interface inside `provider` has one adapter for each protocol, over `tfplugin5` and `tfplugin6`. A protocol 5 message is never decoded with protocol 6 types: the schema messages disagree on field numbers 10 to 12, and the decode loses `write_only` and the deprecation messages without an error.
-8. **Provider processes of the importer.** The handshake needs only `TF_PLUGIN_MAGIC_COOKIE`. `provider` sets `PLUGIN_UNIX_SOCKET_DIR` to a short temporary directory for each process and removes it after. It sets `TF_LOG_SDK`, `TF_LOG_SDK_PROTO`, and `TF_LOG_SDK_FRAMEWORK` to `off`. `StopProvider`, a closed connection, and SIGINT don't end a provider process. `provider` calls `plugin.GRPCController/Shutdown`, treats its `Unavailable` error as success, waits with a deadline, and then kills. The gRPC receive limit is 64 MiB.
-9. **A run reaches the network through writ alone.** Under `egress_mode` report or enforce, each step's view helper also starts in a network namespace with only loopback, listens on three ports there, and hands writ the listeners over a socket pair before tofu starts. writ serves the egress proxy, the credential endpoint, and the state backend on them from its own namespace. So no process of the run relays a connection, and the proxy knows the run by the listener a connection came in on, not by anything the run sends. The proxy decides on a host and port before it connects, and connects only to an address it resolved and checked. [Egress](serve.md#egress) has the rules.
+1. **One masking package:** `internal/mask` produces every stored/displayed run output; `internal/archtest` prevents raw state access elsewhere.
+2. **Content-addressed plan IDs:** `tofuPlanID` hashes length-prefixed masked plan, saved plan SHA-256, commit, stack, and env.
+3. **Per-environment sealing:** One key file per env seals HTTP state, saved plans, and secret sets (via separate HKDF labels). No API route returns a saved plan or a secret set.
+4. **Single-run state tokens:** `tfstate` issues read-only plan tokens and read/write/lock apply tokens stored only as SHA-256 hashes and revoked on run end.
+5. **Trusted plugin cache fills:** `tofu.Runner.Fill` populates `tofu.plugin_cache` from a synthetic config as `writ` (behind a public-only install proxy under `egress_mode` `report`/`enforce`); run UIDs mount the cache read-only.
+6. **Single lifecycle table:** `internal/control/lifecycle.go` owns all valid plan status transitions.
+7. **Dual plugin protocol support:** `provider` speaks both protocol v5 and v6 with separate generated adapters because schema field numbers 10 to 12 differ between versions.
+8. **Clean provider shutdown:** `provider` shuts down gRPC plugins via `GRPCController/Shutdown`, waits with deadline, then kills; sets short `PLUGIN_UNIX_SOCKET_DIR` and 64 MiB gRPC max receive size.
+9. **Loopback-only run networking:** Under `egress_mode` `report`/`enforce`, each step's helper binds three loopback listeners inside the step's network namespace and passes them to `writ serve` over a socket pair so `writ serve` identifies each run by listener.
 
 ## Invariants encoded in types
 
-- `addr.Addr` and `types.Type` have unexported fields. Only constructors make them, so no address or type is malformed.
-- An exported function of `oidc` never returns an `error`. A failure is an `oidc.Refusal`, whose fields are integers, so no text from an identity provider or a token reaches a response or a log. `internal/archtest` enforces both.
-- The risk class of each action list of an OpenTofu plan is one table, `tofuActions` in `internal/server/tofuplan.go`. A plan with an action list the table lacks is refused.
-- The diagnostic classes (`diag`) and the risk classes (`authz.Risks`) are each one list.
+- `addr.Addr` and `types.Type` have unexported fields constructed only via validated constructors.
+- Exported `oidc` functions never return `error`; failures are integer-only `oidc.Refusal` structs.
+- OpenTofu action-to-risk mapping lives in one table (`tofuActions` in `internal/server/tofuplan.go`); unknown actions fail closed.
+- Diagnostic classes (`diag`) and risk classes (`authz.Risks`) each have one authoritative definition.
 
 ## One owner for each piece of state
 
-| State | Single owner | Everyone else |
+| State | Single owner | Access by others |
 | --- | --- | --- |
-| the control database | `control`, through `sqldb` | `server` and `tfstate` call the store, and `ui` reaches it only through `server` |
-| the state versions, tokens, and locks of the http backend | `control` (`tfstate.go`) | `tfstate` serves them to OpenTofu, and a run reaches them only with its token |
-| a stack's state on S3 | the stack's bucket | a run reaches it with the environment's role, and OpenTofu takes the bucket's lock |
-| the plugin cache | `tofu`, which fills it as `writ` | provider uids read it |
-| a run's scratch directory | `tofu`, through one descriptor of the scratch root | |
-| `writ serve`'s free provider uids and each run's credential token | `runner.UIDs`, a channel of uids, and `awsrole.Broker` | providers fetch credentials over loopback |
-| a run's network under `egress_mode` report or enforce | `tofu`, which makes the namespace for each step and for Fill, and serves its ports until the step's processes are gone | `runner.Local` gives the handlers: the job's `egress.Proxy`, which records its destinations, and the install's own `egress.Proxy` for Fill; `server` gives the credential endpoint and the state backend through the relay |
-| fetched files of a commit | `control`, in the table `blobs`, by Git blob id | `repo` fetches only the blobs the store lacks |
-| the importer's provider binaries and schema cache | `provider`, under `WRIT_CACHE_DIR` | `importer` and the `schema` tool of `writ mcp` |
+| Control database | `control` (via `sqldb`) | `server`/`tfstate` call store; `ui` goes through `server` |
+| HTTP state versions, tokens, locks | `control` (`tfstate.go`) | `tfstate` serves to OpenTofu behind per-run tokens |
+| S3 state | Stack's S3 bucket | OpenTofu accesses via `plan_role` / `apply_role` |
+| Plugin cache | `tofu` (filled as `writ`) | Mounted read-only to provider UIDs |
+| Run scratch directory | `tofu` (via open root FD) | Confined to single step |
+| Provider UIDs and STS tokens | `runner.UIDs`, `awsrole.Broker` | Loopback credential endpoint |
+| Per-step network | `tofu` | `runner.Local` serves egress/install proxies; `server` relays state/creds |
+| Cached commit blobs | `control` (`blobs`) | `repo` fetches missing blobs |
+| Importer provider/schema cache | `provider` (`WRIT_CACHE_DIR`) | `importer`, `writ mcp` `schema` |
 
 ## Testing
 
-- **Unit tests per package**, table-driven with `t.Run`, against real types. The `control`, `server`, `tfstate`, and `ui` tests use a real SQLite file in `t.TempDir()`, and a scratch Postgres when `initdb` is on `PATH` or `WRIT_TEST_POSTGRES` names a server.
-- **`internal/archtest`** enforces the import rules and the boundaries around secrets on every `just check`.
-- **End to end**, `just e2e` (build tags `e2e` and `e2e_tofu`): builds `writ`, fills an OpenTofu plugin cache with the real `random`, `tls`, and `local` providers once, and drives the binary and real `tofu` through `writ serve` and `writ serve --dev` with OpenTofu stacks, in namespaces with only loopback: plans by commit, approvals and applies, stale plans, and the state index. `just e2e-tofu-s3` does the same for a stack whose state is on an S3 stand-in, and `just verify-mask` for the mask.
-- **Other targets.** `just test-serve` runs the server packages against Postgres and the provider isolation test, `just test-tfstate` and `just test-tofu` run `tfstate` and `tofu` against real OpenTofu, `just policy-parity` compares policy verdicts with `conftest`, `just e2e-import` plans imports through the importer's provider client against `hashicorp/aws` offline, and `just e2e-import-hcl` takes objects into OpenTofu stacks with `writ import bulk`.
+- **Unit tests:** Table-driven with `t.Run`; DB tests run against SQLite and scratch Postgres (when `initdb` or `WRIT_TEST_POSTGRES` is present).
+- **Architecture tests:** `internal/archtest` runs on every `just check`.
+- **End-to-end suites:** `just e2e`, `just e2e-tofu-s3`, `just verify-mask`, `just policy-parity`, `just test-serve`, `just test-tfstate`, `just test-tofu`, `just e2e-import`, `just e2e-import-hcl`, `just e2e-aws-emulator` ([Development](development.md)).
 
 ### Test clocks and database budgets
 
-`control.Options.ConnectTimeout` bounds Postgres connection setup, five seconds
-by default. `control.Options.Location` names the SQLite file or Postgres
-database. A Postgres session has a statement timeout of 10 seconds, a lock
-timeout of five seconds, and an idle-in-transaction timeout of 15 seconds.
-SQLite waits five seconds for a busy database.
-
-`server.Options.WithTimeout` replaces deadline construction for tests that
-advance time after the runner enters an apply. It must preserve the difference
-between cancellation and deadline expiry. Production uses
-`context.WithTimeoutCause`.
-
-Only builds with the `failpoint` tag read `WRIT_TEST_DATABASE_TIMEOUT`, a
-positive duration that replaces each Postgres budget above. Normal binaries
-ignore it.
+`control.Options.ConnectTimeout` defaults to `5s`; Postgres sessions enforce `10s` statement, `5s` lock, and `15s` idle-in-transaction timeouts; SQLite waits `5s` when busy. `server.Options.WithTimeout` lets tests replace `context.WithTimeoutCause`. Builds tagged `failpoint` honor `WRIT_TEST_DATABASE_TIMEOUT` (ignored by normal binaries).
 
 ## Dependencies
 
-Each is pinned at an exact version, and the commit that adds it says why. Each date is the day its version was tagged.
+All dependencies are pinned to exact versions (tag date in parentheses):
 
-| Module | Version | Why |
+| Module | Version | Purpose |
 | --- | --- | --- |
-| `google.golang.org/grpc` | v1.85.0 (2026-10-27) | plugin protocol client; OPA v1.22.4 requires v1.85.0 |
-| `google.golang.org/protobuf` | v1.36.12 (2026-08-10) | generated messages; `protoc-gen-go` comes from the same module |
-| `google.golang.org/grpc/cmd/protoc-gen-go-grpc` | v1.6.2 (2026-05-07) | generator for `just proto`, not linked |
-| `github.com/zclconf/go-cty` | v1.19.0 (2026-07-06) | msgpack `DynamicValue` encoding and schema type decoding in `provider`, and HCL values in `tfcode` and `mask`; v1.20.0 is two days old |
-| `github.com/hashicorp/hcl/v2` | v2.24.0 (2025-07-07) | `writ serve`'s config, and reading and writing OpenTofu code |
-| `modernc.org/sqlite` | v1.61.0 (2026-10-21) | pure Go SQLite for the control database of `writ serve --dev`, so `CGO_ENABLED=0` holds |
-| `github.com/jackc/pgx/v5` | v5.11.0 (2026-09-07) | `database/sql` driver for the control database of a team's `writ serve` |
-| `github.com/aws/aws-sdk-go-v2/config` | v1.33.11 (2026-10-26) | the credential chain of `writ serve`'s own AWS identity: SSO profiles, assumed roles, web identity, container and instance metadata |
-| `github.com/aws/aws-sdk-go-v2/service/sts` | v1.51.5 (2026-10-22) | `sts:AssumeRole` for each environment's plan and apply roles, in `awsrole` |
-| `github.com/aws/aws-sdk-go-v2/service/s3` | v1.114.5 (2026-10-22) | the S3 client of the end-to-end test of a stack on S3, against its stand-in; v1.114.6 was two weeks old to the day |
-| `github.com/aws/aws-sdk-go-v2/credentials` | v1.20.11 (2026-10-26) | static credentials for that test's stand-in |
-| `github.com/coreos/go-oidc/v3` | v3.21.0 (2026-09-01) | OIDC discovery, ID token verification, and userinfo for `writ serve`, as `AGENTS.md` requires; only `internal/oidc` imports it |
-| `github.com/go-jose/go-jose/v4` | v4.1.6 (2026-10-14) | JWS and JWK parsing under go-oidc; v4.1.6 fixes GHSA-mgcc-cww5-fp2q in JWK parsing of RSA keys, and v4.1.7 to v4.1.9 are under two weeks old |
-| `github.com/open-policy-agent/opa` | v1.22.4 (2026-11-12) | compiles and evaluates the Rego of `internal/policy`, the only package that imports it; the latest release, as the owner chose on 2026-11-16. v1.21.0 to v1.22.1 break two rule forms, so a deny can fail to fire |
-| `golang.org/x/oauth2` | v0.37.0 (2026-08-25) | the device flow of `writ login`, the code flow with PKCE of `writ login` in a browser and of the control UI; v0.38.0 is four days old |
-| `github.com/modelcontextprotocol/go-sdk` | v1.8.0 (2026-09-04) | the Model Context Protocol of `writ mcp` |
-| `github.com/mattn/go-isatty` | v0.0.24 (2026-07-23) | whether `writ` writes to a terminal, which decides color |
-| `golang.org/x/net` | v0.61.0 (2026-10-09) | `idna`, to compare hosts in the config's identity check, and `html` in the control UI's tests |
-| `golang.org/x/sys` | v0.49.0 (2026-10-06) | `Fchmodat` with no link followed, for the mode of the SQLite file |
+| `google.golang.org/grpc` | v1.85.0 (2026-10-27) | Plugin protocol client (also required by OPA v1.22.4) |
+| `google.golang.org/protobuf` | v1.36.12 (2026-08-10) | Generated plugin protocol messages |
+| `google.golang.org/grpc/cmd/protoc-gen-go-grpc` | v1.6.2 (2026-05-07) | Codegen tool for `just proto` (not linked) |
+| `github.com/zclconf/go-cty` | v1.19.0 (2026-07-06) | Msgpack `DynamicValue`, schema types, HCL values (`provider`, `tfcode`, `mask`) |
+| `github.com/hashicorp/hcl/v2` | v2.24.0 (2025-07-07) | Server config and OpenTofu HCL parsing/writing |
+| `modernc.org/sqlite` | v1.61.0 (2026-10-21) | Pure-Go SQLite (`CGO_ENABLED=0`) for `--dev` |
+| `github.com/jackc/pgx/v5` | v5.11.0 (2026-09-07) | Postgres `database/sql` driver |
+| `github.com/aws/aws-sdk-go-v2/config` | v1.33.11 (2026-10-26) | Host AWS identity credential chain |
+| `github.com/aws/aws-sdk-go-v2/service/sts` | v1.51.5 (2026-10-22) | `sts:AssumeRole` in `awsrole` |
+| `github.com/aws/aws-sdk-go-v2/service/s3` | v1.114.5 (2026-10-22) | S3 e2e test client against local stand-in |
+| `github.com/aws/aws-sdk-go-v2/credentials` | v1.20.11 (2026-10-26) | Static credentials for S3 e2e stand-in |
+| `github.com/coreos/go-oidc/v3` | v3.21.0 (2026-09-01) | OIDC discovery, token verification, userinfo (`internal/oidc` only) |
+| `github.com/go-jose/go-jose/v4` | v4.1.6 (2026-10-14) | JWS/JWK parsing under `go-oidc` (includes GHSA-mgcc-cww5-fp2q fix) |
+| `github.com/open-policy-agent/opa` | v1.22.4 (2026-11-12) | Rego compilation and evaluation (`internal/policy` only) |
+| `golang.org/x/oauth2` | v0.37.0 (2026-08-25) | Device and PKCE code OAuth flows |
+| `github.com/modelcontextprotocol/go-sdk` | v1.8.0 (2026-09-04) | `writ mcp` stdio server |
+| `github.com/mattn/go-isatty` | v0.0.24 (2026-07-23) | TTY detection |
+| `golang.org/x/net` | v0.61.0 (2026-10-09) | `idna` host comparison and UI HTML tests |
+| `golang.org/x/sys` | v0.49.0 (2026-10-06) | Syscall helpers (`Fchmodat` without following symlinks) |
 | `golang.org/x/tools` | v0.52.0 (2026-10-10) | `go/packages` for `internal/archtest` |
 
-`protoc` comes from nixpkgs. Not added: `hashicorp/go-plugin` (the handshake is about 100 lines and the library brings hclog and yamux), and cobra or pflag (the standard `flag` package handles subcommands and `--long` flags).
+`protoc` comes from nixpkgs. Intentionally omitted: `hashicorp/go-plugin` (avoiding `hclog`/`yamux`) and `cobra`/`pflag` (stdlib `flag` suffices).

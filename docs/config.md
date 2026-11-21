@@ -1,6 +1,6 @@
 # Server config
 
-A team's `writ serve` reads one config file, written in HCL: settings such as `url = "..."`, and blocks such as `env "prod" { ... }`. It evaluates nothing, so every value is a literal: no variable, function, or `${...}`. It contains no secret: the state keys, the TLS key, and the files of `provider_env` are paths it points to. A relative path is relative to the config file's directory. [Run a control plane](run.md) shows how to start `writ serve` with it.
+A team's `writ serve` reads one static HCL file. Every value must be a literal (no variables, functions, or `${...}`). Secrets never live in the config file; key and token settings point to paths on disk (relative paths resolve from the config file's directory). See [Run a control plane](run.md) to validate and start the server.
 
 ## Sample config
 
@@ -148,65 +148,59 @@ env "prod" {
 
 | Field | Meaning |
 | --- | --- |
-| `url` | The URL of `writ serve`, and the only audience a token can carry. `https://`, or `http://` on a loopback address behind a proxy that ends TLS. |
-| `listen` | The address to listen on. Without `tls`, a loopback address. |
-| `tls` | A block: `cert` and `key`, the certificate chain and key files. |
-| `database` | The Postgres URL of the control database. It can't contain a password: point to a passfile with `?passfile=` or set `PGPASSFILE`. |
-| `data` | A directory for work files. Default `/var/lib/writ`. |
-| `provider_uids` | A range of uids from `1000` to `65533`, such as `"61000-61063"`, that no user on the host has, with at least `limits.plans` uids. Each running plan's providers run as one of them. Required when an environment sets a role or the config has a `tofu` block. See [Run isolation and egress](run-isolation.md). |
-| `aws` | A block: how `writ serve` reaches STS. `region`, an optional `sts_endpoint` for an interface VPC endpoint, and `session`, how long credentials last, from `15m` to `12h`, `1h` by default. Required when an environment sets a role. |
-| `plan_ttl` | How long a plan stays live, pending or approved, before it expires (`>= 1m`). Default `24h`. |
-| `session_ttl` | How long a person's session lasts (`5m` to `168h`). There's no refresh. Default `12h`. |
-| `ui` | A block. `ui { enabled = false }` turns the [control UI](sign-in.md#the-control-ui) off. It's on by default when an issuer of kind `people` exists, and refused when `enabled = true` with no `people` issuer. |
-| `limits` | A block: `requests_per_second` (per principal, `>= 1`), `requests_per_address` (per client IP, `>= 1`), `plans_per_principal` (`>= 1`), `plans` (total concurrent plans, `>= 1`), `applies` (total concurrent applies, `>= 1`), `body` (largest request body after gzip decompression, `64KiB` to `64MiB`), `plan_timeout`, `apply_start_timeout`, and `apply_timeout` (each `>= 1s`), and the limits of each OpenTofu step: `run_memory` (`128MiB` to `1024GiB`, with no swap where the kernel keeps a swap account for cgroups), `run_pids` (processes and threads, `>= 64`), `run_cpus` (`0.1` to `1024`, such as `0.5`), and `run_scratch` (the run's directory on disk, `64MiB` to `1024GiB`). The defaults are in the sample above. See [Rate limits](api.md#rate-limits), [Time limits](api.md#time-limits), and [Limit what each run uses](run-isolation.md#limit-what-each-run-uses). |
-| `trusted_proxies` | Optional. A list of CIDRs, such as `["127.0.0.1/32"]`, of the proxies in front of `writ serve`. `X-Forwarded-For` is read only on a request from one of them. See [Rate limits](api.md#rate-limits). |
-| `retention` | A block: how long `audit` rows and spent `plans` are kept (each `>= 1h` when set). By default they're kept forever. See [Back up and upgrade](run.md#back-up-and-upgrade). |
-| `issuer "NAME"` | A token issuer to trust, one block each: `kind` (`gitlab-ci`, `github-actions`, or `people`), `url`, `identity`, and an optional `ca_file` for an instance with a private CA. See below. |
-| `team "NAME"` | A rule over token claims, one block each: `issuer`, and `match`, an object of claims and the values that match. See below and [Teams and grants](serve.md#teams-and-grants). |
-| `grant` | What teams can do, one block each, numbered from 1 in the order written. See below. |
-| `approval` | Optional. How many approvals a plan needs, one block for each rule, by `stacks`, `envs`, and `risks`, with `need` from 1 to 10. Without one, no plan needs an approval. See below and [Approvals](approvals.md#set-how-many-approvals-a-plan-needs). |
-| `env "NAME"` | An environment, one block each: its state `key` file, and optionally `plan_role`, `apply_role`, `s3_endpoints`, `provider_env`, and `egress`. See below. |
-| `forge "NAME"` | Optional. Where [repositories](repos.md#forges-and-their-tokens) are read from, one block each: `kind = "gitlab"`, `url`, `read_token_file` (a token with `read_api`), and optional `write_token_file` and `ca_file`. See below. |
-| `repo` | Optional. Pins the list of repositories, one block each, with `name`, `forge`, `project`, and optional `path`, `prefix`, and `webhook_secret_file`. Without one, an admin adds them with `writ repo add`. See below. |
-| `poll_every` | How often each repository's default branch is polled (`>= 5s`). Default `60s`. |
-| `poll_every_with_hook` | How often the default branch of a repository with a [webhook](webhooks.md) is polled, as a backstop. At least `poll_every`. Default `5m`, or `poll_every` when that's longer. |
-| `tofu` | Optional. A block: how `writ serve` runs OpenTofu for [stacks of `.tf` files](serve.md#opentofu-stacks). See below. |
-| `drift` | Optional. A block: `every`, how often `writ serve` runs a [drift check](serve.md#drift-checks) of each OpenTofu `stack@env` it keeps state for, at least `1m`. It needs the `tofu` block and `limits.plans` of at least 2. Without it, `writ serve` runs no drift checks. |
-| `egress_mode` | Optional. `"off"`, `"report"`, or `"enforce"`. Under `report` and `enforce`, each OpenTofu run gets a network namespace of its own, whose one way out is Writ's egress proxy: `enforce` refuses a destination its env's `egress` doesn't list, and `report` lets it through and records it. Default `"off"`: runs share the host's network, as they always have. `report` and `enforce` need the `tofu` block. See [Run isolation and egress](run-isolation.md#egress) to set it up and roll it out, and [Egress](serve.md#egress) for how it works. |
-| `provider_registries` | Optional. A list of the registry hosts a provider install can ask under `egress_mode` `report` or `enforce`, such as `["registry.opentofu.org"]`. A stack's `.terraform.lock.hcl` chooses each provider's registry, so a plan whose lock file has a provider from another registry fails before the install. Each item is a host name as a provider's address starts with it, in lowercase, with no scheme or port. Default `["registry.opentofu.org", "registry.terraform.io"]`. See [The provider install](serve.md#the-provider-install). |
-| `notify "NAME"` | Optional. A destination for [notifications](notifications.md), one block each: `kind`, `url_file`, `events`, and optional `secret_file`, `envs`, `stacks`, and `drift_mode`. See below. |
-| `policy` | Optional. A block of Rego policy sets (`set "NAME" { dir = "..." }`) evaluated at the plan and apply points, with `timeout` and `memory` bounds. See [Policy](#policy) below. |
+| `url` | Public URL of `writ serve` and sole accepted token audience (`https://`, or loopback `http://` behind a TLS proxy). |
+| `listen` | Bind address (must be loopback when `tls` is omitted). |
+| `tls` | Optional block: `cert` and `key` PEM file paths. |
+| `database` | Postgres DSN (passwords forbidden in URL; use peer auth, `?passfile=`, or `PGPASSFILE`). |
+| `data` | Working directory for server files (default `/var/lib/writ`). |
+| `provider_uids` | Unused UID range `"FIRST-LAST"` (`1000 <= first <= last < 2^31`, at most `65,536` UIDs, at least `limits.plans` UIDs). Required when any `env` sets a role or `tofu` is configured ([Run isolation and egress](run-isolation.md)). |
+| `aws` | Block (`region`, optional `sts_endpoint`, `session` `15m` to `12h`, default `1h`). Required when any `env` sets an AWS role. |
+| `plan_ttl` | Positive duration a plan stays live before expiring (default `24h`). |
+| `session_ttl` | Positive duration for human sessions with no refresh (default `12h`). |
+| `ui` | Optional block: `enabled = false` disables `/ui/` (enabled by default when a `people` issuer exists; `enabled = true` refused without one). |
+| `limits` | Concurrency, size, and timeout caps (defaults in sample above): `requests_per_second` (`>= 1`), `requests_per_address` (`>= 1`), `plans_per_principal` (`>= 1`), `plans` (`>= 1`), `applies` (`>= 1`), `body` (`1B` to `2GiB`, post-gzip), positive durations `plan_timeout`, `apply_start_timeout`, `apply_timeout`, and per-step run limits `run_memory` (`128MiB` to `1024GiB`), `run_pids` (`>= 64`), `run_cpus` (`0.1` to `1024`), `run_scratch` (`64MiB` to `1024GiB`). |
+| `trusted_proxies` | Optional CIDR list of reverse proxies permitted to supply `X-Forwarded-For` ([Rate limits](api.md#rate-limits)). |
+| `retention` | Optional block: positive durations `audit` and `plans` (kept forever when unset) ([Back up and upgrade](upgrades.md)). |
+| `issuer "NAME"` | Trusted OIDC issuer (`kind`: `gitlab-ci`, `github-actions`, or `people`; `url`; `identity`; optional `ca_file`). |
+| `team "NAME"` | Maps claims from an `issuer` to a team name ([Teams and grants](serve.md#teams-and-grants)). |
+| `grant` | Authorizes `teams` on `stacks` and `envs` for `can` operations (numbered from 1). |
+| `approval` | Optional approval count rules (`stacks`, `envs`, `risks`, `need` `1` to `10`). |
+| `env "NAME"` | Environment definition (`key`, optional `plan_role`, `apply_role`, `s3_endpoints`, `provider_env`, `egress`). |
+| `forge "NAME"` | Optional Git host (`kind = "gitlab"`, `url`, `read_token_file`, optional `write_token_file`, `ca_file`). |
+| `repo` | Optional pinned repository blocks (`name`, `forge`, `project`, optional `path`, `prefix`, `webhook_secret_file`). Disables `POST /v1/repos`. |
+| `poll_every` | Repository default-branch poll interval (`>= 1s`, default `60s`). |
+| `poll_every_with_hook` | Backstop poll interval for repositories with webhooks (`>= poll_every`; default `5m`, or `poll_every` if longer). |
+| `tofu` | OpenTofu execution block (`binary`, `plugin_cache`, `scratch_dir`, optional `git`). |
+| `drift` | Optional scheduled drift check block (`every >= 1m`; requires `tofu` and `limits.plans >= 2`). |
+| `egress_mode` | `"off"` (default), `"report"`, or `"enforce"` (requires `tofu`) ([Run isolation and egress](run-isolation.md#egress)). |
+| `provider_registries` | Allowed provider registry hostnames during cache fills under `report`/`enforce` (default `["registry.opentofu.org", "registry.terraform.io"]`). |
+| `notify "NAME"` | Optional Slack or webhook notifier ([Get notified](notifications.md)). |
+| `policy` | Optional Rego policy sets block ([Policy](#policy)). |
 
 ### issuer
 
-- `identity` is the lowercase name of the Git host or identity provider that the user ids in the issuer's tokens come from, such as the name of a `forge` block. Issuers of one Git host share it. See [Who a person is](serve.md#who-a-person-is).
-- `ca_file`: optional PEM bundle of root CAs trusted when connecting to `url`.
-- An issuer of kind `people` is the identity provider people sign in to the control UI and `writ login` with. It also takes `client_id`, `client_secret_file` (the file that has the client secret; optional for public OAuth clients), and `groups`: `"userinfo"` reads the groups claim from the userinfo endpoint, and `"id_token"`, the default, from the ID token.
-- The application whose id is `client_id` lists `URL/ui/callback` as a redirect URI for the control UI. For `writ login` through a browser, it also lists `http://127.0.0.1/callback`, which `writ login` needs when the identity provider has no device flow, as on GitLab.com. [Set up writ login](sign-in.md#set-up-writ-login) explains both.
+- `identity`: lowercase provider name shared by issuers representing the same Git host/IdP ([Who a person is](serve.md#who-a-person-is)).
+- `ca_file`: optional PEM root CA bundle for `url`.
+- `kind = "people"` requires `client_id` and `client_secret_file`, and accepts `groups` (`"id_token"` default, or `"userinfo"`). Register `URL/ui/callback` (and `http://127.0.0.1/callback` for browser `writ login`) on the OAuth application ([Set up writ login](sign-in.md#set-up-writ-login)).
 
 ### team, grant, and approval
 
-- **`team "NAME"`**: `issuer` names a configured `issuer` block, and `match` is an object mapping non-empty claim names to non-empty lists of allowed string values (a token matches when every listed claim has one of its listed values).
-- **`grant`**:
-  - `teams`: non-empty list of configured `team` names.
-  - `stacks`: non-empty list of [stack patterns](serve.md#stack-patterns) (such as `["*"]` or `["payments/*"]`).
-  - `envs`: non-empty list of configured `env` names, or `["*"]`.
-  - `can`: non-empty list of operations from `read`, `plan`, `approve`, `apply`, `override`, `adopt`, and `admin`.
-  - `risks`: required when `can` includes `apply`, and forbidden otherwise. Lists the risk classes the grant permits applying, from `create`, `update`, `replace`, `delete`, and `data-loss`.
-- **`approval`**:
-  - `stacks`: non-empty list of stack patterns.
-  - `envs`: non-empty list of environment names, or `["*"]`.
-  - `risks`: non-empty list of risk classes (`create`, `update`, `replace`, `delete`, `data-loss`) that trigger the rule.
-  - `need`: number of distinct approvals required, from `1` to `10`. When multiple rules match a plan, the highest `need` applies.
+- **`team "NAME"`:** `issuer` name plus `match` object mapping claim names to non-empty lists of allowed string values (all claims must match).
+- **`grant`:**
+  - `teams`: non-empty list of team names.
+  - `stacks`: non-empty list of [stack patterns](serve.md#stack-patterns).
+  - `envs`: non-empty list of configured environments or `["*"]`.
+  - `can`: non-empty list from `read`, `plan`, `approve`, `apply`, `override`, `adopt`, `admin`.
+  - `risks`: optional list of risk classes (`create`, `update`, `replace`, `delete`, `data-loss`) the grant permits applying (defaults to empty; grants with `apply` need the plan's risk classes covered by one or more matching grants).
+- **`approval`:** `stacks`, `envs`, `risks`, and `need` (`1` to `10`; highest matching `need` wins).
 
 ### env
 
-- `key`: path to a 32-byte key file (raw 32 bytes or 64 hex digits) used to seal state on the `http` backend, saved plans, and secret sets.
-- `plan_role`: the ARN of the AWS IAM role plans and drift checks assume.
-- `apply_role`: the ARN of the AWS IAM role applies assume.
-- `s3_endpoints`: a list of custom `https://` (or loopback `http://`) endpoint URLs a stack's [S3 backend](serve.md#stacks-on-s3) can point to.
-- `provider_env`: an object of environment variables for providers, where each value is a file path whose contents are read and masked.
-- `egress`: a list of the destinations the env's runs can reach under `egress_mode` `report` or `enforce`. Each item is `HOST`, `*.DOMAIN`, or an IP address, with an optional `:PORT`. An item with no port allows 443 only, so plain HTTP needs `HOST:80`. A wildcard matches subdomains, not the domain itself, and needs a domain of two labels or more. Write an IPv6 address with a port as `[ADDR]:PORT`. The list holds what the stack's providers and modules reach, not the providers' registry: see [What a run fetches](serve.md#what-a-run-fetches).
+- `key`: path to a 32-byte key file (raw 32 bytes or 64 hex chars) sealing HTTP state, saved plans, and secret sets.
+- `plan_role`, `apply_role`: AWS IAM role ARNs assumed for plans/drift checks and applies.
+- `s3_endpoints`: custom `https://` (or loopback `http://`) endpoint URLs allowed in `backend "s3"`.
+- `provider_env`: map of env var names to secret file paths (read and masked per run).
+- `egress`: allowed `HOST`, `*.DOMAIN` (subdomains only, >= 2 labels), or IP/IPv6 with optional `:PORT` (default `443`) under `egress_mode` `report`/`enforce`:
 
 ```hcl
 egress_mode = "enforce"
@@ -219,86 +213,59 @@ env "prod" {
 
 ### forge and repo
 
-- **`forge "NAME"`**:
-  - `kind`: `"gitlab"`.
-  - `url`: base URL of the Git host (`https://`, or `http://` on loopback).
-  - `read_token_file`: path to a file containing a token with `read_api` scope.
-  - `write_token_file`: optional path to a file containing a write token (must differ from `read_token_file`).
-  - `ca_file`: optional PEM bundle of root CAs for a private GitLab instance.
-- **`repo`**:
-  - `name`: unique repository name on the control plane (`[a-z0-9][a-z0-9._-]*`).
-  - `forge`: name of a configured `forge` block.
-  - `project`: `namespace/project` path on the forge.
-  - `path`: optional subdirectory inside the repository under which stacks are discovered.
-  - `prefix`: optional prefix prepended to every discovered stack name (such as `"payments/"`).
-  - `webhook_secret_file`: optional path to a file that has the secret of the project's GitLab webhook: its secret token, or a signing token starting with `whsec_` on GitLab 19.1 and later. `writ serve` reads it for each delivery, so you can rotate it without a restart, and never shows or logs it. Not for a `dir` repository. See [Get changes in seconds with a webhook](webhooks.md).
+- **`forge "NAME"`:** `kind = "gitlab"`, `url` (`https://` or loopback `http://`), `read_token_file` (`read_api` scope), optional `ca_file`, and optional `write_token_file` (reserved for future write operations; warns if set).
+- **`repo`:** `name` (`[a-z0-9][a-z0-9._-]*`), `forge`, `project` (`namespace/project`), optional `path`, optional `prefix` (ending in `/`), and optional `webhook_secret_file` (plain token or GitLab 19.1+ `whsec_` signing token, re-read on each delivery) ([Get changes in seconds with a webhook](webhooks.md)).
 
 ### notify
 
-- **`notify "NAME"`**: a name of lowercase letters, digits, `_`, and `-`.
-  - `kind`: `"slack"` for a Slack incoming webhook, or `"webhook"` for a JSON `POST` in the [`writ.notification/v0` format](notifications.md#the-payload).
-  - `url_file`: path to a file containing the URL. It must be `https://`, or `http://` on a loopback address, with no user name or password.
-  - `secret_file`: optional, for `kind = "webhook"` only. Path to a file containing the key that signs each request with [HMAC-SHA256](notifications.md#verify-the-signature).
-  - `events`: non-empty list from `drift`, `plan-failed`, `apply-failed`, `applied`, `outside-write`, and `approval-needed`. See [Events](notifications.md#events).
-  - `envs`: optional non-empty list of configured `env` names, or `["*"]`. Without it, every environment.
-  - `stacks`: optional non-empty list of [stack patterns](serve.md#stack-patterns). Without it, every stack.
-  - `drift_mode`: optional, only with `drift` in `events`. `"on-change"`, the default, sends `drift` when a stack's drift status changes; `"every-check"` sends it for every check that finds drift too.
+- **`notify "NAME"`** (`[a-z0-9_-]+`):
+  - `kind`: `"slack"` or `"webhook"`.
+  - `url_file`: file holding `https://` (or loopback `http://`) URL with no embedded credentials.
+  - `secret_file`: optional HMAC-SHA256 signing key file (`kind = "webhook"` only).
+  - `events`: non-empty subset of `drift`, `plan-failed`, `apply-failed`, `applied`, `outside-write`, `approval-needed`.
+  - `envs`, `stacks`: optional environment names / `["*"]` and [stack patterns](serve.md#stack-patterns) (default: all).
+  - `drift_mode`: optional (`"on-change"` default or `"every-check"`, valid only when `events` includes `drift`).
 
-`writ serve` reads both files once, when it starts, and fails to start when one can't be read or the URL isn't one it sends to. A config that subscribes to `drift` without a `drift` block gets a warning, because no drift check runs. `writ serve --check --notify-test` sends each notifier a test message.
+Files are read once at startup (restart after edits). Subscribing to `drift` without a `drift` block emits a warning.
 
 ### tofu
 
-- `binary`: OpenTofu 1.13.9, a path or a name on `PATH`.
-- `plugin_cache`: the providers' directory.
-- `scratch_dir`: where each run gets a directory.
-- `git`: optional. The `git` that each run's [filesystem view](serve.md#what-a-run-can-see) has, a path or a name on `PATH`. It's found when `writ serve` starts, which fails if it's missing. Each run's `PATH` has that `git`'s directory first. Without `git`, a module source that needs `git`, such as `git::https://...` or a `github.com/` address, fails, and the plan's error says to set `tofu.git`.
+- `binary`: OpenTofu 1.13.9 path or name on `PATH`.
+- `plugin_cache`, `scratch_dir`: directories outside `data`.
+- `git`: optional `git` path/name on `PATH` (must have `git-remote-http` and `git-remote-https` in its exec path; required for `git::https://` or `github.com/` modules).
 
-Both directories must be outside `data`. The block requires `provider_uids`, because a stack runs the code of any commit that `writ serve` plans. So OpenTofu and its providers run as a provider uid, never as `writ serve`'s own user, which can read the state keys, the database, and the tokens. Without the block, a plan of such a stack is refused. `writ serve --check` checks that the binary is OpenTofu 1.13.9, and that `git`, when set, has `git-remote-http` and `git-remote-https` in its exec path.
+Requires `provider_uids` so OpenTofu never executes as `writ serve`'s OS user.
 
 ## Stack names and prefixes
 
-A repository's `prefix` goes before each stack's directory to make its name on the control plane: with `prefix = "payments/"`, the stack `network` is `payments/network`. Grants, approvals, and state use that name. A request can't choose the name.
-
-For every plan and apply, the control plane takes off the stack's name the prefix of the longest-prefixed repository it has that the name starts with. A prefix ends in a slash, so it matches at a slash. Registering a repository is refused when its prefix starts another repository's prefix, or is the start of one, or when one of its stack names starts with another repository's prefix. So one prefix is always the longest. See [Rules for adding a repository](add-repository.md#rules-for-adding-a-repository).
+A repository's `prefix` prepends to each stack directory (`prefix = "payments/"` + `network` = `payments/network`). Grants, approvals, and state key off this full name. Writ rejects overlapping prefixes or stack names colliding with another repository's prefix ([Rules for adding a repository](add-repository.md#rules-for-adding-a-repository)).
 
 ## State
 
-State has no field. An OpenTofu stack's state is on the http backend that `writ serve` serves, in the control database, or in the stack's own S3 bucket, as [OpenTofu stacks](serve.md#opentofu-stacks) says. A request that sets a state location is refused.
+State locations are controlled by the stack's backend (`backend "http" {}` in Postgres, or `backend "s3"` in S3). API requests can't override state location.
 
 ## What writ serve --check refuses
 
-`writ serve --check` refuses, with its position:
+`--check` fails with source file/line on:
 
-- An unknown setting or block, a block written as a setting and the reverse, and a block named twice.
-- A reference to an issuer, team, operation, risk class, or environment that doesn't exist.
-- An issuer without `identity`.
-- An element of `trusted_proxies` that isn't a CIDR or that sets bits past its prefix length.
-- A `drift` block without `every`, with an empty `every`, an `every` of zero or under a minute, in a config with no `tofu` block, or with `limits.plans` under 2.
-- A `tofu` block without `provider_uids`.
-- A `limits.run_memory` or `run_scratch` that isn't a size in `KiB`, `MiB`, or `GiB` within its bounds, a `run_pids` under 64, and a `run_cpus` that isn't a number from `0.1` to `1024`.
-- An `egress_mode` other than `off`, `report`, and `enforce`, and `report` or `enforce` in a config with no `tofu` block, or with an env whose `s3_endpoints` lists an `http://` endpoint on loopback, which a run's own namespace can't reach.
-- An `egress` item that isn't `HOST`, `*.DOMAIN`, or an IP address with an optional port, a wildcard of one label, such as `*.com`, and an IP address the proxy never connects to: loopback, link-local, multicast, unspecified, `fd00:ec2::254`, or a NAT64 address of one of them.
-- A `provider_registries` item that isn't a registry's host name, such as one with `https://` or a port.
-- A stack pattern that isn't one, as [Stack patterns](serve.md#stack-patterns) says.
-- An `approve` grant to a team of a CI issuer that matches no claim of the person who ran the job, and an `override` or `adopt` grant to any team of a CI issuer.
+- Unknown or mistyped settings/blocks, duplicate names, or removed legacy keys (`provider`, `providers_dir`, `limits.files`, `env.secret_env`, `env.state`).
+- Undefined issuer, team, operation, risk class, or environment references; issuer missing `identity`.
+- Malformed `trusted_proxies` CIDRs or host bits set past prefix length.
+- Invalid `drift` (`every < 1m`, missing `tofu`, or `limits.plans < 2`), `tofu` without `provider_uids`, or out-of-range `limits.run_*`.
+- Invalid `egress_mode`, `report`/`enforce` without `tofu` or with loopback `http://` `s3_endpoints`, invalid `egress` entries (single-label wildcards, loopback/link-local/metadata/multicast/unspecified/NAT64 IPs), or invalid `provider_registries` hostnames.
+- Invalid stack patterns; `approve` grant to a CI team matching no user claim; `override` or `adopt` grant to any CI team.
 
-It warns on:
+`--check` warns on:
 
-- A config with an `http://` URL and no `trusted_proxies`.
-- A team that matches a path without its id, and a team that can apply but matches no ref.
-- A config without `provider_uids`.
-- Issuers of two identities whose URLs look like one host.
-- An env that sets `egress` under `egress_mode` `off`, where the list has no effect.
-- `provider_registries` under `egress_mode` `off`, where it has no effect.
-- With a `tofu` block, run limits that `writ serve` couldn't enforce from the cgroup `--check` runs in, and a seccomp filter the kernel can't run, with the reason. See [Check that the limits hold](run-isolation.md#check-that-the-limits-hold).
-
-It prints the approval rules, and under `egress_mode` `report` or `enforce`, the mode, each env's `egress` list, and `provider_registries`. With a `tofu` block, it prints the run limits each OpenTofu step gets, and whether the seccomp filter is on.
-
-A config that sets one of these removed settings is refused, and the setting is named: `provider` and `providers_dir`, because a stack runs the providers its `.terraform.lock.hcl` pins; `limits.files`; and an environment's `secret_env` or `state`. Delete them.
+- Missing `tls` block without `trusted_proxies`.
+- Team matching a repo path without numeric ID, or `apply`-capable team matching no ref.
+- Missing `provider_uids`; distinct issuer identities pointing at the same host.
+- `env.egress` or `provider_registries` set while `egress_mode = "off"`.
+- Unenforceable cgroup run limits or unavailable seccomp filter ([Check that the limits hold](run-isolation.md#check-that-the-limits-hold)).
 
 ## Policy
 
-The `policy` block lists policy sets. Each is a directory of `.rego` files on the host, relative to the config file. The config is the only place policy comes from, so no commit can change the policy that checks it. [Policy](policy.md) describes the input, the rules Writ reads, and the verdicts.
+`policy` loads host-side Rego directories at startup (never from stack commits). See [Policy](policy.md).
 
 ```hcl
 policy {
@@ -318,18 +285,16 @@ policy {
 
 | Key | Meaning | Default |
 | --- | --- | --- |
-| `timeout` | How long one decision can take, at either point, every set together | `"10s"` |
-| `memory` | How much address space the evaluation process can add, at least `"64MiB"` | `"1GiB"` |
-| `set "NAME"` | One policy set. At least one. Its name is lower case letters, digits, `-`, and `_` | |
-| `set.dir` | The directory of the set's `.rego` files, relative to the config file | |
-| `set.level` | `"mandatory"`, whose deny refuses, or `"advisory"`, whose deny only warns | `"mandatory"` |
+| `timeout` | Max total duration per evaluation decision | `"10s"` |
+| `memory` | Max added address space for the policy worker (`>= 64MiB`) | `"1GiB"` |
+| `set "NAME"` | One or more sets (`[a-z0-9_-]+`) | |
+| `set.dir` | Directory of `.rego` files (relative to config file; excludes `*_test.rego`; max 1 MiB per set) | |
+| `set.level` | `"mandatory"` (denies block) or `"advisory"` (denies warn) | `"mandatory"` |
 
-A set has every `.rego` file under its directory, at any depth, except files with names that end in `_test.rego`. Those contain the set's tests for `conftest verify` and `opa test`. A set has at most 1 MiB of Rego.
-
-`writ serve` reads and compiles every set at start, and doesn't start when one doesn't compile. `writ serve --check` compiles them and prints a line for each set, and one for the bounds. When a set doesn't compile, `--check` fails with the file and place:
+`writ serve` and `writ serve --check` compile every set against Writ's input schema at startup and fail with exact locations on type or built-in errors:
 
 ```
 policy set baseline: iam.rego:6:12: rego_type_error: undefined ref: input.planned_values.root_module.resources[__local0__]
 ```
 
-`writ serve --dev --config FILE` takes the same block.
+`writ serve --dev --config FILE` accepts the same `policy` block.

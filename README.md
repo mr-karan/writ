@@ -2,48 +2,48 @@
 
 **Plan, approve, and apply OpenTofu on your own server.**
 
-Writ is an open-source control plane for [OpenTofu](https://opentofu.org). You point it at a Git repository of stacks. It plans the commits you or your CI job send it, waits for your team to approve the plan, and applies that exact plan. Your CI jobs and laptops never hold a cloud credential or a state key.
+Writ is an open-source, self-hosted control plane for [OpenTofu](https://opentofu.org). Point it at a Git repository of stacks. When you or a CI job send a commit, Writ plans it on your server, waits for your team to approve that exact plan, and applies it. CI jobs and laptops never hold cloud credentials or state keys.
 
-It's one Go binary under the Apache 2.0 license, with no limit on users, runs, or resources. A team's control plane keeps its records in Postgres. On your own machine it uses SQLite.
+Writ ships as one Go binary under the Apache 2.0 license, with no limits on users, runs, or resources. A team server stores records in Postgres; local development (`writ serve --dev`) uses SQLite on loopback.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="website/public/ui/overview-1280-dark.webp">
-  <img src="website/public/ui/overview-1280-light.webp" alt="Writ's control UI: plans waiting for approval, applies in progress, failed runs, and drifted stacks, for each environment." width="900">
+  <img src="website/public/ui/overview-1280-light.webp" alt="Writ control UI showing plans waiting for approval, active applies, failed runs, and drifted stacks." width="900">
 </picture>
 
-## What you get
+## What it does
 
-- **Plans on your server.** You or your CI job ask for a commit's plan. `writ serve` reads that commit from your Git host and runs `tofu plan` on your server. A plan writes nothing to your state.
-- **Approvals for one exact plan.** You approve a plan by its id, and the apply runs the plan Writ kept, not a new one. Where an approval rule applies, the author's approval doesn't count. [Approvals](docs/approvals.md)
-- **No cloud keys in CI.** A plan runs with the plan role you configure, so make that role read-only. Only an apply gets the apply role: one that its approval rules allowed, or one that someone with `override` overrode with a recorded reason. [Roles and credentials](docs/serve.md#roles-and-credentials)
-- **Secrets hidden.** One mask covers every plan, run output, and error that Writ stores or shows. [Secrets and the mask](docs/secrets.md)
-- **Policy in Rego.** Writ checks each plan when it's created and again before its apply. A mandatory deny has no override. [Policy](docs/policy.md)
-- **Drift checks.** Writ plans each stack on a schedule and shows what changed outside OpenTofu. [Drift checks](docs/serve.md#drift-checks)
-- **A control UI, a CLI, and an API.** Review and approve plans in the browser, or script everything with `--json`.
-- **Imports and agents.** `writ import bulk` writes `resource` and `import` blocks for objects you already run. `writ mcp` lets a coding agent plan and read a plan, and never approve or apply. [Import many objects](docs/import-bulk.md), [Use Writ with an agent](docs/agents.md)
+- **Server-side plans.** You or a CI job submit a commit SHA. `writ serve` fetches that commit from GitLab and runs `tofu plan -lock=false` in an isolated Linux namespace without modifying state.
+- **Plan-bound approvals.** Reviewers approve a plan by its plan ID, and `writ apply --remote` runs that exact saved plan. Wherever an approval rule applies, the plan's author can't approve it. [Approvals](docs/approvals.md)
+- **Split cloud roles.** Plans run with your `plan_role` (which you keep read-only). Only an approved apply, or an override with a recorded reason, gets `apply_role`. [AWS roles and credentials](docs/aws-credentials.md)
+- **Secret masking.** `internal/mask` strips secrets from every plan, run log, diagnostic, and state index row Writ stores or serves. [Secrets and the mask](docs/secrets.md)
+- **Rego policy.** Writ evaluates OPA Rego policy sets at plan time and again before apply. Mandatory denials can't be overridden. [Policy](docs/policy.md)
+- **Drift checks and notifications.** Writ schedules drift plans and notifies Slack or webhooks, optionally signed, on drift, failed plans or applies, completed applies, out-of-band state writes, and pending approvals. [Drift checks](docs/drift-checks.md), [Notifications](docs/notifications.md)
+- **Run isolation and egress control.** On a team server, each OpenTofu step runs under a dedicated UID in private Linux namespaces, with an opt-in egress proxy. Cgroup resource limits and a seccomp filter apply where the host allows them, and `writ serve --check` says whether they do. [Run isolation and egress](docs/run-isolation.md)
+- **UI, CLI, API, imports, and MCP.** Review and approve plans in the built-in web UI or script everything with `--json`. Generate `resource` and `import` blocks with `writ import bulk`, or expose read-only planning to coding agents through `writ mcp`. [Import many objects](docs/import-bulk.md), [Use Writ with an agent](docs/agents.md)
 
 ## Quick start
 
-`writ serve --dev` runs a control plane on your machine, on loopback, with its records in SQLite. It's the same code as a team's `writ serve`, without sign-in or approval rules. You don't need a cloud account.
+`writ serve --dev` runs a single-user control plane on loopback with SQLite, no sign-in, and no cloud account.
 
-You need Linux, [`minisign`](https://jedisct1.github.io/minisign/), Git, and [OpenTofu 1.13.9](https://opentofu.org/docs/intro/install/) on `PATH`.
+Requirements: Linux, [`minisign`](https://jedisct1.github.io/minisign/), Git, and [OpenTofu 1.13.9](https://opentofu.org/docs/intro/install/) on `PATH`.
 
-1. Install `writ` v0.1.0. The script checks the release's signature and checksum, then puts `writ` in `~/.local/bin`:
+1. Install `writ` v0.1.8 (verifies the minisign signature and SHA-256 checksum, then installs to `~/.local/bin`):
 
-   ```
-   curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.0/install.sh | sh
+   ```sh
+   curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh
    export PATH="$HOME/.local/bin:$PATH"
    ```
 
-2. Start the dev control plane, and leave it running:
+2. Start the dev control plane and leave it running:
 
-   ```
+   ```sh
    writ serve --dev
    ```
 
-3. Open a second terminal, where the first line puts `writ` on its `PATH` too. Then create a repository with one stack and add it. A stack is a directory of `.tf` files with a committed `.terraform.lock.hcl`:
+3. In a second terminal, create a repository with one stack (`.tf` files plus a committed `.terraform.lock.hcl`) and register it:
 
-   ```
+   ```sh
    export PATH="$HOME/.local/bin:$PATH"
    mkdir -p ~/writ-demo/app
    cd ~/writ-demo
@@ -67,7 +67,7 @@ You need Linux, [`minisign`](https://jedisct1.github.io/minisign/), Git, and [Op
    writ repo add .
    ```
 
-4. Plan the commit, then apply the plan by its id:
+4. Plan the commit and apply the plan by ID:
 
    ```
    $ cd app
@@ -88,45 +88,43 @@ You need Linux, [`minisign`](https://jedisct1.github.io/minisign/), Git, and [Op
 
    Output of a real run, 2026-11-15, with some lines cut.
 
-The banner that `writ serve --dev` prints has a link to the control UI, where you can read the plan and the run.
-
-Next, [set up Writ for a team](docs/quick-start.md#set-up-writ-for-a-team): Postgres, sign-in with OIDC, approval rules, and a second person's approval.
+Open the control UI link printed by `writ serve --dev` to inspect the plan and run in your browser. Next, follow [set up Writ for a team](docs/quick-start.md#set-up-writ-for-a-team).
 
 ## Install
 
-- **The install script**, as in the quick start. It checks the release's minisign signature.
-- **From source**, with Go 1.27.3 or later and `just`: `just build` puts `writ` in `bin/`.
-- **Nix.** `nix run github:mr-karan/writ -- version`. The flake also has a NixOS module that runs a team's `writ serve` with Postgres.
-- **Release binaries and the container image.** v0.1.0 has static binaries for Linux and macOS on amd64 and arm64, and `ghcr.io/mr-karan/writ:0.1.0`, a `writ serve` image with OpenTofu 1.13.9. The macOS binaries haven't run on a Mac yet.
+- **Install script:** Downloads the release binary, checks its minisign signature and SHA-256, and writes `~/.local/bin/writ`.
+- **Container image:** `ghcr.io/mr-karan/writ:0.1.8` bundles `writ` and OpenTofu 1.13.9 for team servers.
+- **Nix:** `nix run github:mr-karan/writ -- version`, plus `nixosModules.writ-serve` for a NixOS host with Postgres.
+- **From source:** Go 1.27.3+ and `just` (`just build` writes `bin/writ`).
+- **Release binaries:** Static binaries for Linux and macOS on amd64 and arm64. macOS binaries are cross-built on Linux and haven't been tested on macOS.
 
-[Install](docs/install.md) has the commands for each.
+See [Install](docs/install.md) for commands and verification steps.
 
 ## Supported platforms and limits
 
-- **OpenTofu only.** Writ runs OpenTofu 1.13.9 and no other version, and it doesn't run Terraform. Each stack has one state, with no `tofu workspace`.
-- **GitLab only.** GitLab is the only remote Git host Writ reads, and its CI jobs are for GitLab CI (`writ serve --dev` also reads local Git directories).
-- **AWS roles only.** The plan and apply roles are AWS IAM roles. For another cloud, your provider gets its credentials from `provider_env` in the server's config.
-- **One node, on Linux.** A team's `writ serve` runs as one process on Linux with namespace isolation. A second `writ serve` on the same database fails the other's work.
-- **Stand-in test suite.** The end-to-end suites run real OpenTofu 1.13.9 and real providers against local stand-ins in isolated namespaces; none reaches a live cloud.
-- **No notifications.** You see plans, drift, and runs in the control UI, CLI, and API. Nothing sends chat or email alerts.
+- **OpenTofu only.** Writ runs OpenTofu 1.13.9 exclusively and doesn't run Terraform. Each stack has one state, with no `tofu workspace`.
+- **GitLab only.** GitLab is the only remote Git host Writ reads, and its CI components target GitLab CI (`writ serve --dev` also reads local Git directories).
+- **AWS roles only.** Built-in role assumption supports AWS IAM roles via STS. Other providers get credentials from `provider_env` secret files on the server.
+- **One node, on Linux.** A team `writ serve` runs as a single process on Linux with namespace isolation. Running a second process against the same database fails the first process's in-flight work.
+- **Stand-in test suite.** End-to-end tests run real OpenTofu 1.13.9 and real providers against local stand-ins in isolated namespaces; no test contacts a live cloud account.
 
-[Supported platforms and limits](docs/status.md) has the full list, and how each part is tested.
+See [Supported platforms and limits](docs/status.md) for the full list and test coverage.
 
 ## Documentation
 
-The docs are at [writ.mrkaran.dev/docs](https://writ.mrkaran.dev/docs), and in [`docs/`](docs/README.md).
+Read the docs at [writ.mrkaran.dev/docs](https://writ.mrkaran.dev/docs) or in [`docs/`](docs/README.md):
 
-- [Quick start](docs/quick-start.md): on your own machine, then for a team.
-- [How the control plane works](docs/serve.md): plans, runs, state, drift, and who can do what.
-- [Run a control plane](docs/run.md) and the [server config](docs/config.md).
-- [Set up GitLab CI](docs/set-up-gitlab-ci.md): the plan, approve, and apply jobs.
-- [Commands](docs/commands.md), [API](docs/api.md), and [Errors](docs/errors.md).
-- [Writ compared with other control planes](docs/compare.md) and [with plain GitLab CI](docs/compare-gitlab-ci.md).
+- [Quick start](docs/quick-start.md): local dev setup, then a team server with approvals.
+- [Run a server](docs/run.md) and [Server config](docs/config.md): deployment and configuration.
+- [Set up GitLab CI](docs/set-up-gitlab-ci.md): merge-request plan, blocking approve, and post-merge apply jobs.
+- [Commands](docs/commands.md), [API](docs/api.md), and [Errors](docs/errors.md): CLI, HTTP routes, and error classes.
+- [Control plane internals](docs/serve.md) and [Security model](docs/security-model.md): execution mechanics and trust boundaries.
+- [Writ vs other control planes](docs/compare.md) and [Writ vs plain GitLab CI](docs/compare-gitlab-ci.md).
 
 ## Contributing
 
-Bug reports, design questions, and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) says how to build Writ, run its tests, and send a change. Report a security problem privately, as [SECURITY.md](SECURITY.md) says.
+Bug reports, design questions, and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before sending a change. Report security issues privately per [SECURITY.md](SECURITY.md).
 
 ## License
 
-[Apache 2.0](LICENSE). The files `proto/tfplugin5.proto` and `proto/tfplugin6.proto` are copied from OpenTofu under MPL 2.0, and [NOTICE](NOTICE) has the notices for the code Writ includes.
+[Apache 2.0](LICENSE). `proto/tfplugin5.proto` and `proto/tfplugin6.proto` are copied from OpenTofu under MPL 2.0; see [NOTICE](NOTICE).

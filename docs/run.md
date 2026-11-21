@@ -1,12 +1,12 @@
 # Run a control plane
 
-You can run `writ serve` two ways. If you want to try Writ, `writ serve --dev` runs one for you alone, in one command, with no config. When your team is ready, a team's `writ serve` runs on a host with Postgres, a config file, and sign-in for people and CI jobs.
+Run `writ serve` in two modes: `writ serve --dev` for single-user local work with zero config, or `writ serve --config FILE` for a team server backed by Postgres and OIDC sign-in.
 
-To learn what the control plane does with a plan, read [How the control plane works](serve.md).
+For internal request, plan, and apply mechanics, see [Control plane internals](serve.md).
 
 ## writ serve --dev
 
-With `writ serve --dev`, you get a control plane of your own: the same API and the same code as a team's `writ serve`, with no config, no issuer, and its store in SQLite. Use it to try Writ, and to develop and test it.
+`writ serve --dev` runs the same API and server code as a team deployment using SQLite and no external issuer.
 
 Start it in one terminal:
 
@@ -19,7 +19,7 @@ control UI: http://127.0.0.1:7340/ui/login/dev?code=57CK-7N7L (works once, for 1
 ready in 400 ms
 ```
 
-Then, from a second terminal, check what you can do:
+Check your access in a second terminal:
 
 ```
 $ writ whoami
@@ -28,47 +28,41 @@ teams: dev
 *  **  read plan apply approve override adopt admin  create update replace delete data-loss
 ```
 
-Output of a real run, 2026-11-16, with a config file whose `tofu` block sets the `tofu` binary, a plugin cache, and a scratch directory. When your `tofu` block also sets `git`, the `PATH` in the banner starts with Git's directory, as each run's does.
+Output of a real run, 2026-11-16, with a `tofu` block setting the binary, plugin cache, and scratch directory.
 
-Your remote commands find the dev control plane with no flag and no token. [How a CLI finds its control plane](sign-in.md#how-a-cli-finds-its-control-plane) gives the order. No command starts a dev control plane for you. If a command finds none, it prints the command to run.
-
-You don't need approvals here: the dev control plane has no approval rule, so each plan needs none and is `approved` when it ends, and `writ apply --remote ID` applies it. In `writ whoami` you see the dev team's one grant: every environment, `*`, and every stack at every depth, `**`. For applies on a team's control plane, see [Approve and apply a plan](apply.md).
-
-It starts fast. Measured on this machine on 2026-11-10, with the data directory on tmpfs, `writ serve --dev` answers `GET /v1/server` a median of 8.5 ms after it's started, over 30 starts. [bench/RESULTS.md](../bench/RESULTS.md#a-dev-control-plane-2026-11-10) has the method.
+Remote CLI commands discover `writ serve --dev` automatically ([How a CLI finds its control plane](sign-in.md#how-a-cli-finds-its-control-plane)). No command starts a dev server implicitly. Dev mode defines no approval rules, so plans end `approved` and apply immediately with `writ apply --remote ID`. Startup median is 8.5 ms on tmpfs ([`bench/RESULTS.md`](../bench/RESULTS.md#a-dev-control-plane-2026-11-10)).
 
 ### What the dev control plane does
 
-- **Store.** Your records go in `control.db`, in the data directory, which is `$XDG_DATA_HOME/writ/dev`, else `~/.local/share/writ/dev`, or `--data DIR`. To keep the control database in Postgres instead, pass `--database postgres://...`.
-- **Listen.** By default it listens on `127.0.0.1:7340`. With `--listen` you can set another loopback address, and it refuses any other. With port 0 the kernel picks one.
-- **Identity.** At start it creates a token of 32 random bytes and writes the URL and the token to `client.json` in the data directory, mode 0600, in a directory of mode 0700. Only that token works. You're the principal `dev/USER`, of kind `dev`, in the team `dev`, which can do every operation with every risk class on every `stack@env`.
-- **Environments.** Any name of lowercase letters, digits, `_`, and `-` that starts with a letter, up to 63 characters, is an environment. Its key is created in `keys/ENV.key` the first time a plan opens it. If your request doesn't set an environment, it's in `dev`, so `--env` is optional.
-- **Credentials.** It assumes no role. Your OpenTofu runs get `PATH=/usr/local/bin:/usr/bin:/bin`, `AWS_EC2_METADATA_DISABLED=true`, and the `TF_VAR_` variables of the shell that started it, and no other variable from that shell. Each run's `HOME` is its own directory. The start banner says so.
-- **One at a time.** If you start a second `writ serve --dev` on the same data directory, it refuses to start while the first one answers. A clean stop removes `client.json`.
-- **Control UI.** It serves the control UI. In the start banner you'll find a sign-in link whose code works once, for 10 minutes, and `writ ui` prints another. The link gives your browser a session of the dev user.
-- **Repositories.** `writ repo add .` adds the local Git repository of the current directory, which the dev control plane reads with the `git` binary. With `--config FILE` you can add `forge` and `repo` blocks and `poll_every`, so a GitLab project works too, with a read token. That file can also have a `tofu` block and a `policy` block, as a team's config does. [Add a repository](add-repository.md) shows both.
+- **Store:** SQLite `control.db` under `$XDG_DATA_HOME/writ/dev` (or `~/.local/share/writ/dev`, overridden by `--data DIR`). Pass `--database postgres://...` to use Postgres instead.
+- **Listen:** Defaults to `127.0.0.1:7340`. `--listen` accepts loopback addresses only (`:0` picks an ephemeral port).
+- **Identity:** Generates a 32-byte random token on start and writes URL + token to `client.json` (`0600` inside `0700`). Grants full permissions (`dev` team, principal `dev/USER`).
+- **Environments:** Any valid name (`[a-z][a-z0-9_-]{0,62}`) works on demand, creating `keys/ENV.key` automatically. `--env` defaults to `dev`.
+- **Credentials:** No AWS role assumption. Runs receive `PATH=/usr/local/bin:/usr/bin:/bin` (prefixed with `tofu.git`'s dir if set), `AWS_EC2_METADATA_DISABLED=true`, `TF_VAR_*` from the starting shell, and a per-run `HOME`.
+- **Single instance:** Refuses to start if another dev server answers for the same data directory; clean shutdown removes `client.json`.
+- **Control UI:** Serves `/ui/` with a one-time 10-minute sign-in link printed at startup and by `writ ui`.
+- **Repositories:** `writ repo add .` registers a local Git repo. With `--config FILE`, dev mode also accepts `forge`, `repo`, `poll_every`, `poll_every_with_hook`, `tofu`, and `policy` ([Add a repository](add-repository.md)).
 
 ## Run one for a team
 
-Your team's `writ serve` needs Postgres for its records and for the state of every stack it plans, so its config's `database` must be `postgres://`. You write one config file, in HCL. The [server config](config.md) describes every setting.
+A team's `writ serve` requires Postgres (`database = "postgres://..."`) and an HCL config file ([Config](config.md)).
 
 ### Before you begin
 
-- A host with Postgres.
-- A config file, such as `/etc/writ/serve`.
-- For OpenTofu stacks, a range of `provider_uids` and the `tofu` block. [How providers are kept from the keys](serve.md#how-providers-are-kept-from-the-keys) explains why.
+- A Linux host with Postgres.
+- A server config file (for example `/etc/writ/serve`).
+- A `provider_uids` range and `tofu` block for OpenTofu runs ([Run isolation and egress](run-isolation.md)).
 
 ### Check the config, then start the server
 
-Run the check first, then start the server with the same config:
-
-```
-$ writ serve --config /etc/writ/serve --check
-$ writ serve --config /etc/writ/serve
+```sh
+writ serve --config /etc/writ/serve --check
+writ serve --config /etc/writ/serve
 ```
 
-Here, `--check` parses the config and prints what each team can do. With a `tofu` block, it runs `tofu version`. With `provider_uids` it also runs `writ` as a provider's uid to check what that uid can read and reach, including the EC2 instance metadata addresses. With `notify` blocks, it reads each notifier's delivery counts from Postgres, and a database it can't reach, or one `writ serve` hasn't migrated yet, doesn't fail it. It doesn't contact your Git host or the issuers, and it sends a notification only with `--notify-test`. See [Get notified](notifications.md#check-the-setup).
+`--check` validates the config, prints team grants, checks `tofu version`, probes `provider_uids` isolation (including EC2 metadata blocking), and reads notifier delivery counts from Postgres (ignoring unreachable or unmigrated databases). It doesn't contact Git hosts or OIDC issuers, and sends test notifications only with `--notify-test` ([Get notified](notifications.md#check-the-setup)).
 
-Here's what it printed for the NixOS module's sample config. That run was as a user who can't switch users, so the isolation check only warns:
+Example `--check` output (unprivileged user, so UID switching warns):
 
 ```
 config /var/tmp/writ-s17/tmp.eSdEbz0YlP/serve: ok
@@ -87,17 +81,13 @@ warning[usage]
   isolation not checked: run writ as provider uid 61000: fork/exec /nix/store/a3k9grqxjk9dxgmzrvs2v57yx454ygqw-writ-f5f8f09/bin/.writ-wrapped: operation not permitted; writ serve checks its capabilities at start
 ```
 
-Output of `just check-nixos`, 2026-11-16. To see the isolation check on a host where it runs, read [Check the isolation](serve.md#check-the-isolation).
+Output of `just check-nixos`, 2026-11-16.
 
-When you start it, `writ serve` migrates its Postgres schema and fetches every issuer's discovery document and key set. If one can't be fetched, it fails. Once running, it logs JSON to stdout, one line for each decision.
-
-On SIGTERM, it stops new requests, waits 30 seconds for running ones, and fails the plans still running. If it crashed instead, the next start marks a plan left running as `failed`.
+At startup, `writ serve` runs schema migrations, fetches every OIDC issuer's discovery document and JWKS (failing if any is unreachable), and logs JSON decisions to stdout. On `SIGTERM`, it stops accepting new requests, drains in-flight requests for up to 30 seconds, and marks unfinished plans `failed`.
 
 ### On NixOS
 
-If your host runs NixOS, use the module in `deploy/nixos/writ-serve.nix`. This module runs `writ serve` as the system user `writ` with a hardened unit, and Postgres on the same host. Your `writ` user reaches its database over the Unix socket with peer authentication, so you don't need a database password.
-
-You'll find it in the repository's flake as `nixosModules.writ-serve`, with the flake's `writ` package as the default `package`:
+Import `nixosModules.writ-serve` from the flake (or `deploy/nixos/writ-serve.nix`) to run `writ serve` as a hardened `writ` system user backed by local peer-authenticated Postgres:
 
 ```nix
 {
@@ -121,37 +111,30 @@ You'll find it in the repository's flake as `nixosModules.writ-serve`, with the 
 }
 ```
 
-Without the flake, import `deploy/nixos/writ-serve.nix` and set `package` to any package whose `bin/writ` is the binary.
+When `providerUids` is set, the module grants `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL`, creates `/var/lib/writ-tofu`, installs the EC2 metadata firewall rule (into `networking.nftables` when the host enables it, which flushes every other table when it loads, or else via the `writ-serve-metadata-firewall` unit), enables `Delegate=yes` (leaving `ProtectControlGroups` off for per-run cgroups), allows user, mount, PID, and IPC namespaces, plus network namespaces for `egress_mode` `report` and `enforce` (enabling `ProtectKernelTunables` only on Linux 7.2+), puts Nix's `git` on `PATH`, and runs `writ serve --check` in `ExecStartPre`.
 
-When you set `providerUids`, the unit gets `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL`. The module also creates `/var/lib/writ-tofu` for the `tofu` block's `plugin_cache` and `scratch_dir`, and loads the firewall rule from [How providers are kept from the keys](serve.md#how-providers-are-kept-from-the-keys). It sets `Delegate=yes` and leaves `ProtectControlGroups` off, so `writ serve` can give each OpenTofu step a cgroup of its own with the config's [run limits](run-isolation.md#limit-what-each-run-uses).
+`just check-nixos` evaluates the module, checks that its `RestrictNamespaces` allows `net`, and validates its sample config against the built `writ` and OpenTofu 1.13.9 packages, including a run in its own network namespace.
 
-If your host sets `networking.nftables.enable`, the rule joins that ruleset, which flushes every other table when it loads. Otherwise a unit of the module, `writ-serve-metadata-firewall`, loads it before `writ serve` starts.
-
-The unit lets `writ serve` create user, mount, pid, and IPC namespaces, which each `tofu` process's [filesystem view](serve.md#what-a-run-can-see) needs, and network namespaces, which each run gets under `egress_mode` `report` or `enforce`. On a kernel of 7.2 or later, where that view's `/proc` mounts under it, it sets `ProtectKernelTunables`, and on no older kernel. Because the unit's `PATH` has Nix's `git`, writing `git = "git"` in the config's `tofu` block gives each run that `git`. Before it starts, the unit runs `writ serve --check`.
-
-To check the module, run `just check-nixos`. This evaluates the flake's module on the flake's pinned nixpkgs, and builds the `writ` package that its unit runs and the pinned OpenTofu. Then it checks the sample config, whose `tofu` block points to that OpenTofu, with that binary. It fails when the check doesn't find OpenTofu 1.13.9, because `writ serve` would then refuse every stack of `.tf` files.
-
-**Limits.** No NixOS machine has run the module. For the other ways to get `writ`, see [Install](install.md).
+**Limits:** The NixOS module has been validated by `just check-nixos`, not yet booted on a live NixOS host. See [Install](install.md) for standalone binaries and containers.
 
 ## Back up and upgrade
 
-- **Back up the database** with `pg_dump` or the host's Postgres backups. That database has the state of every served stack and the audit log. Under `writ serve --dev`, the data directory has all of it: `control.db` and `keys/`.
-- **Back up each state key** offline and encrypted. If you lose it, every sealed secret in that environment's state is lost, and you can't check its saved plans.
-- **Know what's deleted.** Once an hour `writ serve` marks live plans past `plan_ttl` as `expired`, and deletes token ids past their token's expiry. It also deletes the `none` rows of apply request keys 25 hours after each key's time, when the key is refused. Writ keeps the greatest time of a key it deleted, so the key stays refused when the clock moves back. If you set `retention.plans`, it deletes no-changes, refused, failed, expired, and superseded plans older than that, with their events, unless an approval or a run refers to them. If you set `retention.audit`, it deletes older audit rows. Without them, nothing else is deleted.
-- **Upgrade** by starting the new `writ`. At start, it migrates the schema in one transaction. A database migrated by a newer `writ` is refused.
+- Back up Postgres (`pg_dump`) and store encrypted offline copies of every `env.*.key` file (losing a key makes sealed states, saved plans, and secret sets unreadable).
+- Hourly pruning expires plans past `plan_ttl`, removes expired CI token `jti`s, and prunes closed `apply_requests` rows after 25 hours. Set `retention.plans` and `retention.audit` to prune historical data.
+- Upgrade by stopping the single node and starting the new binary (which runs migrations atomically; downgrades are refused).
 
-For step-by-step backup commands, retention setup, and single-node upgrade steps, see [Back up and upgrade](upgrades.md).
+See [Back up and upgrade](upgrades.md) for the full runbook.
 
 ## Troubleshooting
 
-- **Second `writ serve --dev` refuses to start**: Only one dev server can use a data directory at a time. Pass `--data DIR` and `--listen 127.0.0.1:0` to run a second isolated dev instance.
-- **`writ serve` fails at start because an issuer is unreachable**: On start, `writ serve` fetches every configured OIDC issuer's discovery document and JWKS. Verify network connectivity, DNS, and `ca_file` (if using a private CA).
-- **`writ serve --check` refuses `tofu` without `provider_uids`**: A team's server never runs OpenTofu as its own OS user. Follow [Run isolation and egress](run-isolation.md) to configure `provider_uids`.
-- **Two `writ serve` processes pointed at the same Postgres database**: Stop one immediately. Each process fails in-flight runs owned by other process IDs on start and every minute after.
+- **Second `writ serve --dev` refuses to start**: Pass `--data DIR` and `--listen 127.0.0.1:0` for a separate dev instance.
+- **Startup fails fetching an issuer**: Verify DNS, HTTPS connectivity, and `ca_file` for every OIDC issuer.
+- **`--check` refuses `tofu` without `provider_uids`**: Configure `provider_uids` ([Run isolation and egress](run-isolation.md)).
+- **Two `writ serve` nodes share one database**: Stop one immediately; each node fails in-flight runs owned by other process IDs every minute.
 
 ## Next steps
 
-- [Configure sign-in](sign-in.md) from the CLI and the control UI.
+- [Sign in](sign-in.md): configure CLI and control UI sign-in.
 - [AWS roles and credentials](aws-credentials.md) and [Run isolation and egress](run-isolation.md).
 - [Add a repository](add-repository.md) and [Back up and upgrade](upgrades.md).
-- [Server config](config.md): every setting.
+- [Config](config.md): full server configuration reference.

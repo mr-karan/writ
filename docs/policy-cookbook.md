@@ -1,16 +1,16 @@
 # Policy cookbook
 
-Every recipe on this page is a working Rego rule from `examples/policy/` with its unit test from `examples/policy/policy_test.rego` or `examples/policy/cookbook_test.rego`. You can run the full test suite locally with:
+Twelve Rego rules from `examples/policy/` with unit tests from `examples/policy/policy_test.rego` and `examples/policy/cookbook_test.rego`. Run the full suite locally with:
 
-```
+```sh
 conftest verify --policy examples/policy
 ```
 
-To learn how to wire a policy directory into `writ serve`, see [Write and test a policy](write-a-policy.md). For the full input schema and allowed built-ins, see [Policy input and built-ins](policy-reference.md).
+For loading policies into `writ serve`, see [Write and test a policy](write-a-policy.md). For the input schema and allowed built-ins, see [Policy input and built-ins](policy-reference.md).
 
 ## Shared helpers (`writ.rego`)
 
-Rules that inspect the environment, decision point, or created/updated resources use these shared definitions in `package main`:
+Shared definitions in `package main` used across the recipes below:
 
 ```rego
 package main
@@ -32,7 +32,7 @@ created_or_updated contains rc if {
 
 ## 1. Require minimum RSA key size (`tls.rego`)
 
-**Goal:** Block creation of RSA private keys shorter than 4096 bits.
+**Goal:** Block RSA private keys shorter than 4096 bits.
 
 **Rego:**
 
@@ -69,11 +69,11 @@ test_rsa_4096_allowed if {
 }
 ```
 
-**What Writ does:** Denies the plan at the plan point (`status = "refused"`, no saved plan stored) and refuses apply if added after a plan was created.
+**Effect:** Refuses the plan at plan time (`status = "refused"`, no saved plan) and blocks apply if added after planning.
 
 ## 2. Forbid deletions in `prod` and warn elsewhere (`deletes.rego`)
 
-**Goal:** Refuse any plan that deletes a resource in `prod`, while warning on deletions in non-production environments.
+**Goal:** Refuse resource deletions in `prod` and warn outside `prod`.
 
 **Rego:**
 
@@ -118,11 +118,11 @@ test_delete_elsewhere_warns if {
 }
 ```
 
-**What Writ does:** In `prod`, refuses the plan at the plan point. In other environments (or under `conftest`, where `environment` is `""`), records a `warn` message on the plan without blocking approval or apply.
+**Effect:** Refuses deletions in `prod` at plan time; records a non-blocking warning in other environments (and under `conftest`).
 
 ## 3. Protect stateful resources from replacement (`replace.rego`)
 
-**Goal:** Refuse plans that replace (`["delete", "create"]`) protected resource types, and warn when any other resource is replaced.
+**Goal:** Refuse replacements (`["delete", "create"]`) of protected types and warn on all other replacements.
 
 **Rego:**
 
@@ -164,11 +164,11 @@ test_replace_of_nomad_job_denied if {
 }
 ```
 
-**What Writ does:** Refuses any plan that replaces a protected type at the plan point; records a warning for other replacements so reviewers see the destroy-and-recreate in the UI and CLI.
+**Effect:** Refuses plans replacing protected resource types; warns on all other replacements.
 
 ## 4. Block production applies during business hours (`window.rego`)
 
-**Goal:** Allow plans at any hour, but refuse `writ apply --remote` on `prod` between 09:00 and 16:00 local time on weekdays.
+**Goal:** Allow planning anytime, but block `prod` applies between 09:00 and 16:00 local time on weekdays.
 
 **Rego:**
 
@@ -205,11 +205,11 @@ test_window_allows_saturday if {
 }
 ```
 
-**What Writ does:** At the plan point (`decision == "plan"`), the rule does not fire, so engineers can plan and approve changes during the day. At the apply point (`decision == "apply"`), `POST /v1/runs` returns HTTP 403 during the blocked window, leaves the plan approved, and does not spend the CI token.
+**Effect:** Plans and approvals succeed during business hours; `POST /v1/runs` returns `403` during the blocked window, leaves the plan approved, and doesn't spend the CI token.
 
 ## 5. Warn on overly permissive local file modes (`files.rego`)
 
-**Goal:** Warn when a `local_file` or `local_sensitive_file` is created with permissions broader than `0600`.
+**Goal:** Warn when `local_file` or `local_sensitive_file` sets a mode other than `0600`.
 
 **Rego:**
 
@@ -240,11 +240,11 @@ test_file_permission_warns if {
 }
 ```
 
-**What Writ does:** Attaches a warning to the plan at both decision points (or denies if you rename `warn_file_permission` to `deny_file_permission`).
+**Effect:** Attaches a warning at both decision points (rename to `deny_file_permission` to block instead).
 
 ## 6. Require `Owner` and `Environment` tags on AWS resources (`cookbook.rego`)
 
-**Goal:** Refuse creation or update of taggable AWS resources (`aws_instance`, `aws_s3_bucket`, `aws_db_instance`, `aws_ebs_volume`) that omit `Owner` or `Environment` tags.
+**Goal:** Refuse creates or updates of taggable AWS resources missing `Owner` or `Environment` tags.
 
 **Rego:**
 
@@ -297,11 +297,11 @@ test_complete_tags_allowed if {
 }
 ```
 
-**What Writ does:** Checks `tags_all` (which includes provider `default_tags`) before falling back to resource `tags`, and refuses the plan at the plan point when either required tag is missing or empty.
+**Effect:** Inspects `tags_all` (including provider `default_tags`) before falling back to `tags`, refusing plans missing either tag.
 
 ## 7. Block public S3 buckets (`cookbook.rego`)
 
-**Goal:** Require all four public-access-block flags on `aws_s3_bucket_public_access_block` and forbid public canned ACLs on `aws_s3_bucket_acl`.
+**Goal:** Require all four public-access-block flags and forbid public canned ACLs on S3 buckets.
 
 **Rego:**
 
@@ -351,7 +351,7 @@ test_public_s3_denied if {
 }
 ```
 
-**What Writ does:** Refuses the plan at the plan point before any bucket policy or ACL can be applied.
+**Effect:** Refuses plans with disabled public-access blocks or public bucket ACLs at plan time.
 
 ## 8. Require encryption at rest on EBS and RDS (`cookbook.rego`)
 
@@ -399,11 +399,11 @@ test_unencrypted_storage_denied if {
 }
 ```
 
-**What Writ does:** Refuses the plan at the plan point so unencrypted disks or databases cannot be created.
+**Effect:** Refuses unencrypted volumes and databases at plan time.
 
 ## 9. Forbid `0.0.0.0/0` or `::/0` ingress on SSH and RDP (`cookbook.rego`)
 
-**Goal:** Refuse security group ingress rules that open port 22 (SSH) or 3389 (RDP) to `0.0.0.0/0` or `::/0`.
+**Goal:** Refuse security group ingress rules exposing port 22 or 3389 to the public internet.
 
 **Rego:**
 
@@ -450,11 +450,11 @@ test_open_ssh_ingress_denied if {
 }
 ```
 
-**What Writ does:** Refuses the plan at the plan point, including port ranges (such as `0` to `65535`) that span port 22 or 3389.
+**Effect:** Refuses public SSH/RDP ingress, including broad port ranges covering 22 or 3389.
 
 ## 10. Cap EC2 instance size by environment (`cookbook.rego`)
 
-**Goal:** Limit non-production environments to `nano`, `micro`, `small`, or `medium` instances, and cap `prod` at `2xlarge`.
+**Goal:** Limit non-production instances to `nano` through `medium` and `prod` instances to `2xlarge`.
 
 **Rego:**
 
@@ -507,11 +507,11 @@ test_instance_size_by_environment if {
 }
 ```
 
-**What Writ does:** Evaluates `input.writ.environment` at the plan point and refuses oversized instances before approval.
+**Effect:** Refuses oversized instances at plan time using `input.writ.environment`.
 
 ## 11. Restrict resources to approved AWS regions (`cookbook.rego`)
 
-**Goal:** Refuse subnets, EBS volumes, or EC2 instances placed in availability zones outside `eu-west-1` or `us-east-1`.
+**Goal:** Refuse subnets, EBS volumes, and EC2 instances outside `eu-west-1` and `us-east-1`.
 
 **Rego:**
 
@@ -550,11 +550,11 @@ test_region_constraint if {
 }
 ```
 
-**What Writ does:** Refuses the plan at the plan point when a resource targets an unapproved availability zone.
+**Effect:** Refuses resources placed in unapproved availability zones at plan time.
 
 ## 12. Warn on IAM wildcard actions and require two approvals at apply (`cookbook.rego`)
 
-**Goal:** Warn at plan time when an IAM policy grants `"Action": "*"`, and at apply time in `prod`, require at least two approvals on any plan that modifies IAM resources.
+**Goal:** Warn on `"Action": "*"` in IAM policies at plan time, and require at least two approvals at apply time for `prod` IAM changes.
 
 **Rego:**
 
@@ -609,10 +609,10 @@ test_iam_prod_apply_requires_two_approvals if {
 }
 ```
 
-**What Writ does:** At the plan point, `warn_iam_wildcard` flags wildcard IAM policies for reviewers while allowing the plan to be saved. At the apply point in `prod`, `deny_iam_prod_apply` inspects `input.writ.approvals` and refuses `POST /v1/runs` with HTTP 403 until at least two distinct approvals are recorded.
+**Effect:** Warns reviewers about wildcard IAM policies at plan time, then blocks `POST /v1/runs` with `403` in `prod` until at least two distinct approvals exist.
 
 ## Next steps
 
-- [Write and test a policy](write-a-policy.md): step-by-step tutorial from writing a rule to loading it into `writ serve`.
-- [Policy](policy.md): how mandatory and advisory sets work at plan and apply time.
-- [Policy input and built-ins](policy-reference.md): complete schema for `input` and `input.writ`.
+- [Write and test a policy](write-a-policy.md): write, test, and load a policy set.
+- [Policy](policy.md): plan-point vs apply-point decisions and mandatory vs advisory sets.
+- [Policy input and built-ins](policy-reference.md): complete `input` and `input.writ` reference.

@@ -3,7 +3,7 @@ export const site = {
   name: 'Writ',
   tagline: 'Plan, approve, and apply OpenTofu on your own server',
   description:
-    'Writ is an open-source control plane for OpenTofu that you host yourself. It plans the commits you or your CI job send it, waits for your team to approve, and applies that exact plan.',
+    'Self-hosted, open-source control plane for OpenTofu. CI sends a commit via OIDC with no cloud keys; Writ plans in a sandbox, enforces Rego policy, waits for plan approval, and applies that exact sealed plan.',
   // The module path in go.mod. Change it here if the repository is published elsewhere.
   repo: 'https://github.com/mr-karan/writ',
   branch: 'main',
