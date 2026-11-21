@@ -1,26 +1,31 @@
 # Security model
 
-Writ's one rule: **cloud credentials and state encryption keys stay on `writ serve`, never in CI pipelines or on developer laptops.**
-
-Planning an unmerged branch runs provider and module code, so Writ layers defenses across identity, masking, sandboxing, policy, and state integrity.
+Writ's one rule: **cloud credentials and state encryption keys stay on `writ serve`, never in CI pipelines or on developer laptops.** Planning an unmerged branch runs provider and module code, so Writ layers defenses across identity, masking, sandboxing, policy, and state integrity.
 
 ## Thirteen layers Writ enforces
 
-| # | Layer | Details |
-| --- | --- | --- |
-| 1 | No cloud credentials in CI | [Identity](#identity-and-token-verification) |
-| 2 | A short-lived STS session per run | [Run isolation](#run-isolation) |
-| 3 | Dedicated provider UIDs and a metadata firewall | [Run isolation](#run-isolation) |
-| 4 | Linux user, mount, PID, and IPC namespaces | [Run isolation](#run-isolation) |
-| 5 | One secret-masking boundary | [Masking](#secret-masking-and-encryption-at-rest) |
-| 6 | Sealed, immutable saved plans | [Approval integrity](#authorization-and-approval-integrity) |
-| 7 | Grants, approvals, and Rego policy owned by the server | [Approval integrity](#authorization-and-approval-integrity) |
-| 8 | No self-approval | [Approval integrity](#authorization-and-approval-integrity) |
-| 9 | Synchronous audit logging | [Audit](#mandatory-audit-logging) |
-| 10 | Scheduled drift checks and outside-write detection | [Masking](#secret-masking-and-encryption-at-rest) |
-| 11 | Rate limits and execution deadlines | [Limits](#rate-limits-and-execution-bounds) |
-| 12 | Opt-in per-run egress proxy | [Run isolation](#run-isolation) |
-| 13 | Per-step cgroup limits and a seccomp filter | [Run isolation](#run-isolation) |
+| # | Layer | What it does | Detail |
+| --- | --- | --- | --- |
+| 1 | No cloud credentials in CI | CI jobs authenticate with single-use OIDC tokens (`WRIT_ID_TOKEN`), checked strictly (`RS256` or `ES256`, exact `iss`, single `aud`, `jti` replay). Identity provider errors map to fixed refusals, never the provider's text. AWS credentials and state keys never leave `writ serve`. | [Token checks](api.md#token-checks) |
+| 2 | A short-lived STS session per run | Each run gets a loopback STS session for `plan_role` or `apply_role`, tagged with `SourceIdentity` for CloudTrail. | [AWS roles and credentials](aws-credentials.md) |
+| 3 | Dedicated provider UIDs and a metadata firewall | Concurrent runs get distinct UIDs from `provider_uids`, with no supplementary groups, `no_new_privs`, and a non-dumpable server. `nftables` drops `169.254.169.254` and `fd00:ec2::254`, tested by `writ serve --check`. | [Run isolation and egress](run-isolation.md) |
+| 4 | Linux user, mount, PID, and IPC namespaces | A read-only `pivot_root` `tmpfs` with empty capabilities and no `data`, keys, database files, shells, `ssh`, or `hg`. Commits are blob-verified, and symlinks, JSON, and `.terraform` are refused. | [How run isolation works](how-run-isolation-works.md) |
+| 5 | One secret-masking boundary | One mask writes every run output (plans, diagnostics, logs, state index rows) using sensitive marks, a value sweep, secret-like names, and a key allow-list. Raw state JSON never leaves a run unmasked. | [Secrets and the mask](secrets.md) |
+| 6 | Sealed, immutable saved plans | Approvals sign off on the plan ID. Saved plans and HTTP states are sealed per env with AES-256-GCM, and an apply runs only the exact approved binary, refusing stale or expired plans. | [Plan lifecycle reference](plan-lifecycle.md#what-the-plan-id-covers) |
+| 7 | Grants, approvals, and Rego owned by the server | Teams, grants, approval rules, and mandatory Rego policies live only in server config. Merge requests, CI YAML, and commits cannot weaken them. Rego runs in a bounded child process with a pure built-in allow-list, reads only the masked plan, and fails closed. | [Approvals](approvals.md), [Policy reference](policy-reference.md) |
+| 8 | No self-approval | Wherever an approval rule applies, the author, identified by a stable `IDENTITY/user/ID` across CI, CLI, and browser, cannot approve their own plan. `writ serve --check` rejects CI `approve` grants without a user-claim match, and any CI `override` or `adopt` grant. | [Approvals](approvals.md#who-can-approve-a-plan) |
+| 9 | Synchronous audit logging | Every API, UI, and state request, except `/healthz`, `/v1/server`, and per-IP `429`s, commits an audit row before it responds (5-second timeout, else `503`). Audit reads hide client IPs and state hashes and withhold refusal reasons. | [Every answer waits for its audit row](api.md#every-answer-waits-for-its-audit-row) |
+| 10 | Drift checks and outside-write detection | Scheduled drift checks find cloud changes and out-of-band S3 state writes, and block approvals until someone with `adopt` runs `writ state adopt`. | [Drift checks](drift-checks.md) |
+| 11 | Rate limits and execution deadlines | Per-IP and per-principal rate limits, bounded concurrency, and plan and apply timeouts. | [Bounds](#rate-limits-and-execution-bounds) |
+| 12 | Opt-in per-run egress proxy | Under `egress_mode = "enforce"`, each run's only exit is Writ's proxy, limited to `env.egress` and refusing metadata, loopback, link-local, and wildcard-matched private IPs. | [Egress](run-isolation.md#egress) |
+| 13 | Per-step cgroup limits and a seccomp filter | `run_memory` (no swap), `run_pids`, `run_cpus`, `run_scratch`, and a seccomp filter against mount, namespace, `ptrace`, keyring, `bpf`, `userfaultfd`, `io_uring`, and kernel module calls. The limits need a delegated cgroup and the filter Linux 4.14+ on amd64 or arm64; `--check` says when either is off. | [Limit what each run uses](run-isolation.md#limit-what-each-run-uses) |
+
+Other boundaries:
+
+- **Carriers:** browser cookies are not accepted on `/v1/`, and CLI bearer tokens cannot open `/ui/`. `/ui/` sets a strict CSP and checks cross-origin requests ([How sign-in works](how-sign-in-works.md#what-every-page-sends)).
+- **Webhooks:** a delivery is verified by the pinned repository's secret in constant time (or a `whsec_` signature with a 5-minute replay window), its body is ignored, and every failure gets the same `401` ([Webhook route](api.md#webhook-route)).
+- **Encryption at rest:** HTTP states, saved plans, and secret sets use AES-256-GCM with HKDF-derived keys from each env's 32-byte `key` file. Every apply seals its mask's known secrets with the state; a state without a secret set cannot be approved until [adopted](adopt-state.md).
+- **Notifications** carry only fixed wording, names, counts, and error classes, go to `https://` only with no redirects, and their `url_file` and `secret_file` are checked unreadable by `provider_uids` ([Get notified](notifications.md)).
 
 ## Who holds what
 
@@ -31,61 +36,6 @@ Planning an unmerged branch runs provider and module code, so Writ layers defens
 | CI job | None | None | Single-use OIDC JWT (`WRIT_ID_TOKEN`) |
 | `writ serve` (plan) | Env `plan_role` via STS | Reads sealed state | Host AWS identity + verified OIDC/session |
 | `writ serve` (apply) | Env `apply_role` via STS | Locks/writes sealed state, opens sealed plan | Approved plan ID + apply grant + policy pass |
-
-## Identity and token verification
-
-- **No cloud credentials in CI:** CI jobs authenticate with single-use OIDC tokens (`WRIT_ID_TOKEN`). AWS credentials and state keys never leave `writ serve`.
-- **Strict OIDC checks:** only compact JWS tokens with `RS256` or `ES256`. `kid` required. Header keys (`jku`, `jwk`, `x5u`, `x5c`) and duplicate JSON keys rejected. Exact `iss`, a single-element `aud`, and `exp`, `iat`, and `nbf` checked. `jti` tracked on writes.
-- **No IdP text leaks:** verification failures return fixed refusal codes, never the identity provider's text.
-- **One person across issuers:** issuers for one Git host share a configured `identity`, so CI jobs and CLI and UI sessions map to one `IDENTITY/user/ID`.
-- **Verified webhooks:** `POST /v1/hooks/{forge}/{repo}` checks the pinned repository's secret in constant time (or a `whsec_` HMAC-SHA256 signature with a 5-minute replay window), ignores the payload body, and returns the same `401` for every failure ([Webhooks](webhooks.md#security-notes)).
-- **Carrier isolation:** browser cookies are not accepted on `/v1/`, and CLI bearer tokens cannot open `/ui/`. `/ui/` enforces a strict CSP (`default-src 'none'; script-src 'self'; ...`) and cross-origin request checks.
-
-## Authorization and approval integrity
-
-- **Server-side config:** teams, grants, approval rules, and mandatory Rego policies live only in server config. Merge requests, CI YAML, and repository commits cannot weaken them.
-- **No self-approval:** wherever an approval rule applies, the plan's author, identified by a stable `IDENTITY/user/ID` across CI, CLI, and browser, cannot approve their own plan. `writ serve --check` rejects CI `approve` grants without a user-claim match, and any `override` or `adopt` grant for a CI team.
-- **Immutable plan binding:** approvals sign off on the plan ID, a hash of the masked plan, saved plan, commit, stack, and env. Saved plans and HTTP-backend states are sealed per env with AES-256-GCM. An apply runs only the exact approved binary and refuses stale or expired (`plan_ttl`) plans. `tofu show` and `tofu apply` read the saved plan from a sealed in-memory file that run processes cannot write.
-
-## Run isolation
-
-On Linux, a team's `writ serve` isolates every run with:
-
-- Dedicated `provider_uids`, so concurrent runs get distinct UIDs: no supplementary groups, `no_new_privs`, and a non-dumpable server process.
-- User, mount, PID, and IPC namespaces on a read-only `pivot_root` `tmpfs` with empty capabilities, and no `data`, keys, database files, shells, `ssh`, or `hg`.
-- A seccomp filter that blocks mount, namespace, `ptrace`, keyring, `bpf`, `userfaultfd`, `io_uring`, and kernel module system calls. It needs Linux 4.14+ on amd64 or arm64.
-- Per-step cgroup v2 limits (`run_memory` with no swap, `run_pids`, `run_cpus`, cleanup by `cgroup.kill`), which need `writ serve` alone in a delegated cgroup, plus `run_scratch` monitoring. `writ serve --check` and the start log say when the filter or the limits are off, and why ([Limit what each run uses](run-isolation.md#limit-what-each-run-uses)).
-- An `nftables` drop rule for `169.254.169.254` and `fd00:ec2::254`, tested by `writ serve --check`.
-- Git blob SHA-1 verification, rejection of symlinks, JSON, and `.terraform`, and a strict module-source allow-list.
-- A loopback STS session per run for `plan_role` or `apply_role`, tagged with `SourceIdentity` for CloudTrail.
-- An optional egress proxy. Under `egress_mode = "enforce"`, each run's only exit is Writ's proxy, limited to `env.egress`, refusing metadata, loopback, link-local, and wildcard-matched private IPs ([Egress](run-isolation.md#egress)). The default, `off`, leaves runs and the provider install on the host's network.
-
-See [Run isolation and egress](run-isolation.md) for setup and verification.
-
-## Secret masking and encryption at rest
-
-- **One masking boundary:** one mask writes every run output: plans, diagnostics, logs, and state index rows. Raw state JSON never leaves a run unmasked.
-- **Four rules:** OpenTofu sensitive marks; a value sweep (plain, URL, JSON, hex, and base64 forms, plus the run's STS credentials); secret-like attribute names; a strict key allow-list.
-- **Secret sets:** every apply seals its mask's known secrets with the state version or S3 serial. A state with no secret set (written outside Writ, before secret sets, or by an apply whose mask could not read its plan) cannot be approved until someone [adopts](adopt-state.md) it or a Writ apply writes a newer version.
-- **Outside writes:** scheduled drift checks detect cloud changes and out-of-band S3 state writes, and block approvals until someone with the `adopt` grant runs `writ state adopt`.
-- **Per-env sealing:** HTTP states, saved plans, and secret sets use AES-256-GCM with HKDF-derived keys from each env's 32-byte `key` file.
-
-See [Secrets and the mask](secrets.md) for the rules and known gaps.
-
-## Notifications
-
-- [Notifications](notifications.md) carry only Writ's fixed wording, stack and env names, counts, and error classes. Never secrets, plan diffs, diagnostic text, or policy messages.
-- `url_file` and `secret_file` are checked to be unreadable by `provider_uids`, and never appear in APIs, logs, or the UI. Delivery is `https://` only, follows no redirects, and uses bounded queues.
-
-## Policy isolation
-
-- Rego runs in a separate child process with an empty environment, closed file descriptors, `memory` (`1GiB`) and `timeout` (`10s`) bounds, and a pure built-in allow-list: no network, filesystem, clock, randomness, or `print`.
-- Policies read only the masked plan document and `input.writ`. Every output message passes through the mask. Errors fail closed at the mandatory level.
-
-## Mandatory audit logging
-
-- Every API, UI, and state request, except `/healthz`, `/v1/server`, and per-IP `429`s, commits an audit row before it responds. The write has a 5-second timeout, after which the request gets `503`.
-- `GET /v1/audit` filters by the caller's grants, hides client IPs and state SHA-256 hashes, and withholds refusal reasons (`reason_withheld: true`).
 
 ## Rate limits and execution bounds
 
