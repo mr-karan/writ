@@ -32,31 +32,15 @@ Install [`minisign`](https://jedisct1.github.io/minisign/). Without it, the scri
 curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh
 ```
 
-To read the script first, download it and run `sh install.sh`. Output without `minisign`, then with it:
+To read the script first, download it and run `sh install.sh`. A successful run ends with:
 
 ```
-install.sh: minisign is not installed, so the signature of SHA256SUMS cannot be checked; nothing installed. Install minisign and run this again: brew install minisign (macOS), apt install minisign (Debian, Ubuntu), dnf install minisign (Fedora), nix profile install nixpkgs#minisign, or see https://jedisct1.github.io/minisign/
-
 installed writ v9.9.9 to /home/dev/.local/bin/writ (SHA-256 checked, signature checked)
-/home/dev/.local/bin is not on your PATH; add it: export PATH="/home/dev/.local/bin:$PATH"
 ```
 
-Real run, 2026-11-10. If the checksum fails, nothing is installed:
+Real run, 2026-11-10. If `~/.local/bin` is not on `PATH`, the script says so and prints the `export PATH` line. Without `minisign` it installs nothing and prints how to install it. If the checksum fails, it installs nothing and prints both hashes.
 
-```
-install.sh: writ-linux-amd64 has SHA-256 eafe950cb49f9769424fc2971bd176aa5c1e22b7d881ffbe94836bf80f1849cf, but SHA256SUMS says 7fb400623abfa4cac138255ff762b4c8483331aed9369c59cd4659b9720d28bd; nothing installed
-```
-
-The script refuses to overwrite a symlink or directory at the target path, rejects `--version` values outside `[A-Za-z0-9._-]`, and never follows symlinks when it installs.
-
-| Flag | Env var | Meaning |
-| --- | --- | --- |
-| `--version V` | `WRIT_VERSION` | Release tag to install (stamped into each release's script). |
-| `--dir DIR` | `WRIT_INSTALL_DIR` | Install directory. Default `~/.local/bin`. |
-| `--from DIR` | | Install from a local directory with no network. |
-| `--insecure-skip-signature` | | Skip signature verification (still checks SHA-256 and warns). |
-| | `WRIT_MINISIGN_PUBKEY` | Override the release public key. |
-| | `WRIT_BASE_URL` | Override the download base URL (`https://`). |
+Flags such as `--version`, `--dir`, and `--from`, and the script's safety rules, are in [install.sh flags](commands.md#installsh-flags).
 
 Pass flags through a pipe with `sh -s --`:
 
@@ -155,12 +139,6 @@ writ: git is not installed: writ reads local Git repositories with the git binar
 ```
 
 Output of a real run, 2026-11-10.
-
-## Cache location
-
-| Env var | Purpose | Default |
-| --- | --- | --- |
-| `WRIT_CACHE_DIR` | Provider binaries and cached schemas for `writ import bulk` and `writ mcp` | `$XDG_CACHE_HOME/writ` (`~/.cache/writ` on Linux; `/var/lib/writ/cache` in the container image) |
 
 ## Troubleshooting
 
