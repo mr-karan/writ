@@ -14,12 +14,12 @@ Writ ships as one Go binary under the Apache 2.0 license, with no limits on user
 ## What it does
 
 - **Server-side plans.** You or a CI job submit a commit SHA. `writ serve` fetches that commit from GitLab and runs `tofu plan -lock=false` in an isolated Linux namespace without modifying state.
-- **Plan-bound approvals.** Reviewers approve a plan by its SHA-256 ID, and `writ apply --remote` runs that exact saved plan. Wherever an approval rule applies, the plan's author can't approve it. [Approvals](docs/approvals.md)
+- **Plan-bound approvals.** Reviewers approve a plan by its plan ID, and `writ apply --remote` runs that exact saved plan. Wherever an approval rule applies, the plan's author can't approve it. [Approvals](docs/approvals.md)
 - **Split cloud roles.** Plans run with your `plan_role` (which you keep read-only). Only an approved apply, or an override with a recorded reason, gets `apply_role`. [AWS roles and credentials](docs/aws-credentials.md)
 - **Secret masking.** `internal/mask` strips secrets from every plan, run log, diagnostic, and state index row Writ stores or serves. [Secrets and the mask](docs/secrets.md)
 - **Rego policy.** Writ evaluates OPA Rego policy sets at plan time and again before apply. Mandatory denials can't be overridden. [Policy](docs/policy.md)
-- **Drift checks and notifications.** Writ schedules drift plans and notifies Slack or signed webhooks on drift, failed plans or applies, completed applies, out-of-band state writes, and pending approvals. [Drift checks](docs/drift-checks.md), [Notifications](docs/notifications.md)
-- **Run isolation and egress control.** Each OpenTofu step runs under a dedicated UID in private Linux namespaces with cgroup resource limits, a seccomp filter, and an opt-in egress proxy. [Run isolation and egress](docs/run-isolation.md)
+- **Drift checks and notifications.** Writ schedules drift plans and notifies Slack or webhooks, optionally signed, on drift, failed plans or applies, completed applies, out-of-band state writes, and pending approvals. [Drift checks](docs/drift-checks.md), [Notifications](docs/notifications.md)
+- **Run isolation and egress control.** On a team server, each OpenTofu step runs under a dedicated UID in private Linux namespaces, with an opt-in egress proxy. Cgroup resource limits and a seccomp filter apply where the host allows them, and `writ serve --check` says whether they do. [Run isolation and egress](docs/run-isolation.md)
 - **UI, CLI, API, imports, and MCP.** Review and approve plans in the built-in web UI or script everything with `--json`. Generate `resource` and `import` blocks with `writ import bulk`, or expose read-only planning to coding agents through `writ mcp`. [Import many objects](docs/import-bulk.md), [Use Writ with an agent](docs/agents.md)
 
 ## Quick start

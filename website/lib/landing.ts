@@ -32,7 +32,7 @@ export const what = {
         'Runs OpenTofu in per-run UID namespaces',
         'Seals plans and binds approvals to one plan ID',
         'Enforces grants, approval rules, and Rego policy',
-        'Masks secrets, checks drift, and logs every request',
+        'Masks secrets, checks drift, and writes an audit log',
       ],
     },
     right: {
@@ -85,7 +85,7 @@ export const how = {
       name: 'Approve',
       idle: { tone: 'warn', text: 'needs 1 approval' },
       live: { tone: 'ok', text: '1 of 1, by bob' },
-      text: 'A reviewer inspects the masked plan in the CLI or control UI and approves its SHA-256 plan ID. Wherever an approval rule applies, the author’s approval never counts.',
+      text: 'A reviewer inspects the masked plan in the CLI or control UI and approves its plan ID. Wherever an approval rule applies, the author’s approval never counts.',
       output: '2. alice made the plan, so only bob can approve it',
     },
     {
@@ -147,8 +147,8 @@ export const security = {
     },
     {
       num: '09',
-      title: 'Synchronous audit log of every request',
-      text: 'Every API, UI, and state request commits an audit row before `writ serve` responds, readable via `GET /v1/audit`, `writ audit --remote`, and `/ui/audit`.',
+      title: 'Synchronous audit log',
+      text: 'API, UI, and state requests commit an audit row before `writ serve` responds (health checks, discovery, and per-address rate-limit refusals excepted), readable via `GET /v1/audit`, `writ audit --remote`, and `/ui/audit`.',
     },
     {
       num: '10',
@@ -168,7 +168,7 @@ export const security = {
     {
       num: '13',
       title: 'Per-step cgroup limits and seccomp filter',
-      text: 'Each OpenTofu step runs in its own cgroup (`run_memory`, `run_pids`, `run_cpus`, `cgroup.kill`) under a seccomp filter blocking mounts, new namespaces, `ptrace`, `bpf`, and kernel module calls.',
+      text: 'Where the host allows them, each OpenTofu step runs in its own cgroup (`run_memory`, `run_pids`, `run_cpus`, `cgroup.kill`) under a seccomp filter blocking mounts, new namespaces, `ptrace`, `bpf`, and kernel module calls. `writ serve --check` says when they are off.',
     },
   ],
   limit:
@@ -222,7 +222,7 @@ export const tour = {
     {
       id: 'plan',
       label: 'Plan review',
-      caption: 'Plan lifecycle stations, approval status, Approve button, risk chips, attribute diffs, and `(sensitive)` values.',
+      caption: 'Approval status, Approve button, risk classes, attribute diffs, and `(sensitive)` values.',
       alt: 'Writ control UI plan review page showing Plan, Approve, and Apply stations, Approve this plan button, and masked attribute changes.',
     },
     {
@@ -277,8 +277,8 @@ export const benefits = {
   },
   drift: {
     title: 'Scheduled drift checks and notifications',
-    text: 'Add `drift { every = "6h" }` and Writ plans each stack on a schedule, separating out-of-band cloud changes from unapplied code without storing secret values. Configure `notify` blocks to alert Slack or a signed webhook.',
-    limit: 'Built-in alert channels are Slack and HMAC-signed webhooks; email is not built.',
+    text: 'Add `drift { every = "6h" }` and Writ plans each stack on a schedule, separating out-of-band cloud changes from unapplied code without storing secret values. Configure `notify` blocks to alert Slack or a webhook.',
+    limit: 'Built-in alert channels are Slack and webhooks with optional HMAC signing; email is not built.',
     link: { text: 'Enable drift checks', href: '/docs/drift-checks' },
     alt: 'A stack drift table in the Writ control UI separating changes outside OpenTofu from code changes.',
   },
@@ -299,7 +299,7 @@ export const benefits = {
   also: [
     {
       title: 'Sandboxed runs and egress controls',
-      text: 'On Linux, each `tofu` step runs under a dedicated `provider_uids` UID inside user/mount/PID/IPC namespaces with seccomp, cgroup limits, an `nftables` metadata block, and an optional egress proxy. [Run isolation and egress](/docs/run-isolation)',
+      text: 'On Linux, each `tofu` step runs under a dedicated `provider_uids` UID inside user/mount/PID/IPC namespaces with an `nftables` metadata block and an optional egress proxy. Seccomp and cgroup limits apply where the host allows them. [Run isolation and egress](/docs/run-isolation)',
     },
     {
       title: 'Exact sealed plan applies',
@@ -403,7 +403,7 @@ export const questions: { q: string; a: string }[] = [
   },
   {
     q: 'How are runs isolated on the server?',
-    a: 'On Linux, each `tofu` step runs under a dedicated `provider_uids` UID inside private user, mount, PID, and IPC namespaces with a read-only filesystem view, seccomp filter, cgroup resource limits, an `nftables` EC2 metadata block, and an optional egress proxy. See [Run isolation and egress](/docs/run-isolation).',
+    a: 'On Linux, each `tofu` step runs under a dedicated `provider_uids` UID inside private user, mount, PID, and IPC namespaces with a read-only filesystem view, an `nftables` EC2 metadata block, and an optional egress proxy. A seccomp filter and cgroup resource limits apply where the host allows them; `writ serve --check` reports whether they do. Dev mode sets no run limits. See [Run isolation and egress](/docs/run-isolation).',
   },
   {
     q: 'Where does my state live?',
