@@ -272,6 +272,12 @@ export const pages: Page[] = [
     description: 'The filesystem view, seccomp filter, cgroup limits, scratch measurement, and egress proxy around each OpenTofu step, and what each does not cover.',
     parts: whole('docs/how-run-isolation-works.md'),
   },
+  {
+    slug: 'how-sign-in-works',
+    title: 'How sign-in works',
+    description: 'How writ login and the control UI sign people in: CLI discovery, device and browser flows, pending limits, sessions, control UI pages, and response headers.',
+    parts: whole('docs/how-sign-in-works.md'),
+  },
 ];
 
 export const nav: NavEntry[] = [
@@ -318,6 +324,7 @@ export const nav: NavEntry[] = [
   'plan-lifecycle',
   'security-model',
   'how-run-isolation-works',
+  'how-sign-in-works',
 ];
 
 // Where a link to a source file lands on the site.
@@ -360,4 +367,5 @@ export const fileRoutes: Record<string, string> = {
   'docs/plan-lifecycle.md': '/docs/plan-lifecycle',
   'docs/security-model.md': '/docs/security-model',
   'docs/how-run-isolation-works.md': '/docs/how-run-isolation-works',
+  'docs/how-sign-in-works.md': '/docs/how-sign-in-works',
 };

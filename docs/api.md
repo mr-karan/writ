@@ -13,7 +13,7 @@ The JSON REST API of `writ serve`, used by the CLI, the control UI, and CI jobs.
 | `GET /` | none | `303` redirect to `/ui/` (or `writ.server/v0` when UI is off) |
 | `GET /v1/server` | none | `writ.server/v0`: version, URL, `dev`, issuers, `login`, `device_issuers` |
 | `GET /healthz` | none | `writ.health/v0`: database and issuer status (`503` if unhealthy) |
-| `POST /v1/auth/device` | none | `writ.device/v0`: starts device-flow [`writ login`](sign-in.md#sign-in-with-the-device-flow) (`429` past [pending limits](sign-in.md#sign-ins-that-wait)) |
+| `POST /v1/auth/device` | none | `writ.device/v0`: starts device-flow [`writ login`](sign-in.md#sign-in-with-the-device-flow) (`429` past [pending limits](how-sign-in-works.md#sign-ins-that-wait)) |
 | `POST /v1/auth/device/token` | none | `writ.session/v0`: `pending` or `signed-in` (token returned once) |
 | `POST /v1/auth/browser` | none | `writ.browser/v0`: starts PKCE loopback [`writ login`](sign-in.md#sign-in-through-a-browser) (`429` past pending limits) |
 | `POST /v1/auth/browser/token` | none | `writ.session/v0`: `signed-in` (token returned once) |
@@ -42,7 +42,7 @@ The JSON REST API of `writ serve`, used by the CLI, the control UI, and CI jobs.
 | `POST /v1/apply-requests/{key}/outcome` | token (`started`: caller or `admin`) | `writ.apply-outcome/v0`: `started` with run, or `none` (closes unused key) |
 | `GET /v1/audit?plan=&run=&env=&stack=&person=&op=&changes=&since=&until=&limit=&cursor=` | any token | `writ.audit/v0` ([Read the audit log](#read-the-audit-log)) |
 | `GET`, `POST`, `LOCK`, `UNLOCK /v1/tfstate/{stack}` (and `/lock`) | run state token | OpenTofu `http` backend (`plan` tokens: `GET` only; `apply` tokens: `GET`/`POST`/`LOCK`/`UNLOCK`) |
-| `GET`, `POST /ui/...` | browser session | [Control UI](sign-in.md#the-control-ui) (`/ui/`, `/ui/stack?stack=&env=`, `/ui/plans`, `/ui/plans/{id}`, `POST /ui/plans/{id}/approve`, `/ui/runs`, `/ui/runs/{id}`, `/ui/drift/{id}`, `/ui/approvals`, `/ui/access`, `/ui/whoami`, `/ui/audit`, `/ui/repos`, `/ui/repos/new`, `/ui/repos/{name}`, `/ui/settings`, `/ui/start`, `/ui/login`, `/ui/login/dev`, `/ui/callback`, `/ui/logout`) |
+| `GET`, `POST /ui/...` | browser session | [Control UI](how-sign-in-works.md#the-control-ui) (`/ui/`, `/ui/stack?stack=&env=`, `/ui/plans`, `/ui/plans/{id}`, `POST /ui/plans/{id}/approve`, `/ui/runs`, `/ui/runs/{id}`, `/ui/drift/{id}`, `/ui/approvals`, `/ui/access`, `/ui/whoami`, `/ui/audit`, `/ui/repos`, `/ui/repos/new`, `/ui/repos/{name}`, `/ui/settings`, `/ui/start`, `/ui/login`, `/ui/login/dev`, `/ui/callback`, `/ui/logout`) |
 
 ### Error classes
 

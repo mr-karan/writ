@@ -50,7 +50,7 @@ Each Writ term has one meaning across the docs, CLI, and UI. Where Terraform or 
 | person id | `IDENTITY/user/ID` (for example `gitlab/user/1001`), compared by approval rules to prevent self-approval across CI, CLI, and UI. | |
 | principal | The verified caller behind a token or session: a CI job (and its triggering user) or a signed-in person. | |
 | session | A `writ login` (`cli`) or control UI (`browser`) sign-in, valid for `session_ttl` (12h default) with no refresh. Only the token's SHA-256 is stored. | |
-| control UI | Built-in web interface served by `writ serve` under `/ui/`. See [The control UI](sign-in.md#the-control-ui). | |
+| control UI | Built-in web interface served by `writ serve` under `/ui/`. See [The control UI](how-sign-in-works.md#the-control-ui). | |
 | team | A named claim-matching rule on one issuer. Any token matching all claims in `match` belongs to the team. | Team |
 | grant | A rule granting teams operations (`read`, `plan`, `approve`, `apply`, `override`, `adopt`, `admin`) and risk classes on matching `stack@env`. | Permission |
 | repository | A GitLab project (or local Git dir under `--dev`) registered with `writ serve`, short form "repo". See [Add a repository](add-repository.md). | VCS connection |

@@ -26,7 +26,7 @@ teams: dev
 
 Real run, 2026-11-16, with a `tofu` block setting the binary, plugin cache, and scratch directory.
 
-- Remote CLI commands find `writ serve --dev` on their own ([How a CLI finds its control plane](sign-in.md#how-a-cli-finds-its-control-plane)). No command starts a dev server implicitly.
+- Remote CLI commands find `writ serve --dev` on their own ([How a CLI finds its control plane](how-sign-in-works.md#how-a-cli-finds-its-control-plane)). No command starts a dev server implicitly.
 - Dev mode has no approval rules, so plans end `approved` and `writ apply --remote ID` applies them at once.
 
 ### What the dev control plane does
