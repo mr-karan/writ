@@ -218,6 +218,34 @@ Unknown fields (such as tokens) are refused; forge tokens never appear in respon
 
 Every other delivery writes an `op = hook` audit row.
 
+### Audit rows and check codes
+
+Deliveries that pass the per-address rate limit write an audit row with `op = hook`. When the URL matches a pinned repository with a webhook, `via` is `webhook of repository NAME`. Principals with `read` on any stack at the repository's current default branch can read its webhook rows; rows for earlier projects, unknown webhooks, or missing project identities require global `admin`. Query them with `writ audit --remote --op hook` or filter by `hook` in `/ui/audit`.
+
+Every 401 returns the same message so senders learn nothing. Inspect `check` in the audit row to diagnose failures:
+
+| `check` | Reason |
+| --- | --- |
+| `hook-body` | Body exceeds 1 MiB or failed to read |
+| `hook-unknown` | No pinned repository with a webhook matches that forge and repo name |
+| `hook-no-token` | Missing `X-Gitlab-Token` header |
+| `hook-token` | `X-Gitlab-Token` doesn't match the secret |
+| `hook-secret-file` | Secret file is unreadable, not a regular file <= 4 KiB, or has invalid base64 after `whsec_` (see server log) |
+| `hook-no-signature` | Missing `webhook-id`, `webhook-timestamp`, or `webhook-signature` under a signing token |
+| `hook-timestamp` | `webhook-timestamp` is more than 5 minutes from server time |
+| `hook-signature` | Signature doesn't match the raw body |
+
+GitLab treats any 4xx response as a failure. Normal project traffic stays far below these rate limits, so a 429 indicates unexpected traffic to the endpoint.
+
+### Webhook security
+
+- Secret tokens are compared in constant time via SHA-256 digests, hiding both value and length.
+- Secrets and failed candidate tokens never appear in logs, audit rows, API responses, or the control UI.
+- Webhooks are unauthenticated by bearer token; the per-IP rate limit runs before reading the body.
+- Bodies are capped at 1 MiB and never stored or logged.
+- The newest 4,096 delivery IDs are deduplicated in memory. After a restart, a resent delivery triggers at most one extra head read.
+- A delivery never triggers plans or applies and never chooses what to fetch; `writ serve` always reads the stored project ID and default branch using the forge's read token.
+
 ## Token checks
 
 Compact JWS tokens signed with `RS256` or `ES256`, checked in this order. The first failure returns `401 auth`.

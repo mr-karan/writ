@@ -75,39 +75,7 @@ poll_every_with_hook = "10m"
 
 ## What writ serve answers
 
-Deliveries that pass the per-address rate limit write an audit row with `op = hook`. When the URL matches a pinned repository with a webhook, `via` is `webhook of repository NAME`. Principals with `read` on any stack at the repository's current default branch can read its webhook rows; rows for earlier projects, unknown webhooks, or missing project identities require global `admin`. Query them with `writ audit --remote --op hook` or filter by `hook` in `/ui/audit`.
-
-| Status | Body | When |
-| --- | --- | --- |
-| 202 | `writ.hook/v0`, `queued: true` | Verified push event; a read of the default branch is queued. |
-| 200 | `writ.hook/v0`, `duplicate: true` | Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0); not acted on again. |
-| 200 | `writ.hook/v0`, `queued: false` | Verified delivery, but not a push event. |
-| 401 | class `auth`: `the delivery failed verification` | Verification failed for any reason, including a body over 1 MiB. |
-| 429 | class `usage`, `Retry-After: 1` | Over 10 deliveries/s from one client IP (no audit row), or over 5 deliveries/s for one repository (audited). |
-
-Every 401 returns the same message so senders learn nothing. Inspect `check` in the audit row to diagnose failures:
-
-| `check` | Reason |
-| --- | --- |
-| `hook-body` | Body exceeds 1 MiB or failed to read |
-| `hook-unknown` | No pinned repository with a webhook matches that forge and repo name |
-| `hook-no-token` | Missing `X-Gitlab-Token` header |
-| `hook-token` | `X-Gitlab-Token` doesn't match the secret |
-| `hook-secret-file` | Secret file is unreadable, not a regular file <= 4 KiB, or has invalid base64 after `whsec_` (see server log) |
-| `hook-no-signature` | Missing `webhook-id`, `webhook-timestamp`, or `webhook-signature` under a signing token |
-| `hook-timestamp` | `webhook-timestamp` is more than 5 minutes from server time |
-| `hook-signature` | Signature doesn't match the raw body |
-
-GitLab treats any 4xx response as a failure. Normal project traffic stays far below these rate limits, so a 429 indicates unexpected traffic to the endpoint.
-
-## Security notes
-
-- Secret tokens are compared in constant time via SHA-256 digests, hiding both value and length.
-- Secrets and failed candidate tokens never appear in logs, audit rows, API responses, or the control UI.
-- Webhooks are unauthenticated by bearer token; the per-IP rate limit runs before reading the body.
-- Bodies are capped at 1 MiB and never stored or logged.
-- The newest 4,096 delivery IDs are deduplicated in memory. After a restart, a resent delivery triggers at most one extra head read.
-- A delivery never triggers plans or applies and never chooses what to fetch; `writ serve` always reads the stored project ID and default branch using the forge's read token.
+A verified push gets `202`; a duplicate or a non-push event gets `200`; every verification failure gets the same `401` (class `auth`, `the delivery failed verification`), including a body over 1 MiB; over 10 deliveries a second from one IP or 5 for one repository gets `429`. Each delivery that passes the per-address limit writes an `op = hook` audit row whose `check` names the cause of a failure. Query them with `writ audit --remote --op hook`. The full table, check codes, and security rules are in [Webhook route](api.md#webhook-route).
 
 ## Troubleshooting
 
