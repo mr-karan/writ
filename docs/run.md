@@ -127,7 +127,7 @@ When you set `providerUids`, the unit gets `CAP_SETUID`, `CAP_SETGID`, and `CAP_
 
 If your host sets `networking.nftables.enable`, the rule joins that ruleset, which flushes every other table when it loads. Otherwise a unit of the module, `writ-serve-metadata-firewall`, loads it before `writ serve` starts.
 
-The unit lets `writ serve` create user, mount, pid, and IPC namespaces, which each `tofu` process's [filesystem view](serve.md#what-a-run-can-see) needs. On a kernel of 7.2 or later, where that view's `/proc` mounts under it, it sets `ProtectKernelTunables`, and on no older kernel. Because the unit's `PATH` has Nix's `git`, writing `git = "git"` in the config's `tofu` block gives each run that `git`. Before it starts, the unit runs `writ serve --check`.
+The unit lets `writ serve` create user, mount, pid, and IPC namespaces, which each `tofu` process's [filesystem view](serve.md#what-a-run-can-see) needs, and network namespaces, which each run gets under `egress_mode` `report` or `enforce`. On a kernel of 7.2 or later, where that view's `/proc` mounts under it, it sets `ProtectKernelTunables`, and on no older kernel. Because the unit's `PATH` has Nix's `git`, writing `git = "git"` in the config's `tofu` block gives each run that `git`. Before it starts, the unit runs `writ serve --check`.
 
 To check the module, run `just check-nixos`. This evaluates the flake's module on the flake's pinned nixpkgs, and builds the `writ` package that its unit runs and the pinned OpenTofu. Then it checks the sample config, whose `tofu` block points to that OpenTofu, with that binary. It fails when the check doesn't find OpenTofu 1.13.9, because `writ serve` would then refuse every stack of `.tf` files.
 

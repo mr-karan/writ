@@ -12,6 +12,7 @@ let
     listen        = "0.0.0.0:443"
     database      = "postgres://writ@/writ?host=/run/postgresql"
     provider_uids = "61000-61063"
+    egress_mode   = "report"
 
     tls {
       cert = "/var/lib/writ/tls/fullchain.pem"

@@ -178,8 +178,9 @@ in
         ProtectControlGroups = !isolated;
         RestrictAddressFamilies = [ "AF_UNIX" "AF_INET" "AF_INET6" ];
         # The user, mount, pid, and IPC namespaces of each tofu process's
-        # private filesystem view.
-        RestrictNamespaces = "user mnt pid ipc";
+        # private filesystem view, and the network namespace each step
+        # starts in under egress_mode report or enforce.
+        RestrictNamespaces = "user mnt pid ipc net";
         LockPersonality = true;
         ReadWritePaths = [ "/var/lib/writ" ] ++ lib.optionals isolated [ "/var/lib/writ-tofu" ];
         UMask = "0077";

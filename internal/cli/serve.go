@@ -244,6 +244,13 @@ func (a *App) checkTofu(ctx context.Context, cfg *server.Config) error {
 		return ErrFailed
 	}
 	fmt.Fprintf(a.humanOutput(), "tofu: %s is OpenTofu %s: ok\n", bin, tofu.Version)
+	if cfg.EgressMode.On() {
+		if err := tofu.CheckNetwork(ctx, bin); err != nil {
+			fmt.Fprintf(a.humanOutput(), "tofu: own network: FAILED: %v; egress_mode %s starts each run in a network namespace of its own, which writ serve's unit must allow, as systemd's RestrictNamespaces does with net\n", err, cfg.EgressMode)
+			return ErrFailed
+		}
+		fmt.Fprintln(a.humanOutput(), "tofu: own network: ok")
+	}
 	if cfg.Tofu.Git == "" {
 		return nil
 	}

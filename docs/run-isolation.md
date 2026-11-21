@@ -11,7 +11,7 @@ Because a merge request chooses the OpenTofu code and providers that run on your
 - `CAP_SETUID`, `CAP_SETGID`, and `CAP_KILL` granted to the `writ serve` service (the [NixOS module](run.md#on-nixos) configures these automatically).
 - `nftables` (or an equivalent firewall) on hosts with an instance metadata service.
 - For each run's memory, process, and CPU limits: cgroup v2, Linux 5.14 or later, and `writ serve` alone in a cgroup delegated to its user, as systemd's `Delegate=yes` gives it (the [NixOS module](run.md#on-nixos) sets it). See [Limit what each run uses](#limit-what-each-run-uses).
-- For `egress_mode` `report` or `enforce`: the `tofu` block, and no env whose `s3_endpoints` lists an `http://` endpoint on loopback, which a run's own namespace can't reach.
+- For `egress_mode` `report` or `enforce`: the `tofu` block, a unit that lets `writ serve` create network namespaces (with systemd's `RestrictNamespaces`, include `net`, as the [NixOS module](run.md#on-nixos) does), and no env whose `s3_endpoints` lists an `http://` endpoint on loopback, which a run's own namespace can't reach.
 
 ## Steps
 
