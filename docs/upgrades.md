@@ -26,7 +26,7 @@ Each `env.*.key` (32 random bytes) [seals](glossary.md) HTTP-backend states, sav
 
 ### 3. Configure retention (optional)
 
-Every hour, `writ serve` automatically marks plans past `plan_ttl` as `expired`, prunes expired CI token `jti`s, and prunes closed `apply_requests` `none` rows older than 25 hours (updating `apply_key_floor` so clock skew can't reopen closed keys).
+Every hour, `writ serve` automatically marks plans past `plan_ttl` as `expired`, prunes expired CI token `jti`s, and prunes closed apply idempotency keys older than 25 hours.
 
 By default, completed plans and audit rows are kept forever. Add a `retention` block to prune older records:
 
@@ -63,7 +63,7 @@ systemctl stop writ-serve
 systemctl start writ-serve
 ```
 
-On `SIGTERM`, `writ serve` drains in-flight requests for up to 30 seconds. On startup, the new binary runs pending SQL migrations in a single transaction and fetches OIDC issuer discovery/JWKS documents.
+On `SIGTERM`, `writ serve` drains in-flight requests for up to 30 seconds. On startup, the new binary applies pending schema migrations in Postgres schema `writ_control` in a single transaction (refusing to start against a database migrated by a newer version of Writ) and fetches OIDC issuer discovery/JWKS documents. HTTP-backend state retains the newest 20 versions per `stack@env`.
 
 ### 4. Verify health
 
@@ -79,14 +79,9 @@ curl -sS https://writ.example.com/healthz
 
 Output of a real run, 2026-11-16 (a team server lists each issuer under `issuers`).
 
-## Version-specific upgrade notes
+## Downgrades
 
-- **Downgrades are refused:** Starting an older `writ` against a database migrated by a newer version fails immediately. Restore your pre-upgrade Postgres dump before rolling back.
-- **Pre-release builds (before 2026-11-10 / 2026-11-12):**
-  - Migration 1 requires the unified SQLite/Postgres schema (older Postgres-only `0001_init.sql` databases are refused).
-  - Migration 5 expires pre-approval live plans (`made before approvals`); re-plan after upgrading.
-  - Migration 16 dropped legacy `stacks` and CloudTrail watcher tables; old `state_ENV_STACK_HASH` schemas can be dropped once unused.
-  - `**` in stack patterns matches any number of segments (previously one segment like `*`); review grant and approval patterns before restarting.
+Starting an older `writ` against a database migrated by a newer version fails immediately. Restore your pre-upgrade Postgres dump before rolling back.
 
 ## Troubleshooting
 
@@ -97,6 +92,6 @@ Output of a real run, 2026-11-16 (a team server lists each issuer under `issuers
 
 ## Next steps
 
-- [Control database](database.md): tables, timeouts, and migrations.
-- [Run a control plane](run.md): systemd, container, and NixOS setup.
+- [Run a control plane](run.md): systemd, container, NixOS setup, and database timeouts.
+- [Read the audit log](audit-log.md): query audit rows via CLI, UI, and API.
 - [Supported platforms and limits](status.md): current limits and test coverage.

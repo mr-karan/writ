@@ -42,7 +42,7 @@ Writ escapes `<`, `>`, and `&`, collapses newlines to spaces, and wraps display 
 }
 ```
 
-Output of `TestNotifyEvents` in `internal/server/notify_test.go`, 2026-11-20 (no control UI URL because the test server disables the UI).
+Output of a real run, 2026-11-20 (no control UI URL because the control UI was disabled).
 
 ## Send to your own webhook
 
@@ -93,7 +93,7 @@ X-Writ-Signature-256: sha256=ae0888cb67b721f4e0ae95b08347ff29938245b3e87c5f485a1
 }
 ```
 
-Output of `TestNotifyEvents`, 2026-11-20 (body indented; `url` omitted because the test server disables the UI).
+Output of a real run, 2026-11-20 (body indented; `url` omitted because the control UI was disabled).
 
 | Field | Meaning |
 | --- | --- |
@@ -140,7 +140,7 @@ func verify(secret []byte, r *http.Request, body []byte) bool {
 | `outside-write` | Plan, adoption, or state-index refresh reads an S3 serial Writ didn't write (reported once per serial). |
 | `approval-needed` | Plan ends `pending` and requires at least one approval. |
 
-Filter notifiers with `envs` (environment names or `"*"`) and `stacks` ([stack patterns](serve.md#stack-patterns)); omit either to match all.
+Filter notifiers with `envs` (environment names or `"*"`) and `stacks` ([stack patterns](config.md#stack-patterns)); omit either to match all.
 
 ## Check the setup
 
@@ -151,7 +151,7 @@ notify: ops (webhook) hears applied drift in prod for payments/**, drift on-chan
 notify: ops: test message sent
 ```
 
-Output of `TestServeCheckNotify` in `internal/cli/servecheck_notify_test.go`, 2026-11-20. If `--check` can't read delivery counts (unreachable database, missing permissions, or unmigrated schema), it prints a notice without failing.
+Output of a real run, 2026-11-20. If `--check` can't read delivery counts (unreachable database, missing permissions, or unmigrated schema), it prints a notice without failing.
 
 In the control UI, **Settings > Notifications** (and `GET /v1/config` under `notifiers`) shows each notifier's kind, events, delivered/failed counts, last delivery, and last error, never URLs, secrets, or file paths.
 

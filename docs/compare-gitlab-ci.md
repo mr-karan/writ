@@ -21,7 +21,7 @@ In plain CI, the runner executes `tofu` and holds cloud credentials, state acces
 | The plan that applies | `fetch-mr-plan` "retrieves the approved plan artifact from the associated merge request pipeline" (requires no merge trains and "merge commit with semi-linear history") [component] | The sealed plan stored on `writ serve`. Refused if a newer plan exists, state moved, or the branch moved |
 | Policy | Experimental OPA template evaluated inside the pipeline [component] | Server-side Rego evaluated at plan time and again before apply; mandatory denies have no override |
 | Drift | `detect-drift` template that fails or warns a scheduled job [component] | Scheduled drift checks in `writ serve`, shown in the control UI and API, with optional Slack or webhook alerts ([drift checks](drift-checks.md), [notifications](notifications.md)) |
-| Logs and secrets | Raw `tofu` output in the job log | One mask over everything stored or shown, tested by `just verify-mask`, with [three documented gaps](secrets.md#what-the-mask-cant-do) |
+| Logs and secrets | Raw `tofu` output in the job log | One mask over everything stored or shown, verified by a differential test, with [documented limits](secrets.md#what-the-mask-cant-do) |
 | Audit | Pipeline and job history | Synchronous row in the control database before each response (except health checks, discovery, and rate-limited requests); request fails if the row can't commit. Read via `GET /v1/audit`, `writ audit --remote`, or `/ui/audit` ([Read the audit log](audit-log.md)) |
 
 ## What plain CI gives you that Writ doesn't
@@ -46,7 +46,7 @@ In plain CI, the runner executes `tofu` and holds cloud credentials, state acces
 - [Writ compared with other control planes](compare.md): Atlantis, OTF, Terrakube, and paid control planes.
 - [Quick start](quick-start.md): try Writ locally, then set it up for a team.
 - [Set up GitLab CI](set-up-gitlab-ci.md): Writ's GitLab CI jobs and server config.
-- [Roles and credentials](serve.md#roles-and-credentials): how `writ serve` assumes AWS roles per run.
+- [AWS roles and credentials](aws-credentials.md): how `writ serve` assumes AWS roles per run.
 
 [component]: https://gitlab.com/components/opentofu
 [state]: https://docs.gitlab.com/user/infrastructure/iac/terraform_state/

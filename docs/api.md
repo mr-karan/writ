@@ -22,7 +22,7 @@
 | `GET /v1/plans/{id}?wait=60s` | `read` | `writ.remote-plan/v0` by ID or ref (`wait` up to `120s`) |
 | `POST /v1/state/adopt` | `adopt` (person) | `writ.state-adopt/v0` ([Adopt a state](adopt-state.md)) |
 | `GET /v1/config` | `read` on any stack | `writ.config/v0` (adds `limits` and `retention` for `admin`; no paths/secrets) |
-| `GET /v1/policy` | `read` or `admin` on any stack | `writ.policy/v0`: active policy sets and `.rego` text ([Policy](policy.md#read-the-policy-the-server-runs)) |
+| `GET /v1/policy` | `read` or `admin` on any stack | `writ.policy/v0`: active policy sets and `.rego` text ([Write and test policies](write-a-policy.md#how-policy-decisions-work)) |
 | `POST /v1/repos` | global `admin` | `201` and `writ.repo/v0` ([Repository routes](#repository-routes)) |
 | `GET /v1/repos`, `GET /v1/repos/{name}` | `read` on any stack | `writ.repos/v0`, `writ.repo/v0` |
 | `POST /v1/hooks/{forge}/{repo}` | webhook secret | `writ.hook/v0` ([Webhook route](#webhook-route)) |
@@ -212,17 +212,17 @@ Unknown fields (such as tokens) are refused; forge tokens never appear in respon
 1. **Shape:** 3 strict base64url segments, <= 16 KiB (JWE refused).
 2. **Header:** `alg` is `RS256` or `ES256` (`kid` required; `jku`, `jwk`, `x5u`, `x5c`, `crit`, `b64`, `enc`, `zip`, `epk`, and duplicate JSON keys refused).
 3. **Issuer:** `iss` equals a configured issuer's `url` exactly.
-4. **Signature:** Verified via `github.com/coreos/go-oidc/v3` and `go-jose/v4` against the issuer's cached JWKS (`kid` type and `alg` must match).
+4. **Signature:** Verified against the issuer's cached JWKS (`kid` type and `alg` must match).
 5. **Times:** `exp` and `iat` required, `nbf` optional, 60s leeway.
 6. **Audience:** `aud` must be `writ serve`'s `url` alone.
 7. **Claims:** Non-empty `sub`, `jti`, and all required claims for the issuer's kind (GitLab CI: `project_id`, `project_path`, `namespace_id`, `pipeline_id`, `pipeline_source`, `job_id`, `ref_path`, `ref_protected`, `sha`, `user_id`, `user_login`; GitHub Actions: `repository`, `repository_id`, `repository_owner_id`, `run_id`, `ref`, `sha`, `event_name`, `workflow_ref`, `actor`, `actor_id`).
-8. **Replay:** Each CI token `jti` allows one write, stored in `token_uses` until `exp`.
+8. **Replay:** Each CI token `jti` allows one write, recorded until `exp`.
 
 JWKS refreshes hourly (or per `Cache-Control: max-age` clamped to 5m to 1h), at most once per minute on unknown `kid`, with 24h stale fallback on fetch error (10s timeout, 1 MiB max, <= 100 keys, RSA 2048 to 8192 `e=65537`, EC P-256, HTTPS on issuer host, no redirects).
 
 ### Identity provider refusals
 
-`internal/oidc` never echoes raw text from identity provider responses or tokens (preventing credential leaks in errors, logs, or audit rows). Every failure maps to a typed stage/check refusal carrying only Writ-computed counts, positions, or known RFC 6749 codes:
+Writ never echoes raw text from identity provider responses or tokens (preventing credential leaks in errors, logs, or audit rows). Every failure maps to a fixed stage/check refusal carrying only Writ-computed counts, positions, or known RFC 6749 codes:
 
 | Stage | When | Reported detail |
 | --- | --- | --- |
@@ -324,11 +324,11 @@ error: the apply ran past limits.apply_timeout, 1s: OpenTofu was interrupted, st
 | Threat | Defense |
 | --- | --- |
 | Forged JWT, `alg: none`, algorithm confusion | Strict `RS256`/`ES256`, issuer JWKS only, no header keys (`jku`/`jwk`/`x5u`/`x5c`) |
-| Cross-service or replayed CI token | Single-audience `url` check; `jti` stored in `token_uses` until `exp` |
+| Cross-service or replayed CI token | Single-audience `url` check; `jti` recorded until `exp` |
 | Oversized tokens, headers, or gzip bombs | 16 KiB token, 64 KiB headers, auth before body read, 16 MiB post-gzip stream cap |
 | Request/audit floods | Per-IP 429 before auth with no audit row; per-principal rate and plan/apply concurrency caps |
 | Unpinned providers or server disk reads | Commits fetched from Git host and blob-verified; providers installed offline/read-only from `.terraform.lock.hcl` |
 | Provider reading keys, other runs, or metadata | Per-run `provider_uids`, Linux namespaces, seccomp, cgroups, `nftables` metadata drop, short-lived loopback credential tokens |
-| Secret leaks via IdP errors, audit reads, or run output | Typed OIDC refusals, sanitized `/v1/audit`, single `internal/mask` over all run outputs |
+| Secret leaks via IdP errors, audit reads, or run output | Fixed OIDC refusals, sanitized `/v1/audit`, single mask over all run outputs |
 
 **Limits:** A pinned provider can still exercise its run's assumed role for the duration of the run.

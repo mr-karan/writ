@@ -14,6 +14,8 @@ For approval rules and stale-plan checks, see [Approvals](approvals.md) and [How
 
 From a clean Git working tree of a registered repository:
 
+`writ plan --remote` sends the checked-out commit when the repository is registered, the stack sits under `path`, no file under `path` differs from `HEAD`, and, for remote forges, the commit is pushed to a remote branch.
+
 ```sh
 writ plan --remote --env prod
 ```
@@ -46,7 +48,7 @@ Plan: 4 to add, 0 to change, 0 to destroy.
 Outputs that change: pet.
 ```
 
-Output of `TestTofuApproveApply`, 2026-11-16, against a team's `writ serve` with a test issuer and a GitLab stand-in.
+Output of a real run against a local GitLab stand-in, 2026-11-16.
 
 A maintainer then runs the manual `writ-approve` job (`writ approve --remote --pipeline`), which approves every live plan in that pipeline atomically. If the plan's author runs it, Writ refuses with exit code 1 and the plan stays `pending`.
 
@@ -119,7 +121,7 @@ $ writ apply --remote --merged --env prod --stack app
 Plan abc0596aff0857c996028b716be98aee of app@prod has the sources of infra at 2357a3f0 and changes no resource: there is nothing to apply.
 ```
 
-Output of `TestTofuApproveApply` in `e2e/`, 2026-11-20. If another run applied or state moved after that plan was requested, Writ checks whether the newest run applied those sources and wrote the current HTTP state version before asking for a fresh plan. See [A plan that changes nothing](approvals.md#a-plan-that-changes-nothing).
+Output of a real run against a local GitLab stand-in, 2026-11-20. If another run applied or state moved after that plan was requested, Writ checks whether the newest run applied those sources and wrote the current HTTP state version before asking for a fresh plan. See [A plan that changes nothing](approvals.md#a-plan-that-changes-nothing).
 
 Even if someone removes the approve job from a branch and merges, the default-branch apply job refuses to run without an approved plan. The control plane enforces the gate, not the CI YAML.
 
@@ -143,19 +145,17 @@ That command queries the outcome route, reports whether a run started, and close
 
 ### How the key works
 
-Each `writ apply --remote` invocation generates one `Idempotency-Key`: Unix seconds, a dash, and 26 random characters from `crypto/rand` (for example `1794405508-IDTB4TY5M2Z4M4RFR773KN4BKQ`). If a client omits the header, `writ serve` generates one.
+Each `writ apply --remote` invocation generates one `Idempotency-Key`: Unix seconds, a dash, and 26 random characters (for example `1794405508-IDTB4TY5M2Z4M4RFR773KN4BKQ`). If a client omits the header, `writ serve` generates one.
 
-The key is written as the first write inside the transaction that starts the run, and its row is final:
+The key's outcome is final once recorded:
 
 - `started`: a run started. Repeating the same request as the same principal returns `202` with that run without starting a second run or spending a second CI token. Reusing the key for a different request returns `usage`; another principal gets `denied`.
 - `none`: closed with no run (by the outcome route or after a rolled-back commit). Any later apply with that key returns `state` with `key_closed: true`.
-- No row: no run started and no refusal committed the key, so the client may reuse it.
+- Unrecorded: no run started and no refusal committed the key, so the client may reuse it.
 
 ### Ask whether a run started
 
-`POST /v1/apply-requests/{key}/outcome` returns `started` (with the run) or `none`. If the key has no row, the route writes `none` and answers after committing.
-
-On Postgres and SQLite, that write serializes against any in-flight start transaction for the same key, so `none` can never race ahead of a committing run. Asking closes an unused key, so asking also cancels any delayed retry carrying that key.
+`POST /v1/apply-requests/{key}/outcome` returns `started` (with the run) or `none`. If the key wasn't used, asking closes it to `none` atomically so no delayed retry carrying that key can start a run.
 
 ### What writ apply does for you
 
@@ -167,7 +167,7 @@ After a transport error, timeout, or `503` whose `outcome` isn't `none`, `writ a
 
 After a `429`, or a `503` with `outcome: "none"` and `key_closed: false`, the CLI retries with the same key. After a `503` or `409` with `key_closed: true`, it retries with a new key. All retries share the 5-attempt cap; a `503` with `outcome: "unknown"` never rotates the key.
 
-Examples from `TestRemoteApplyOutcome` (against a `writ serve` stand-in, 2026-11-16). First, connection dropped after the run committed:
+Examples from a real run against a local stand-in, 2026-11-16. First, connection dropped after the run committed:
 
 ```
 $ writ apply --remote d3f700d860a97483a7ad509c31fe9e28
@@ -206,15 +206,7 @@ Run LLGTGDJCKQ6LZQJWNBMA2ESMHV of plan d3f700d860a97483a7ad509c31fe9e28 for prod
 
 A `503` from `POST /v1/runs` sets `outcome: "none"` if no run started, or `outcome: "unknown"` if the server can't tell. A `503` from the outcome route always sets `outcome: "unknown"`.
 
-Only `outcome: "none"` from the outcome route or `key_closed: true` on `POST /v1/runs` guarantees the key can never start a run. A `503` with `outcome: "none"` and no `key_closed` failed before commit, so the same key can still be retried.
-
-### When the commit returns an error
-
-If committing the run's start returns an error, `writ serve` checks the database for the key's outcome (5-second timeout):
-
-- `started`: continues the run and answers `202`.
-- `none`: answers `503` with `outcome: "none"` and `key_closed: true`.
-- Still failing: answers `503` with `outcome: "unknown"`, holds the apply slot, and retries every 5 seconds for up to 2 minutes. If `started` appears, it launches the run; if `none`, timeout, or server stop occurs, it releases the slot. Any orphaned `applying` row is later marked `failed` by the minute sweep ([What a run records](approvals.md#what-a-run-records)).
+Only `outcome: "none"` from the outcome route or `key_closed: true` on `POST /v1/runs` guarantees the key can never start a run. A `503` with `outcome: "none"` and no `key_closed` failed before commit, so the same key can still be retried. If a database commit error leaves the outcome unknown, `writ serve` returns `503` with `outcome: "unknown"` and reconciles the run in the background (or marks any orphaned `applying` run `failed` on its minute sweep; see [What a run records](approvals.md#what-a-run-records)).
 
 ### Who can learn a key's outcome
 
@@ -240,10 +232,9 @@ writ apply --remote ID --override "bob on leave, rotate leaked key, OPS-112"
 
 ## Limits
 
-- `limits.applies` (default `4`): concurrent applies; excess requests get `429`. Applies share `provider_uids` with plans and wait for a free UID.
+- `limits.applies` (default `4`): concurrent applies; excess requests get `429`. Applies share `provider_uids` with plans and wait for a free UID. Settling a failed state commit holds an apply slot for at most 2 minutes (5-second retries).
 - `limits.apply_start_timeout` (default `10m`): max wait for a free UID. `limits.apply_timeout` (default `4h`): sends `SIGINT` to OpenTofu so running changes finish without starting new ones ([Time limits](api.md#time-limits)).
-- Failed-commit settlement holds an apply slot for at most 2 minutes (5-second retries).
-- Request keys live 24 hours (max 5 minutes future skew); `none` rows prune after 25 hours.
+- Request keys live 24 hours (max 5 minutes future skew); closed `none` keys prune after 25 hours.
 - `writ apply --remote` uses a 30-second per-request timeout, up to 5 apply attempts and 5 outcome queries (backoff 2s, 4s, 8s, 16s), and follows a run for up to 30 minutes from attach time.
 - Pipeline approval covers at most 50 plans.
 - Override and adoption reasons must be 10 to 500 characters.

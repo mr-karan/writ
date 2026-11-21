@@ -37,7 +37,7 @@ var egressNamespace = []string{"--user", "--map-root-user", "--map-users=auto", 
 // namespace: the instance metadata address and three test servers'
 // addresses on loopback, which stand for the network writ serve reaches,
 // the last a private one,
-// and docs/serve.md's firewall rule. writ then runs as root of the
+// and docs/run-isolation.md's firewall rule. writ then runs as root of the
 // namespace, as the tofu gate runs it. A writ that is not root of its
 // user namespace, with only the capabilities systemd's unit gives it,
 // cannot start a view once it has made files as a run's uid: the change
@@ -63,7 +63,7 @@ const egressMetadataRules = `table inet writ {
 }
 `
 
-// TestRunEgressIsolation proves on this machine what docs/serve.md says of
+// TestRunEgressIsolation proves on this machine what docs/run-isolation.md says of
 // a run under egress_mode enforce: as a provider uid, in its own network
 // namespace, it reaches a listed server through writ's egress proxy, is
 // refused an unlisted one, the host's loopback, and the metadata address,

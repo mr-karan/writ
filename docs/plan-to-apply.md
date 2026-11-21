@@ -36,8 +36,8 @@ Planning starts from `writ plan --remote` in a clean Git working tree or a CI jo
 
 1. Verify the caller's OIDC token or session and `plan` grant on `stack@env`.
 2. Confirm with the Git host that the commit is on the claimed ref.
-3. Fetch stack and local module (`./`, `../`) blobs missing from `blobs` and verify every blob's Git SHA-1 ID.
-4. Enforce [stack structure and module-source rules](serve.md#what-a-stack-can-contain) before running OpenTofu.
+3. Fetch stack and local module (`./`, `../`) files not already cached and verify every file's Git SHA-1 blob ID.
+4. Enforce [stack structure and module-source rules](add-repository.md#what-a-stack-can-contain) before running OpenTofu.
 
 ## 2. Isolated planning and masking
 
@@ -45,7 +45,7 @@ Planning starts from `writ plan --remote` in a clean Git working tree or a CI jo
 2. Allocate a free `provider_uids` UID and launch Linux user, mount, PID, and IPC namespaces with a read-only filesystem view, seccomp filter, and per-step cgroup limits.
 3. Run `tofu init -lockfile=readonly` with no cloud credentials.
 4. Assume `plan_role` via STS and run `tofu plan -lock=false` (read-only state token on HTTP backend; read-only role on S3). Copy the saved plan immediately into a sealed in-memory file and run `tofu show -json` against that copy so plan document, policy input, plan ID, and sealed plan share the exact same bytes.
-5. Pass plan JSON through `internal/mask` (sensitive marks, learned values and encodings, secret-named keys, `provider_env`, assumed STS credentials, and prior state's sealed [secret set](glossary.md)).
+5. Pass plan JSON through Writ's mask (sensitive marks, learned values and encodings, secret-named keys, `provider_env`, assumed STS credentials, and prior state's sealed [secret set](glossary.md)).
 
 ## 3. Policy evaluation (plan point) and sealing
 
@@ -57,7 +57,7 @@ If `policy` is configured, Writ evaluates all Rego sets in a bounded child proce
 
 ## 4. Approvals and status transitions
 
-Plan statuses follow a single transition table in `internal/control/lifecycle.go`:
+Plan statuses:
 
 | Status | Meaning |
 | --- | --- |
@@ -87,13 +87,18 @@ When applying by ID or via `--merged`:
 ## 6. Post-apply indexing, audit, and crash recovery
 
 - **State and secret set:** Seals the resulting state (on HTTP backend) and secret set (on HTTP and S3) under the environment key.
-- **State index:** Runs offline `tofu show -json` to update allow-listed resource rows via `internal/mask`.
+- **State index:** Runs offline `tofu show -json` to update allow-listed resource rows through Writ's mask.
 - **Saved plan cleanup:** Deletes the sealed saved plan as soon as the plan leaves live status.
 - **Crash recovery:** On startup and every minute, `writ serve` marks `applying` runs belonging to other process IDs as `failed`, revokes their state tokens, and releases HTTP state locks in one transaction.
+
+## The state index
+
+Writ maintains a queryable resource index per `stack@env` (served at `GET /v1/index` and rendered in the `/ui/stack` Resources tab). It stores only `address`, `type`, `provider`, and allow-listed identifying columns: `id`, `arn`, `identifier`, `region`, plus `namespace` and `modify_index` for `nomad_job`. Sensitive or masked values are stored empty.
+
+The index refreshes after each successful apply (using offline `tofu show -json` with no cloud credentials or `provider_env`) and every 5 minutes in the background (up to 50 lagging stacks per sweep). States without a sealed secret set aren't indexed until adopted with [`writ state adopt`](adopt-state.md) or overwritten by a Writ apply.
 
 ## Next steps
 
 - [Plan and apply](apply.md): CLI and CI commands.
 - [Approvals](approvals.md): approval rules and staleness checks.
 - [Security model](security-model.md): trust boundaries across every stage.
-- [Architecture](architecture.md): Go packages implementing this flow.

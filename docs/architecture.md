@@ -141,7 +141,7 @@ commit ─ repo.TofuSources ─▶ stack files, lock file, backend block
 
 - **Unit tests:** Table-driven with `t.Run`; DB tests run against SQLite and scratch Postgres (when `initdb` or `WRIT_TEST_POSTGRES` is present).
 - **Architecture tests:** `internal/archtest` runs on every `just check`.
-- **End-to-end suites:** `just e2e`, `just e2e-tofu-s3`, `just verify-mask`, `just policy-parity`, `just test-serve`, `just test-tfstate`, `just test-tofu`, `just e2e-import`, `just e2e-import-hcl`, `just e2e-aws-emulator` ([Development](development.md)).
+- **End-to-end suites:** `just e2e`, `just e2e-tofu-s3`, `just verify-mask`, `just policy-parity`, `just test-serve`, `just test-tfstate`, `just test-tofu`, `just e2e-import`, `just e2e-import-hcl`, `just e2e-aws-emulator` (see `justfile`).
 
 ### Test clocks and database budgets
 

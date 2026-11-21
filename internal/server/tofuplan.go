@@ -357,7 +357,7 @@ func (s *Server) endState(run string) {
 // ["(sensitive)"]. The rest of the summary stays, because it says why the
 // plan failed, as an AccessDenied names the action the role lacks. So a
 // past secret such a state keeps in an attribute through nonsensitive()
-// shows where a summary quotes that attribute; docs/serve.md states the
+// shows where a summary quotes that attribute; docs/secrets.md states the
 // limit. extra follows the step's diagnostics: writ's own words on why it
 // failed, such as the egress proxy's refusals.
 func refusedTofu(res control.PlanResult, se *tofu.StepError, m *mask.Mask, unread bool, extra []Diagnostic) control.PlanResult {

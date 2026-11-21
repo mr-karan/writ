@@ -1,6 +1,6 @@
 # Policy input and built-ins
 
-Policies evaluate one input (the masked plan document plus `input.writ`) using a fixed allow-list of Rego built-ins inside a bounded child process. See [Policy](policy.md), [Write and test a policy](write-a-policy.md), and the [Policy cookbook](policy-cookbook.md).
+Policies evaluate one input (the masked plan document plus `input.writ`) using a fixed allow-list of Rego built-ins inside a bounded child process. See [Write and test policies](write-a-policy.md) and the [Policy cookbook](policy-cookbook.md).
 
 ## Input
 
@@ -32,7 +32,7 @@ environment := object.get(input, ["writ", "environment"], "")
 
 ## Built-ins
 
-Policies may call only the built-ins below (kept in sync with `internal/policy/builtins.go` by a test). Calling any other built-in fails compilation at startup.
+Policies may call only the built-ins below. Calling any other built-in fails compilation at startup.
 
 | Family | Built-ins | Purpose |
 | --- | --- | --- |
@@ -57,7 +57,7 @@ All other OPA v1.22.4 built-ins are excluded:
 
 ## Bounds and failures
 
-`writ serve` evaluates every set for a decision in an isolated child process (`writ` itself) with `TZ=UTC`, empty environment, closed inherited file descriptors, and stdin/stdout only. GC pressure ramps from half of `memory`, Linux address space is bounded to `memory` above startup mapping, execution is killed at `timeout`, and input is capped at 16 MiB.
+`writ serve` evaluates every set for a decision in an isolated child process with `TZ=UTC`, empty environment, closed inherited file descriptors, and stdin/stdout only. Memory is soft-limited from half of `memory`, and on Linux address space above the startup mapping is capped at `memory`; execution is killed at `timeout`, and input is capped at 16 MiB.
 
 Each set keeps up to 100 messages. Messages are masked whole and truncated to 1,000 bytes (cutting before any `(sensitive)` marker that would be split).
 

@@ -613,6 +613,5 @@ test_iam_prod_apply_requires_two_approvals if {
 
 ## Next steps
 
-- [Write and test a policy](write-a-policy.md): write, test, and load a policy set.
-- [Policy](policy.md): plan-point vs apply-point decisions and mandatory vs advisory sets.
+- [Write and test policies](write-a-policy.md): write, test, and load a policy set, and how plan-point and apply-point decisions work.
 - [Policy input and built-ins](policy-reference.md): complete `input` and `input.writ` reference.

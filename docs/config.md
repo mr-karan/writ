@@ -162,7 +162,7 @@ env "prod" {
 | `trusted_proxies` | Optional CIDR list of reverse proxies permitted to supply `X-Forwarded-For` ([Rate limits](api.md#rate-limits)). |
 | `retention` | Optional block: positive durations `audit` and `plans` (kept forever when unset) ([Back up and upgrade](upgrades.md)). |
 | `issuer "NAME"` | Trusted OIDC issuer (`kind`: `gitlab-ci`, `github-actions`, or `people`; `url`; `identity`; optional `ca_file`). |
-| `team "NAME"` | Maps claims from an `issuer` to a team name ([Teams and grants](serve.md#teams-and-grants)). |
+| `team "NAME"` | Maps claims from an `issuer` to a team name ([Teams, grants, and approvals](#team-grant-and-approval)). |
 | `grant` | Authorizes `teams` on `stacks` and `envs` for `can` operations (numbered from 1). |
 | `approval` | Optional approval count rules (`stacks`, `envs`, `risks`, `need` `1` to `10`). |
 | `env "NAME"` | Environment definition (`key`, optional `plan_role`, `apply_role`, `s3_endpoints`, `provider_env`, `egress`). |
@@ -179,20 +179,30 @@ env "prod" {
 
 ### issuer
 
-- `identity`: lowercase provider name shared by issuers representing the same Git host/IdP ([Who a person is](serve.md#who-a-person-is)).
+- `identity`: lowercase provider name (never `dev`) shared by issuers representing the same Git host or IdP.
 - `ca_file`: optional PEM root CA bundle for `url`.
 - `kind = "people"` requires `client_id` and `client_secret_file`, and accepts `groups` (`"id_token"` default, or `"userinfo"`). Register `URL/ui/callback` (and `http://127.0.0.1/callback` for browser `writ login`) on the OAuth application ([Set up writ login](sign-in.md#set-up-writ-login)).
 
+#### Who a person is
+
+Writ identifies people as `IDENTITY/user/ID` using `user_id` (GitLab CI), `actor_id` (GitHub Actions), or `sub` (`people` ID token). Issuers for the same Git host share one `identity` so a person's CI jobs and CLI/UI sessions collapse to one ID, preventing cross-channel self-approval. Separate Git hosts must use separate identities (`writ serve --check` warns if different identities point to the same normalized host).
+
+Renaming an identity renames every person in it. Sessions and plan authors under the old identity are refused until they sign in or plan again, and approvals kept under the old identity stop counting (rolling back the rename restores them).
+
 ### team, grant, and approval
 
-- **`team "NAME"`:** `issuer` name plus `match` object mapping claim names to non-empty lists of allowed string values (all claims must match).
+- **`team "NAME"`:** `issuer` name plus `match` object mapping claim names to non-empty lists of allowed string values. All `match` keys must match; list claims match any element; numbers and booleans compare as JSON text; trailing `/*` matches one path segment and `/**` matches any depth; missing claims never match; a team with no rule has no members.
 - **`grant`:**
   - `teams`: non-empty list of team names.
-  - `stacks`: non-empty list of [stack patterns](serve.md#stack-patterns).
+  - `stacks`: non-empty list of [stack patterns](#stack-patterns).
   - `envs`: non-empty list of configured environments or `["*"]`.
   - `can`: non-empty list from `read`, `plan`, `approve`, `apply`, `override`, `adopt`, `admin`.
   - `risks`: optional list of risk classes (`create`, `update`, `replace`, `delete`, `data-loss`) the grant permits applying (defaults to empty; grants with `apply` need the plan's risk classes covered by one or more matching grants).
 - **`approval`:** `stacks`, `envs`, `risks`, and `need` (`1` to `10`; highest matching `need` wins).
+
+#### Stack patterns
+
+Stack patterns split on `/`. Within a segment, `*`, `?`, and `[...]` match characters without crossing `/`. A standalone `**` segment matches zero or more segments (`data/**` matches `data`, `data/pg`, and `data/pg/replica`; `**` matches every stack). At most one `**` segment is allowed per pattern (`apps**` and `a/**/b/**` are refused).
 
 ### env
 
@@ -223,7 +233,7 @@ env "prod" {
   - `url_file`: file holding `https://` (or loopback `http://`) URL with no embedded credentials.
   - `secret_file`: optional HMAC-SHA256 signing key file (`kind = "webhook"` only).
   - `events`: non-empty subset of `drift`, `plan-failed`, `apply-failed`, `applied`, `outside-write`, `approval-needed`.
-  - `envs`, `stacks`: optional environment names / `["*"]` and [stack patterns](serve.md#stack-patterns) (default: all).
+  - `envs`, `stacks`: optional environment names / `["*"]` and [stack patterns](#stack-patterns) (default: all).
   - `drift_mode`: optional (`"on-change"` default or `"every-check"`, valid only when `events` includes `drift`).
 
 Files are read once at startup (restart after edits). Subscribing to `drift` without a `drift` block emits a warning.
@@ -265,7 +275,7 @@ State locations are controlled by the stack's backend (`backend "http" {}` in Po
 
 ## Policy
 
-`policy` loads host-side Rego directories at startup (never from stack commits). See [Policy](policy.md).
+`policy` loads host-side Rego directories at startup (never from stack commits). See [Write and test policies](write-a-policy.md).
 
 ```hcl
 policy {

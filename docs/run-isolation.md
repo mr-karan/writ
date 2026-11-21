@@ -2,8 +2,6 @@
 
 Because merge requests choose the OpenTofu code and providers that execute on your server, a team's `writ serve` isolates every `tofu` step from its own OS user, keys, database, and host identity, and optionally restricts all outbound network connections through an egress proxy.
 
-For deeper internals, see [Control plane internals: How providers are kept from the keys](serve.md#how-providers-are-kept-from-the-keys).
-
 ## Prerequisites
 
 - Linux host (user, mount, PID, IPC, and network namespaces plus `provider_uids` require Linux).
@@ -37,7 +35,7 @@ Lock down host files so no provider UID can read them:
 - State keys (`keys/*.key`), TLS private key, OIDC client secrets, forge read tokens, webhook secrets, notifier secrets, and `provider_env` files: `0600` (or `0400`), owned by `writ`.
 - Postgres: Unix-socket peer auth or a `0600` passfile.
 
-With `provider_uids` set, `writ serve` marks itself non-dumpable at startup so no same-UID process can trace it or trigger core dumps containing keys.
+With `provider_uids` set, `writ serve` marks itself non-dumpable at startup so no same-UID process can trace it or read its memory, and crashes write no core dump (only the Go traceback on stderr).
 
 ### 2. Block the instance metadata service for `provider_uids`
 
@@ -90,9 +88,11 @@ Every `tofu` step (`init`, `plan`, `show`, `apply`, plugin cache fill) runs in f
 | `tofu` binary, dynamic loader, shared libraries (and `tofu.git` + `git-remote-http`/`https` if configured) | read-only |
 | `/etc/resolv.conf`, `/etc/hosts`, `/etc/ld.so.cache`, `/etc/ssl/certs/ca-certificates.crt`, minimal `/etc/nsswitch.conf` | read-only |
 | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/fd`, PID-scoped `/proc` | standard / read-only |
-| Saved plan for `show` and `apply` at `/dev/fd/8` (sealed in-memory file) | read-only |
+| Saved plan for `show` and `apply` (sealed in-memory file) | read-only |
 
 No `/home`, `data`, `/tmp`, `/bin/sh`, `ssh`, or `hg` exists in the view. Each step's System V IPC objects end with its IPC namespace, and Writ kills all processes owned by the run's UID before returning the UID to the pool.
+
+These namespaces, the filesystem view, and the run's network namespace don't fall back. If Writ can't create the view or the run's network, the step fails with the reason and `tofu` doesn't run.
 
 ## System calls a run can't make
 
@@ -121,7 +121,7 @@ tofu init stopped at a limit: the run reached limits.run_pids, 64 processes and 
 tofu init stopped at a limit: the run's directory held more than limits.run_scratch, 16MiB, on disk
 ```
 
-Output of `TestRunLimits`, 2026-11-20. When a host-level OOM kills a step before its own or shared cgroup limit, the diagnostic reports that rather than `run_memory`. On step exit, Writ terminates remaining processes via `cgroup.kill` and deletes the cgroup.
+Output of a real run, 2026-11-20. When a host-level OOM kills a step before its own or shared cgroup limit, the diagnostic reports that rather than `run_memory`. On step exit, Writ terminates remaining processes via `cgroup.kill` and deletes the cgroup.
 
 ### How writ serve makes the cgroups
 
@@ -147,7 +147,7 @@ Delegate=yes
 
 ### Under Nomad's exec driver
 
-Run the task as `root` with `writ` as the task command (sole process in the task cgroup). A root task gets Nomad's legacy capability set, which includes `CAP_SYS_ADMIN`. If Nomad mounts a read-only `/sys` without cgroupfs, `writ serve` mounts cgroup v2 at an empty `/sys/fs/cgroup` and creates per-step cgroups inside the task's limits. (Verified in namespace tests from Nomad's exec driver source, 2026-11-20; not yet run under a live Nomad agent.)
+Run the task as `root` with `writ` as the task command (sole process in the task cgroup). A root task gets Nomad's legacy capability set, which includes `CAP_SYS_ADMIN`. If Nomad mounts a read-only `/sys` without cgroupfs, `writ serve` mounts cgroup v2 at an empty `/sys/fs/cgroup` and creates per-step cgroups inside the task's limits. (Not yet verified under a live Nomad agent.)
 
 ### Check that the limits hold
 
@@ -214,11 +214,11 @@ The hard bound is a filesystem quota. Put `tofu.scratch_dir` on a filesystem of 
 
 - **Metadata firewall:** `nftables` drops `169.254.169.254` and `fd00:ec2::254` for `provider_uids`.
 - **Module source allow-list:** Only in-repo relative paths (`./`, `../`), registry addresses, and HTTPS/remote addresses with at most `ref` and `depth` params are permitted (`file://`, absolute paths, `~`, `oci://`, `#` fragments, and `go-getter` params like `checksum`/`sshkey` are refused).
-- **HTTPS-only Git:** `tofu.git` runs with `GIT_ALLOW_PROTOCOL=https:ssh`, no system/global Git config, and no `ssh` binary in the view.
+- **HTTPS-only Git:** `tofu.git` runs with `GIT_ALLOW_PROTOCOL=https:ssh`, no system/global Git config, and no `ssh` binary in the view (HTTPS submodules work without `/bin/sh`).
 - **No cloud credentials in `init`:** Only `plan`, `apply`, and S3 backend init receive role credentials.
 - **Trusted plugin cache fills:** `writ serve` installs lock-file providers using a synthetic config, never giving stack code write access to `tofu.plugin_cache`. The lock file still chooses each provider's registry, and the registry chooses the download hosts.
 
-Under `egress_mode = "off"` (default), that is all. A run shares the host's network, so code the commit chose can reach anything the host reaches, with the run's role credentials and the env's `provider_env` values in hand: the internet, the network `writ serve` runs in, and services on the host's loopback, such as `writ serve`'s own Postgres. The provider install also runs on the host's network, as `writ`'s own UID, which the metadata firewall rule doesn't cover; see [The provider install](serve.md#the-provider-install).
+Under `egress_mode = "off"` (default), that is all. A run shares the host's network, so code the commit chose can reach anything the host reaches, with the run's role credentials and the env's `provider_env` values in hand: the internet, the network `writ serve` runs in, and services on the host's loopback, such as `writ serve`'s own Postgres. The provider install also runs on the host's network, as `writ`'s own UID, which the metadata firewall rule doesn't cover, so a lock file's registry can send the install to any host `writ serve` reaches (including the metadata service) and its error text ends up in plan diagnostics.
 
 ### Egress
 
@@ -233,9 +233,17 @@ env "prod" {
 }
 ```
 
-Each step runs in a loopback-only network namespace with no external route or DNS, reaching the network solely via Writ's proxy at `127.0.0.1:3128` (`HTTPS_PROXY` / `HTTP_PROXY`), alongside the loopback credential and state endpoints ([Control plane internals: Egress](serve.md#egress)). Provider installs run in their own namespace behind a public-only proxy limited to `provider_registries` (default `registry.opentofu.org`, `registry.terraform.io`).
+Each step runs in a loopback-only network namespace with no external route or DNS, reaching the network solely through Writ's loopback endpoints (bound before `tofu` starts, with `NO_PROXY=127.0.0.1,localhost,::1`):
 
-Entries accept `HOST`, `*.DOMAIN` (subdomains only), or IP addresses with optional `:PORT` (default `443`). Private IPs (RFC 1918, ULA, CGNAT) are permitted only when matched by an exact hostname or IP, never a wildcard.
+| Run loopback port | Service | Environment variable |
+| --- | --- | --- |
+| `127.0.0.1:3128` | Egress proxy (`CONNECT` + HTTP) | `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, `https_proxy` |
+| `127.0.0.1:3129` | Loopback STS credential endpoint | `AWS_CONTAINER_CREDENTIALS_FULL_URI` |
+| `127.0.0.1:3130` | HTTP state backend (`/v1/tfstate/` only, per-run rate bucket) | `TF_HTTP_ADDRESS` |
+
+Each port caps at 256 connections (10s header timeout); the egress proxy caps at 128 connections per run (10m idle, 1h max), closes all sockets when the step exits, and records only `host:port` (never paths, headers, or bodies).
+
+Entries accept `HOST`, `*.DOMAIN` (subdomains only), or IP addresses with optional `:PORT` (default `443`). The proxy resolves listed names on the host and dials only the checked IP, treats NAT64 addresses as their embedded IPv4 address (`64:ff9b::a9fe:a9fe` is blocked as metadata, `64:ff9b:1::/48` as private), and allows private IPs (RFC 1918, ULA, CGNAT) only via exact host or IP match, never wildcards. Provider installs run in their own namespace behind a public-only proxy limited to `provider_registries` (default `registry.opentofu.org`, `registry.terraform.io`); install destinations appear first in `network` with `step: "install"`.
 
 | `egress_mode` | Listed destination | Unlisted destination | Loopback, link-local, metadata, multicast, unspecified, and a NAT64 address of one |
 | --- | --- | --- | --- |
@@ -302,6 +310,5 @@ Use VPC firewalls or `nftables` `meta skuid` rules for stricter controls.
 ## Next steps
 
 - [AWS roles and credentials](aws-credentials.md): pair isolation with short-lived STS roles.
-- [Control plane internals: Egress](serve.md#egress): proxy ports and protocol details.
 - [Security model](security-model.md): overview of all trust boundaries.
 - [Run a control plane](run.md): systemd and NixOS deployment.

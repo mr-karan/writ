@@ -1,6 +1,6 @@
 # Migrate from Terraform
 
-Move an existing Terraform stack onto Writ and OpenTofu 1.13.9 without rewriting the repository first. Each stack needs `.tf` or `.tofu` files, a committed `.terraform.lock.hcl`, and either `backend "http" {}` or `backend "s3"` ([OpenTofu stacks](serve.md#opentofu-stacks)).
+Move an existing Terraform stack onto Writ and OpenTofu 1.13.9 without rewriting the repository first. Each stack needs `.tf` or `.tofu` files, a committed `.terraform.lock.hcl`, and either `backend "http" {}` or `backend "s3"` ([What a stack can contain](add-repository.md#what-a-stack-can-contain)).
 
 ## Before you begin
 
@@ -16,7 +16,11 @@ Omit the registry host on `hashicorp/` providers (write `source = "hashicorp/aws
 
 ### 2. Keep or refresh `.terraform.lock.hcl`
 
-You can keep Terraform's existing lock file while migrating: `writ serve` translates `registry.terraform.io` entries to OpenTofu's registry per run ([Lock files that Terraform wrote](serve.md#lock-files-that-terraform-wrote)).
+You can keep Terraform's existing lock file while migrating. For each run, `writ serve` translates a temporary copy of `.terraform.lock.hcl` from `registry.terraform.io` to `registry.opentofu.org` at the same versions (leaving Git untouched and noting translated providers in plan warnings):
+
+- **Non-`hashicorp/` providers:** Keep their committed hashes (OpenTofu serves the same author archives).
+- **`hashicorp/` providers:** Drop Terraform's hashes (OpenTofu builds differ), verify OpenTofu registry signatures on install, and pin the installed hashes in memory for subsequent runs and applies (re-fetched once after server restart).
+- **State reads:** State adoption and index refreshes remap `registry.terraform.io` provider addresses on a temporary state copy for `tofu show -json`.
 
 When you're ready to pin OpenTofu's own build hashes in Git, run `tofu init` with OpenTofu 1.13.9 and commit `.terraform.lock.hcl`:
 
@@ -68,4 +72,4 @@ OpenTofu 1.13.9 plans cleanly against state written by Terraform (providers at `
 
 - [Adopt a state](adopt-state.md): seal a secret set for existing state.
 - [AWS credentials](aws-credentials.md): configure `plan_role` and `apply_role` for S3 state.
-- [Control plane internals: Lock files that Terraform wrote](serve.md#lock-files-that-terraform-wrote): lock-file translation and hash rules.
+- [Add a repository](add-repository.md#what-a-stack-can-contain): stack file and module-source rules.

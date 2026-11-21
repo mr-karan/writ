@@ -6,13 +6,13 @@ Three templates, one component each, give the merge request flow of [Approvals a
 - `templates/writ-approve.yml` adds `writ-approve`, a manual job of merge request pipelines with `allow_failure: false`, so the pipeline waits at it. Its `writ approve --remote --pipeline` approves every plan of the pipeline as the person who runs it. writ serve refuses the approval of the plans' author, and passes the job once each plan has its approvals, whoever gave them.
 - `templates/writ-apply.yml` adds `writ-apply-STACK-ENV` to pipelines of pushes to the default branch. Its `writ apply --remote --merged` names no plan: writ serve applies the approved plan whose sources of the stack equal the merged commit's, and refuses when there is none.
 
-No job holds a cloud credential, a state key, or a source. `example.gitlab-ci.yml` includes all three, and `writ ci gitlab --repo NAME` prints the lines for a repository writ serve reads, with the teams, grants, and approval rule of its config. See [Repositories](../../docs/repos.md).
+No job holds a cloud credential, a state key, or a source. `example.gitlab-ci.yml` includes all three, and `writ ci gitlab --repo NAME` prints the lines for a repository writ serve reads, with the teams, grants, and approval rule of its config. See [Add a repository](../../docs/add-repository.md).
 
 These are sketches. No GitLab pipeline has run them. `just lint-gitlab-ci` checks them as YAML with yamllint. GitLab's own CI lint needs a GitLab instance, which no test here contacts.
 
 ## Not verified yet
 
-Each item needs a real GitLab project. The [test plan](../../docs/development.md#test-plan-for-a-real-gitlab-project) in `docs/development.md` says how to check it.
+Each item needs a real GitLab project to verify end to end.
 
 - GitLab interpolates `$[[ inputs.stack ]]` and `$[[ inputs.env ]]` in a job name, and takes a stack name with `/` there.
 - A job's token carries every claim writ serve requires, as strings, including `ref_protected` as `"true"` or `"false"`, and its `sha` is `$CI_COMMIT_SHA`.

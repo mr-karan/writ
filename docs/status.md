@@ -4,11 +4,11 @@ Writ plans, approves, and applies OpenTofu 1.13.9 stacks on your own Linux serve
 
 ## What ships today
 
-- **Control plane (`writ serve`)**: Plans OpenTofu 1.13.9 stacks by Git commit, binds approvals to one SHA-256 plan ID, excludes plan authors from approving, and applies the exact sealed saved plan. [Control plane internals](serve.md), [Approvals](approvals.md)
+- **Control plane (`writ serve`)**: Plans OpenTofu 1.13.9 stacks by Git commit, binds approvals to one SHA-256 plan ID, excludes plan authors from approving, and applies the exact sealed saved plan. [How a plan becomes an apply](plan-to-apply.md), [Approvals](approvals.md)
 - **State backends**: Built-in sealed and versioned `http` backend in Postgres (or SQLite under `--dev`), or existing `backend "s3"` buckets with read-only plan roles and `writ state adopt` for out-of-band state. [AWS roles and credentials](aws-credentials.md), [Adopt existing state](adopt-state.md)
-- **Secret masking**: `internal/mask` strips secrets from plans, run logs, diagnostics, egress records, and the state index, verified with `just verify-mask`. [Secrets and the mask](secrets.md)
+- **Secret masking**: Strips secrets from plans, run logs, diagnostics, egress records, and the state index. [Secrets and the mask](secrets.md)
 - **Run isolation and egress**: Dedicated `provider_uids`, Linux user/mount/PID/IPC namespaces, cgroup v2 resource limits, a seccomp filter, `nftables` EC2 metadata blocking, module-source allow-listing, and an opt-in per-run egress proxy. [Run isolation and egress](run-isolation.md)
-- **OPA Rego policy**: Evaluated at plan and apply time with `conftest` parity and no override for mandatory denials. [Policy](policy.md)
+- **OPA Rego policy**: Evaluated at plan and apply time with `conftest` parity and no override for mandatory denials. [Write and test policies](write-a-policy.md)
 - **Drift checks and notifications**: Scheduled drift checks (`drift` block) and asynchronous Slack or HMAC-signed JSON webhook notifications (`notify` block) for drift, failures, applies, outside writes, and pending approvals. [Drift checks](drift-checks.md), [Notifications](notifications.md)
 - **GitLab webhooks**: Verified push webhooks (`POST /v1/hooks/{forge}/{repo}`) to trigger immediate default-branch reads with periodic polling as a backstop. [Webhooks](webhooks.md)
 - **Control UI and audit log**: Built-in web UI at `/ui/` (overview, plan review, approvals, stack resources and drift, runs, repos, access, settings, and `/ui/audit`) backed by a synchronous audit log. [Configure sign-in](sign-in.md), [Read the audit log](audit-log.md)
@@ -19,9 +19,9 @@ Writ plans, approves, and applies OpenTofu 1.13.9 stacks on your own Linux serve
 
 End-to-end suites build `writ` and run real OpenTofu 1.13.9 and real providers inside isolated Linux namespaces, offline once providers are cached:
 
-- `hashicorp/random`, `hashicorp/tls`, and `hashicorp/local` through `writ serve` on its `http` backend (`just e2e`, `just verify-mask`, `just policy-parity`).
-- `hashicorp/random` and `terraform_data` through `writ serve` on `backend "s3"` against local `versitygw` and an STS stand-in (`just e2e-tofu-s3`).
-- `hashicorp/nomad` against a local dev agent and `hashicorp/aws` against local stand-ins and AWS Emulator for `writ import bulk` and `writ import accept` (`just e2e-import`, `just e2e-import-hcl`, `just e2e-aws-emulator`).
+- `hashicorp/random`, `hashicorp/tls`, and `hashicorp/local` through `writ serve` on its `http` backend (including differential secret-masking and `conftest` policy-parity suites).
+- `hashicorp/random` and `terraform_data` through `writ serve` on `backend "s3"` against local S3 and STS stand-ins.
+- `hashicorp/nomad` against a local dev agent and `hashicorp/aws` against local stand-ins and AWS Emulator for `writ import bulk` and `writ import accept`.
 
 No test contacts a live cloud account or real GitLab instance.
 
@@ -61,6 +61,6 @@ No test contacts a live cloud account or real GitLab instance.
 ### Repositories and policy
 
 - Deleting a repository via the HTTP API (pinned `repo` blocks reconcile automatically on config reload).
-- Garbage collection of unreferenced Git blobs in the `blobs` table.
+- Garbage collection of unreferenced Git blobs in the control database.
 - Dynamically raising `approval.need` from Rego at plan time (an apply-point Rego rule can inspect `count(input.writ.approvals)` and deny until enough approvals exist).
 - Overriding a mandatory policy `deny`, loading Rego policies from application Git repos, or `writ policy test`/`eval` subcommands (use `conftest verify` and `conftest test`).

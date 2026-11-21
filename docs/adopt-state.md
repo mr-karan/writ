@@ -1,6 +1,6 @@
 # Adopt a state
 
-When a stack's state wasn't written by `writ serve`, Writ has no secret set for it. Until a secret set exists, Writ withholds plan and drift details and refuses approval for plans against that state ([States with no secret set](serve.md#states-with-no-secret-set)).
+When a stack's state wasn't written by `writ serve`, Writ has no secret set for it. Until a secret set exists, Writ withholds plan and drift details (plans fail with `no secret set for state version N of stack@env`, and drift checks report `drift unknown`) and refuses approval for plans against that state.
 
 `writ state adopt` reads the state, seals a secret set for it, and populates the state index so plans can be approved again. Use it when:
 
@@ -31,7 +31,7 @@ The state index holds its 3 resources.
 warning: the secret set holds each value the state marks sensitive and the environment's provider_env values; a secret the state holds where nothing marks it, as an address keyed by nonsensitive() of a variable before writ serve planned the stack, is not in it, and later plans and drift checks may show it
 ```
 
-Output of `just e2e-tofu-s3`, 2026-11-15.
+Output of a real run against a local S3 stand-in, 2026-11-15.
 
 After adoption, plan the stack again; the new plan can be approved and applied (the earlier failed plan stays failed). The control UI also prints the exact `writ state adopt` command on affected stack and failed-plan pages.
 

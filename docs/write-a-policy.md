@@ -2,7 +2,21 @@
 
 Policies are directories of Rego files that `writ serve` evaluates against each plan's masked document at plan time and again before apply. Unlike approval rules, a mandatory policy deny can't be approved or overridden.
 
-Writ uses the same rule conventions as `conftest`: write rules once, test them locally with `conftest verify` and `conftest test`, and load them into `writ serve` via server config. For ready-to-use AWS and workflow rules, see the [Policy cookbook](policy-cookbook.md). For how policy sets and decision points work, see [Policy](policy.md).
+Writ uses the same rule conventions as `conftest`: write rules once, test them locally with `conftest verify` and `conftest test`, and load them into `writ serve` via server config. Policies load only from server config directories, never from a stack's repository, so a merge request can't weaken or delete the rules checking it. For ready-to-use AWS and workflow rules, see the [Policy cookbook](policy-cookbook.md).
+
+## How policy decisions work
+
+| Result | Mandatory set | Advisory set |
+| --- | --- | --- |
+| `deny` or `violation` message | denies | warns |
+| `warn` message | warns | warns |
+| Evaluation error | denies | warns |
+
+- **At plan time:** A mandatory deny sets the plan's status to `refused`, keeps the masked document and decision, and discards the saved plan so it can't be approved or applied.
+- **At apply time:** `POST /v1/runs` re-evaluates live plans against the server's current policy sets with `decision = "apply"`, the caller, and counting approvals. On a deny, Writ returns `403` (`policy`), starts no run, doesn't spend a CI token, and leaves the plan `approved`. If sources moved, state lacks a secret set, or approvals changed before start commits, Writ returns `409`. Adding or tightening a policy takes effect at apply time even for plans created earlier. Policies don't run on [drift checks](drift-checks.md).
+- **Nothing overrides a deny:** Neither approvals nor `writ apply --remote --override` bypass a mandatory deny (`--override` skips approval rules only).
+- **Read active policies:** `GET /v1/policy` (and the `policy` tool in [`writ mcp`](agents.md#the-mcp-server)) returns active sets as [`writ.policy/v0`](json-output.md#documents-of-writ-serve) to any principal with `read` or `admin` on any `stack@env`. **Warning:** Never embed secrets in Rego files; policy text isn't masked and is readable by anyone who can read any stack.
+- **Secrets in policy messages:** Policies receive only the masked plan document, and output messages pass through the mask before storage or display. **Limit:** If a Rego rule hardcodes a secret in its own message text and that string isn't in the run's mask, the mask won't scrub it. Outcomes are decided before masking, so a secret that spells `deny` can't change the verdict.
 
 ## Before you begin
 
@@ -88,14 +102,14 @@ tofu show -json plan.out > plan.json
 conftest test --policy policy/baseline plan.json
 ```
 
-For rules reading non-secret fields kept by Writ's mask, `conftest` and `writ serve` return identical verdicts and messages (`just policy-parity` verifies `examples/policy` across three stacks):
+For rules reading non-secret fields kept by Writ's mask, `conftest` and `writ serve` return identical verdicts and messages:
 
 ```
 writ serve: deny local_file.key: file_permission is 0777; set 0600, so only its owner reads it | tls_private_key.key: an RSA key needs 4096 bits, and this one has 2048
 conftest:   deny local_file.key: file_permission is 0777; set 0600, so only its owner reads it | tls_private_key.key: an RSA key needs 4096 bits, and this one has 2048
 ```
 
-Output of `just policy-parity`, 2026-11-15.
+Output of a real run, 2026-11-15.
 
 Expected differences between `conftest` and `writ serve`:
 
@@ -141,7 +155,7 @@ Policy: denied, so this plan cannot be approved or applied.
   warn: [examples] local_file.note: file_permission is 0777; set 0600, so only its owner reads it
 ```
 
-Output of `TestTofuPlanByCommit`, 2026-11-15.
+Output of a real run, 2026-11-15.
 
 A mandatory deny stores the masked document and decision with `status = "refused"` and discards the saved plan. Neither `writ approve --remote` nor `writ apply --remote --override` can apply it. Once you raise `rsa_bits` to `4096` and plan again, only the warning remains and the plan becomes `pending` (or `approved` if no approval rule matches).
 
@@ -170,5 +184,4 @@ A mandatory deny stores the masked document and decision with `status = "refused
 
 - [Policy cookbook](policy-cookbook.md): 12 copy-pasteable Rego rules and tests.
 - [Policy input and built-ins](policy-reference.md): input schema, allowed built-ins, and process limits.
-- [Policy](policy.md): plan-point vs apply-point evaluation and mandatory vs advisory sets.
 - [Server config](config.md#policy): full `policy` block reference.

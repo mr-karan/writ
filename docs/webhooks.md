@@ -122,6 +122,6 @@ GitLab treats any 4xx response as a failure. Normal project traffic stays far be
 
 ## Next steps
 
-- [How repositories work](repos.md#how-the-control-plane-learns-about-commits): how polls, webhooks, and CI jobs bring commits in.
+- [Add a repository](add-repository.md): forge tokens, stack rules, and repository config.
 - [API: webhook route](api.md#webhook-route): route reference.
 - [Read the audit log](audit-log.md): query webhook and other audit events.

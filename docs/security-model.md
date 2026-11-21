@@ -10,7 +10,7 @@ Because planning an unmerged branch executes provider and module code, Writ enfo
 2. **Short-lived STS sessions per run.** Each run gets a dedicated loopback STS session for `plan_role` or `apply_role`, tagged with `SourceIdentity` for CloudTrail attribution.
 3. **Dedicated provider UIDs and metadata firewall.** Concurrent OpenTofu runs execute under distinct UIDs from `provider_uids`, blocked by `nftables` from `169.254.169.254` and `fd00:ec2::254`.
 4. **Linux user, mount, PID, and IPC namespaces.** Every step runs in a `pivot_root` read-only `tmpfs` view with `no_new_privs`, empty capabilities, and no server keys, database files, or shells mounted.
-5. **Single secret-masking boundary.** `internal/mask` scrubs marked values, learned secrets (plain and encoded), secret-named fields, and per-run STS credentials from every plan, diagnostic, log, and state index row.
+5. **Single secret-masking boundary.** Writ's mask scrubs marked values, learned secrets (plain and encoded), secret-named fields, and per-run STS credentials from every plan, diagnostic, log, and state index row.
 6. **Sealed, immutable saved plans.** Saved plans and HTTP-backend states are sealed per environment with AES-256-GCM; apply runs only the exact approved binary and refuses stale or expired (`plan_ttl`) plans.
 7. **Server-owned grants, approvals, and Rego policy.** Teams, grants, approval rules, and mandatory Rego policies live only in server config, out of reach of merge requests and CI YAML edits.
 8. **No self-approval.** Wherever an approval rule applies, the plan's author (by stable `IDENTITY/user/ID` across CI, CLI, and browser) can never approve their own plan.
@@ -32,11 +32,11 @@ Because planning an unmerged branch executes provider and module code, Writ enfo
 
 ## Identity and token verification
 
-- **Strict OIDC checks:** `internal/oidc` accepts only compact JWS tokens with `RS256` or `ES256`, requires `kid`, rejects header keys (`jku`/`jwk`/`x5u`/`x5c`) and duplicate JSON keys, enforces exact `iss` and single-element `aud`, checks `exp`, `iat`, and `nbf`, and tracks `jti` on writes.
-- **No IdP text leaks:** Exported `internal/oidc` functions return typed integer `oidc.Refusal` values (enforced by `internal/archtest`), never raw IdP text.
+- **Strict OIDC checks:** Writ accepts only compact JWS tokens with `RS256` or `ES256`, requires `kid`, rejects header keys (`jku`/`jwk`/`x5u`/`x5c`) and duplicate JSON keys, enforces exact `iss` and single-element `aud`, checks `exp`, `iat`, and `nbf`, and tracks `jti` on writes.
+- **No IdP text leaks:** OIDC verification failures return fixed refusal codes, never raw identity provider text.
 - **Cross-issuer person IDs:** Issuers for one Git host share a configured `identity`, mapping CI jobs and CLI/UI sessions to one `IDENTITY/user/ID`.
 - **Verified webhooks:** `POST /v1/hooks/{forge}/{repo}` verifies the pinned repo's secret in constant time (or `whsec_` HMAC-SHA256 with a 5-minute replay window), ignores the payload body completely, and returns uniform `401` on all verification failures ([Webhooks](webhooks.md#security-notes)).
-- **Carrier isolation:** Browser cookies aren't accepted on `/v1/`; CLI bearer tokens can't open `/ui/`. `/ui/` enforces strict CSP (`default-src 'none'; script-src 'self'; ...`) and `http.CrossOriginProtection`.
+- **Carrier isolation:** Browser cookies aren't accepted on `/v1/`; CLI bearer tokens can't open `/ui/`. `/ui/` enforces strict CSP (`default-src 'none'; script-src 'self'; ...`) and cross-origin request checks.
 
 ## Authorization and approval integrity
 
@@ -59,12 +59,12 @@ See [Run isolation and egress](run-isolation.md) for setup and verification.
 
 ## Secret masking and encryption at rest
 
-- **Single masking boundary:** `internal/mask` writes every run output; `internal/archtest` prevents other packages from reading raw state JSON except via `mask.Index`.
+- **Single masking boundary:** One mask writes every run output; raw state JSON never leaves a run unmasked.
 - **Four rules:** OpenTofu sensitive marks, value sweep (plain + URL/JSON/hex/base64 + run STS credentials), secret-like attribute names, and strict key allow-list.
 - **Secret sets:** Every apply seals its mask's known secrets alongside the state version or S3 serial. A state with no secret set, written outside Writ, before secret sets, or by an apply whose mask couldn't read its plan, can't be approved until someone [adopts](adopt-state.md) it or a Writ apply writes a newer version.
 - **Per-environment sealing:** HTTP states, saved plans, and secret sets use AES-256-GCM with HKDF-derived keys from each environment's 32-byte `key` file.
 
-See [Secrets and the mask](secrets.md) for `just verify-mask` and known gaps.
+See [Secrets and the mask](secrets.md) for masking rules and known gaps.
 
 ## Notifications
 
@@ -103,6 +103,6 @@ See [Supported platforms and limits](status.md) for platform requirements.
 ## Next steps
 
 - [Run isolation and egress](run-isolation.md): configure `provider_uids`, `nftables`, cgroups, and egress.
-- [Secrets and the mask](secrets.md): run `just verify-mask`.
+- [Secrets and the mask](secrets.md): masking rules and known gaps.
 - [API: What the API refuses](api.md#what-the-api-refuses): threat-by-threat API defense table.
 - [`SECURITY.md`](../SECURITY.md): private security reporting.
