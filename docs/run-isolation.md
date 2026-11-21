@@ -90,13 +90,13 @@ Every `tofu` step (`init`, `plan`, `show`, `apply`, plugin cache fill) runs in f
 | `tofu` binary, dynamic loader, shared libraries (and `tofu.git` + `git-remote-http`/`https` if configured) | read-only |
 | `/etc/resolv.conf`, `/etc/hosts`, `/etc/ld.so.cache`, `/etc/ssl/certs/ca-certificates.crt`, minimal `/etc/nsswitch.conf` | read-only |
 | `/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom`, `/dev/fd`, PID-scoped `/proc` | standard / read-only |
-| Saved plan for `show` and `apply` at `/dev/fd/7` (sealed in-memory file) | read-only |
+| Saved plan for `show` and `apply` at `/dev/fd/8` (sealed in-memory file) | read-only |
 
 No `/home`, `data`, `/tmp`, `/bin/sh`, `ssh`, or `hg` exists in the view. Each step's System V IPC objects end with its IPC namespace, and Writ kills all processes owned by the run's UID before returning the UID to the pool.
 
 ## System calls a run can't make
 
-Before execing `tofu`, Writ installs an inherited seccomp filter (Linux 4.14+ on amd64/arm64; elsewhere runs proceed without it and `--check` warns):
+A process in the view has no capabilities, but it can still reach parts of the kernel no OpenTofu run needs, and it could make a user namespace of its own and hold every capability inside it again. So before execing `tofu`, Writ installs a seccomp filter that every process of the run inherits. It needs Linux 4.14+ on amd64 or arm64; elsewhere runs proceed without it, and `--check` and the start log say so.
 
 - **Blocked with `EPERM`:** `kexec_load`, `kexec_file_load`, `init_module`, `finit_module`, `delete_module`; `mount`, `umount2`, `pivot_root`, `mount_setattr`, `open_tree`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick`, `open_by_handle_at`; `unshare`, `setns`, namespace-creating `clone`; `ptrace`, `process_vm_readv`, `process_vm_writev`, `pidfd_getfd`; `keyctl`, `add_key`, `request_key`; `bpf`, `perf_event_open`, `userfaultfd`, `io_uring_setup`.
 - **Blocked with `ENOSYS`:** `clone3` (glibc falls back to `clone`) and the x32 ABI.
@@ -111,7 +111,7 @@ Each OpenTofu step runs in its own cgroup bounded by [`limits`](config.md#settin
 | `run_memory` | `4GiB` | Kernel OOM-kills the step (no swap where cgroup swap accounting is enabled; file page cache counts). |
 | `run_pids` | `1024` | New processes/threads fail (threads count; an idle `hashicorp/random` 3.9.1 provider uses 9 threads on 16 CPUs). |
 | `run_cpus` | `2` | CPU throttled; step doesn't fail. |
-| `run_scratch` | `8GiB` | Writ stops the step once measured directory + unlinked open/mapped file usage exceeds the limit (minimum 4KiB per file/directory; soft bound, see [How writ serve measures scratch](#how-writ-serve-measures-scratch)). |
+| `run_scratch` | `8GiB` | Writ stops the step once measured directory + unlinked open/mapped file usage exceeds the limit (minimum 4KiB per file/directory). It bounds a runaway run, not a hostile one; see [How writ serve measures scratch](#how-writ-serve-measures-scratch). |
 
 Diagnostics name the tripped limit:
 
@@ -147,11 +147,11 @@ Delegate=yes
 
 ### Under Nomad's exec driver
 
-Run the task as `root` with `writ` as the task command (sole process in the task cgroup). If Nomad mounts a read-only `/sys` without cgroupfs, `writ serve` mounts cgroup v2 at an empty `/sys/fs/cgroup` and creates per-step cgroups inside the task's limits. (Verified in namespace tests from Nomad's exec driver source, 2026-11-20; not yet run under a live Nomad agent.)
+Run the task as `root` with `writ` as the task command (sole process in the task cgroup). A root task gets Nomad's legacy capability set, which includes `CAP_SYS_ADMIN`. If Nomad mounts a read-only `/sys` without cgroupfs, `writ serve` mounts cgroup v2 at an empty `/sys/fs/cgroup` and creates per-step cgroups inside the task's limits. (Verified in namespace tests from Nomad's exec driver source, 2026-11-20; not yet run under a live Nomad agent.)
 
 ### Check that the limits hold
 
-Run `writ serve --check` inside the target unit (`ExecStartPre` or `systemd-run --scope -p Delegate=yes`) to inspect active cgroup limits and sizing warnings:
+Run `writ serve --check` inside the target unit (`ExecStartPre` or `systemd-run --scope -p Delegate=yes`) to inspect active cgroup limits and sizing warnings. If a check fails, it reports the limits off, with the reason. Where the kernel keeps no swap account for cgroups, as `cgroup.memory=noswap` makes it, `--check` and the start log warn that a step may swap past `run_memory`:
 
 ```
 limits: each OpenTofu step runs in a cgroup of its own under /sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/run-p595929-i597350.scope/runs: memory 2GiB with no swap, 512 processes and threads, 2 CPUs
@@ -192,16 +192,21 @@ Outputs of `writ serve --check`, 2026-11-20 (`run_memory = "2GiB"`, `run_pids = 
 
 ### What run limits don't cover
 
-- **Scratch is polled, not kernel-enforced:** Use a dedicated filesystem with ext4/XFS project or per-UID quotas for a hard ceiling.
+- **Scratch is polled, not kernel-enforced:** `run_scratch` bounds a runaway or careless run, not one that tries to hide what it uses on disk. The hard bound is a filesystem quota; see [How writ serve measures scratch](#how-writ-serve-measures-scratch).
 - **No disk I/O bandwidth cap:** `io` cgroup limits require stable device numbers not reliably available on device-mapper/btrfs.
 - **Per-step, additive concurrency:** `init` and `plan` each get `run_memory`, and concurrent runs sum up. Set systemd `MemoryMax` and `TasksMax` for worst-case `(limits.plans + limits.applies)`.
+- **Steps share the `runs` limits:** A step can be refused a process, or killed, before it reaches its own limit. Its first diagnostic then names the shared limit and the unit setting that raises it, `TasksMax` or `MemoryMax`. Before Linux 6.15, and from it on a cgroup filesystem mounted with `pids_localevents`, the kernel counts a refusal by the shared limit as the step's own, so a step names its own `run_pids` only when it reached that many processes and threads.
 - **No limits in `--dev`:** Dev mode doesn't enforce run limits.
 
 ### How writ serve measures scratch
 
-Writ polls the run directory every 500ms (or 4x last walk duration if slower) and once after exit, counting at least 4KiB per file/directory (prorating hard links) plus unlinked files held open or mapped by threads in the step's cgroup via `/proc` (excluding `memfd`/SysV shm/anon mappings bounded by `run_memory`). Walks abort the step if they exceed `run_scratch`, 10 seconds, 256 directory levels, 16MiB of `/proc/PID/maps`, or 65,536 unlinked files.
+Writ polls the run directory every 500ms (or 4x last walk duration if slower) and once after exit, so a step can pass `run_scratch` by what it writes between two walks. Each walk counts at least 4KiB per file/directory (prorating hard links) plus unlinked files held open or mapped by threads in the step's cgroup via `/proc` (excluding `memfd`/SysV shm/anon mappings bounded by `run_memory`). Walks abort the step if they exceed `run_scratch`, 10 seconds, 256 directory levels, 16MiB of `/proc/PID/maps`, or 65,536 unlinked files.
 
-Adversarial hiding (in-flight Unix socket FDs, partial mappings of large unlinked files, external hard links, `inotify` races) can evade polling; mount `tofu.scratch_dir` on a dedicated filesystem with quotas for hard enforcement.
+Without a cgroup, as when `writ serve` shares its cgroup, it can't list the step's processes, and a removed file escapes `run_scratch` until the step ends.
+
+The walk bounds a runaway or careless run, not a hostile one. A run can hide what it uses with a removed file held only in a descriptor in flight on a Unix socket, a mapping of one page of a large removed file, a hard link to a file of its user's outside its directory, or `inotify` timing.
+
+The hard bound is a filesystem quota. Put `tofu.scratch_dir` on a filesystem of its own, so a full scratch can't fill `data` or Postgres, and set ext4 or XFS project quotas on each run's directory, or per-user quotas for `provider_uids`. `writ serve` sets no quota itself, and a non-root `writ serve` can't mount a size-limited filesystem.
 
 ## Outbound traffic
 
@@ -211,9 +216,9 @@ Adversarial hiding (in-flight Unix socket FDs, partial mappings of large unlinke
 - **Module source allow-list:** Only in-repo relative paths (`./`, `../`), registry addresses, and HTTPS/remote addresses with at most `ref` and `depth` params are permitted (`file://`, absolute paths, `~`, `oci://`, `#` fragments, and `go-getter` params like `checksum`/`sshkey` are refused).
 - **HTTPS-only Git:** `tofu.git` runs with `GIT_ALLOW_PROTOCOL=https:ssh`, no system/global Git config, and no `ssh` binary in the view.
 - **No cloud credentials in `init`:** Only `plan`, `apply`, and S3 backend init receive role credentials.
-- **Trusted plugin cache fills:** `writ serve` installs lock-file providers using a synthetic config, never giving stack code write access to `tofu.plugin_cache`.
+- **Trusted plugin cache fills:** `writ serve` installs lock-file providers using a synthetic config, never giving stack code write access to `tofu.plugin_cache`. The lock file still chooses each provider's registry, and the registry chooses the download hosts.
 
-Under `egress_mode = "off"` (default), runs share the host network otherwise.
+Under `egress_mode = "off"` (default), that is all. A run shares the host's network, so code the commit chose can reach anything the host reaches, with the run's role credentials and the env's `provider_env` values in hand: the internet, the network `writ serve` runs in, and services on the host's loopback, such as `writ serve`'s own Postgres. The provider install also runs on the host's network, as `writ`'s own UID, which the metadata firewall rule doesn't cover; see [The provider install](serve.md#the-provider-install).
 
 ### Egress
 
@@ -232,7 +237,7 @@ Each step runs in a loopback-only network namespace with no external route or DN
 
 Entries accept `HOST`, `*.DOMAIN` (subdomains only), or IP addresses with optional `:PORT` (default `443`). Private IPs (RFC 1918, ULA, CGNAT) are permitted only when matched by an exact hostname or IP, never a wildcard.
 
-| `egress_mode` | Listed destination | Unlisted destination | Loopback, link-local, metadata, multicast, unspecified, NAT64 equivalents |
+| `egress_mode` | Listed destination | Unlisted destination | Loopback, link-local, metadata, multicast, unspecified, and a NAT64 address of one |
 | --- | --- | --- | --- |
 | `off` (default) | Direct host network | Direct host network | Reachable except metadata blocked by `nftables` |
 | `report` | Allowed and recorded | Allowed and recorded as `unlisted` | Refused |
@@ -270,10 +275,12 @@ Provider downloads use the separate install proxy, so `env.egress` only needs ho
 
 #### What egress doesn't cover
 
-- **Host-level only:** `*.amazonaws.com` permits any S3 bucket (TLS `CONNECT` passes through uninspected).
-- **`report` isn't a security boundary:** Unlisted destinations and DNS lookups still succeed.
-- **Proxy-unaware clients fail:** Processes ignoring `HTTPS_PROXY` have no route or DNS.
-- **Host DNS resolution:** Listed names resolve via `writ serve`'s resolver.
+- **`off` covers nothing:** Under the default, runs and the provider install use the host's network. The install runs as `writ`'s own UID, so it can reach the metadata service, and the error text of a request it sends ends up in the plan's diagnostics.
+- **An allowed host can carry data out:** `*.amazonaws.com` permits any S3 bucket, an attacker's included, and any AWS API that takes the run's credentials. The proxy decides by host and port, not by the URL, the account, or what's sent, and passes a `CONNECT`'s TLS through untouched.
+- **`report` isn't a security boundary:** Unlisted destinations, private addresses included, and DNS lookups still succeed. Only `enforce` refuses a name the list lacks before any lookup.
+- **Proxy-unaware clients fail:** Processes ignoring `HTTPS_PROXY` have no route or DNS. A client that sends the proxy only IP addresses needs each address listed.
+- **Host DNS resolution:** Listed names resolve via `writ serve`'s resolver, so a run can make it look up any name the list allows.
+- **No upstream proxy:** The proxy connects directly. It doesn't use a proxy of `writ serve`'s own.
 - **Out-of-scope paths:** `writ serve --dev` and `writ import bulk` don't use the egress proxy.
 - **Private provider registries:** Blocked by the install proxy's private-IP refusal.
 
