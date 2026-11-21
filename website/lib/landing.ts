@@ -111,7 +111,7 @@ export const showcase = {
     denyTitle: 'writ plan --remote (exit 1)',
   },
   drift: {
-    title: 'Detect drift and log every request',
+    title: 'Catch drift and trace every change',
     text: 'Scheduled checks flag outside edits; audited API, UI, and state calls write to the database.',
     links: [
       { text: 'Drift checks', href: '/docs/drift-checks' },
