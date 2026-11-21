@@ -83,7 +83,7 @@ Key guarantees:
 
 ### Files under --dir
 
-Tool `dir` paths must stay inside `--dir` (enforced via `os.Root`; escaping symlinks and absolute symlinks fail). `schema` reads providers from `WRIT_CACHE_DIR` verified against `.terraform.lock.hcl` hashes without network downloads unless `--allow-providers` is passed. `import_bulk` is exposed only with `--allow-providers` because it runs stack providers using `writ mcp`'s local credentials and network access.
+Tool `dir` paths must stay inside `--dir`. The files a tool reads, `.terraform.lock.hcl` for `schema` and the imports file for `import_accept`, go through an `os.Root` on `--dir`, so escaping symlinks and absolute symlinks fail. That check is on paths: a hard link or a bind mount under `--dir` to a file outside it is read. `schema` reads providers from `WRIT_CACHE_DIR` verified against `.terraform.lock.hcl` hashes without network downloads unless `--allow-providers` is passed. If the cache lacks a provider's schema, Writ starts the provider once, with no configuration, to report it, even without `--allow-providers`. `import_bulk` is exposed only with `--allow-providers` because it runs stack providers using `writ mcp`'s local credentials and network access.
 
 ### A plan from a work tree
 
@@ -104,7 +104,7 @@ Writ runs `git status` scoped to the stack directory and every local module dire
 
 #### How Writ runs git
 
-`writ mcp` runs only `git config`, `git rev-parse`, `git ls-files`, `git status`, `git symbolic-ref`, and `git branch --contains`, with `core.fsmonitor=false`, `core.hooksPath=/dev/null`, optional locks disabled, clean/smudge/process filters neutralized, no system/global config, no inherited `GIT_*` vars, `GIT_ALLOW_PROTOCOL=""`, `GIT_NO_LAZY_FETCH=1`, and `GIT_NO_REPLACE_OBJECTS=1`. (`writ serve --dev` uses the same isolation when reading local commits.)
+`writ mcp` runs only `git config`, `git rev-parse`, `git ls-files`, `git status`, `git symbolic-ref`, and `git branch --contains`, with `core.fsmonitor=false`, `core.hooksPath=/dev/null`, optional locks disabled, clean/smudge/process filters neutralized (Writ lists the filter drivers and runs `git status` as two commands, so a config that changes between them isn't covered), no system/global config, no inherited `GIT_*` vars, `GIT_ALLOW_PROTOCOL=""`, `GIT_NO_LAZY_FETCH=1`, and `GIT_NO_REPLACE_OBJECTS=1`. (`writ serve --dev` uses the same isolation when reading local commits.)
 
 **Limits:** `.git/info/grafts`, `.git/shallow`, and symlinks or `include.path` inside `.git/` aren't confined by `os.Root`.
 
