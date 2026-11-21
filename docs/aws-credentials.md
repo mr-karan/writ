@@ -1,6 +1,6 @@
 # AWS roles and credentials
 
-Configure `writ serve` to assume separate read-only plan roles and write-capable apply roles via AWS STS, serving short-lived credentials to each OpenTofu run over loopback. CI jobs and laptops hold no AWS credentials, and every CloudTrail event carries the requesting person or CI pipeline in `SourceIdentity`.
+Have `writ serve` assume a read-only plan role and a write-capable apply role through AWS STS, and serve short-lived credentials to each OpenTofu run over loopback. CI jobs and laptops hold no AWS credentials, and every CloudTrail event names the requesting person or CI pipeline in `SourceIdentity`.
 
 ## Prerequisites
 
@@ -116,7 +116,9 @@ Output of a real run against a local STS stand-in, 2026-11-10.
 3. Long runs refresh credentials 15 minutes before expiry.
 4. When the run finishes, its bearer token is revoked. The run's [mask](secrets.md) tracks every issued `SecretAccessKey` and `SessionToken` (including refreshes) and scrubs them from stored outputs and logs.
 
-If an environment has no `plan_role`, its providers get no AWS credential. A provider's environment holds only the credential endpoint and its token, the `provider_env` values, `PATH`, `AWS_EC2_METADATA_DISABLED=true`, `HOME` and `TMPDIR` set to the provider's own directory, and the plugin settings. Nothing comes from the environment of `writ serve`, so a variable such as `AWS_REGION` or a proxy setting in its unit doesn't reach providers; set it in `provider_env`.
+- An env with no `plan_role` gives its providers no AWS credential.
+- A provider's environment holds only the credential endpoint and its token, the `provider_env` values, `PATH`, `AWS_EC2_METADATA_DISABLED=true`, `HOME` and `TMPDIR` set to the provider's own directory, and the plugin settings.
+- Providers do not inherit the environment of `writ serve`. A variable such as `AWS_REGION`, or a proxy setting in its unit, does not reach them: set it in `provider_env`.
 
 CloudTrail session attribution:
 
@@ -128,10 +130,12 @@ CloudTrail session attribution:
 
 ## Troubleshooting
 
-- **Immediate `denied` naming the role**: Confirm the trust policy allows both `sts:AssumeRole` and `sts:SetSourceIdentity` and that the role's max session duration >= `aws.session`.
-- **`--check` refuses a `provider_env` key**: Rename it. Names that start with `AWS_`, `TF_` (other than `TF_VAR_`), `PLUGIN_`, or `WRIT_` are reserved, and so are `HOME` and `TMPDIR`.
-- **S3 stack refused**: Use literal values only, set `use_lockfile = true` or `dynamodb_table`, remove inline credentials/profiles/roles, and match any custom `endpoints.s3` to `env.s3_endpoints`.
-- **S3 stack fails under `--dev`**: Dev mode has no credential broker; use `backend "http" {}`.
+| Problem | Fix |
+| --- | --- |
+| Immediate `denied` naming the role | The trust policy must allow `sts:AssumeRole` and `sts:SetSourceIdentity`, and the role's maximum session duration must be at least `aws.session`. |
+| `--check` refuses a `provider_env` key | Rename it. Names starting with `AWS_`, `TF_` (other than `TF_VAR_`), `PLUGIN_`, or `WRIT_` are reserved, and so are `HOME` and `TMPDIR`. |
+| S3 stack refused | Use literal values only, set `use_lockfile = true` or `dynamodb_table`, remove inline credentials, profiles, and roles, and match any custom `endpoints.s3` to `env.s3_endpoints`. |
+| S3 stack fails under `--dev` | Dev mode has no credential broker. Use `backend "http" {}`. |
 
 ## Limits
 

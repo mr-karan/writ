@@ -14,7 +14,13 @@ The mask produces every output stored or shown from a run:
 - Failure diagnostics from plans and applies.
 - Recorded hostnames under [egress](run-isolation.md#egress).
 
-Each run gets its own mask initialized with the run's environment values (`provider_env`, dev `TF_VAR_*`), the state version's sealed secret set, and every temporary AWS `SecretAccessKey` and `SessionToken` issued by the [credential broker](aws-credentials.md#how-credentials-reach-providers-and-cloudtrail) (refreshed before each sweep; `AccessKeyId` stays visible for CloudTrail lookup and temporary credentials are never saved in state secret sets). The mask then applies four rules.
+Each run gets its own mask, loaded with:
+
+- the run's environment values (`provider_env`, dev `TF_VAR_*`);
+- the state version's sealed secret set;
+- every temporary AWS `SecretAccessKey` and `SessionToken` the [credential broker](aws-credentials.md#how-credentials-reach-providers-and-cloudtrail) issued, refreshed before each sweep. `AccessKeyId` stays visible for CloudTrail lookups, and temporary credentials are never saved in state secret sets.
+
+It then applies four rules.
 
 ### Rule 1: OpenTofu's marks
 
@@ -54,14 +60,16 @@ The mask is an output filter. It catches a secret only if OpenTofu marks it, the
 - **Unmarked provider return value after apply:** Sealed in state, but visible in the state index if the provider puts it in an indexed attribute such as `id`.
 - **Refused S3 plan against a state with no secret set:** The mask knows nothing of a state with no secret set. If a refused plan's summary quotes a value from such a state outside a quoted instance key (for example an attribute set through `nonsensitive()`, an attribute marked sensitive in state, or a name built from `each.key`), or quotes a key three times or more, that value shows.
 
-Declare all secret variables `sensitive = true` and avoid `nonsensitive()` on derived values. The mask is verified by differential and fuzz tests, not formally proven. Those tests don't cover policy messages, notifications, or control UI HTML.
+Declare every secret variable `sensitive = true`, and avoid `nonsensitive()` on derived values. The mask is checked by differential and fuzz tests, not formally proven, and those tests do not cover policy messages, notifications, or control UI HTML.
 
 ## Troubleshooting
 
-- **Plan or run stores no document:** The run's distinct learned secrets exceeded 4 MiB, or one string cost more than 32 MiB to decode, and failed closed. Move large sensitive blobs out of inline variables.
-- **Non-secret field masked as `(sensitive)`:** Attribute name matched Rule 3 (`password`, `secret`, `token`, etc.). Intended to prevent leaks.
-- **`no secret set for state version N`:** State was written outside Writ, before secret sets, or by an apply whose mask couldn't read its plan; inspect the stack code and run [`writ state adopt`](adopt-state.md).
-- **Derived secret appeared in output:** Review [What the mask can't do](#what-the-mask-cant-do), remove `nonsensitive()` around hashed or multi-line base64 values, and mark source variables `sensitive = true`.
+| Problem | Fix |
+| --- | --- |
+| A plan or run stores no document | The run's distinct learned secrets passed 4 MiB, or one string cost more than 32 MiB to decode, so the mask failed closed. Move large sensitive blobs out of inline variables. |
+| A non-secret field shows `(sensitive)` | Its name matched Rule 3 (`password`, `secret`, `token`, and so on). This is on purpose. |
+| `no secret set for state version N` | The state was written outside Writ, before secret sets, or by an apply whose mask could not read its plan. Inspect the stack code and run [`writ state adopt`](adopt-state.md). |
+| A derived secret appeared in output | See [What the mask can't do](#what-the-mask-cant-do). Remove `nonsensitive()` around hashed or multi-line base64 values, and mark source variables `sensitive = true`. |
 
 ## Next steps
 
