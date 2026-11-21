@@ -160,14 +160,7 @@ func (r *Runner) Close() error { return r.root.Close() }
 // version -json` does not name the product, and Terraform has a 1.13 too.
 // The error leaves out what the binary printed, which writ does not trust.
 func CheckVersion(ctx context.Context, binary string) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	out, _, err := command{
-		binary: binary,
-		args:   []string{"version"},
-		env:    []string{"CHECKPOINT_DISABLE=1", "TF_CLI_CONFIG_FILE=" + os.DevNull},
-		max:    64 << 10,
-	}.run(ctx)
+	out, err := versionCommand(binary).runFor(ctx)
 	if err != nil {
 		return fmt.Errorf("run %s version: %w", binary, err)
 	}
@@ -176,6 +169,62 @@ func CheckVersion(ctx context.Context, binary string) error {
 		return fmt.Errorf("%s: %w", binary, ErrVersion)
 	}
 	return nil
+}
+
+// CheckNetwork runs `tofu version` in a network namespace of its own, as
+// each step of a run starts under egress_mode report or enforce. A unit
+// whose seccomp filter refuses that namespace, as systemd's
+// RestrictNamespaces does when it lacks net, then fails writ serve
+// --check instead of every run.
+//
+// A run's own network needs a run's directory, so it runs in an empty
+// one of its own, which it removes after.
+func CheckNetwork(ctx context.Context, binary string) error {
+	tmp, err := os.MkdirTemp("", "writ-check-net-")
+	if err != nil {
+		return fmt.Errorf("make a directory to check a run's own network in: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+	dir, err := filepath.EvalSymlinks(tmp)
+	if err != nil {
+		return err
+	}
+	if err := os.Mkdir(filepath.Join(dir, "home"), 0o700); err != nil {
+		return err
+	}
+	run, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer run.Close()
+	home, err := os.Open(filepath.Join(dir, "home"))
+	if err != nil {
+		return err
+	}
+	defer home.Close()
+	c := versionCommand(binary)
+	c.net = &Net{}
+	c.view = view{run: run, dir: dir, home: home, work: "."}
+	_, err = c.runFor(ctx)
+	return err
+}
+
+// versionCommand runs `tofu version` in a private filesystem view.
+func versionCommand(binary string) command {
+	return command{
+		binary: binary,
+		args:   []string{"version"},
+		env:    []string{"CHECKPOINT_DISABLE=1", "TF_CLI_CONFIG_FILE=" + os.DevNull},
+		max:    64 << 10,
+	}
+}
+
+// runFor runs c for at most 30 seconds and returns its stdout.
+func (c command) runFor(ctx context.Context) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	out, _, err := c.run(ctx)
+	return out, err
 }
 
 // User is an OS user and group with no name, as writ serve gives each run.

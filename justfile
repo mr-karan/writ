@@ -255,7 +255,9 @@ update-nix-hash:
 # its unit, check that the unit's PATH has Nix's git, build the writ
 # package the module uses and the OpenTofu of the sample config's tofu
 # block, and check the sample config with that writ serve --check, which
-# must find OpenTofu 1.13.9 there and so plan stacks of .tf files.
+# must find OpenTofu 1.13.9 there and so plan stacks of .tf files, and,
+# under the sample's egress_mode, start a run in a network namespace of
+# its own, which the unit's RestrictNamespaces must allow.
 check-nixos:
 	#!/usr/bin/env bash
 	set -euo pipefail
@@ -275,10 +277,17 @@ check-nixos:
 	# writable.
 	grep -qxF "Delegate=true" <(nix eval --impure --raw --file deploy/nixos/check.nix unit)
 	! grep -qxF "ProtectControlGroups=true" <(nix eval --impure --raw --file deploy/nixos/check.nix unit)
+	# Each tofu process's view needs the user, mount, pid, and IPC
+	# namespaces, and egress_mode report or enforce the network one.
+	grep -qxF "RestrictNamespaces=user mnt pid ipc net" <(nix eval --impure --raw --file deploy/nixos/check.nix unit)
 	tofu="$(nix build --impure --no-link --print-out-paths --file deploy/nixos/check.nix tofu)"
 	"$writ/bin/writ" serve --config "$dir/serve" --check | tee "$dir/check"
 	if ! grep -qxF "tofu: $tofu/bin/tofu is OpenTofu 1.13.9: ok" "$dir/check"; then
 		echo "check-nixos: the sample config runs no OpenTofu 1.13.9, so writ serve would refuse every stack of .tf files" >&2
+		exit 1
+	fi
+	if ! grep -qxF "tofu: own network: ok" "$dir/check"; then
+		echo "check-nixos: under the sample config's egress_mode, --check started no run in a network namespace of its own" >&2
 		exit 1
 	fi
 

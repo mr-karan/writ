@@ -379,8 +379,8 @@ func TestScratchCountsEachInode(t *testing.T) {
 }
 
 // TestRunLimitsUnderTheShippedUnit plans in a delegated service confined
-// as the NixOS module confines writ serve: RestrictNamespaces="user mnt
-// pid ipc", under which the kernel answers clone3 with ENOSYS, and
+// as the NixOS module confines writ serve: its RestrictNamespaces, under
+// which the kernel answers clone3 with ENOSYS, and
 // NoNewPrivileges. --check must report what a step then gets, and a step
 // must start in its cgroup.
 func TestRunLimitsUnderTheShippedUnit(t *testing.T) {
@@ -402,7 +402,7 @@ func TestRunLimitsUnderTheShippedUnit(t *testing.T) {
 		}
 		return
 	}
-	inDelegatedService(t, "TestRunLimitsUnderTheShippedUnit", []string{"RestrictNamespaces=user mnt pid ipc", "NoNewPrivileges=yes"}, limitsStageEnv+"=restricted")
+	inDelegatedService(t, "TestRunLimitsUnderTheShippedUnit", []string{shippedNamespaces, "NoNewPrivileges=yes"}, limitsStageEnv+"=restricted")
 }
 
 // TestRunLimitsLeaveRoomForServe runs four steps at once that each start

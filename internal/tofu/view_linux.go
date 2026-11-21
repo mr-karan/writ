@@ -251,7 +251,10 @@ func startConfined(cmd *exec.Cmd, c command) (stop func(), err error) {
 		lnSend.Close()
 	}
 	if err != nil {
-		return nil, fmt.Errorf("tofu: start tofu in new user, mount, and pid namespaces, which its private filesystem view needs: %w", err)
+		if c.net != nil {
+			return nil, fmt.Errorf("tofu: start tofu in new user, mount, pid, IPC, and network namespaces, which its private filesystem view and the run's own network need: %w", err)
+		}
+		return nil, fmt.Errorf("tofu: start tofu in new user, mount, pid, and IPC namespaces, which its private filesystem view needs: %w", err)
 	}
 	stop = func() {}
 	var lns []net.Listener

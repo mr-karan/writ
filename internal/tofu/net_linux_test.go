@@ -250,3 +250,49 @@ func TestRunNetworkHidesTheHost(t *testing.T) {
 		t.Errorf("without Net the plan step reported\n%s\nwant it to reach the host's abstract socket from %s", got, hostNS)
 	}
 }
+
+// shippedNamespaces is the NixOS module's RestrictNamespaces, which `just
+// check-nixos` checks the unit sets.
+const shippedNamespaces = "RestrictNamespaces=user mnt pid ipc net"
+
+// TestRunNetworkUnderTheShippedUnit runs a step with Net in a delegated
+// service confined as the NixOS module confines writ serve: the step
+// starts in its network namespace and reaches the port writ serves there.
+// Under a RestrictNamespaces without net, as the module set before,
+// CheckNetwork, which writ serve --check runs under egress_mode report or
+// enforce, fails and names the network namespace.
+func TestRunNetworkUnderTheShippedUnit(t *testing.T) {
+	switch os.Getenv(limitsStageEnv) {
+	case "netns":
+		if err := CheckNetwork(context.Background(), fakeTofu(t, "net")); err != nil {
+			t.Fatal(err)
+		}
+		r := fakeRunner(t, fakeTofu(t, "net"), time.Minute, 1<<20)
+		s := fakeStack()
+		s.Env = []string{"PROBE_GET=http://127.0.0.1:8181/creds"}
+		s.Net = &Net{Ports: map[int]http.Handler{8181: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "bridged %s", r.URL.Path)
+		})}}
+		p, err := r.Plan(context.Background(), s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := "get http://127.0.0.1:8181/creds: 200 bridged /creds\n"; !strings.Contains(string(p.Log), want) {
+			t.Fatalf("the plan step's probe reported\n%s\nwant %q", p.Log, want)
+		}
+		return
+	case "netns-refused":
+		err := CheckNetwork(context.Background(), fakeTofu(t, "net"))
+		if err == nil || !strings.Contains(err.Error(), "network namespaces") {
+			t.Fatalf("CheckNetwork under a unit that refuses network namespaces returned %v, want an error that names them", err)
+		}
+		return
+	}
+	props := []string{"NoNewPrivileges=yes", "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"}
+	t.Run("shipped", func(t *testing.T) {
+		inDelegatedService(t, "TestRunNetworkUnderTheShippedUnit", append(props, shippedNamespaces), limitsStageEnv+"=netns")
+	})
+	t.Run("without net", func(t *testing.T) {
+		inDelegatedService(t, "TestRunNetworkUnderTheShippedUnit", append(props, "RestrictNamespaces=user mnt pid ipc"), limitsStageEnv+"=netns-refused")
+	})
+}
