@@ -112,7 +112,7 @@ Output of `TestNotifyEvents`, 2026-11-20 (body indented; `url` omitted because t
 
 ### Verify the signature
 
-`X-Writ-Signature-256` is `sha256=` plus lowercase hex HMAC-SHA256 of `<X-Writ-Timestamp>.<raw body>`. Each retry updates `X-Writ-Timestamp` and its signature. Verify over raw bytes in constant time before parsing JSON, and reject timestamps more than 5 minutes off:
+With `secret_file` set, Writ adds `X-Writ-Signature-256`; without it, deliveries are unsigned. The header is `sha256=` plus lowercase hex HMAC-SHA256 of `<X-Writ-Timestamp>.<raw body>`. Each retry updates `X-Writ-Timestamp` and its signature. Verify over raw bytes in constant time before parsing JSON, and reject timestamps more than 5 minutes off:
 
 ```go
 func verify(secret []byte, r *http.Request, body []byte) bool {
