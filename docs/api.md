@@ -205,13 +205,13 @@ Unknown fields (such as tokens) are refused; forge tokens never appear in respon
 
 ## Webhook route
 
-`POST /v1/hooks/{forge}/{repo}` receives GitLab webhooks for pinned repositories with `webhook_secret_file` ([Get changes in seconds with a webhook](webhooks.md)). It takes no bearer token; deliveries authenticate with `X-Gitlab-Token` or a `whsec_` `webhook-signature`.
+`POST /v1/hooks/{forge}/{repo}` receives GitLab and GitHub webhooks for pinned repositories with `webhook_secret_file` ([Get changes in seconds with a webhook](webhooks.md)). It takes no bearer token. GitLab deliveries authenticate with `X-Gitlab-Token` or a `whsec_` `webhook-signature`; GitHub deliveries with `X-Hub-Signature-256`, `sha256=` and the hex HMAC-SHA256 of the raw body under the secret.
 
 | Delivery | Response |
 | --- | --- |
-| Verified `Push Hook` | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never parsed, stored, or logged. |
-| Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0) | `200`, `duplicate: true` |
-| Verified, not a push | `200`, `queued: false` |
+| Verified `Push Hook` (GitLab) or `X-GitHub-Event: push` (GitHub) | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never parsed, stored, or logged. |
+| Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0), or duplicate `X-GitHub-Delivery` | `200`, `duplicate: true` |
+| Verified, not a push, such as GitHub's `ping` | `200`, `queued: false` |
 | Any verification failure: unknown repository or webhook, missing or wrong secret, bad signature or timestamp, body over 1 MiB (`check: hook-body`) | `401`, `auth`: `the delivery failed verification` |
 | Over 10 deliveries/s from one client IP | `429`, `Retry-After: 1`. Dropped before the body is read; no audit row. |
 | Over 5 deliveries/s for one repository | `429`, `Retry-After: 1`. Audited. |
@@ -231,11 +231,11 @@ Every 401 returns the same message so senders learn nothing. Inspect `check` in 
 | `hook-no-token` | Missing `X-Gitlab-Token` header |
 | `hook-token` | `X-Gitlab-Token` doesn't match the secret |
 | `hook-secret-file` | Secret file is unreadable, not a regular file <= 4 KiB, or has invalid base64 after `whsec_` (see server log) |
-| `hook-no-signature` | Missing `webhook-id`, `webhook-timestamp`, or `webhook-signature` under a signing token |
+| `hook-no-signature` | Missing `webhook-id`, `webhook-timestamp`, or `webhook-signature` under a signing token, or a GitHub delivery without `X-Hub-Signature-256` |
 | `hook-timestamp` | `webhook-timestamp` is more than 5 minutes from server time |
 | `hook-signature` | Signature doesn't match the raw body |
 
-GitLab treats any 4xx response as a failure. Normal project traffic stays far below these rate limits, so a 429 indicates unexpected traffic to the endpoint.
+GitLab and GitHub treat any 4xx response as a failure. Normal project traffic stays far below these rate limits, so a 429 indicates unexpected traffic to the endpoint.
 
 ### Webhook security
 

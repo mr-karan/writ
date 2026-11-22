@@ -93,6 +93,12 @@ export const pages: Page[] = [
     parts: whole('docs/set-up-gitlab-ci.md'),
   },
   {
+    slug: 'set-up-github-actions',
+    title: 'Set up GitHub Actions',
+    description: 'Plan each pull request from GitHub Actions with no checkout and no cloud credential, then approve and apply as people.',
+    parts: whole('docs/set-up-github-actions.md'),
+  },
+  {
     slug: 'apply',
     title: 'Plan and apply',
     description: 'Plan a commit, approve it, apply by ID or after a merge, recover when an answer is lost, and override approval rules.',
@@ -316,6 +322,7 @@ export const nav: NavEntry[] = [
   'add-repository',
   'webhooks',
   'set-up-gitlab-ci',
+  'set-up-github-actions',
   'apply',
   'approvals',
   'write-a-policy',
@@ -366,6 +373,7 @@ export const fileRoutes: Record<string, string> = {
   'docs/add-repository.md': '/docs/add-repository',
   'docs/webhooks.md': '/docs/webhooks',
   'docs/set-up-gitlab-ci.md': '/docs/set-up-gitlab-ci',
+  'docs/set-up-github-actions.md': '/docs/set-up-github-actions',
   'docs/apply.md': '/docs/apply',
   'docs/approvals.md': '/docs/approvals',
   'docs/write-a-policy.md': '/docs/write-a-policy',

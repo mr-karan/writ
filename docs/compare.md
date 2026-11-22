@@ -17,7 +17,7 @@ Four differences between Writ, Atlantis, OTF, and Terrakube, from each project's
 
 Sources: Atlantis's [command requirements](https://www.runatlantis.io/docs/command-requirements), [server configuration](https://www.runatlantis.io/docs/server-configuration), and [security](https://www.runatlantis.io/docs/security). OTF's [runners](https://docs.otf.ninja/runners/), [flags](https://docs.otf.ninja/config/flags/), and [issue 809](https://github.com/leg100/otf/issues/809). Terrakube's [README](https://github.com/terrakube-io/terrakube), [templates](https://docs.terrakube.io/user-guide/organizations/templates), and [pull request 3406](https://github.com/terrakube-io/terrakube/pull/3406).
 
-All three also have what Writ lacks: GitHub support alongside GitLab, and years of production use. Writ supports GitLab only and shipped its first release on 2026-11-17.
+All three also have what Writ lacks: years of production use and a GitHub App. Writ reads GitLab and GitHub with a read-only token, and shipped its first release on 2026-11-17.
 
 ## Among the paid control planes
 

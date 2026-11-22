@@ -166,7 +166,7 @@ env "prod" {
 | `grant` | Authorizes `teams` on `stacks` and `envs` for `can` operations (numbered from 1). |
 | `approval` | Optional approval count rules (`stacks`, `envs`, `risks`, `need` `1` to `10`). |
 | `env "NAME"` | Environment definition (`key`, optional `plan_role`, `apply_role`, `s3_endpoints`, `provider_env`, `egress`). |
-| `forge "NAME"` | Optional Git host (`kind = "gitlab"`, `url`, `read_token_file`, optional `write_token_file`, `ca_file`). |
+| `forge "NAME"` | Optional Git host (`kind = "gitlab"` or `"github"`, `url`, `read_token_file`, optional `write_token_file`, `ca_file`). |
 | `repo` | Optional pinned repository blocks (`name`, `forge`, `project`, optional `path`, `prefix`, `webhook_secret_file`). Disables `POST /v1/repos`. |
 | `poll_every` | Repository default-branch poll interval (`>= 1s`, default `60s`). |
 | `poll_every_with_hook` | Backstop poll interval for repositories with webhooks (`>= poll_every`; default `5m`, or `poll_every` if longer). |
@@ -223,8 +223,10 @@ env "prod" {
 
 ### forge and repo
 
-- **`forge "NAME"`:** `kind = "gitlab"`, `url` (`https://` or loopback `http://`), `read_token_file` (`read_api` scope), optional `ca_file`, and optional `write_token_file` (reserved for future write operations; warns if set). `read_token_file` is re-read on every call, so it rotates without a restart, and is sent only in `PRIVATE-TOKEN` with redirects disabled. Writ never echoes raw forge response text in API answers, logs, or database rows; read tokens are redacted from errors, and refused if a forge echoes them back.
-- **`repo`:** `name` (`[a-z0-9][a-z0-9._-]*`), `forge`, `project` (`namespace/project`), optional `path`, optional `prefix` (ending in `/`), and optional `webhook_secret_file` (plain token or GitLab 19.1+ `whsec_` signing token, re-read on each delivery) ([Get changes in seconds with a webhook](webhooks.md)).
+- **`forge "NAME"`:** `kind = "gitlab"` or `kind = "github"`, `url` (`https://` or loopback `http://`), `read_token_file`, optional `ca_file`, and optional `write_token_file` (reserved for future write operations; warns if set). `read_token_file` is re-read on every call, so it rotates without a restart, and is sent with redirects disabled. Writ never echoes raw forge response text in API answers, logs, or database rows; read tokens are redacted from errors, and refused if a forge echoes them back.
+  - **`kind = "gitlab"`:** `url` is required. The token needs `read_api` and is sent in `PRIVATE-TOKEN`.
+  - **`kind = "github"`:** `url` defaults to `https://github.com`; for GitHub Enterprise Server, set `https://HOST`. Writ calls `https://api.github.com` for github.com and `HOST/api/v3` otherwise. The token is a fine-grained personal access token with **Contents: read** and **Metadata: read** on the repositories, sent as `Authorization: Bearer`. A rate-limit answer (403 or 429 with `Retry-After`, or `X-RateLimit-Remaining: 0` with `X-RateLimit-Reset`) holds every call to that forge back until the limit ends, at most one hour. `app_id` and `key_file` are reserved for a GitHub App and refused.
+- **`repo`:** `name` (`[a-z0-9][a-z0-9._-]*`), `forge`, `project` (`namespace/project` on GitLab, `OWNER/REPO` on GitHub, or the numeric ID), optional `path`, optional `prefix` (ending in `/`), and optional `webhook_secret_file` (on GitLab, a plain token or a GitLab 19.1+ `whsec_` signing token; on GitHub, the webhook's secret; re-read on each delivery) ([Get changes in seconds with a webhook](webhooks.md)).
 
 ### notify
 

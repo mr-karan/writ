@@ -74,7 +74,7 @@ Any principal with `admin` on any grant can list sessions with `GET /v1/sessions
 | `writ login --browser` says the server has no browser sign-in | That `writ serve` is too old for it. Use `--device`. |
 | `429` when starting sign-in behind a reverse proxy | Add the proxy's CIDR to `trusted_proxies`, so users do not share one address's limit of 10 pending logins ([Sign-ins that wait](how-sign-in-works.md#sign-ins-that-wait)). |
 | `sessions.json` refused | It must be a regular file you own, `0600` in a `0700` directory. Delete it and run `writ login` again. |
-| `writ: no control plane` or `no token for URL` | Sign in with `writ login URL`, or in CI set `id_tokens: { WRIT_ID_TOKEN: { aud: URL } }` on the job. |
+| `writ: no control plane` or `no token for URL` | Sign in with `writ login URL`; in GitHub Actions give the job `permissions: id-token: write`; in GitLab CI set `id_tokens: { WRIT_ID_TOKEN: { aud: URL } }` on the job. |
 | An offboarded user still has access | Revoke their sessions: `GET /v1/sessions?person=PERSON_ID`, then `DELETE /v1/sessions/{id}`. |
 
 ## Next steps

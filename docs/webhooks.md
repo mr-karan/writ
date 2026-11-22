@@ -1,14 +1,14 @@
 # Get changes in seconds with a webhook
 
-Add a GitLab webhook so `writ serve` reads a pushed or merged head within seconds, instead of at the next poll (`poll_every`, 60 seconds by default). Polling continues every `poll_every_with_hook` (5 minutes by default) as a backstop, because GitLab disables a webhook for a while after 4 consecutive failures, and for good after 40.
+Add a GitLab or GitHub webhook so `writ serve` reads a pushed or merged head within seconds, instead of at the next poll (`poll_every`, 60 seconds by default). Polling continues every `poll_every_with_hook` (5 minutes by default) as a backstop, because GitLab disables a webhook for a while after 4 consecutive failures, and for good after 40.
 
-A webhook only triggers an early read of the default branch through GitLab's API, with the forge's read token. It never starts a plan or apply. `writ serve` never trusts or parses the webhook body: the repository comes from the URL path, and the commit from GitLab's API.
+A webhook only triggers an early read of the default branch through the forge's API, with the forge's read token. It never starts a plan or apply. `writ serve` never trusts or parses the webhook body: the repository comes from the URL path, and the commit from the forge's API.
 
 ## Before you begin
 
 - The repository is pinned with a `repo` block in `/etc/writ/serve`. Only pinned repositories take webhooks, because server config governs the secret path. Repositories added with `writ repo add` only poll.
-- GitLab can reach `writ serve`'s `url` over HTTPS.
-- You have Maintainer or Owner access on the GitLab project.
+- The forge can reach `writ serve`'s `url` over HTTPS.
+- You have Maintainer or Owner access on the GitLab project, or admin access on the GitHub repository.
 
 ## Set up a webhook
 
@@ -56,6 +56,22 @@ Leave other triggers off. A merge to the default branch fires a push event, so *
 
 Click **Test > Push events** on the webhook row. Under **Recent events**, GitLab should show `202`. In the control UI, `/ui/repos` displays a `webhook` chip with the last delivery time, and `GET /v1/repos` returns `hook: true` and `hook_at`.
 
+### On GitHub
+
+In the repository, open **Settings > Webhooks > Add webhook** and configure:
+
+| Field | Value |
+| --- | --- |
+| Payload URL | `https://writ.example.com/v1/hooks/github/web` (`url` + `/v1/hooks/{forge}/{repo}`, where `{forge}` is the `forge` block's name) |
+| Content type | `application/json` |
+| Secret | Contents of `webhook_secret_file` |
+| SSL verification | Enabled |
+| Events | **Just the push event** |
+
+`writ serve` verifies `X-Hub-Signature-256`: `sha256=` and the hex HMAC-SHA256 of the raw body under the secret, compared in constant time. A missing signature is check `hook-no-signature`, a wrong one `hook-signature`; `X-Hub-Signature` (SHA-1) is ignored. `X-GitHub-Event: push` queues a read, and GitHub's `ping`, sent when the webhook is made, answers `200` and reads nothing. A delivery sent again with the same `X-GitHub-Delivery` answers `200` with `duplicate: true`. GitHub signs no timestamp, so a captured delivery with a new delivery ID passes verification; it can only make `writ serve` read the head sooner, within the per-repository rate limit.
+
+On the webhook's **Recent Deliveries** tab, the ping shows `200` and a push `202`.
+
 ## Use a signing token instead
 
 GitLab 19.1+ supports HMAC signing tokens starting with `whsec_`. Put that token in `webhook_secret_file` instead of a plain secret token. When the file starts with `whsec_`, `writ serve` verifies `webhook-signature` (HMAC-SHA256 of `webhook-id`, `webhook-timestamp`, and the raw body), rejects timestamps more than 5 minutes from its clock, and ignores `X-Gitlab-Token`.
@@ -81,13 +97,12 @@ A verified push gets `202`; a duplicate or a non-push event gets `200`; every ve
 
 | Problem | Fix |
 | --- | --- |
-| GitLab shows 401 | Run `writ audit --remote --op hook`. The `check` column names the cause: wrong secret, wrong URL, missing `webhook_secret_file`, or an unreadable file. |
+| GitLab or GitHub shows 401 | Run `writ audit --remote --op hook`. The `check` column names the cause: wrong secret, wrong URL, missing `webhook_secret_file`, or an unreadable file. |
 | GitLab disabled the webhook | Fix the error, then click **Test > Push events**. A 2xx response re-enables it. |
 | The head updates only every few minutes | Check **Recent events** in GitLab. If nothing fired, check the push trigger's branch wildcard. Polling still updates the head every `poll_every_with_hook`. |
 
 ## Limits
 
-- GitLab only; GitHub's `X-Hub-Signature-256` isn't implemented.
 - Repositories added with `writ repo add` can't use webhooks.
 
 ## Next steps

@@ -29,6 +29,7 @@ writ [--dir DIR] [--env ENV] [--server URL] [--verbose] <command> [flags] [args]
 | `writ repo add [NAME] DIR` | Under `writ serve --dev`, register a local Git repository (such as `.`). |
 | `writ repo list`, `writ repo show NAME` | List registered repositories or inspect one repository's discovered stacks. |
 | `writ ci gitlab --repo NAME` | Generate `.gitlab-ci.yml` jobs and server HCL config for a repository's project ID (`--envs`, `--image`, `--component`). |
+| `writ ci github --repo NAME` | Generate a GitHub Actions workflow that plans each stack on `pull_request` and `push`, and server HCL config for a repository's ID (`--envs`, `--writ-version`) ([Set up GitHub Actions](set-up-github-actions.md)). |
 | `writ ui` | Print the control UI URL (and a one-time 10-minute sign-in link under `writ serve --dev`). |
 | `writ login [URL]` | Sign in via OAuth device flow or loopback PKCE browser flow (`--device`, `--browser`, `--issuer`), saving the session to `~/.config/writ/sessions.json` ([Sign in](sign-in.md#people-writ-login)). |
 | `writ logout [URL]` | Revoke your session on `writ serve` and remove it from `sessions.json`. |
@@ -66,6 +67,7 @@ Running `plan`, `apply`, `plans`, `runs`, or `audit` without `--remote` exits 2 
 | `--device`, `--browser`, `--issuer NAME` | `login` | Force device or PKCE browser flow, or choose among multiple `people` issuers. |
 | `--path DIR`, `--prefix PREFIX` | `repo add` | Subdirectory for stack discovery and prefix prepended to stack names. |
 | `--repo NAME`, `--envs a,b`, `--image IMAGE`, `--component PATH` | `ci gitlab` | Repository name and overrides for generated `.gitlab-ci.yml`. |
+| `--repo NAME`, `--envs a,b`, `--writ-version V` | `ci github` | Repository name, environments, and the Writ release the workflow installs (default: the CLI's version). |
 | `--remote` | `plan`, `apply`, `approve`, `show`, `plans`, `runs`, `audit`, `state`, `whoami` | Target `writ serve` (`state` and `whoami` always target it). |
 | `--limit N` | `plans`, `runs`, `audit` (`--remote`) | Page size, 1 to 200 (default `50`). |
 | `--status STATUS` | `plans --remote` | Filter by effective plan status (`pending`, `applied`, `no-changes`, etc.). |
@@ -137,6 +139,7 @@ The script refuses to overwrite a symlink or directory at the target path, rejec
 | `WRIT_ENV` | Default environment (same as `--env`). |
 | `WRIT_SERVER` | Control plane URL (checked after `--server`). |
 | `WRIT_ID_TOKEN` | CI OIDC token (checked before `writ login` sessions). |
+| `ACTIONS_ID_TOKEN_REQUEST_URL`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN` | Set by GitHub Actions in a job with `permissions: id-token: write`. With `WRIT_ID_TOKEN` unset, `writ` asks this URL for an ID token whose audience is the server URL, before `writ login` sessions. The URL must be `https://`, or `http://` on loopback. |
 | `XDG_CONFIG_HOME` | Base directory for `writ/sessions.json` (default `~/.config`). |
 | `XDG_DATA_HOME` | Base directory for `writ/dev` and `client.json` (default `~/.local/share`). |
 | `WRIT_CACHE_DIR` | Provider binary and schema cache used by `writ import bulk` and `writ mcp` `schema`. Default `$XDG_CACHE_HOME/writ` (`~/.cache/writ` on Linux; `/var/lib/writ/cache` in the container image). |

@@ -144,6 +144,7 @@ Common messages:
 Common messages:
 
 - `WHAT: the forge answered STATUS`
+- `WHAT: the forge limits the rate of calls until TIME, so writ serve sends it none before then` (GitHub's rate limit: `writ serve` sends that forge no call before `TIME`, at most an hour away)
 - `the lock file is over N bytes, so a plan of the stack is refused`
 - `provider SOURCE finds no TYPE with that import id`
 - `N objects could not be imported, so nothing was written`
