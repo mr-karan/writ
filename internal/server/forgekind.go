@@ -1,9 +1,16 @@
 package server
 
 import (
+	"context"
+	"fmt"
+	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/mr-karan/writ/internal/control"
+	"github.com/mr-karan/writ/internal/diag"
 	"github.com/mr-karan/writ/internal/forge"
 	"github.com/mr-karan/writ/internal/oidc"
 )
@@ -28,6 +35,10 @@ type forgeKind struct {
 	// forkNote ends the refusal of a CI job whose repository is none of
 	// this control plane's.
 	forkNote string
+	// checkJob, when set, checks at the forge what a CI job's token names
+	// before the job's commit is planned, through the repository's
+	// client. It fails closed: an error it cannot settle refuses the plan.
+	checkJob func(ctx context.Context, c forge.Client, repo control.Repo, job ciJob) *repoError
 }
 
 // ciJob is the repository and commit a CI job's token names.
@@ -73,7 +84,41 @@ var forgeKinds = map[control.RepoKind]forgeKind{
 			return ciJob{forgeURL: githubForgeOf(issuerURL(tok)), projectID: c("repository_id"), project: c("repository"), sha: c("sha"), ref: c("ref")}
 		},
 		forkNote: "; GitHub gives no ID token to a pull request from a fork",
+		checkJob: checkGitHubPull,
 	},
+}
+
+// pullRefRE is a pull request's merge or head ref, refs/pull/N/merge or
+// refs/pull/N/head, as a GitHub Actions job of a pull_request event names.
+var pullRefRE = regexp.MustCompile(`^refs/pull/([1-9][0-9]{0,18})/(merge|head)$`)
+
+// checkGitHubPull refuses a job of a pull request whose head is in another
+// repository than the job's, such as a fork. GitHub gives no ID token to
+// a fork's pull_request run, so this is a second line: it holds should a
+// workflow run a fork's code with a token, as pull_request_target can.
+func checkGitHubPull(ctx context.Context, c forge.Client, repo control.Repo, job ciJob) *repoError {
+	if !strings.HasPrefix(job.ref, "refs/pull/") {
+		return nil
+	}
+	m := pullRefRE.FindStringSubmatch(job.ref)
+	if m == nil {
+		return &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("the token's ref %s is not a pull request's merge or head ref, so writ serve cannot check where the pull request comes from", trunc(job.ref))}
+	}
+	gh, ok := c.(*forge.GitHub)
+	if !ok {
+		return &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("repository %s is not read through GitHub's API, so writ serve cannot check where pull request %s comes from", repo.Name, m[1])}
+	}
+	n, _ := strconv.ParseInt(m[1], 10, 64)
+	head, err := gh.PullHeadRepo(ctx, repo.ProjectID, n)
+	if err != nil {
+		rerr := forgeRefusal(err)
+		rerr.msg = fmt.Sprintf("writ serve could not check that pull request %s of repository %s comes from the repository itself, so it refuses the plan: %v", m[1], repo.Name, err)
+		return rerr
+	}
+	if head != job.projectID {
+		return &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("pull request %s of repository %s comes from another repository, id %s, such as a fork: writ serve plans only a pull request whose head is in the repository itself", m[1], repo.Name, head)}
+	}
+	return nil
 }
 
 // kindOfToken is the forge kind whose CI jobs a token's issuer kind

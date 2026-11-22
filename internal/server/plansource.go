@@ -41,6 +41,8 @@ func fullRef(ref string) bool {
 func (s *Server) planSource(ctx context.Context, p *principal, req *SourceRequest, stack string) (planInput, *repoError) {
 	var in planInput
 	var commit string
+	// check is the token's forge's check of its job, nil when it has none.
+	var check func(context.Context, forge.Client) *repoError
 	if p.tok != nil {
 		kind, fk, ok := kindOfToken(p.tok.Kind)
 		if !ok {
@@ -86,6 +88,9 @@ func (s *Server) planSource(ctx context.Context, p *principal, req *SourceReques
 			return in, refusedRepo(http.StatusBadRequest, "the token's ref %q is not a full ref, such as refs/heads/main", trunc(ref))
 		}
 		commit, in.source.Ref = sha, ref
+		if fk.checkJob != nil {
+			check = func(ctx context.Context, c forge.Client) *repoError { return fk.checkJob(ctx, c, in.repo, job) }
+		}
 	} else {
 		if req.Repo == "" || !forge.IsSHA(req.Commit) {
 			return in, refusedRepo(http.StatusBadRequest, "a plan of a commit names the repository and the commit's full id: source.repo and source.commit")
@@ -112,6 +117,11 @@ func (s *Server) planSource(ctx context.Context, p *principal, req *SourceReques
 	}
 	cctx, cancel := context.WithTimeout(ctx, forge.CallTimeout)
 	defer cancel()
+	if check != nil {
+		if rerr := check(cctx, c); rerr != nil {
+			return in, rerr
+		}
+	}
 	full, err := c.Commit(cctx, in.repo.ProjectID, commit)
 	if err != nil {
 		rerr := forgeRefusal(err)

@@ -133,6 +133,15 @@ type (
 			SHA  string `json:"sha"`
 		} `json:"tree"`
 	}
+	githubPull struct {
+		Number int64 `json:"number"`
+		Head   struct {
+			// Repo is null when the pull request's fork was deleted.
+			Repo *struct {
+				ID int64 `json:"id"`
+			} `json:"repo"`
+		} `json:"head"`
+	}
 	githubCompare struct {
 		MergeBase struct {
 			SHA string `json:"sha"`
@@ -354,6 +363,28 @@ func (g *GitHub) subtree(ctx context.Context, tok, projectID, sha, seg, what str
 		}
 	}
 	return "", fmt.Errorf("%s: it has no directory %s: %w", what, seg, ErrNotFound)
+}
+
+// PullHeadRepo returns the numeric id of the repository a pull request's
+// head branch is in: the repository itself, or a fork. A pull request
+// whose head repository is gone is an error.
+func (g *GitHub) PullHeadRepo(ctx context.Context, projectID string, number int64) (string, error) {
+	if number <= 0 {
+		return "", fmt.Errorf("pull request %d is not a pull request's number", number)
+	}
+	var p githubPull
+	what := "read pull request " + strconv.FormatInt(number, 10)
+	err := g.rest.call(func(tok string) error {
+		_, err := g.rest.getJSON(ctx, tok, what, repoPath(projectID)+"/pulls/"+strconv.FormatInt(number, 10), nil, maxDoc, &p)
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	if p.Number != number || p.Head.Repo == nil || p.Head.Repo.ID <= 0 {
+		return "", fmt.Errorf("%s: the answer names no head repository", what)
+	}
+	return strconv.FormatInt(p.Head.Repo.ID, 10), nil
 }
 
 // Blob reads a file's content by its blob id, raw.

@@ -352,3 +352,30 @@ func TestGitHubAnswersWhatWasAskedFor(t *testing.T) {
 		t.Fatalf("another ref: %q, %v", got, err)
 	}
 }
+
+// TestGitHubPullHeadRepo checks that a pull request's head repository is
+// read, and that an answer naming none, as for a deleted fork, or another
+// pull request, is an error.
+func TestGitHubPullHeadRepo(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct{ name, body, want, err string }{
+		{"the repository itself", `{"number":42,"head":{"repo":{"id":777001}}}`, "777001", ""},
+		{"a fork", `{"number":42,"head":{"repo":{"id":888002}}}`, "888002", ""},
+		{"a deleted fork", `{"number":42,"head":{"repo":null}}`, "", "names no head repository"},
+		{"another pull request", `{"number":43,"head":{"repo":{"id":777001}}}`, "", "names no head repository"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := hostileGitHub(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v3/repositories/777001/pulls/42" {
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				fmt.Fprint(w, tc.body)
+			})
+			got, err := c.PullHeadRepo(ctx, "777001", 42)
+			if got != tc.want || (tc.err == "") != (err == nil) || err != nil && !strings.Contains(err.Error(), tc.err) {
+				t.Fatalf("got %q, %v", got, err)
+			}
+		})
+	}
+}

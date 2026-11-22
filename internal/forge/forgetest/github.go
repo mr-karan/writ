@@ -29,6 +29,9 @@ type GitHub struct {
 	// trees maps each tree id the stand-in sent to its commit and
 	// directory.
 	trees map[string]treeRef
+	// pulls maps a repository's id and a pull request's number to the id
+	// of the repository its head is in.
+	pulls map[string]int
 }
 
 type treeRef struct {
@@ -53,7 +56,15 @@ func NewGitHub(t testing.TB, token string) *GitHub {
 // another test server, such as an OIDC issuer's, as GitHub Enterprise
 // Server serves both from one host. The caller sets URL.
 func GitHubHandler(token string) *GitHub {
-	return &GitHub{Token: token, host: newHost(), trees: map[string]treeRef{}}
+	return &GitHub{Token: token, host: newHost(), trees: map[string]treeRef{}, pulls: map[string]int{}}
+}
+
+// AddPull adds pull request number of a repository, whose head is in the
+// repository headRepo: the repository's own id, or a fork's.
+func (g *GitHub) AddPull(projectID, number, headRepo int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.pulls[strconv.Itoa(projectID)+"/"+strconv.Itoa(number)] = headRepo
 }
 
 // ServeHTTP answers the API's calls.
@@ -131,6 +142,18 @@ func (g *GitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"sha": rest[2], "truncated": false, "tree": g.list(t, r.URL.Query().Get("recursive") != "")})
+	case len(rest) == 2 && rest[0] == "pulls":
+		head, ok := g.pulls[strconv.Itoa(p.id)+"/"+rest[1]]
+		if !ok {
+			notFound()
+			return
+		}
+		n, _ := strconv.Atoi(rest[1])
+		writeJSON(w, http.StatusOK, map[string]any{
+			"number": n, "state": "open", "html_url": g.URL + "/" + p.path + "/pull/" + rest[1],
+			"head": map[string]any{"ref": "add-subnet-d", "repo": map[string]any{"id": head, "full_name": "someone/web"}},
+			"base": map[string]any{"ref": p.defaultBranch, "repo": map[string]any{"id": p.id, "full_name": p.path}},
+		})
 	case len(rest) == 2 && rest[0] == "compare":
 		base, head, ok := strings.Cut(rest[1], "...")
 		if _, okb := p.commits[base]; !ok || !okb {

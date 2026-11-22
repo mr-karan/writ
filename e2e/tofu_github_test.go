@@ -316,6 +316,7 @@ env "prod" {
 		return r
 	}
 	pr := gh.Commit(777001, "refs/pull/7/merge", tofuAppFiles(lock, "v1"))
+	gh.AddPull(777001, 7, 777001)
 	claims := map[string]any{"repository_id": "777001", "repository": "acme/web", "sha": pr, "ref": "refs/pull/7/merge", "event_name": "pull_request"}
 	var p tofuPlanDoc
 	r := job(0, claims, "plan", "--remote", "--json", "--env", "prod", "--stack", "app", "--repo", "web", "--commit", pr)

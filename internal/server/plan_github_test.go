@@ -75,6 +75,12 @@ grant {
 	files["infra/network/main.tf"] = forgetest.File{Content: files["infra/network/main.tf"].Content + "resource \"random_pet\" \"pet2\" {}\n"}
 	branch := gh.Commit(777001, "add-subnet-d", files)
 	merge := gh.Commit(777001, "refs/pull/42/merge", files)
+	gh.AddPull(777001, 42, 777001)
+	// Pull request 9 comes from a fork, 888002; pull request 10 is one the
+	// forge does not answer for.
+	fork := gh.Commit(777001, "refs/pull/9/merge", files)
+	gh.AddPull(777001, 9, 888002)
+	unknown := gh.Commit(777001, "refs/pull/10/merge", files)
 	other := gh.Commit(777001, "other", map[string]forgetest.File{"x": {Content: "x"}})
 
 	token := func(edits map[string]any) string {
@@ -120,6 +126,9 @@ grant {
 		{"a commit not on its ref", map[string]any{"sha": other, "ref": "refs/heads/add-subnet-d"}, nil, 403, "is not on refs/heads/add-subnet-d of repository web"},
 		{"another commit than its own", map[string]any{"sha": branch, "ref": "refs/heads/add-subnet-d"}, map[string]any{"repo": "web", "commit": other}, 403, "a CI job plans its own commit"},
 		{"a ref that is not full", map[string]any{"sha": branch, "ref": "add-subnet-d"}, nil, 400, "is not a full ref"},
+		{"a pull request from a fork", map[string]any{"sha": fork, "ref": "refs/pull/9/merge", "event_name": "pull_request"}, nil, 403, "pull request 9 of repository web comes from another repository, id 888002, such as a fork"},
+		{"a pull request the forge cannot show", map[string]any{"sha": unknown, "ref": "refs/pull/10/merge", "event_name": "pull_request"}, nil, 404, "writ serve could not check that pull request 10 of repository web comes from the repository itself, so it refuses the plan"},
+		{"a pull ref of another shape", map[string]any{"sha": merge, "ref": "refs/pull/42/evil", "event_name": "pull_request"}, nil, 403, "is not a pull request's merge or head ref"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := f.do("POST", "/v1/plans", token(tc.claims), planRequest(func(m map[string]any) {
