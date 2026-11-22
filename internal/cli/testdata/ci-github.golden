@@ -15,10 +15,15 @@ permissions:
   id-token: write
 jobs:
   plan:
-    runs-on: ubuntu-24.04
+    # A pull request from a fork and Dependabot's runs get no ID token, so the job skips
+    # them; a skipped check does not block a pull request.
+    if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: "ubuntu-24.04"
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      # writ serve's default limits.plans_per_principal is 4; set your server's value here.
+      max-parallel: 4
       matrix:
         include:
           - stack: "web/network"
@@ -31,9 +36,13 @@ jobs:
       - name: Install writ
         env:
           WRIT_VERSION: "v0.1.8"
+        # install.sh checks the release's minisign signature. A runner without minisign
+        # gets it from apt-get with sudo, as an Ubuntu runner has them.
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq minisign
+          if ! command -v minisign >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq minisign
+          fi
           curl -fsSL "https://github.com/mr-karan/writ/releases/download/$WRIT_VERSION/install.sh" | sh -s -- --version "$WRIT_VERSION"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Plan
@@ -70,3 +79,4 @@ approval {
 # Grant approve and apply on these stacks to a team of a people issuer.
 
 # Repository settings of acme/web-app: protect main, and require the writ plan checks to pass.
+# max-parallel is writ serve's default plans_per_principal: an admin's run of writ ci github reads the server's own.

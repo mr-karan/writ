@@ -78,7 +78,7 @@ else the dev token:
   repo     show NAME [--json]             print a repository and the stacks found at its head
   ci       gitlab --repo NAME [--envs LIST] [--image IMAGE] [--component REF]
                                           print the .gitlab-ci.yml lines and the config lines for a repository
-  ci       github --repo NAME [--envs LIST] [--writ-version V]
+  ci       github --repo NAME [--envs LIST] [--writ-version V] [--runs-on LABEL]
                                           print a GitHub Actions workflow that plans a repository's stacks,
                                           and the config lines for it
   ui       [--json]                       print the control UI's address; under --dev, a sign-in link
@@ -690,6 +690,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 		image := fs.String("image", "registry.example.com/writ:"+version, "the `image` whose PATH holds the writ binary")
 		component := fs.String("component", cli.DefaultComponent, "the GitLab CI/CD component to include, `PATH@VERSION`")
 		writVersion := fs.String("writ-version", version, "the Writ `release` a GitHub Actions job installs, such as v0.1.8")
+		runsOn := fs.String("runs-on", "", "the `label` of the runner a GitHub Actions job runs on; default ubuntu-24.04 at github.com, required elsewhere")
 		return func(ctx context.Context, app *cli.App, pos []string) error {
 			if len(pos) != 1 || pos[0] != "gitlab" && pos[0] != "github" {
 				return &cli.UsageError{Msg: "ci takes gitlab or github: writ ci gitlab --repo NAME, or writ ci github --repo NAME"}
@@ -703,7 +704,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 					list = append(list, e)
 				}
 			}
-			return app.CI(ctx, pos[0], cli.CIOptions{Repo: *repo, Envs: list, Image: *image, Component: *component, WritVersion: *writVersion})
+			return app.CI(ctx, pos[0], cli.CIOptions{Repo: *repo, Envs: list, Image: *image, Component: *component, WritVersion: *writVersion, RunsOn: *runsOn})
 		}, nil
 	case "ui":
 		j := asJSON()

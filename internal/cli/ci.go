@@ -26,8 +26,10 @@ type CIOptions struct {
 	// version, and Image the image whose PATH holds writ.
 	Component string
 	Image     string
-	// WritVersion is the release a GitHub Actions job installs.
+	// WritVersion is the release a GitHub Actions job installs, and RunsOn
+	// the runner label its job runs on, "" for github.com's default.
 	WritVersion string
+	RunsOn      string
 }
 
 // DefaultComponent is the GitLab CI/CD component writ ci gitlab includes,
@@ -38,7 +40,7 @@ const DefaultComponent = "$CI_SERVER_FQDN/platform/writ-ci/writ-plan@0.1.0"
 type ciKind struct {
 	// what names the kind's repositories, for a refusal.
 	what  string
-	write func(a *App, r *remote, d server.RepoDoc, o CIOptions, p ciPlan) error
+	write func(ctx context.Context, a *App, r *remote, d server.RepoDoc, o CIOptions, p ciPlan) error
 }
 
 var ciKinds = map[string]ciKind{
@@ -105,7 +107,7 @@ func (a *App) CI(ctx context.Context, kind string, o CIOptions) error {
 			return usagef("%q cannot be written as an HCL string that reads back unchanged, so writ ci %s cannot write a rule for it", v, kind)
 		}
 	}
-	return k.write(a, r, d, o, p)
+	return k.write(ctx, a, r, d, o, p)
 }
 
 // quotedList is xs as an HCL list's items.
@@ -120,7 +122,7 @@ func quotedList(xs []string) string {
 // writeGitLabCI prints the lines a repository's .gitlab-ci.yml needs, a
 // plan job and an apply job for each stack and environment and one
 // approve job, and the config's teams, grants, and approval rule.
-func writeGitLabCI(a *App, r *remote, d server.RepoDoc, o CIOptions, p ciPlan) error {
+func writeGitLabCI(_ context.Context, a *App, r *remote, d server.RepoDoc, o CIOptions, p ciPlan) error {
 	approveRef, applyRef, ok := siblings(o.Component)
 	if !ok {
 		return usagef("--component %s does not name the writ-plan component, PATH/writ-plan@VERSION, beside which writ-approve and writ-apply are", o.Component)
