@@ -26,8 +26,9 @@ import (
 // --server (dev for the dev control plane), WRIT_SERVER, the one control
 // plane the user holds a session of writ login for, and the dev control
 // plane. The token is the
-// first of WRIT_ID_TOKEN, the session for that server, and the dev token
-// when the server is the dev control plane. No command starts a control
+// first of WRIT_ID_TOKEN, the ID token a GitHub Actions job asks for, the
+// session for that server, and the dev token when the server is the dev
+// control plane. No command starts a control
 // plane: a process that a command leaves running has no owner.
 
 // RemoteOptions are the flags every --remote command shares.

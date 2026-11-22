@@ -56,7 +56,8 @@ commands:
 
 remote commands, against the first control plane of --server, WRIT_SERVER, the one you
 hold a session for, and the one writ serve --dev runs, with the CI token in
-WRIT_ID_TOKEN, else your session from writ login, else the dev token:
+WRIT_ID_TOKEN, else a GitHub Actions job's ID token, else your session from writ login,
+else the dev token:
   login    [URL] [--issuer NAME] [--device | --browser] [--json]
                                           sign in through the team's identity provider: with the
                                           device flow when it offers one, else in a browser on this

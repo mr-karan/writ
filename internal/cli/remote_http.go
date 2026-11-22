@@ -91,6 +91,15 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 		r.token, r.tokenFrom = ciToken, tokenCI
 		return r, nil
 	}
+	// A GitHub Actions job may ask for its ID token instead of setting
+	// WRIT_ID_TOKEN, for the audience writ serve takes: its own URL.
+	if tok, ok, err := a.actionsToken(ctx, base); ok {
+		if err != nil {
+			return nil, err
+		}
+		r.token, r.tokenFrom = tok, tokenActions
+		return r, nil
+	}
 	_, doc, err := a.readSessions()
 	if err != nil {
 		return nil, err
@@ -106,7 +115,7 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 		r.token, r.tokenFrom, r.dev = c.Token, tokenDev, true
 		return r, nil
 	}
-	return nil, usagef("no token for %s: sign in with writ login %s, or in GitLab CI set id_tokens: { WRIT_ID_TOKEN: { aud: %s } } on the job", base, base, base)
+	return nil, usagef("no token for %s: sign in with writ login %s; in GitHub Actions give the job permissions: id-token: write; in GitLab CI set id_tokens: { WRIT_ID_TOKEN: { aud: %s } } on the job", base, base, base)
 }
 
 // newRemote is a client of the control plane at base, with no token, that
