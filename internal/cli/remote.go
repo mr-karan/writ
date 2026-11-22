@@ -99,6 +99,10 @@ type RemotePlanOptions struct {
 	// job with no checkout sends them. A CI job's token names its own
 	// repository, so Repo may be empty there.
 	Repo, Commit string
+	// SlotWait is how long to keep asking while writ serve refuses the
+	// plan with 429 because its plan slots are busy; 0 asks as a command
+	// always does, a few times over about 30 seconds.
+	SlotWait time.Duration
 }
 
 // RemotePlan sends a plan to writ serve, waits for it, and prints it. The
@@ -118,6 +122,9 @@ func (a *App) RemotePlan(ctx context.Context, o RemotePlanOptions) (err error) {
 func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote, []byte, error) {
 	if o.Commit != "" && !forge.IsSHA(o.Commit) {
 		return nil, nil, usagef("--commit %q is not a commit's full id", o.Commit)
+	}
+	if o.SlotWait < 0 || o.SlotWait > maxSlotWait {
+		return nil, nil, usagef("--slot-wait %s must be between 0 and %s", o.SlotWait, maxSlotWait)
 	}
 	r, err := a.remote(ctx)
 	if err != nil {
@@ -161,7 +168,7 @@ func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote,
 	if !o.JSON {
 		io.WriteString(a.humanOutput(), line)
 	}
-	status, resp, err := r.call(ctx, http.MethodPost, "/v1/plans", body, remoteTimeout)
+	status, resp, err := a.postPlan(ctx, r, body, o.SlotWait)
 	if err != nil {
 		return nil, nil, err
 	}

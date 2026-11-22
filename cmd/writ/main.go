@@ -68,7 +68,7 @@ else the dev token:
                                           plan the OpenTofu stack on writ serve, which keeps the plan:
                                           in a clean work tree of a repository writ serve reads, the
                                           commit you are on, which writ serve fetches
-  plan     --remote --env ENV --stack NAME --commit SHA [--repo NAME]
+  plan     --remote --env ENV --stack NAME --commit SHA [--repo NAME] [--slot-wait 15m]
                                           plan a commit and read no file, as a CI job with no checkout
   repo     add NAME FORGE/PROJECT [--path PATH] [--prefix PREFIX] [--json]
                                           add a repository: writ serve reads its default branch with the
@@ -417,6 +417,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 		mr := fs.Int("hint-merge-request", 0, "with --remote: the merge request `IID` the plan belongs to, for writ serve's records")
 		repo := fs.String("repo", "", "with --remote: the `repository` whose commit to plan, as writ repo list names it; a CI job's token names its own")
 		commit := fs.String("commit", "", "with --remote: the commit `SHA` to plan, which writ serve fetches; no file is read")
+		slotWait := fs.Duration("slot-wait", 0, "with --remote: how long to keep asking while writ serve's plan slots are busy, such as 15m; at most 1h")
 		return func(ctx context.Context, app *cli.App, pos []string) error {
 			if err := noArgs(name, pos); err != nil {
 				return err
@@ -424,7 +425,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 			if err := remoteOnly(rem); err != nil {
 				return err
 			}
-			return app.RemotePlan(ctx, cli.RemotePlanOptions{RemoteOptions: cli.RemoteOptions{Stack: *stackName}, JSON: *j, HintMergeRequest: *mr, Repo: *repo, Commit: *commit})
+			return app.RemotePlan(ctx, cli.RemotePlanOptions{RemoteOptions: cli.RemoteOptions{Stack: *stackName}, JSON: *j, HintMergeRequest: *mr, Repo: *repo, Commit: *commit, SlotWait: *slotWait})
 		}, nil
 	case "apply":
 		j := asJSON()
