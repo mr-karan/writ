@@ -46,15 +46,20 @@ jobs:
           WRIT_VERSION: "v0.1.9"
           CGO_ENABLED: "0"
           GOTOOLCHAIN: auto
-        # go install fetches the release through the Go module proxy and checks every module
-        # against the Go checksum database, not the release's own files. A failed step
-        # stops the job, so a runner never plans with a writ left from before.
+          GOSUMDB: sum.golang.org
+          GOFLAGS: ""
+        # go install fetches the release through the Go module proxy and checks its modules
+        # against the Go checksum database, not the release's own files; a runner must not
+        # exempt github.com/mr-karan/writ with GONOSUMDB or GOPRIVATE. The binary goes to a
+        # directory of this job only, and a failed step stops the job, so a runner never
+        # plans with a writ left from before.
         run: |
           set -euo pipefail
+          export GOBIN="$RUNNER_TEMP/writ-bin"
+          rm -rf "$GOBIN"
           go install "github.com/mr-karan/writ/cmd/writ@${WRIT_VERSION}"
-          bin="$(go env GOPATH)/bin"
-          test "$("$bin/writ" version)" = "writ ${WRIT_VERSION}"
-          echo "$bin" >> "$GITHUB_PATH"
+          test "$("$GOBIN/writ" version)" = "writ ${WRIT_VERSION}"
+          echo "$GOBIN" >> "$GITHUB_PATH"
       - name: Plan
         env:
           WRIT_SERVER: "http://127.0.0.1:PORT"

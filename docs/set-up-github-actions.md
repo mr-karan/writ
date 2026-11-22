@@ -72,15 +72,20 @@ jobs:
           WRIT_VERSION: "v0.1.9"
           CGO_ENABLED: "0"
           GOTOOLCHAIN: auto
-        # go install fetches the release through the Go module proxy and checks every module
-        # against the Go checksum database, not the release's own files. A failed step
-        # stops the job, so a runner never plans with a writ left from before.
+          GOSUMDB: sum.golang.org
+          GOFLAGS: ""
+        # go install fetches the release through the Go module proxy and checks its modules
+        # against the Go checksum database, not the release's own files; a runner must not
+        # exempt github.com/mr-karan/writ with GONOSUMDB or GOPRIVATE. The binary goes to a
+        # directory of this job only, and a failed step stops the job, so a runner never
+        # plans with a writ left from before.
         run: |
           set -euo pipefail
+          export GOBIN="$RUNNER_TEMP/writ-bin"
+          rm -rf "$GOBIN"
           go install "github.com/mr-karan/writ/cmd/writ@${WRIT_VERSION}"
-          bin="$(go env GOPATH)/bin"
-          test "$("$bin/writ" version)" = "writ ${WRIT_VERSION}"
-          echo "$bin" >> "$GITHUB_PATH"
+          test "$("$GOBIN/writ" version)" = "writ ${WRIT_VERSION}"
+          echo "$GOBIN" >> "$GITHUB_PATH"
       - name: Plan
         env:
           WRIT_SERVER: "http://127.0.0.1:34789"
@@ -146,7 +151,7 @@ Output of a real run against a local test `writ serve` on loopback, with a GitHu
 2. Add the HCL blocks it printed to `/etc/writ/serve`, with a grant of `approve` and `apply` for a team of people, and restart `writ serve`.
 3. Protect the default branch and require the one check named `writ`, not the per-stack `plan` checks.
 
-The workflow's one action, `actions/setup-go`, is pinned by its full commit SHA with its version in a comment. The install step runs `go install github.com/mr-karan/writ/cmd/writ@VERSION` with `CGO_ENABLED=0`: the Go module proxy serves the module, and the Go checksum database (`sum.golang.org`) checks it, independent of the release's own files. The step fails unless the installed `writ` reports that version, so a persistent runner never plans with a `writ` left from before. Every `run` step is `bash` with `set -euo pipefail`. The runner needs only network access to the Go module proxy, and to `writ serve`. Matrix values reach the shell through `env`, never through an expression in `run`.
+The workflow's one action, `actions/setup-go`, is pinned by its full commit SHA with its version in a comment. The install step runs `go install github.com/mr-karan/writ/cmd/writ@VERSION` with `CGO_ENABLED=0`: the Go module proxy serves the module, and the Go checksum database (`sum.golang.org`) checks it, independent of the release's own files. It installs into a directory of the job under `$RUNNER_TEMP`, whatever `GOBIN` the runner sets, and fails unless that `writ` reports the version, so a persistent runner never plans with a `writ` left from before. The step sets `GOSUMDB=sum.golang.org`; on a self-hosted runner, do not exempt `github.com/mr-karan/writ` from it through `GONOSUMDB`, `GOPRIVATE`, or `go env -w`. Every `run` step is `bash` with `set -euo pipefail`. The runner needs network access to the Go module proxy and the checksum database, to `writ serve`, and, unless a matching Go is already cached on the runner, to the Go downloads `actions/setup-go` resolves `stable` from. Matrix values reach the shell through `env`, never through an expression in `run`.
 
 ## Pull requests from forks and Dependabot
 
