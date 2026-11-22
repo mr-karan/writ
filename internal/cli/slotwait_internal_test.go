@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
@@ -21,6 +22,12 @@ type busyServer struct {
 	mu     sync.Mutex
 	busy   int
 	tokens []string
+	// times are when each plan request came.
+	times []time.Time
+	// status and retryAfter are the refusal's status, 429 when 0, and its
+	// Retry-After, none when "".
+	status     int
+	retryAfter string
 }
 
 func newBusyServer(t *testing.T, busy int) *busyServer {
@@ -33,9 +40,13 @@ func newBusyServer(t *testing.T, busy int) *busyServer {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/plans":
 			b.tokens = append(b.tokens, r.Header.Get("Authorization"))
+			b.times = append(b.times, time.Now())
 			if b.busy != 0 {
 				b.busy--
-				w.WriteHeader(http.StatusTooManyRequests)
+				if b.retryAfter != "" {
+					w.Header().Set("Retry-After", b.retryAfter)
+				}
+				w.WriteHeader(cmp.Or(b.status, http.StatusTooManyRequests))
 				_, _ = w.Write([]byte(`{"format":"writ.remote-plan/v0","ok":false,"diagnostics":[{"severity":"error","class":"usage","message":"writ serve is running 4 plans for github acme/web or 8 in all; try again when one ends"}]}`))
 				return
 			}
@@ -50,6 +61,12 @@ func newBusyServer(t *testing.T, busy int) *busyServer {
 	}))
 	t.Cleanup(b.Close)
 	return b
+}
+
+func (b *busyServer) postTimes() []time.Time {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]time.Time(nil), b.times...)
 }
 
 func (b *busyServer) posts() []string {
@@ -110,5 +127,63 @@ func TestSlotWaitGivesUp(t *testing.T) {
 	o.SlotWait = 2 * time.Hour
 	if _, _, err := a.sendRemotePlan(context.Background(), o); err == nil || !strings.Contains(err.Error(), "--slot-wait 2h0m0s must be between 0 and 1h0m0s") {
 		t.Fatalf("a wait over an hour: %v", err)
+	}
+}
+
+// TestSlotWaitHonorsRetryAfter checks that a refusal's Retry-After, as
+// writ serve sends when the forge limits the rate of calls, sets the next
+// try, and that one past the wait's end gives up at once.
+func TestSlotWaitHonorsRetryAfter(t *testing.T) {
+	writ := newBusyServer(t, 1)
+	writ.status, writ.retryAfter = http.StatusServiceUnavailable, "1"
+	a := precedenceApp(t, t.TempDir(), writ.URL, map[string]string{tokenCI: "ci-token", "WRIT_ENV": "prod"})
+	a.opts.Stderr = &bytes.Buffer{}
+	o := slotPlan
+	o.SlotWait = 3 * time.Second
+	if _, _, err := a.sendRemotePlan(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if times := writ.postTimes(); len(times) != 2 || times[1].Sub(times[0]) < time.Second {
+		t.Fatalf("tries at %v, want the second Retry-After's second after the first", times)
+	}
+
+	far := newBusyServer(t, -1)
+	far.status, far.retryAfter = http.StatusServiceUnavailable, "60"
+	a = precedenceApp(t, t.TempDir(), far.URL, map[string]string{tokenCI: "ci-token", "WRIT_ENV": "prod"})
+	a.opts.Stdout, a.opts.Stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	start := time.Now()
+	if _, _, err := a.sendRemotePlan(context.Background(), o); !errors.Is(err, ErrFailed) || len(far.posts()) != 1 || time.Since(start) > time.Second {
+		t.Fatalf("a Retry-After past the wait: %v after %d tries and %s", err, len(far.posts()), time.Since(start))
+	}
+}
+
+// TestSlotWaitIsBounded checks that no plan request starts after the wait
+// ends, though each GitHub Actions token takes a while to come.
+func TestSlotWaitIsBounded(t *testing.T) {
+	writ := newBusyServer(t, -1)
+	actions := newActionsEndpoint(t)
+	actions.delay = 350 * time.Millisecond
+	env := actions.env()
+	env["WRIT_ENV"] = "prod"
+	a := precedenceApp(t, t.TempDir(), writ.URL, env)
+	a.opts.Stdout, a.opts.Stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	o := slotPlan
+	o.SlotWait = 800 * time.Millisecond
+	start := time.Now()
+	_, _, err := a.sendRemotePlan(context.Background(), o)
+	elapsed := time.Since(start)
+	if !errors.Is(err, ErrFailed) {
+		t.Fatalf("got %v", err)
+	}
+	// The first token is fetched before the wait starts.
+	times := writ.postTimes()
+	deadline := times[0].Add(o.SlotWait)
+	for i, at := range times {
+		if at.After(deadline) {
+			t.Fatalf("try %d started %v after the wait ended", i+1, at.Sub(deadline))
+		}
+	}
+	if elapsed > o.SlotWait+actions.delay+500*time.Millisecond {
+		t.Fatalf("the wait of %s took %s", o.SlotWait, elapsed)
 	}
 }

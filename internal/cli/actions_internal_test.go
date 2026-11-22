@@ -22,8 +22,10 @@ type actionsEndpoint struct {
 	audiences []string
 	status    int
 	body      string
-	// vary, when set, makes each answer a new token, numbered from 1.
-	vary bool
+	// vary, when set, makes each answer a new token, numbered from 1, and
+	// delay holds each answer back.
+	vary  bool
+	delay time.Duration
 }
 
 // numberedToken is the nth token a varying endpoint hands out.
@@ -49,6 +51,13 @@ func newActionsEndpoint(t *testing.T) *actionsEndpoint {
 			return
 		}
 		e.audiences = append(e.audiences, r.URL.Query().Get("audience"))
+		if e.delay > 0 {
+			select {
+			case <-time.After(e.delay):
+			case <-r.Context().Done():
+				return
+			}
+		}
 		w.WriteHeader(e.status)
 		if e.vary {
 			_, _ = fmt.Fprintf(w, `{"count":1,"value":%q}`, numberedToken(len(e.audiences)))

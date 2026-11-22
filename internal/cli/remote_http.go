@@ -201,6 +201,12 @@ func (r *remote) call(ctx context.Context, method, path string, body []byte, tim
 
 // once sends one request, with the headers in hdr besides the token's.
 func (r *remote) once(ctx context.Context, method, path string, body []byte, timeout time.Duration, hdr http.Header) (int, []byte, error) {
+	status, _, b, err := r.send(ctx, method, path, body, timeout, hdr)
+	return status, b, err
+}
+
+// send is once, which also returns the answer's headers.
+func (r *remote) send(ctx context.Context, method, path string, body []byte, timeout time.Duration, hdr http.Header) (int, http.Header, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var rd io.Reader
@@ -209,7 +215,7 @@ func (r *remote) once(ctx context.Context, method, path string, body []byte, tim
 	}
 	req, err := http.NewRequestWithContext(ctx, method, r.base+path, rd)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	if r.token != "" {
 		req.Header.Set("Authorization", "Bearer "+r.token)
@@ -225,7 +231,7 @@ func (r *remote) once(ctx context.Context, method, path string, body []byte, tim
 	}
 	resp, err := r.http.Do(req)
 	if err != nil {
-		return 0, nil, fmt.Errorf("%s %s: %w", method, r.base+path, errors.Unwrap(err))
+		return 0, nil, nil, fmt.Errorf("%s %s: %w", method, r.base+path, errors.Unwrap(err))
 	}
 	defer resp.Body.Close()
 	if v := resp.Header.Get(server.VersionHeader); v != "" && r.seen != nil {
@@ -233,9 +239,9 @@ func (r *remote) once(ctx context.Context, method, path string, body []byte, tim
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse))
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
-	return resp.StatusCode, b, nil
+	return resp.StatusCode, resp.Header, b, nil
 }
 
 // get fetches a document and refuses a body that is not one.
