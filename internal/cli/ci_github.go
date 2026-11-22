@@ -15,8 +15,12 @@ import (
 	"github.com/mr-karan/writ/internal/tfcode"
 )
 
-// releaseRE is a Writ release tag, which install.sh takes.
-var releaseRE = regexp.MustCompile(`^v([0-9]{1,6})\.([0-9]{1,6})\.([0-9]{1,6})$`)
+// releaseRE is a Writ release tag, vMAJOR.MINOR.PATCH with no leading
+// zeros, which go install takes as the module's version.
+var releaseRE = regexp.MustCompile(`^v(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})$`)
+
+// setupGo is actions/setup-go pinned by its commit, with its tag.
+const setupGo = "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0"
 
 // minWorkflowRelease is the first release whose writ the workflow can
 // run: it asks GitHub Actions for its ID token, takes --slot-wait, and
@@ -103,13 +107,15 @@ func yamlString(s string) string {
 // branch, and the config's team, grant, and approval rule. Approval and
 // apply stay with people: the workflow holds no apply job.
 //
-// The workflow uses no action, so it pins none: writ serve reads the
-// commit with its own token, so no job checks the repository out, and
-// install.sh checks the release's minisign signature and SHA-256. Each
-// value reaches the shell through env, never through an expression in
-// run, so no stack or environment name can inject a command. The job
-// skips a pull request from a fork and Dependabot's runs, which get no ID
-// token; a skipped check does not block a pull request.
+// The one action it uses, actions/setup-go, is pinned by its commit. writ
+// serve reads the commit with its own token, so no job checks the
+// repository out, and go install takes writ through the Go module proxy,
+// checked against the Go checksum database, not from the release's own
+// files. Each run step is bash with set -euo pipefail, so a failed step
+// stops the job. Each value reaches the shell through env, never through
+// an expression in run, so no stack or environment name can inject a
+// command. The plan job skips a pull request from a fork and Dependabot's
+// runs, which get no ID token, and the writ job reports that as a pass.
 func writeGitHubCI(ctx context.Context, a *App, r *remote, d server.RepoDoc, o CIOptions, p ciPlan) error {
 	release, err := a.workflowRelease(o.WritVersion)
 	if err != nil {
@@ -145,6 +151,9 @@ func writeGitHubCI(ctx context.Context, a *App, r *remote, d server.RepoDoc, o C
 	fmt.Fprintln(out, "permissions:")
 	fmt.Fprintln(out, "  contents: read")
 	fmt.Fprintln(out, "  id-token: write")
+	fmt.Fprintln(out, "defaults:")
+	fmt.Fprintln(out, "  run:")
+	fmt.Fprintln(out, "    shell: bash")
 	fmt.Fprintln(out, "jobs:")
 	fmt.Fprintln(out, "  plan:")
 	fmt.Fprintln(out, "    # A pull request from a fork and Dependabot's runs get no ID token, so the job skips")
@@ -167,18 +176,24 @@ func writeGitHubCI(ctx context.Context, a *App, r *remote, d server.RepoDoc, o C
 		fmt.Fprintf(out, "          - stack: %s\n            env: %s\n", yamlString(j.stack), yamlString(j.env))
 	}
 	fmt.Fprintln(out, "    steps:")
+	fmt.Fprintf(out, "      - uses: %s\n", setupGo)
+	fmt.Fprintln(out, "        with:")
+	fmt.Fprintln(out, "          go-version: stable")
+	fmt.Fprintln(out, "          cache: false")
 	fmt.Fprintln(out, "      - name: Install writ")
 	fmt.Fprintln(out, "        env:")
 	fmt.Fprintf(out, "          WRIT_VERSION: %s\n", yamlString(release))
-	fmt.Fprintln(out, "        # install.sh checks the release's minisign signature. A runner without minisign")
-	fmt.Fprintln(out, "        # gets it from apt-get with sudo, as an Ubuntu runner has them.")
+	fmt.Fprintln(out, "          CGO_ENABLED: \"0\"")
+	fmt.Fprintln(out, "          GOTOOLCHAIN: auto")
+	fmt.Fprintln(out, "        # go install fetches the release through the Go module proxy and checks every module")
+	fmt.Fprintln(out, "        # against the Go checksum database, not the release's own files. A failed step")
+	fmt.Fprintln(out, "        # stops the job, so a runner never plans with a writ left from before.")
 	fmt.Fprintln(out, "        run: |")
-	fmt.Fprintln(out, "          if ! command -v minisign >/dev/null; then")
-	fmt.Fprintln(out, "            sudo apt-get update -qq")
-	fmt.Fprintln(out, "            sudo apt-get install -y -qq minisign")
-	fmt.Fprintln(out, "          fi")
-	fmt.Fprintln(out, `          curl -fsSL "https://github.com/mr-karan/writ/releases/download/$WRIT_VERSION/install.sh" | sh -s -- --version "$WRIT_VERSION"`)
-	fmt.Fprintln(out, `          echo "$HOME/.local/bin" >> "$GITHUB_PATH"`)
+	fmt.Fprintln(out, "          set -euo pipefail")
+	fmt.Fprintln(out, `          go install "github.com/mr-karan/writ/cmd/writ@${WRIT_VERSION}"`)
+	fmt.Fprintln(out, `          bin="$(go env GOPATH)/bin"`)
+	fmt.Fprintln(out, `          test "$("$bin/writ" version)" = "writ ${WRIT_VERSION}"`)
+	fmt.Fprintln(out, `          echo "$bin" >> "$GITHUB_PATH"`)
 	fmt.Fprintln(out, "      - name: Plan")
 	fmt.Fprintln(out, "        env:")
 	fmt.Fprintf(out, "          WRIT_SERVER: %s\n", yamlString(r.base))
@@ -188,7 +203,9 @@ func writeGitHubCI(ctx context.Context, a *App, r *remote, d server.RepoDoc, o C
 	fmt.Fprintln(out, "        # writ asks GitHub Actions for the job's ID token, whose audience is WRIT_SERVER;")
 	fmt.Fprintln(out, "        # writ serve refuses a commit or a repository other than the token's. While writ serve's")
 	fmt.Fprintf(out, "        # plan slots are busy, as with overlapping runs, writ asks again for up to %s.\n", slotWait)
-	fmt.Fprintf(out, "        run: writ plan --remote --env \"$WRIT_ENV\" --stack \"$WRIT_STACK\" --repo \"$WRIT_REPO\" --commit \"$GITHUB_SHA\" --slot-wait %s\n", slotWait)
+	fmt.Fprintln(out, "        run: |")
+	fmt.Fprintln(out, "          set -euo pipefail")
+	fmt.Fprintf(out, "          writ plan --remote --env \"$WRIT_ENV\" --stack \"$WRIT_STACK\" --repo \"$WRIT_REPO\" --commit \"$GITHUB_SHA\" --slot-wait %s\n", slotWait)
 	fmt.Fprintln(out, "  writ:")
 	fmt.Fprintln(out, "    # The one check to require. It passes when every plan passed, or when the plan job was")
 	fmt.Fprintln(out, "    # skipped, as for a fork's or Dependabot's pull request, whose per-stack checks GitHub")
@@ -202,6 +219,7 @@ func writeGitHubCI(ctx context.Context, a *App, r *remote, d server.RepoDoc, o C
 	fmt.Fprintln(out, "        env:")
 	fmt.Fprintln(out, "          RESULT: ${{ needs.plan.result }}")
 	fmt.Fprintln(out, "        run: |")
+	fmt.Fprintln(out, "          set -euo pipefail")
 	fmt.Fprintln(out, `          case "$RESULT" in`)
 	fmt.Fprintln(out, `            success|skipped) echo "writ plan: $RESULT" ;;`)
 	fmt.Fprintln(out, `            *) echo "writ plan: $RESULT" >&2; exit 1 ;;`)

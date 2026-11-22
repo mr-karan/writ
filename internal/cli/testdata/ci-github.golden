@@ -13,6 +13,9 @@ on:
 permissions:
   contents: read
   id-token: write
+defaults:
+  run:
+    shell: bash
 jobs:
   plan:
     # A pull request from a fork and Dependabot's runs get no ID token, so the job skips
@@ -34,18 +37,24 @@ jobs:
           - stack: "web/database"
             env: "prod"
     steps:
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
       - name: Install writ
         env:
           WRIT_VERSION: "v0.1.9"
-        # install.sh checks the release's minisign signature. A runner without minisign
-        # gets it from apt-get with sudo, as an Ubuntu runner has them.
+          CGO_ENABLED: "0"
+          GOTOOLCHAIN: auto
+        # go install fetches the release through the Go module proxy and checks every module
+        # against the Go checksum database, not the release's own files. A failed step
+        # stops the job, so a runner never plans with a writ left from before.
         run: |
-          if ! command -v minisign >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq minisign
-          fi
-          curl -fsSL "https://github.com/mr-karan/writ/releases/download/$WRIT_VERSION/install.sh" | sh -s -- --version "$WRIT_VERSION"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          set -euo pipefail
+          go install "github.com/mr-karan/writ/cmd/writ@${WRIT_VERSION}"
+          bin="$(go env GOPATH)/bin"
+          test "$("$bin/writ" version)" = "writ ${WRIT_VERSION}"
+          echo "$bin" >> "$GITHUB_PATH"
       - name: Plan
         env:
           WRIT_SERVER: "http://127.0.0.1:PORT"
@@ -55,7 +64,9 @@ jobs:
         # writ asks GitHub Actions for the job's ID token, whose audience is WRIT_SERVER;
         # writ serve refuses a commit or a repository other than the token's. While writ serve's
         # plan slots are busy, as with overlapping runs, writ asks again for up to 15m.
-        run: writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA" --slot-wait 15m
+        run: |
+          set -euo pipefail
+          writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA" --slot-wait 15m
   writ:
     # The one check to require. It passes when every plan passed, or when the plan job was
     # skipped, as for a fork's or Dependabot's pull request, whose per-stack checks GitHub
@@ -69,6 +80,7 @@ jobs:
         env:
           RESULT: ${{ needs.plan.result }}
         run: |
+          set -euo pipefail
           case "$RESULT" in
             success|skipped) echo "writ plan: $RESULT" ;;
             *) echo "writ plan: $RESULT" >&2; exit 1 ;;

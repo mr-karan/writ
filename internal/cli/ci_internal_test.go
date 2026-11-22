@@ -152,6 +152,7 @@ func TestCIRefusals(t *testing.T) {
 		{"another kind", "bitbucket", webRepo("github"), CIOptions{Repo: "web-app"}, "ci takes gitlab or github"},
 		{"a release before the workflow's least", "github", webRepo("github"), CIOptions{Repo: "web-app", WritVersion: "v0.1.8"}, "writ v0.1.8 cannot run the workflow, which needs the GitHub Actions token fetch and --slot-wait of v0.1.9 or later"},
 		{"a pre-release", "github", webRepo("github"), CIOptions{Repo: "web-app", WritVersion: "v0.2.0-rc1"}, "is not a Writ release, such as v0.1.9"},
+		{"leading zeros", "github", webRepo("github"), CIOptions{Repo: "web-app", WritVersion: "v0.01.009"}, `--writ-version "v0.01.009" is not a Writ release`},
 		{"no flag on a build of a commit", "github", webRepo("github"), CIOptions{Repo: "web-app"}, `this writ is "1a8c8a3", not a release, so writ ci github cannot tell which release the workflow should install: name one with --writ-version, v0.1.9 or later`},
 		{"an enterprise server with no runner label", "github", ghe, CIOptions{Repo: "web-app", WritVersion: "v0.1.9"}, "repository web-app is at https://ghe.example.com, not github.com, so writ ci github cannot know its runners' labels: name the label of a Linux runner with --runs-on LABEL"},
 		{"a matrix over 256 jobs", "github", huge, CIOptions{Repo: "web-app", WritVersion: "v0.1.9"}, "has 258 stacks and environments to plan, over the 256 jobs a GitHub Actions matrix makes"},
