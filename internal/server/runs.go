@@ -321,6 +321,7 @@ func (s *Server) byMerged(w http.ResponseWriter, r *http.Request, body RunReques
 	env := e.Name
 	in, rerr := s.mergedSource(ctx, pr, body.Merged)
 	if rerr != nil {
+		rerr.retry(w)
 		s.refuse(w, r, FormatRemoteRun, rerr.class, rerr.status, "%s", rerr.msg)
 		return mergedApply{}, false
 	}
@@ -332,6 +333,7 @@ func (s *Server) byMerged(w http.ResponseWriter, r *http.Request, body RunReques
 	sources, err := s.commitSources(ctx, rp, c, commit, stack)
 	if err != nil {
 		rerr := forgeRefusal(err)
+		rerr.retry(w)
 		s.refuse(w, r, FormatRemoteRun, rerr.class, rerr.status, "read %s at %s: %s", rp.Name, forge.Short(commit), rerr.msg)
 		return mergedApply{}, false
 	}

@@ -32,6 +32,17 @@ type GitHub struct {
 	// pulls maps a repository's id and a pull request's number to the id
 	// of the repository its head is in.
 	pulls map[string]int
+	// limited is how many calls from now answer 429 with Retry-After of
+	// retryAfter seconds, as GitHub's secondary rate limit answers.
+	limited, retryAfter int
+}
+
+// Limit makes the next n calls answer 429, Retry-After retryAfter
+// seconds.
+func (g *GitHub) Limit(n, retryAfter int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.limited, g.retryAfter = n, retryAfter
 }
 
 type treeRef struct {
@@ -72,6 +83,12 @@ func (g *GitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.calls = append(g.calls, r.Method+" "+r.URL.EscapedPath())
+	if g.limited > 0 {
+		g.limited--
+		w.Header().Set("Retry-After", strconv.Itoa(g.retryAfter))
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"message": "You have exceeded a secondary rate limit."})
+		return
+	}
 	if r.Header.Get("Authorization") != "Bearer "+g.Token {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "Bad credentials", "documentation_url": "https://docs.github.com/rest"})
 		return

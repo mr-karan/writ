@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -143,5 +144,16 @@ grant {
 				t.Fatalf("got %d %s", r.status, r.body)
 			}
 		})
+	}
+
+	// A GitHub rate limit while the commit is checked, before the plan is
+	// taken, is 503 with GitHub's Retry-After, so a job waits and asks
+	// again. Last: the client then holds calls back.
+	gh.Limit(1, 30)
+	r := f.do("POST", "/v1/plans", token(map[string]any{"sha": branch, "ref": "refs/heads/add-subnet-d", "event_name": "push"}), planRequest(func(m map[string]any) {
+		m["stacks"], m["source"] = []string{"web/network"}, map[string]any{}
+	}))
+	if ra, _ := strconv.Atoi(r.header.Get("Retry-After")); r.status != http.StatusServiceUnavailable || r.class() != "provider" || ra < 25 || ra > 30 || !strings.Contains(string(r.body), "limits the rate of calls") {
+		t.Fatalf("a rate limit: %d Retry-After %q %s", r.status, r.header.Get("Retry-After"), r.body)
 	}
 }

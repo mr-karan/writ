@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -159,18 +161,32 @@ type repoError struct {
 	status int
 	class  diag.Class
 	msg    string
+	// retryAfter, when set, is how long a client should wait before it
+	// asks again, which the answer's Retry-After says.
+	retryAfter time.Duration
 }
 
 func (e *repoError) Error() string { return e.msg }
+
+// retry sets Retry-After on an answer of the refusal, when it has one.
+func (e *repoError) retry(w http.ResponseWriter) {
+	if e.retryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(e.retryAfter.Seconds()))))
+	}
+}
 
 func refusedRepo(status int, format string, args ...any) *repoError {
 	return &repoError{status: status, class: diag.Usage, msg: fmt.Sprintf(format, args...)}
 }
 
 // forgeRefusal turns a forge's error into a refusal: a project, branch, or
-// commit the token cannot see is 404, and anything else 502, because the
-// forge, not the request, failed.
+// commit the token cannot see is 404, a forge's rate limit 503 with how
+// long it lasts, so a client waits and asks again, and anything else 502,
+// because the forge, not the request, failed.
 func forgeRefusal(err error) *repoError {
+	if rl, ok := errors.AsType[*forge.RateLimitError](err); ok {
+		return &repoError{status: http.StatusServiceUnavailable, class: diag.Provider, msg: err.Error(), retryAfter: max(time.Until(rl.Until), time.Second)}
+	}
 	if _, ok := errors.AsType[*repo.WritFilesError](err); ok {
 		return &repoError{status: http.StatusBadRequest, class: diag.Usage, msg: err.Error()}
 	}
@@ -456,6 +472,7 @@ func (s *Server) createRepo(w http.ResponseWriter, r *http.Request) {
 	spec := RepoSpec{Name: body.Name, Forge: body.Forge, Project: body.Project, Path: body.Path, Prefix: body.Prefix}
 	rp, c, rerr := s.addRepo(ctx, spec, control.FromAPI, req.principal.key(), e)
 	if rerr != nil {
+		rerr.retry(w)
 		s.refuse(w, r, FormatRepo, rerr.class, rerr.status, "%s", rerr.msg)
 		return
 	}

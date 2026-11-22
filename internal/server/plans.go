@@ -53,6 +53,7 @@ func (s *Server) createPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	in, rerr := s.planSource(r.Context(), p, body.Source, stack)
 	if rerr != nil {
+		rerr.retry(w)
 		s.refuse(w, r, FormatRemotePlan, rerr.class, rerr.status, "%s", rerr.msg)
 		return
 	}
