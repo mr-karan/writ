@@ -68,7 +68,7 @@ In the repository, open **Settings > Webhooks > Add webhook** and configure:
 | SSL verification | Enabled |
 | Events | **Just the push event** |
 
-`writ serve` verifies `X-Hub-Signature-256`: `sha256=` and the hex HMAC-SHA256 of the raw body under the secret, compared in constant time. A missing signature is check `hook-no-signature`, a wrong one `hook-signature`; `X-Hub-Signature` (SHA-1) is ignored. `X-GitHub-Event: push` queues a read, and GitHub's `ping`, sent when the webhook is made, answers `200` and reads nothing. A delivery sent again with the same `X-GitHub-Delivery` answers `200` with `duplicate: true`. GitHub signs no timestamp, so a captured delivery with a new delivery ID passes verification; it can only make `writ serve` read the head sooner, within the per-repository rate limit.
+`writ serve` verifies `X-Hub-Signature-256`: `sha256=` and the hex HMAC-SHA256 of the raw body under the secret, compared in constant time. A missing signature is check `hook-no-signature`, a wrong one `hook-signature`; `X-Hub-Signature` (SHA-1) is ignored. A delivery queues a read when `X-GitHub-Event` is `push` and its signed body is a push's (a JSON object with `ref` and `after`), so a captured `ping` sent again as a push reads nothing. GitHub's `ping`, sent when the webhook is made, answers `200` and reads nothing. A delivery sent again with the same `X-GitHub-Delivery` answers `200` with `duplicate: true`. GitHub signs no timestamp, so a captured delivery with a new delivery ID passes verification; it can only make `writ serve` read the head sooner, within the per-repository rate limit.
 
 On the webhook's **Recent Deliveries** tab, the ping shows `200` and a push `202`.
 

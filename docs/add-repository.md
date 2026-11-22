@@ -108,7 +108,7 @@ demo  /home/alice/demo  the root  main    42bf997f  1       2026-11-16T03:29:49Z
 | Commit refused for symlinks or a missing lock file | Remove symlinks under the repository path, and commit `.terraform.lock.hcl` in every stack directory. |
 | `404` adding a GitLab project | The project is missing on the forge, or the read token cannot see it (it needs Reporter and `read_api`). Check `FORGE/PROJECT` and the token's access. |
 | `404` adding a GitHub repository | The repository is missing, or the fine-grained token was not given access to it. GitHub answers 404 for both. |
-| `the forge limits the rate of calls until ...` | GitHub's rate limit. `writ serve` sends that forge no call before the time shown, then reads again at the next poll. |
+| `the forge limits the rate of calls until ...` | GitHub's rate limit, primary or secondary. `writ serve` sends that forge no call before the time shown, then reads again at the next poll. |
 
 ## Next steps
 
