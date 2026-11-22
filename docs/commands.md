@@ -67,6 +67,7 @@ Running `plan`, `apply`, `plans`, `runs`, or `audit` without `--remote` exits 2 
 | `--device`, `--browser`, `--issuer NAME` | `login` | Force device or PKCE browser flow, or choose among multiple `people` issuers. |
 | `--path DIR`, `--prefix PREFIX` | `repo add` | Subdirectory for stack discovery and prefix prepended to stack names. |
 | `--repo NAME`, `--envs a,b`, `--image IMAGE`, `--component PATH` | `ci gitlab` | Repository name and overrides for generated `.gitlab-ci.yml`. |
+| `--slot-wait DURATION` | `plan --remote` | Keep asking for up to `DURATION` (at most `1h`) while writ serve refuses the plan with 429 or 503 because its plan slots are busy, with backoff and jitter from 5s to 1m. Without it, a plan request is retried as every request is. |
 | `--repo NAME`, `--envs a,b`, `--writ-version V`, `--runs-on LABEL` | `ci github` | Repository name, environments, the Writ release the workflow installs (default: the CLI's version), and the runner label (default `ubuntu-24.04` at github.com; required for GitHub Enterprise Server). |
 | `--remote` | `plan`, `apply`, `approve`, `show`, `plans`, `runs`, `audit`, `state`, `whoami` | Target `writ serve` (`state` and `whoami` always target it). |
 | `--limit N` | `plans`, `runs`, `audit` (`--remote`) | Page size, 1 to 200 (default `50`). |

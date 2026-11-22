@@ -22,7 +22,9 @@ Run `writ ci github --repo NAME` to generate the workflow and the `writ serve` t
 | `--runs-on LABEL` | The runner label. Default `ubuntu-24.04` for a repository at github.com; required for GitHub Enterprise Server, whose runner labels are its administrators'. |
 | `--envs a,b` | Narrow the environments. |
 
-`strategy.max-parallel` is the server's `limits.plans_per_principal`, since every job of a run is one principal, its actor. `writ ci github` reads it from `GET /v1/config`, which shows the limits to an admin; for anyone else it writes the default, 4, and says so in a comment.
+`strategy.max-parallel` is the lesser of the server's `limits.plans` and `limits.plans_per_principal`, since every job of a run is one principal, its actor. `writ ci github` reads both from `GET /v1/config`, which shows the limits only to an admin; for anyone else it writes 1, with a comment to run it again as an admin.
+
+Each plan step passes `--slot-wait 15m`, and the job's `timeout-minutes` is 45. When writ serve refuses a plan with 429 or 503 because its plan slots are busy, as when two runs overlap, `writ plan --remote` asks again with exponential backoff and jitter, from 5 seconds to a minute, for up to 15 minutes, fetching a fresh ID token before each try. A refused plan spends no token. If the slots stay busy past the wait, the step prints writ serve's refusal and fails.
 
 ```
 $ writ ci github --repo web --writ-version v0.1.8 --runs-on self-hosted-linux
@@ -44,14 +46,15 @@ permissions:
 jobs:
   plan:
     # A pull request from a fork and Dependabot's runs get no ID token, so the job skips
-    # them; a skipped check does not block a pull request.
-    if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    # them, for any event that carries a pull request; the writ job below reports it.
+    if: github.actor != 'dependabot[bot]' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: "self-hosted-linux"
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
-      # writ serve's default limits.plans_per_principal is 4; set your server's value here.
-      max-parallel: 4
+      # writ ci github could not read writ serve's limits, which only an admin may: an admin
+      # who runs it again gets the lesser of limits.plans and limits.plans_per_principal.
+      max-parallel: 1
       matrix:
         include:
           - stack: "app"
@@ -71,13 +74,31 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Plan
         env:
-          WRIT_SERVER: "http://127.0.0.1:33009"
+          WRIT_SERVER: "http://127.0.0.1:46435"
           WRIT_REPO: "web"
           WRIT_STACK: ${{ matrix.stack }}
           WRIT_ENV: ${{ matrix.env }}
         # writ asks GitHub Actions for the job's ID token, whose audience is WRIT_SERVER;
-        # writ serve refuses a commit or a repository other than the token's.
-        run: writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA"
+        # writ serve refuses a commit or a repository other than the token's. While writ serve's
+        # plan slots are busy, as with overlapping runs, writ asks again for up to 15m.
+        run: writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA" --slot-wait 15m
+  writ:
+    # The one check to require. It passes when every plan passed, or when the plan job was
+    # skipped, as for a fork's or Dependabot's pull request, whose per-stack checks GitHub
+    # never makes; it fails when a plan failed or was cancelled.
+    needs: plan
+    if: always()
+    runs-on: "self-hosted-linux"
+    timeout-minutes: 5
+    steps:
+      - name: Check the plans
+        env:
+          RESULT: ${{ needs.plan.result }}
+        run: |
+          case "$RESULT" in
+            success|skipped) echo "writ plan: $RESULT" ;;
+            *) echo "writ plan: $RESULT" >&2; exit 1 ;;
+          esac
 
 # The writ serve config: the team and grant of this repository's workflow runs, by the
 # repository's id, 777001, which a renamed or moved repository keeps, and an approval rule.
@@ -102,23 +123,26 @@ approval {
 }
 # Grant approve and apply on these stacks to a team of a people issuer.
 
-# Repository settings of acme/web: protect main, and require the writ plan checks to pass.
-# max-parallel is writ serve's default plans_per_principal: an admin's run of writ ci github reads the server's own.
+# Repository settings of acme/web: protect main, and require the one check named writ, not
+# the per-stack plan checks.
+# max-parallel is 1: an admin who runs writ ci github again gets writ serve's own limit.
 ```
 
-Output of a real run against a local test `writ serve` on loopback, with a GitHub Enterprise Server stand-in, 2026-11-22. It shows the shape only: the `http://127.0.0.1:33009` server URL, the runner label, and the repository ID are the test's. Run the command against your own control plane and copy what it prints.
+Output of a real run against a local test `writ serve` on loopback, with a GitHub Enterprise Server stand-in, 2026-11-22. It shows the shape only: the `http://127.0.0.1:46435` server URL, the runner label, and the repository ID are the test's. Run the command against your own control plane and copy what it prints.
 
 1. Save the YAML it printed as `.github/workflows/writ-plan.yml`.
 2. Add the HCL blocks it printed to `/etc/writ/serve`, with a grant of `approve` and `apply` for a team of people, and restart `writ serve`.
-3. Protect the default branch and require the `writ plan` checks to pass.
+3. Protect the default branch and require the one check named `writ`, not the per-stack `plan` checks.
 
 The workflow uses no third-party action, so it has none to pin by commit SHA. `install.sh` checks the release's minisign signature and SHA-256 before it installs `writ`. The install step needs `minisign`; on a runner without it, the step installs it with `sudo apt-get`, so a runner without `minisign` must be Ubuntu or Debian with `sudo`. Matrix values reach the shell through `env`, never through an expression in `run`.
 
 ## Pull requests from forks and Dependabot
 
-The plan job skips a pull request whose head is in a fork, and every run started by `dependabot[bot]`. GitHub gives neither an ID token, so the plan could only fail. A skipped job reports a skipped check, which does not block the pull request, so a required `writ plan` check does not hold a fork's pull request back; review it, and plan it from a branch of the repository if it should be applied.
+The plan job skips a pull request whose head is in a fork, and every run started by `dependabot[bot]`. GitHub gives neither an ID token, so the plan could only fail. The gate keys on `github.event.pull_request`, so it holds for any event that carries a pull request, and the plan job runs as usual if you add `workflow_dispatch` or `merge_group`.
 
-`writ serve` refuses such a plan too. For a token whose ref is `refs/pull/N/merge` or `refs/pull/N/head`, it reads pull request `N` through the forge's read token and plans only when the pull request's head repository is the token's `repository_id`. Any error reading it refuses the plan.
+GitHub evaluates a job's `if` before it expands its matrix, so a skipped plan job makes none of its per-stack checks, and a required per-stack check would stay pending. The `writ` job, with `needs: plan` and `if: always()`, is the one check to require: it passes when the plan job succeeded or was skipped, and fails when it failed or was cancelled. A fork's pull request then passes `writ` without a plan; review it, and plan it from a branch of the repository if it should be applied.
+
+`writ serve` refuses a token whose signed `event_name` is `pull_request_target`, which runs with the repository's permissions for a pull request that may come from a fork; plan on `pull_request` or `push`. It refuses a fork's plan too. For a token whose ref is `refs/pull/N/merge` or `refs/pull/N/head`, it reads pull request `N` through the forge's read token and plans only when the pull request's head repository is the token's `repository_id`. Any error reading it refuses the plan.
 
 ## How a job gets its token
 
@@ -142,6 +166,8 @@ Writ applies the approved plan whose sources equal that commit's. See [Apply aft
 - **`GitHub Actions ... answered 403 to the ID token request`**: The job lacks `id-token: write`. GitHub gives no ID token to a pull request from a fork.
 - **`401 auth: audience: aud is not writ serve's URL`**: Set `WRIT_SERVER` to `url` in `/etc/writ/serve` exactly (same scheme, no trailing slash).
 - **`403 denied: project OWNER/REPO (id N) is not a repository of this control plane`**: The job's repository is not registered at a `github` forge whose `url` matches the token's issuer.
+- **`a job of a pull_request_target event may not plan`**: Trigger the workflow on `pull_request`, not `pull_request_target`.
+- **`still refused the plan with 429 after waiting 15m0s for a plan slot`**: Plans held writ serve's slots for the whole wait. Lower `max-parallel`, raise `limits.plans_per_principal`, or run again.
 - **`pull request N of repository NAME comes from another repository`**: The pull request's head is in a fork. Writ plans only a pull request whose head is in the repository itself.
 - **`--runs-on LABEL`**: The repository is at a GitHub Enterprise Server. Name the label of a Linux runner.
 - **`issuer URL is not the CI issuer of a forge this control plane knows`**: The `github-actions` issuer's `url` is neither github.com's nor `https://HOST/_services/token`.
