@@ -9,9 +9,10 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
+
+	"github.com/mr-karan/writ/internal/oidc"
 )
 
 // The variables GitHub Actions sets in a job whose permissions include
@@ -87,16 +88,12 @@ func (a *App) actionsToken(ctx context.Context, audience string) (tok string, ok
 	tok = strings.TrimSpace(doc.Value)
 	// The request token must never reach writ serve, and only a compact
 	// JWT is an ID token: an endpoint that answers with anything else is
-	// not GitHub Actions'.
-	if tok == bearer || !jwtRE.MatchString(tok) {
+	// not GitHub Actions'. writ serve checks the signature.
+	if tok == bearer || oidc.Screen(tok) != nil {
 		return "", true, fmt.Errorf("GitHub Actions at %s answered the ID token request with a value that is not an ID token, so writ sends it nowhere", where)
 	}
 	return tok, true, nil
 }
-
-// jwtRE is a compact JWT: three base64url segments, the last of which, a
-// signature, is never empty.
-var jwtRE = regexp.MustCompile(`^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$`)
 
 func loopbackHost(host string) bool {
 	ip := net.ParseIP(host)

@@ -110,6 +110,16 @@ func screen(raw string) (*screened, *Refusal) {
 	return &screened{claims: claims}, nil
 }
 
+// Screen checks a token's shape and header as Verify does first, with no
+// key and no signature check: a compact JWS of three base64url parts, a
+// JSON header with alg RS256 or ES256 and a kid, and a JSON payload. A
+// client checks a token it was handed with it before it sends it on; only
+// writ serve checks the signature.
+func Screen(raw string) *Refusal {
+	_, r := screen(raw)
+	return r
+}
+
 // stringField reads a required string member of a decoded object, and
 // returns 0, ReasonMissing, or ReasonNotString.
 func stringField(obj map[string]json.RawMessage, f Field, out *string) Reason {

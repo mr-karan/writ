@@ -23,8 +23,10 @@ type actionsEndpoint struct {
 }
 
 const (
-	actionsBearer  = "actions-request-token-0123456789"
-	actionsIDToken = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvOmFjbWUvd2ViIn0.c2lnbmF0dXJl"
+	actionsBearer = "actions-request-token-0123456789"
+	// actionsIDToken has a header of alg RS256 and kid k1, a payload, and
+	// a signature writ serve would check.
+	actionsIDToken = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIn0.eyJzdWIiOiJyZXBvOmFjbWUvd2ViIn0.c2lnbmF0dXJl"
 )
 
 func newActionsEndpoint(t *testing.T) *actionsEndpoint {
@@ -102,6 +104,10 @@ func TestActionsTokenRefusals(t *testing.T) {
 		{"the request token sent back", func(e *actionsEndpoint, _ map[string]string) { e.body = `{"value":"` + actionsBearer + `"}` }, "with a value that is not an ID token", false},
 		{"not a compact JWT", func(e *actionsEndpoint, _ map[string]string) { e.body = `{"value":"eyJ.only-two"}` }, "with a value that is not an ID token", false},
 		{"a JWT with no signature", func(e *actionsEndpoint, _ map[string]string) { e.body = `{"value":"eyJ.eyJ."}` }, "with a value that is not an ID token", false},
+		{"three parts that are not a JWT", func(e *actionsEndpoint, _ map[string]string) { e.body = `{"value":"a.b.c"}` }, "with a value that is not an ID token", false},
+		{"a header with no alg", func(e *actionsEndpoint, _ map[string]string) {
+			e.body = `{"value":"eyJraWQiOiJrMSJ9.eyJzdWIiOiJ4In0.c2ln"}`
+		}, "with a value that is not an ID token", false},
 		{"not JSON", func(e *actionsEndpoint, _ map[string]string) { e.body = "<html>ACTIONS-INTERNAL</html>" }, "with no token", false},
 		{"only the URL", func(_ *actionsEndpoint, env map[string]string) { delete(env, actionsRequestToken) }, "set only one of", true},
 		{"plain http off loopback", func(_ *actionsEndpoint, env map[string]string) {
