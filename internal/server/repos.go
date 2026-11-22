@@ -45,7 +45,7 @@ type forgeClient struct {
 func (s *Server) initForges() error {
 	s.forges = map[string]forgeClient{}
 	for _, f := range s.cfg.Forges {
-		c, err := forge.NewGitLab(forge.GitLabOptions{URL: f.URL, TokenFile: f.ReadTokenFile, CAFile: f.CAFile})
+		c, err := forgeKinds[f.Kind].client(f)
 		if err != nil {
 			return fmt.Errorf("forge %s: %w", f.Name, err)
 		}

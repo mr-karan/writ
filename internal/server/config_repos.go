@@ -74,14 +74,13 @@ func (d *decoder) forges(bs []*hclsyntax.Block, cfg *Config) {
 		}
 		r := d.attrs(blk, "forge "+name, "kind", "url", "read_token_file", "ca_file", "app_id", "key_file", "write_token_file")
 		fg := Forge{Name: name}
+		var fk forgeKind
 		if k, ok := r["kind"]; ok {
-			switch kind := d.str(k.value, "kind"); kind {
-			case "gitlab":
-				fg.Kind = control.GitLab
-			case "github":
-				d.errorf(k.value, "forge %s: kind github is not built yet; the GitHub App waits for stage 9 of the client-server design", name)
-			default:
-				d.errorf(k.value, "forge %s: kind %q is not gitlab", name, kind)
+			kind := d.str(k.value, "kind")
+			if fk, ok = forgeKinds[control.RepoKind(kind)]; ok {
+				fg.Kind = control.RepoKind(kind)
+			} else {
+				d.errorf(k.value, "forge %s: kind %q is not gitlab or github", name, kind)
 			}
 		} else {
 			d.errorf(blk, "forge %s needs kind", name)
@@ -94,13 +93,17 @@ func (d *decoder) forges(bs []*hclsyntax.Block, cfg *Config) {
 			if !ok {
 				d.errorf(u.value, "forge %s: url must be https://HOST, or http:// on a loopback address, got %q", name, fg.URL)
 			}
+		} else if fk.defaultURL != "" {
+			fg.URL = fk.defaultURL
 		} else {
 			d.errorf(blk, "forge %s needs url", name)
 		}
 		if t, ok := r["read_token_file"]; ok {
 			fg.ReadTokenFile = d.path(t.value, "read_token_file")
+		} else if fk.tokenNeeds != "" {
+			d.errorf(blk, "forge %s needs read_token_file, the file that holds a read-only token: %s", name, fk.tokenNeeds)
 		} else {
-			d.errorf(blk, "forge %s needs read_token_file, the file that holds a read-only token with read_api", name)
+			d.errorf(blk, "forge %s needs read_token_file, the file that holds a read-only token", name)
 		}
 		if c, ok := r["ca_file"]; ok {
 			fg.CAFile = d.path(c.value, "ca_file")
@@ -111,7 +114,7 @@ func (d *decoder) forges(bs []*hclsyntax.Block, cfg *Config) {
 		}
 		for _, k := range []string{"app_id", "key_file"} {
 			if x, ok := r[k]; ok {
-				d.errorf(x.key, "forge %s: %s is for kind github, which is not built yet", name, k)
+				d.errorf(x.key, "forge %s: %s is for a GitHub App, which is not built yet; a github forge reads with read_token_file", name, k)
 			}
 		}
 		cfg.Forges = append(cfg.Forges, fg)
