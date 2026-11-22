@@ -44,8 +44,8 @@ func (a *App) postPlan(ctx context.Context, r *remote, body []byte, wait time.Du
 			return 0, nil, ctx.Err()
 		}
 		backoff = min(backoff*2, slotBackoffMax, max(wait/2, backoff))
-		if r.tokenFrom == tokenActions {
-			tok, _, err := a.actionsToken(ctx, r.base)
+		if r.refresh != nil {
+			tok, err := r.refresh(ctx)
 			if err != nil {
 				return 0, nil, err
 			}

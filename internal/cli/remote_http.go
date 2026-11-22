@@ -37,6 +37,10 @@ type remote struct {
 	http *http.Client
 	// seen takes writ serve's version from each answer that names it.
 	seen func(version string)
+	// refresh asks for a new token where the token came from GitHub
+	// Actions, whose ID tokens expire while a long plan runs; nil
+	// otherwise.
+	refresh func(ctx context.Context) (string, error)
 }
 
 // Where a remote command's token came from.
@@ -98,6 +102,10 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 			return nil, err
 		}
 		r.token, r.tokenFrom = tok, tokenActions
+		r.refresh = func(ctx context.Context) (string, error) {
+			tok, _, err := a.actionsToken(ctx, base)
+			return tok, err
+		}
 		return r, nil
 	}
 	_, doc, err := a.readSessions()
@@ -163,6 +171,16 @@ func (r *remote) call(ctx context.Context, method, path string, body []byte, tim
 			}
 		}
 		status, b, err := r.once(ctx, method, path, body, timeout, nil)
+		if err == nil && status == http.StatusUnauthorized && method == http.MethodGet && r.refresh != nil {
+			// The Actions token may have expired since it was fetched:
+			// fetch another and read once more. A write is never resent.
+			tok, rerr := r.refresh(ctx)
+			if rerr != nil {
+				return 0, nil, rerr
+			}
+			r.token = tok
+			status, b, err = r.once(ctx, method, path, body, timeout, nil)
+		}
 		_, redirected := errors.AsType[*redirectError](err)
 		switch {
 		case err != nil && method == http.MethodGet && ctx.Err() == nil && !redirected:

@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +22,13 @@ type actionsEndpoint struct {
 	audiences []string
 	status    int
 	body      string
+	// vary, when set, makes each answer a new token, numbered from 1.
+	vary bool
+}
+
+// numberedToken is the nth token a varying endpoint hands out.
+func numberedToken(n int) string {
+	return "eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIn0." + base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"n":%d}`, n))) + ".c2lnbmF0dXJl"
 }
 
 const (
@@ -41,6 +50,10 @@ func newActionsEndpoint(t *testing.T) *actionsEndpoint {
 		}
 		e.audiences = append(e.audiences, r.URL.Query().Get("audience"))
 		w.WriteHeader(e.status)
+		if e.vary {
+			_, _ = fmt.Fprintf(w, `{"count":1,"value":%q}`, numberedToken(len(e.audiences)))
+			return
+		}
 		_, _ = w.Write([]byte(e.body))
 	}))
 	t.Cleanup(e.Close)
@@ -150,5 +163,51 @@ func TestActionsTokenRefusals(t *testing.T) {
 	_, err = precedenceApp(t, t.TempDir(), writ.URL, map[string]string{actionsTokenURL: slow.URL + "/?api-version=2.0", actionsRequestToken: actionsBearer}).remote(ctx)
 	if err == nil || strings.Contains(err.Error(), "api-version") {
 		t.Fatalf("a slow endpoint: %v", err)
+	}
+}
+
+// TestActionsTokenRefreshedMidPoll checks that a plan that outlives its
+// Actions token is still followed: writ serve refuses the first token
+// with 401 after a poll, as when it expired, and writ asks Actions for a
+// new token and reads the plan with it. The plan request is sent once.
+func TestActionsTokenRefreshedMidPoll(t *testing.T) {
+	actions := newActionsEndpoint(t)
+	actions.vary = true
+	var mu sync.Mutex
+	var posts, gets []string
+	writ := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		tok := r.Header.Get("Authorization")
+		switch {
+		case r.Method == http.MethodPost:
+			posts = append(posts, tok)
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"format":"writ.remote-plan/v0","ok":true,"plan":{"ref":"REF","status":"planning"},"diagnostics":[]}`))
+		case tok == "Bearer "+numberedToken(1) && len(gets) > 0:
+			gets = append(gets, tok)
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"format":"writ.remote-plan/v0","ok":false,"diagnostics":[{"severity":"error","class":"auth","message":"exp: the token expired"}]}`))
+		case len(gets) == 0:
+			gets = append(gets, tok)
+			_, _ = w.Write([]byte(`{"format":"writ.remote-plan/v0","ok":true,"plan":{"ref":"REF","status":"planning"},"diagnostics":[]}`))
+		default:
+			gets = append(gets, tok)
+			_, _ = w.Write([]byte(`{"format":"writ.remote-plan/v0","ok":true,"plan":{"ref":"REF","id":"0123","status":"pending"},"diagnostics":[]}`))
+		}
+	}))
+	defer writ.Close()
+	env := actions.env()
+	env["WRIT_ENV"] = "prod"
+	a := precedenceApp(t, t.TempDir(), writ.URL, env)
+	_, doc, err := a.sendRemotePlan(context.Background(), RemotePlanOptions{RemoteOptions: RemoteOptions{Stack: "app"}, Repo: "web", Commit: strings.Repeat("a", 40), JSON: true})
+	if err != nil || !strings.Contains(string(doc), `"status":"pending"`) {
+		t.Fatalf("got %s, %v", doc, err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(posts) != 1 || len(gets) != 3 || gets[2] != "Bearer "+numberedToken(2) {
+		t.Fatalf("plan requests %d, reads %v", len(posts), gets)
 	}
 }
