@@ -102,6 +102,8 @@ func (e *Error) Error() string {
 		msg += "; the token needs " + e.Need
 	case e.Status == 404:
 		msg += "; it has no such thing, or the token may not see it"
+	case e.Status == 429:
+		msg += "; it is limiting the rate of calls, so writ serve tries again at the next poll"
 	case e.Status >= 500:
 		msg += "; the forge failed"
 	}
@@ -115,9 +117,9 @@ func (e *Error) Unwrap() error {
 	return nil
 }
 
-// RateLimitError is a forge that limits the rate of calls until Until.
-// The client sends it no call before then: Status is the answer that
-// said so, or 0 for a call the client held back.
+// RateLimitError is a GitHub forge that limits the rate of calls until
+// Until. The client sends it no call before then: Status is the answer
+// that said so, or 0 for a call the client held back.
 type RateLimitError struct {
 	What   string
 	Status int

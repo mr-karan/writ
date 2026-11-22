@@ -20,8 +20,8 @@ import (
 
 // rest is the HTTP side of a forge's REST API: the read token, bounded
 // GETs, and the checks that keep the token out of every error and answer.
-// GitLab and GitHub differ only in the header that carries the token and
-// in what a 403 says the token needs.
+// GitLab and GitHub differ in the header that carries the token, in what
+// a 403 says the token needs, and in whether a rate limit holds calls back.
 type rest struct {
 	api       string
 	tokenFile string
@@ -30,6 +30,9 @@ type rest struct {
 	auth func(h http.Header, tok string)
 	// need is what the token needs, which a 403 names.
 	need string
+	// limitOf reads when a rate limit an answer reports ends, and nil
+	// means the forge's rate limits fail only the call that met them.
+	limitOf func(resp *http.Response, now time.Time) (time.Time, bool)
 
 	mu sync.Mutex
 	// limitedUntil is when the forge's last rate limit ends. No call goes
@@ -143,10 +146,12 @@ func (r *rest) get(ctx context.Context, tok, what, p string, q url.Values, accep
 		return nil, nil, fmt.Errorf("%s: %w", what, err)
 	}
 	defer resp.Body.Close()
-	if until, ok := limitOf(resp, time.Now()); ok {
-		r.limit(until)
-		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
-			return nil, nil, &RateLimitError{What: what, Status: resp.StatusCode, Until: until}
+	if r.limitOf != nil {
+		if until, ok := r.limitOf(resp, time.Now()); ok {
+			r.limit(until)
+			if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+				return nil, nil, &RateLimitError{What: what, Status: resp.StatusCode, Until: until}
+			}
 		}
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -183,12 +188,19 @@ func (r *rest) getJSON(ctx context.Context, tok, what, p string, q url.Values, m
 	return h, nil
 }
 
-// limitOf reads when a rate limit an answer reports ends: after
-// Retry-After seconds on a 403 or 429, or at X-RateLimit-Reset when
-// X-RateLimit-Remaining is 0 on any answer, as GitHub reports both. A 429
-// with neither header holds calls back for a minute. The wait is at least
-// a second and at most maxLimitWait.
-func limitOf(resp *http.Response, now time.Time) (time.Time, bool) {
+// secondaryLimitRead bounds what githubLimit reads of a 403's body to
+// tell a secondary rate limit from a refusal of the token.
+const secondaryLimitRead = 4 << 10
+
+// githubLimit reads when a rate limit a GitHub answer reports ends, as
+// GitHub's documentation of rate limits gives them: after Retry-After
+// seconds on a 403 or 429, or at X-RateLimit-Reset when
+// X-RateLimit-Remaining is 0 on any answer. A 403 whose body says it is a
+// secondary rate limit, and a 429, with neither header hold calls back for
+// a minute. The body is read only for that, bounded, and discarded: its
+// text never reaches an error. The wait is at least a second and at most
+// maxLimitWait.
+func githubLimit(resp *http.Response, now time.Time) (time.Time, bool) {
 	limiting := resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests
 	var until time.Time
 	if s, err := strconv.ParseInt(resp.Header.Get("Retry-After"), 10, 64); err == nil && s >= 0 && limiting {
@@ -196,6 +208,12 @@ func limitOf(resp *http.Response, now time.Time) (time.Time, bool) {
 	} else if resp.Header.Get("X-RateLimit-Remaining") == "0" {
 		if reset, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
 			until = time.Unix(reset, 0)
+		}
+	}
+	if until.IsZero() && resp.StatusCode == http.StatusForbidden {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, secondaryLimitRead))
+		if bytes.Contains(bytes.ToLower(b), []byte("secondary rate limit")) {
+			until = now.Add(time.Minute)
 		}
 	}
 	if until.IsZero() && resp.StatusCode == http.StatusTooManyRequests {

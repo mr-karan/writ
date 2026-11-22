@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -47,6 +48,11 @@ func GitHubAPI(u string) (string, error) {
 	if err != nil || pu.Host == "" || pu.User != nil || pu.RawQuery != "" || pu.Fragment != "" || strings.Trim(pu.Path, "/") != "" {
 		return "", fmt.Errorf("forge URL %q is not a URL of a host, such as https://github.com", trunc(u))
 	}
+	// The token goes to this host, so only HTTPS, or HTTP to a loopback
+	// address, as a test's stand-in serves it.
+	if pu.Scheme != "https" && !(pu.Scheme == "http" && loopback(pu.Hostname())) {
+		return "", fmt.Errorf("forge URL %q must be https://, or http:// on a loopback address", trunc(u))
+	}
 	if pu.Scheme == "https" && strings.EqualFold(pu.Host, "github.com") {
 		return "https://api.github.com", nil
 	}
@@ -69,7 +75,8 @@ func NewGitHub(o GitHubOptions) (*GitHub, error) {
 			h.Set("X-GitHub-Api-Version", githubAPIVersion)
 			h.Set("User-Agent", "writ")
 		},
-		need: "Contents: read and Metadata: read on the repository",
+		need:    "Contents: read and Metadata: read on the repository",
+		limitOf: githubLimit,
 	}}, nil
 }
 
@@ -77,6 +84,11 @@ func NewGitHub(o GitHubOptions) (*GitHub, error) {
 var githubRepoRE = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
 
 var githubIDRE = regexp.MustCompile(`^[1-9][0-9]{0,18}$`)
+
+func loopback(host string) bool {
+	ip := net.ParseIP(host)
+	return host == "localhost" || ip != nil && ip.IsLoopback()
+}
 
 func repoPath(id string) string { return "/repositories/" + url.PathEscape(id) }
 

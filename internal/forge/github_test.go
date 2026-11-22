@@ -29,15 +29,18 @@ func TestGitHubAPI(t *testing.T) {
 		{"https://ghe.example.com", "https://ghe.example.com/api/v3"},
 		{"https://ghe.example.com:8443", "https://ghe.example.com:8443/api/v3"},
 		{"http://127.0.0.1:9000", "http://127.0.0.1:9000/api/v3"},
-		// Only https://github.com is github.com's API: another scheme or
-		// port is a server of its own.
-		{"http://github.com", "http://github.com/api/v3"},
+		{"http://localhost:9000", "http://localhost:9000/api/v3"},
+		// Only https://github.com is github.com's API: another port is a
+		// server of its own.
+		{"https://github.com:8443", "https://github.com:8443/api/v3"},
 	} {
 		if got, err := forge.GitHubAPI(tc.in); err != nil || got != tc.want {
 			t.Errorf("GitHubAPI(%q) = %q, %v; want %q", tc.in, got, err, tc.want)
 		}
 	}
-	for _, bad := range []string{"", "github.com", "https://github.com/acme", "https://@github.com", "https://github.com?x=1"} {
+	for _, bad := range []string{"", "github.com", "https://github.com/acme", "https://@github.com", "https://github.com?x=1",
+		// The token goes to the host: plain HTTP only on loopback.
+		"http://github.com", "http://ghe.example.com", "ftp://ghe.example.com"} {
 		if got, err := forge.GitHubAPI(bad); err == nil {
 			t.Errorf("GitHubAPI(%q) = %q", bad, got)
 		}
@@ -237,13 +240,15 @@ func TestGitHubRateLimit(t *testing.T) {
 		name   string
 		status int
 		hdr    map[string]string
+		body   string
 		until  time.Duration
 	}{
-		{"a primary limit", 403, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": strconv.FormatInt(reset, 10)}, 90 * time.Second},
-		{"a secondary limit", 403, map[string]string{"Retry-After": "30"}, 30 * time.Second},
-		{"a 429 with retry-after", 429, map[string]string{"Retry-After": "45"}, 45 * time.Second},
-		{"a 429 with neither", 429, nil, time.Minute},
-		{"a reset far off is held to an hour", 403, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": strconv.FormatInt(time.Now().Add(48*time.Hour).Unix(), 10)}, time.Hour},
+		{"a primary limit", 403, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": strconv.FormatInt(reset, 10)}, "", 90 * time.Second},
+		{"a secondary limit", 403, map[string]string{"Retry-After": "30"}, "", 30 * time.Second},
+		{"a 429 with retry-after", 429, map[string]string{"Retry-After": "45"}, "", 45 * time.Second},
+		{"a 429 with neither", 429, nil, "", time.Minute},
+		{"a secondary limit with no header", 403, nil, `{"message":"You have exceeded a secondary rate limit. Please wait a few minutes before you try again."}`, time.Minute},
+		{"a reset far off is held to an hour", 403, map[string]string{"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": strconv.FormatInt(time.Now().Add(48*time.Hour).Unix(), 10)}, "", time.Hour},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls atomic.Int32
@@ -253,11 +258,15 @@ func TestGitHubRateLimit(t *testing.T) {
 					w.Header().Set(k, v)
 				}
 				w.WriteHeader(tc.status)
-				_, _ = io.WriteString(w, `{"message":"API rate limit exceeded for `+ghToken+`"}`)
+				body := tc.body
+				if body == "" {
+					body = `{"message":"API rate limit exceeded for ` + ghToken + `"}`
+				}
+				_, _ = io.WriteString(w, body)
 			})
 			_, err := c.Head(ctx, "4242", "main")
 			rl, ok := errors.AsType[*forge.RateLimitError](err)
-			if !ok || rl.Status != tc.status || !strings.Contains(err.Error(), "limits the rate of calls until") || strings.Contains(err.Error(), "exceeded") {
+			if !ok || rl.Status != tc.status || !strings.Contains(err.Error(), "limits the rate of calls until") || strings.Contains(err.Error(), "exceeded") || strings.Contains(err.Error(), "the token needs") {
 				t.Fatalf("got %v", err)
 			}
 			if d := time.Until(rl.Until); d < tc.until-5*time.Second || d > tc.until+time.Second {
