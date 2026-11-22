@@ -128,6 +128,8 @@ grant {
 		{"a ref that is not full", map[string]any{"sha": branch, "ref": "add-subnet-d"}, nil, 400, "is not a full ref"},
 		{"a pull request from a fork", map[string]any{"sha": fork, "ref": "refs/pull/9/merge", "event_name": "pull_request"}, nil, 403, "pull request 9 of repository web comes from another repository, id 888002, such as a fork"},
 		{"a pull request the forge cannot show", map[string]any{"sha": unknown, "ref": "refs/pull/10/merge", "event_name": "pull_request"}, nil, 404, "writ serve could not check that pull request 10 of repository web comes from the repository itself, so it refuses the plan"},
+		{"a pull_request_target job", map[string]any{"sha": branch, "ref": "refs/heads/add-subnet-d", "event_name": "pull_request_target"}, nil, 403, "a job of a pull_request_target event may not plan"},
+		{"a pull request number over int64", map[string]any{"sha": merge, "ref": "refs/pull/9999999999999999999/merge", "event_name": "pull_request"}, nil, 400, "names pull request 9999999999999999999, which is not a pull request's number"},
 		{"a pull ref of another shape", map[string]any{"sha": merge, "ref": "refs/pull/42/evil", "event_name": "pull_request"}, nil, 403, "is not a pull request's merge or head ref"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

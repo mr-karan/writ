@@ -50,6 +50,9 @@ type ciJob struct {
 	// its path, for messages only.
 	projectID, project string
 	sha, ref           string
+	// event is the event that started the job, such as pull_request, ""
+	// for a kind whose tokens name none.
+	event string
 }
 
 var forgeKinds = map[control.RepoKind]forgeKind{
@@ -81,10 +84,10 @@ var forgeKinds = map[control.RepoKind]forgeKind{
 		ci:   oidc.GitHubActions,
 		job: func(tok *oidc.Token) ciJob {
 			c := claimsOf(tok)
-			return ciJob{forgeURL: githubForgeOf(issuerURL(tok)), projectID: c("repository_id"), project: c("repository"), sha: c("sha"), ref: c("ref")}
+			return ciJob{forgeURL: githubForgeOf(issuerURL(tok)), projectID: c("repository_id"), project: c("repository"), sha: c("sha"), ref: c("ref"), event: c("event_name")}
 		},
 		forkNote: "; GitHub gives no ID token to a pull request from a fork",
-		checkJob: checkGitHubPull,
+		checkJob: checkGitHubJob,
 	},
 }
 
@@ -92,11 +95,16 @@ var forgeKinds = map[control.RepoKind]forgeKind{
 // refs/pull/N/head, as a GitHub Actions job of a pull_request event names.
 var pullRefRE = regexp.MustCompile(`^refs/pull/([1-9][0-9]{0,18})/(merge|head)$`)
 
-// checkGitHubPull refuses a job of a pull request whose head is in another
-// repository than the job's, such as a fork. GitHub gives no ID token to
-// a fork's pull_request run, so this is a second line: it holds should a
-// workflow run a fork's code with a token, as pull_request_target can.
-func checkGitHubPull(ctx context.Context, c forge.Client, repo control.Repo, job ciJob) *repoError {
+// checkGitHubJob refuses a job no fork may start: one of a
+// pull_request_target event, which runs with the base repository's
+// permissions on a fork's pull request, and one of a pull request whose
+// head is in another repository than the job's, such as a fork. GitHub
+// gives no ID token to a fork's pull_request run, so the head check is a
+// second line, should a fork's pull request reach a token another way.
+func checkGitHubJob(ctx context.Context, c forge.Client, repo control.Repo, job ciJob) *repoError {
+	if job.event == "pull_request_target" {
+		return &repoError{status: http.StatusForbidden, class: diag.Denied, msg: "a job of a pull_request_target event may not plan: it runs with the repository's permissions for a pull request that may come from a fork; plan on pull_request or push"}
+	}
 	if !strings.HasPrefix(job.ref, "refs/pull/") {
 		return nil
 	}
@@ -104,11 +112,14 @@ func checkGitHubPull(ctx context.Context, c forge.Client, repo control.Repo, job
 	if m == nil {
 		return &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("the token's ref %s is not a pull request's merge or head ref, so writ serve cannot check where the pull request comes from", trunc(job.ref))}
 	}
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
+		return refusedRepo(http.StatusBadRequest, "the token's ref %s names pull request %s, which is not a pull request's number", trunc(job.ref), trunc(m[1]))
+	}
 	gh, ok := c.(*forge.GitHub)
 	if !ok {
 		return &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("repository %s is not read through GitHub's API, so writ serve cannot check where pull request %s comes from", repo.Name, m[1])}
 	}
-	n, _ := strconv.ParseInt(m[1], 10, 64)
 	head, err := gh.PullHeadRepo(ctx, repo.ProjectID, n)
 	if err != nil {
 		rerr := forgeRefusal(err)
