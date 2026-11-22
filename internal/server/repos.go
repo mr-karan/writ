@@ -73,6 +73,10 @@ func (s *Server) clientOf(r control.Repo) (forge.Client, error) {
 	if f.cfg.URL != r.ForgeURL {
 		return nil, fmt.Errorf("forge %s is now %s, and repository %s was added at %s; add the repository again", r.Forge, f.cfg.URL, r.Name, r.ForgeURL)
 	}
+	// A project id is a forge kind's own: GitLab's 4242 is not GitHub's.
+	if f.cfg.Kind != r.Kind {
+		return nil, fmt.Errorf("forge %s is now of kind %s, and repository %s was added at a forge of kind %s; add the repository again", r.Forge, f.cfg.Kind, r.Name, r.Kind)
+	}
 	return f.client, nil
 }
 
@@ -708,7 +712,7 @@ func (s *Server) sameSpec(r control.Repo, spec RepoSpec) bool {
 		return r.Kind == control.Dir
 	}
 	f, err := findForge(s.cfg.Forges, spec.Forge)
-	return err == nil && f.Name == r.Forge && f.URL == r.ForgeURL
+	return err == nil && f.Name == r.Forge && f.Kind == r.Kind && f.URL == r.ForgeURL
 }
 
 // stackDir is the directory of a stack in its repository, from its name.
