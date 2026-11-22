@@ -25,6 +25,9 @@ type forgeKind struct {
 	// one of them names.
 	ci  oidc.Kind
 	job func(tok *oidc.Token) ciJob
+	// forkNote ends the refusal of a CI job whose repository is none of
+	// this control plane's.
+	forkNote string
 }
 
 // ciJob is the repository and commit a CI job's token names.
@@ -55,6 +58,7 @@ var forgeKinds = map[control.RepoKind]forgeKind{
 			// A GitLab instance issues its CI jobs' tokens at its own URL.
 			return ciJob{forgeURL: issuerURL(tok), projectID: c("project_id"), project: c("project_path"), sha: c("sha"), ref: ref}
 		},
+		forkNote: "; a merge request from a fork runs in the fork's project, whose id matches no repository",
 	},
 	control.GitHub: {
 		defaultURL: forge.GitHubURL,
@@ -68,6 +72,7 @@ var forgeKinds = map[control.RepoKind]forgeKind{
 			c := claimsOf(tok)
 			return ciJob{forgeURL: githubForgeOf(issuerURL(tok)), projectID: c("repository_id"), project: c("repository"), sha: c("sha"), ref: c("ref")}
 		},
+		forkNote: "; GitHub gives no ID token to a pull request from a fork",
 	},
 }
 

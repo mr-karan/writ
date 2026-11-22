@@ -98,9 +98,15 @@ func (g *GitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"clone_url": g.URL + "/" + p.path + ".git", "visibility": "private", "archived": false,
 		})
 	case len(rest) >= 3 && rest[0] == "git" && rest[1] == "ref":
+		// A branch is kept by its name, and any other ref, such as a pull
+		// request's refs/pull/42/merge, by its full name.
 		ref, _ := url.PathUnescape(strings.Join(rest[2:], "/"))
-		sha, ok := p.branches[strings.TrimPrefix(ref, "heads/")]
-		if !ok || !strings.HasPrefix(ref, "heads/") {
+		key, isBranch := strings.CutPrefix(ref, "heads/")
+		if !isBranch {
+			key = "refs/" + ref
+		}
+		sha, ok := p.branches[key]
+		if !ok {
 			notFound()
 			return
 		}

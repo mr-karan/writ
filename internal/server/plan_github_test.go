@@ -1,0 +1,136 @@
+package server_test
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/mr-karan/writ/internal/forge/forgetest"
+	"github.com/mr-karan/writ/internal/oidc/oidctest"
+	"github.com/mr-karan/writ/internal/server"
+)
+
+// TestGitHubActionsCommitPlan checks that a GitHub Actions job's token
+// plans its own commit of the repository its repository_id names at the
+// GitHub forge its issuer belongs to, here a GitHub Enterprise Server
+// stand-in that issues tokens at HOST/_services/token and serves its API
+// at HOST/api/v3, and that a token of another repository, or of a commit
+// not on its ref, is refused.
+func TestGitHubActionsCommitPlan(t *testing.T) {
+	ghe := oidctest.New(t)
+	issuer := ghe.ServeAt("/_services/token")
+	gh := forgetest.GitHubHandler(githubToken)
+	gh.URL = ghe.URL
+	ghe.Mount("/api/v3/", gh)
+	dir := t.TempDir()
+	ca, tokenFile := filepath.Join(dir, "ghe.pem"), filepath.Join(dir, "github_read")
+	if err := os.WriteFile(ca, ghe.CAPEM(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tokenFile, []byte(githubToken+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := planFixture(t, withForge(t, fmt.Sprintf(`
+issuer "ghe" {
+  kind = "github-actions"
+  identity = "ghe"
+  url = %q
+  ca_file = %q
+}
+
+forge "ghe" {
+  kind = "github"
+  url = %q
+  read_token_file = %q
+  ca_file = %q
+}
+
+# Any repository of the owner may plan, so the control plane's own check
+# of the repository id, not a team rule, refuses another repository's job.
+team "web_ci" {
+  issuer = "ghe"
+  match = { repository_owner_id = ["65"] }
+}
+
+grant {
+  teams = ["web_ci"]
+  stacks = ["web/*"]
+  envs = ["prod"]
+  can = ["read", "plan"]
+}
+`, issuer, ca, ghe.URL, tokenFile, ca)))
+	gh.AddProject(777001, "acme/web", "main")
+	files := infraFiles()
+	gh.Commit(777001, "main", files)
+	add := repoRequest(func(m map[string]any) {
+		m["name"], m["forge"], m["project"], m["prefix"] = "web", "ghe", "acme/web", "web/"
+	})
+	if r := f.do("POST", "/v1/repos", admin(f), add); r.status != http.StatusCreated {
+		t.Fatalf("add: %d %s", r.status, r.body)
+	}
+	files["infra/network/main.tf"] = forgetest.File{Content: files["infra/network/main.tf"].Content + "resource \"random_pet\" \"pet2\" {}\n"}
+	branch := gh.Commit(777001, "add-subnet-d", files)
+	merge := gh.Commit(777001, "refs/pull/42/merge", files)
+	other := gh.Commit(777001, "other", map[string]forgetest.File{"x": {Content: "x"}})
+
+	token := func(edits map[string]any) string {
+		c := oidctest.GitHubJob(issuer, audience, time.Now())
+		c["repository_id"], c["repository"] = "777001", "acme/web"
+		for k, v := range edits {
+			c[k] = v
+		}
+		return oidctest.Sign(ghe.Keys()[0], c)
+	}
+	plan := func(tok string) server.RemotePlan {
+		t.Helper()
+		r := f.do("POST", "/v1/plans", tok, planRequest(func(m map[string]any) {
+			m["stacks"], m["source"] = []string{"web/network"}, map[string]any{}
+		}))
+		if r.status != http.StatusAccepted {
+			t.Fatalf("plan: %d %s", r.status, r.body)
+		}
+		return f.waitPlan(tok, r.doc["plan"].(map[string]any)["ref"].(string))
+	}
+	for _, tc := range []struct {
+		name, sha, ref, event string
+	}{
+		{"a push", branch, "refs/heads/add-subnet-d", "push"},
+		{"a pull request's merge commit", merge, "refs/pull/42/merge", "pull_request"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := plan(token(map[string]any{"sha": tc.sha, "ref": tc.ref, "event_name": tc.event}))
+			if p.Plan.Status != "approved" || p.Plan.Source != (server.PlanSourceInfo{Kind: "commit", Repo: "web", Ref: tc.ref, Commit: tc.sha, RefCheck: "on-ref"}) {
+				t.Fatalf("plan %+v: %s", p.Plan, p.Text)
+			}
+		})
+	}
+
+	for _, tc := range []struct {
+		name   string
+		claims map[string]any
+		source map[string]any
+		status int
+		want   string
+	}{
+		{"another repository's job", map[string]any{"repository_id": "999", "repository": "mallory/web", "sha": branch}, nil, 403, "project mallory/web (id 999) is not a repository of this control plane"},
+		{"a commit not on its ref", map[string]any{"sha": other, "ref": "refs/heads/add-subnet-d"}, nil, 403, "is not on refs/heads/add-subnet-d of repository web"},
+		{"another commit than its own", map[string]any{"sha": branch, "ref": "refs/heads/add-subnet-d"}, map[string]any{"repo": "web", "commit": other}, 403, "a CI job plans its own commit"},
+		{"a ref that is not full", map[string]any{"sha": branch, "ref": "add-subnet-d"}, nil, 400, "is not a full ref"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := f.do("POST", "/v1/plans", token(tc.claims), planRequest(func(m map[string]any) {
+				m["stacks"], m["source"] = []string{"web/network"}, tc.source
+				if tc.source == nil {
+					m["source"] = map[string]any{}
+				}
+			}))
+			if r.status != tc.status || !strings.Contains(string(r.body), tc.want) {
+				t.Fatalf("got %d %s", r.status, r.body)
+			}
+		})
+	}
+}
