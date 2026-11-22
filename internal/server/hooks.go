@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,11 +28,12 @@ import (
 
 // A webhook delivery only makes the poll read a repository's default
 // branch sooner, through the forge's client and read token. Nothing in
-// its body is trusted or parsed: the repository is the one the path
-// names, and the head is what the forge's API says.
+// its body is trusted: the repository is the one the path names, and the
+// head is what the forge's API says. A GitHub body, once its signature
+// passed, is read only to tell a push from a ping.
 const (
-	// hookBody bounds a delivery's body, which is read only to bound it
-	// and to check a signature over it.
+	// hookBody bounds a delivery's body, which is read to bound it, to
+	// check a signature over it, and on GitHub to tell its event.
 	hookBody = 1 << 20
 	// hookPerAddress and hookPerRepo bound the deliveries a second from
 	// one client address, checked first, and for one repository, checked
@@ -55,8 +57,9 @@ type hookForge struct {
 	verify func(h http.Header, body, secret []byte, now time.Time) (ok bool, check string)
 	// delivery is the delivery's id, the same on each retry, or "".
 	delivery func(h http.Header) string
-	// moves reports whether the delivery's event can move a branch.
-	moves func(h http.Header) bool
+	// moves reports whether the delivery's event can move a branch, from
+	// its header and its raw body, which passed verify.
+	moves func(h http.Header, body []byte) bool
 }
 
 // verifyGitLab checks a GitLab delivery against the repository's secret:
@@ -167,7 +170,7 @@ func gitlabDelivery(h http.Header) string {
 
 // gitlabMoves reports whether a GitLab delivery is a push event, which
 // GitLab sends for each push and merge to a branch.
-func gitlabMoves(h http.Header) bool { return h.Get("X-Gitlab-Event") == "Push Hook" }
+func gitlabMoves(h http.Header, _ []byte) bool { return h.Get("X-Gitlab-Event") == "Push Hook" }
 
 // githubDelivery is X-GitHub-Delivery, a GUID GitHub keeps the same when
 // a delivery is sent again.
@@ -180,8 +183,21 @@ func githubDelivery(h http.Header) string {
 
 // githubMoves reports whether a GitHub delivery is a push event, which
 // GitHub sends for each push and merge to a branch. A ping, sent when the
-// webhook is made, passes its check and reads nothing.
-func githubMoves(h http.Header) bool { return h.Get("X-GitHub-Event") == "push" }
+// webhook is made, passes its check and reads nothing. X-GitHub-Event is
+// not signed, so the signed body must be a push's too: a JSON object with
+// ref and after, and not a ping's zen. Then a captured ping, sent again as
+// a push, reads nothing. What the body names is never believed.
+func githubMoves(h http.Header, body []byte) bool {
+	if h.Get("X-GitHub-Event") != "push" {
+		return false
+	}
+	var push struct {
+		Ref   *string         `json:"ref"`
+		After *string         `json:"after"`
+		Zen   json.RawMessage `json:"zen"`
+	}
+	return json.Unmarshal(body, &push) == nil && push.Ref != nil && push.After != nil && push.Zen == nil
+}
 
 // hookState is what the webhook route keeps between deliveries: its rate
 // limits, the delivery ids it acted on, and the repositories it asked the
@@ -447,7 +463,7 @@ func (s *Server) receiveHook(w http.ResponseWriter, r *http.Request) {
 	}
 	e.Principal = "forge " + f.Name
 	doc := HookDoc{Format: FormatHook, OK: true, Repo: name, Diagnostics: []Diagnostic{}}
-	if !hf.moves(r.Header) {
+	if !hf.moves(r.Header, body) {
 		e.Reason = "repository " + name + ": the delivery is not a push event, so nothing is read"
 		s.reply(w, http.StatusOK, doc)
 		return

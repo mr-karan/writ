@@ -139,6 +139,12 @@ func TestGitHubHook(t *testing.T) {
 		t.Fatalf("audit rows %+v", rows)
 	}
 
+	// A captured ping, signed, sent again as a push, reads nothing: the
+	// signed body is a ping's.
+	if r := f.githubHook(githubHookPath, hookSecret, "push", "33333333-0000-4000-8000-000000000000", []byte(`{"zen":"Keep it logically awesome.","hook_id":1}`)); r.status != http.StatusOK || r.doc["queued"] != false {
+		t.Fatalf("a ping's body as a push: %d %s", r.status, r.body)
+	}
+
 	// GitHub sends a delivery again with the same X-GitHub-Delivery.
 	if r := f.githubHook(githubHookPath, hookSecret, "push", "22222222-0000-4000-8000-000000000000", push); r.status != http.StatusOK || r.doc["duplicate"] != true || r.doc["queued"] != false {
 		t.Fatalf("a replayed delivery: %d %s", r.status, r.body)

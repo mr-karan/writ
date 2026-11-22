@@ -113,6 +113,33 @@ func TestVerifyGitHub(t *testing.T) {
 	}
 }
 
+// TestGitHubMoves checks that a delivery reads the head only when both
+// its header and its signed body are a push's.
+func TestGitHubMoves(t *testing.T) {
+	push := `{"ref":"refs/heads/main","before":"0000000000000000000000000000000000000000","after":"5d1e9a0c7b2f4e1d8a6c3b9e0f7a2d4c6b8e1f3a","commits":[]}`
+	ping := `{"zen":"Keep it logically awesome.","hook_id":1,"hook":{"type":"Repository"}}`
+	for _, c := range []struct {
+		name, event, body string
+		want              bool
+	}{
+		{"a push", "push", push, true},
+		{"a ping", "ping", ping, false},
+		{"a ping's body sent as a push", "push", ping, false},
+		{"a push's body sent as a ping", "ping", push, false},
+		{"a push with a zen", "push", `{"ref":"refs/heads/main","after":"x","zen":"z"}`, false},
+		{"not JSON", "push", "ref=refs/heads/main", false},
+		{"an array", "push", "[]", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := http.Header{}
+			h.Set("X-GitHub-Event", c.event)
+			if got := githubMoves(h, []byte(c.body)); got != c.want {
+				t.Fatalf("got %v", got)
+			}
+		})
+	}
+}
+
 // TestHookProofsCompareInConstantTime checks that hooks.go compares a
 // proof a delivery sent only through secretEqual, and that secretEqual
 // compares SHA-256 digests, which have one length, with
