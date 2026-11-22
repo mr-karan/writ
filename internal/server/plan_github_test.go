@@ -131,6 +131,8 @@ grant {
 		{"a pull request the forge cannot show", map[string]any{"sha": unknown, "ref": "refs/pull/10/merge", "event_name": "pull_request"}, nil, 404, "writ serve could not check that pull request 10 of repository web comes from the repository itself, so it refuses the plan"},
 		{"a pull_request_target job", map[string]any{"sha": branch, "ref": "refs/heads/add-subnet-d", "event_name": "pull_request_target"}, nil, 403, "a job of a pull_request_target event may not plan"},
 		{"a pull request number over int64", map[string]any{"sha": merge, "ref": "refs/pull/9999999999999999999/merge", "event_name": "pull_request"}, nil, 400, "names pull request 9999999999999999999, which is not a pull request's number"},
+		{"a pull request number of 20 digits", map[string]any{"sha": merge, "ref": "refs/pull/99999999999999999999/merge", "event_name": "pull_request"}, nil, 400, "names pull request 99999999999999999999, which is not a pull request's number"},
+		{"pull request 0", map[string]any{"sha": merge, "ref": "refs/pull/0/merge", "event_name": "pull_request"}, nil, 400, "names pull request 0, which is not a pull request's number"},
 		{"a pull ref of another shape", map[string]any{"sha": merge, "ref": "refs/pull/42/evil", "event_name": "pull_request"}, nil, 403, "is not a pull request's merge or head ref"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
