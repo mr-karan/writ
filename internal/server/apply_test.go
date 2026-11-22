@@ -1021,4 +1021,19 @@ func TestApplyGrantBeforeForge(t *testing.T) {
 			}
 		})
 	}
+	// Each refusal's audit row names its target, so a team that reads the
+	// stack sees the denied apply.
+	rows, _ := f.auditAll(f.token(nil), nil)
+	denied := 0
+	for _, row := range rows {
+		if row.Method == "POST" && row.Route == "/v1/runs" && row.Status == http.StatusForbidden {
+			denied++
+			if row.Env != "prod" || len(row.Stacks) != 1 {
+				t.Fatalf("a denied apply's audit row names %q %v", row.Env, row.Stacks)
+			}
+		}
+	}
+	if denied != 2 {
+		t.Fatalf("%d denied apply rows, want 2", denied)
+	}
 }
