@@ -26,13 +26,13 @@ Each Writ term has one meaning across the docs, CLI, and UI. Where Terraform or 
 | serial | OpenTofu's monotonic state counter, incremented on each write. Used to identify S3 states. | Serial |
 | state token | A per-run token sent via HTTP Basic auth (`TF_HTTP_USERNAME=writ`) for the `http` state backend. Plan tokens are read-only; apply tokens can also lock and write. Revoked when the run ends; only its SHA-256 is stored. | |
 | lock | OpenTofu's exclusive claim on state during an apply (`LOCK` on the `http` backend, or lockfile/DynamoDB on S3). | State lock |
-| state index | Control-database rows recording each managed resource's address, type, provider, and allow-listed identifying attributes (`id`, `arn`, `identifier`, `region`, `namespace`, `modify_index`). Written only by the mask. See [The state index](plan-to-apply.md#the-state-index). | |
+| state index | Control-database rows recording each managed resource's address, type, provider, and allow-listed identifying attributes (`id`, `arn`, `identifier`, `region`, `namespace`, `modify_index`). Written only by the mask. See [The state index](plan-lifecycle.md#the-state-index). | |
 | row | One record in a control database table. | |
 | plan | The changes OpenTofu proposes for one commit of `stack@env`, or `writ plan --remote`. | Plan |
 | commit plan | A plan generated from a Git commit fetched by `writ serve`. | |
 | speculative plan | Legacy plan created from client-uploaded files. Team servers never approve or apply one. | Speculative plan |
 | saved plan | Binary output of `tofu plan -out`, sealed with the environment key. Applied by `tofu apply`; never served by any API route. | Saved plan |
-| risk class | Change category used by grants and approval rules: `create`, `update`, `replace`, `delete`, or `data-loss`. In OpenTofu plans, `forget` maps to `delete`, `import` adds `create`, and no change maps to `data-loss`. | |
+| risk class | Change category used by grants and approval rules: `create`, `update`, `replace`, `delete`, or `data-loss`. In OpenTofu plans, `forget` maps to `delete` and `import` adds `create`. `data-loss` is a valid class for grants and approval rules, but no OpenTofu change produces it today. | |
 | apply | Running an approved saved plan on `writ serve`, or `writ apply --remote`. | Apply |
 | run | One apply started by `writ serve`, listed by `writ runs --remote`. | Run |
 | actor | The principal recorded as starting a run. | |
@@ -50,7 +50,7 @@ Each Writ term has one meaning across the docs, CLI, and UI. Where Terraform or 
 | person id | `IDENTITY/user/ID` (for example `gitlab/user/1001`), compared by approval rules to prevent self-approval across CI, CLI, and UI. | |
 | principal | The verified caller behind a token or session: a CI job (and its triggering user) or a signed-in person. | |
 | session | A `writ login` (`cli`) or control UI (`browser`) sign-in, valid for `session_ttl` (12h default) with no refresh. Only the token's SHA-256 is stored. | |
-| control UI | Built-in web interface served by `writ serve` under `/ui/`. See [The control UI](sign-in.md#the-control-ui). | |
+| control UI | Built-in web interface served by `writ serve` under `/ui/`. See [The control UI](how-sign-in-works.md#the-control-ui). | |
 | team | A named claim-matching rule on one issuer. Any token matching all claims in `match` belongs to the team. | Team |
 | grant | A rule granting teams operations (`read`, `plan`, `approve`, `apply`, `override`, `adopt`, `admin`) and risk classes on matching `stack@env`. | Permission |
 | repository | A GitLab project (or local Git dir under `--dev`) registered with `writ serve`, short form "repo". See [Add a repository](add-repository.md). | VCS connection |

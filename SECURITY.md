@@ -31,4 +31,4 @@ Security fixes land on `main` and ship in the next release. Older releases do no
 ## Out of scope
 
 - Bugs in OpenTofu or in a provider. Report them upstream.
-- The limits that the docs state: the cases the mask cannot catch, which [Secrets and the mask](docs/secrets.md#what-the-mask-cant-do) lists, a provider that uses the open network with the role its run holds, under `egress_mode` `off` or through a host its env's egress list allows, as [What egress doesn't cover](docs/run-isolation.md#what-egress-doesnt-cover) lists, and a `writ serve --dev` that someone shares, which its banner says not to do.
+- The limits that the docs state: the cases the mask cannot catch, which [Secrets and the mask](docs/secrets.md#what-the-mask-cant-do) lists, a provider that uses the open network with the role its run holds, under `egress_mode` `off` or through a host its env's egress list allows, as [What egress doesn't cover](docs/how-run-isolation-works.md#what-egress-doesnt-cover) lists, and a `writ serve --dev` that someone shares, which its banner says not to do.

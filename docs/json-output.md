@@ -54,7 +54,7 @@ Output of a real run, 2026-11-16 (`writ import bulk SELECTION.json --json` witho
 ## `writ import accept --imports FILE PLAN --json` (`writ.import-accept/v0`)
 
 ```json
-{"format":"writ.import-accept/v0","ok":true,"objects":1,"imports":1,"refusals":[],"settings":[{"address":"nomad_job.nomad_job_import_web_default","attribute":"deregister_on_destroy","value":true,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"},{"address":"nomad_job.nomad_job_import_web_default","attribute":"deregister_on_id_change","value":true,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"},{"address":"nomad_job.nomad_job_import_web_default","attribute":"detach","value":true,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"},{"address":"nomad_job.nomad_job_import_web_default","attribute":"preserve_counts","value":false,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"},{"address":"nomad_job.nomad_job_import_web_default","attribute":"read_allocation_ids","value":false,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"},{"address":"nomad_job.nomad_job_import_web_default","attribute":"rerun_if_dead","value":false,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"}],"diagnostics":[]}
+{"format":"writ.import-accept/v0","ok":true,"objects":1,"imports":1,"refusals":[],"settings":[{"address":"nomad_job.nomad_job_import_web_default","attribute":"deregister_on_destroy","value":true,"provider":"registry.opentofu.org/hashicorp/nomad","version":"2.6.1"}],"diagnostics":[]}
 ```
 
 - `objects`, `imports`: manifest object count and accepted import count.
@@ -98,7 +98,7 @@ Returns `GET /v1/audit` ([API: Read the audit log](api.md#read-the-audit-log)).
 
 ## Documents of `writ serve`
 
-Remote plan `document` holds the masked OpenTofu plan ([Policy input](policy-reference.md#input)), or `writ.plan.json/v2` (`ok: false`) if planning failed before producing one. Remote run `document` holds `writ.tofu-apply/v0` ([Approvals](approvals.md#what-the-runs-document-contains)), or `writ.apply/v0` (`status: "apply-failed"`) if the run couldn't start or was lost.
+Remote plan `document` holds the masked OpenTofu plan ([Policy input](policy-reference.md#input)), or `writ.plan.json/v2` (`ok: false`) if planning failed before producing one. Remote run `document` holds `writ.tofu-apply/v0` ([Approvals](plan-lifecycle.md#what-the-runs-document-contains)), or `writ.apply/v0` (`status: "apply-failed"`) if the run couldn't start or was lost.
 
 | Format | Route | CLI command |
 | --- | --- | --- |
@@ -122,7 +122,7 @@ Remote plan `document` holds the masked OpenTofu plan ([Policy input](policy-ref
 | `writ.audit/v0` | `GET /v1/audit` | `writ audit --remote --json` |
 | `writ.apply-outcome/v0` | `POST /v1/apply-requests/{key}/outcome` | `writ show --remote --request KEY --json` (and lost `writ apply --remote --json`) |
 | `writ.config/v0` | `GET /v1/config` | |
-| `writ.notification/v0` | Outbound `webhook` notifier `POST` ([The payload](notifications.md#the-payload)) | |
+| `writ.notification/v0` | Outbound `webhook` notifier `POST` ([Notification payload](#notification-payload-writnotificationv0)) | |
 | `writ.policy/v0` | `GET /v1/policy` | `writ mcp` `policy` tool |
 | `writ.repo-request/v0` | `POST /v1/repos` request | |
 | `writ.repo/v0` | `POST /v1/repos`, `GET /v1/repos/{name}` | `writ repo add --json`, `writ repo show --json` |
@@ -172,6 +172,25 @@ Key document fields:
 - `writ.overview/v0`: authorized per-environment counts (`envs`; when `plans_more` is true, the plan counts are lower bounds), up to 200 stacks (`stacks`, `stacks_more`), active/pending plans (`applying`, `pending`, `planning`), `alerts` (`alerts_more`), and `repos`.
 - `writ.state-adopt-request/v0` / `writ.state-adopt/v0`: request (`env`, `stack`, `reason`, `version` or `serial`); response (`stack`, `env`, `backend`, `version`, `serial`, `lineage`, `repo`, `commit`, `resources`, `indexed`, plus warning diagnostic).
 - `writ.tofu-apply/v0`: `format`, `ok`, `applied`, `status` (`applied`/`apply-failed`), `summary` (`add`, `change`, `import`, `remove`), masked `events` (`type`, `address`, `action`, `elapsed_seconds`), masked `diagnostics`.
+
+## Notification payload (`writ.notification/v0`)
+
+A `webhook` notifier sends a JSON `POST` with headers `X-Writ-Event`, `X-Writ-Delivery`, `X-Writ-Timestamp`, and, when `secret_file` is set, `X-Writ-Signature-256` ([Verify the signature](notifications.md#verify-the-signature)).
+
+| Field | Meaning |
+| --- | --- |
+| `format` | `writ.notification/v0`. |
+| `id` | Stable delivery ID across retries (use for deduplication; trust the signed body over `X-Writ-Delivery`). |
+| `event` | One of the [events](notifications.md#events) (trust the signed body over `X-Writ-Event`). |
+| `at` | Event timestamp (UTC). |
+| `server` | Server config's `url`. |
+| `stack`, `env` | Target `stack@env`. |
+| `status` | `pending`, `failed`, `refused`, `applied`, `drifted`, `clean`, or `outside-write`. |
+| `summary` | One-line Writ summary. |
+| `started_by` | `kind` (`person`, `ci`, `drift`, or `outside`), plus `display` and `person`. |
+| `plan`, `run` | Plan ID (or ref if failed before save) and run ID. |
+| `counts` | Non-zero event counts (`changes`/`need` for `approval-needed`; `added`/`changed`/`destroyed`/`imported` for `applied`; `outside`/`code` for `drift`; `serial` for `outside-write`). |
+| `url` | Control UI link (omitted when the control UI is disabled). |
 
 ## On-disk JSON files
 

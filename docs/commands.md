@@ -115,6 +115,21 @@ writ: warning: writ serve is v0.1.7 and this writ is v0.1.5: a newer writ serve 
 
 `dev` builds and older servers never trigger this warning. If a newer server returns an unrecognized status or shape, `writ` exits 1 naming both versions. Pin CI images to the server release ([Set up GitLab CI](set-up-gitlab-ci.md#pin-the-cli-to-the-servers-version)).
 
+## install.sh flags
+
+The [install script](install.md#the-install-script) takes these flags, passed through a pipe with `sh -s --`.
+
+The script refuses to overwrite a symlink or directory at the target path, rejects `--version` values outside `[A-Za-z0-9._-]`, and never follows symlinks when it installs.
+
+| Flag | Env var | Meaning |
+| --- | --- | --- |
+| `--version V` | `WRIT_VERSION` | Release tag to install (stamped into each release's script). |
+| `--dir DIR` | `WRIT_INSTALL_DIR` | Install directory. Default `~/.local/bin`. |
+| `--from DIR` | | Install from a local directory with no network. |
+| `--insecure-skip-signature` | | Skip signature verification (still checks SHA-256 and warns). |
+| | `WRIT_MINISIGN_PUBKEY` | Override the release public key. |
+| | `WRIT_BASE_URL` | Override the download base URL (`https://`). |
+
 ## Environment variables
 
 | Variable | Meaning |
@@ -124,7 +139,7 @@ writ: warning: writ serve is v0.1.7 and this writ is v0.1.5: a newer writ serve 
 | `WRIT_ID_TOKEN` | CI OIDC token (checked before `writ login` sessions). |
 | `XDG_CONFIG_HOME` | Base directory for `writ/sessions.json` (default `~/.config`). |
 | `XDG_DATA_HOME` | Base directory for `writ/dev` and `client.json` (default `~/.local/share`). |
-| `WRIT_CACHE_DIR` | Provider binary and schema cache used by `writ import bulk` and `writ mcp` `schema`. |
+| `WRIT_CACHE_DIR` | Provider binary and schema cache used by `writ import bulk` and `writ mcp` `schema`. Default `$XDG_CACHE_HOME/writ` (`~/.cache/writ` on Linux; `/var/lib/writ/cache` in the container image). |
 | `WRIT_CPUPROFILE` | Write a Go pprof CPU profile to this path on exit. |
 | `PGPASSFILE` | Postgres password file read by `writ serve` (default `~/.pgpass`). |
 | `DISPLAY`, `WAYLAND_DISPLAY` | Checked by `writ login` on Linux before calling `xdg-open`. |

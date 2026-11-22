@@ -35,23 +35,20 @@ Output of real runs, 2026-11-16.
 
 | Class | Meaning | Exit code | HTTP status |
 | --- | --- | --- | --- |
-| [`usage`](#usage) | Caller's CLI arguments or request are wrong | `2` (bad CLI/preconditions) or `1` | `400`, `404`, `405`, `409`, `413`, `429` |
+| [`usage`](#usage) | Caller's CLI arguments or request are wrong | `2` for bad CLI flags, arguments, or preconditions (`writ agent init` may still write `AGENTS.md` before exiting 2 on a symlink error); `1` for server refusals, failed OpenTofu steps, or timeouts | `400`, `404`, `405`, `409`, `413`, `429` |
 | [`auth`](#auth) | Missing or invalid token, or failed webhook verification | `1` | `401` |
 | [`denied`](#denied) | Grant missing, approvals missing, or author tried to approve | `1` | `403` |
 | [`policy`](#policy) | Mandatory Rego policy refused the apply | `1` | `403` |
-| [`state`](#state) | Plan stale/expired/`no-changes`, stack busy, or key closed | `1` | `409`, `404` |
+| [`state`](#state) | Plan stale/expired/`no-changes`, stack busy, or key closed | `1` | `409` (`404` when `writ state adopt` names an unknown version or serial) |
 | [`saved-plan`](#saved-plan) | Plan sources don't match or branch moved | `1` | `409` |
-| [`state-io`](#state-io) | Database/audit write failed or apply response lost | `1` | `503`, `502` |
-| [`provider`](#provider) | Provider, lock file, S3 read, or Git host failed | `1` | `502`, `409` |
+| [`state-io`](#state-io) | Database/audit write failed or apply response lost | `1` | `503` (`502` when an IdP fails to start sign-in) |
+| [`provider`](#provider) | Provider, lock file, S3 read, or Git host failed | `1` | `502` (Git host failure) or `409` (S3 adoption read failure) |
 | [`internal`](#internal) | Local I/O error or bug | `1` | `500` |
 | [`syntax`](#syntax) | Server config HCL failed to parse | `1` | none |
 
-Exit `0` indicates success (warnings only). See [Commands: Exit codes](commands.md#exit-codes) and [API: Error classes](api.md#error-classes). Capitalized words below are placeholders.
+Exit `0` means success, with warnings only. See [Commands: Exit codes](commands.md#exit-codes) and [API: Error classes](api.md#error-classes). Below, capitalized words are placeholders.
 
 ## `usage`
-
-- **Exit code:** `2` for bad CLI flags/args/preconditions (`writ agent init` may still write `AGENTS.md` before exiting 2 on a symlink error); `1` for server refusals, failed OpenTofu steps, or timeouts.
-- **HTTP status:** `400`, `404`, `405`, `409`, `413`, `429`.
 
 Common messages:
 
@@ -69,8 +66,6 @@ Common messages:
 
 ## `auth`
 
-- **Exit code:** `1`. **HTTP status:** `401`.
-
 Common messages:
 
 - `no token: sign in with writ login, or send Authorization: Bearer with the OIDC token of a CI job`
@@ -83,8 +78,6 @@ Common messages:
 **Recovery:** Re-run `writ login`, re-run the CI job for a fresh OIDC token, or check the webhook secret/audit `check` ([Token checks](api.md#token-checks)).
 
 ## `denied`
-
-- **Exit code:** `1`. **HTTP status:** `403`.
 
 Common messages:
 
@@ -101,15 +94,11 @@ Common messages:
 
 ## `policy`
 
-- **Exit code:** `1`. **HTTP status:** `403`.
-
 Returns `policy refuses the apply of plan ID` followed by one diagnostic per result (`OUTCOME: [SET] MESSAGE`).
 
 **Recovery:** Update the stack code to satisfy the Rego rule, commit, and plan again ([Write and test a policy](write-a-policy.md)).
 
 ## `state`
-
-- **Exit code:** `1`. **HTTP status:** `409` (`404` when `writ state adopt` references an unknown version/serial).
 
 Common messages:
 
@@ -125,11 +114,9 @@ Common messages:
 - `state version N of STACK@ENV is not its newest, version N: adopt the newest`
 - `an apply of STACK@ENV runs, which may write a newer state: adopt after it ends`
 
-**Recovery:** Plan again, wait for the active apply, or adopt the newest state. For a speculative plan, push the commit and plan it ([Why an approved plan can still be refused](approvals.md#why-an-approved-plan-can-still-be-refused)).
+**Recovery:** Plan again, wait for the active apply, or adopt the newest state. For a speculative plan, push the commit and plan it ([Why an approved plan can still be refused](plan-lifecycle.md#why-an-approved-plan-can-still-be-refused)).
 
 ## `saved-plan`
-
-- **Exit code:** `1`. **HTTP status:** `409`.
 
 Common messages:
 
@@ -141,8 +128,6 @@ Common messages:
 **Recovery:** Plan the current commit and get the new plan approved ([Apply after a merge](apply.md#apply-after-a-merge)).
 
 ## `state-io`
-
-- **Exit code:** `1`. **HTTP status:** `503` (`502` when an IdP fails to start sign-in).
 
 Common messages:
 
@@ -156,8 +141,6 @@ Common messages:
 
 ## `provider`
 
-- **Exit code:** `1`. **HTTP status:** `502` (Git host failure) or `409` (S3 adoption read failure).
-
 Common messages:
 
 - `WHAT: the forge answered STATUS`
@@ -169,8 +152,6 @@ Common messages:
 
 ## `internal`
 
-- **Exit code:** `1`. **HTTP status:** `500`.
-
 Common messages:
 
 - `writ serve hit a bug; the request id is ID`
@@ -179,7 +160,5 @@ Common messages:
 **Recovery:** Fix any local file permission named, or report bugs with the request ID and server log / stderr stack trace.
 
 ## `syntax`
-
-- **Exit code:** `1`. **HTTP status:** none.
 
 HCL parse error in server config. Fix the reported file/line/column and verify with `writ serve --config FILE --check` ([Server config](config.md)).

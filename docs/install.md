@@ -13,11 +13,11 @@ The current release is **v0.1.8**. Releases include static binaries for Linux an
 
 ## The install script
 
-The script downloads the release binary for your OS and architecture, `SHA256SUMS`, and `SHA256SUMS.minisig`. It verifies the minisign signature against the embedded release key, checks the binary's SHA-256, runs `writ version` to confirm the version matches, and atomically installs `~/.local/bin/writ` without `sudo`.
+The script downloads the binary for your OS and architecture, `SHA256SUMS`, and `SHA256SUMS.minisig`. It checks the minisign signature against the embedded release key and the binary's SHA-256, runs `writ version` to confirm the version, and installs `~/.local/bin/writ` atomically, without `sudo`.
 
 ### Before you begin
 
-Install [`minisign`](https://jedisct1.github.io/minisign/) first. Without it, the script stops before downloading anything because a checksum alone doesn't prove the Writ release key signed the file:
+Install [`minisign`](https://jedisct1.github.io/minisign/). Without it, the script stops before downloading anything, because a checksum alone does not prove the Writ release key signed the file:
 
 | OS / Manager | Command |
 | --- | --- |
@@ -32,35 +32,15 @@ Install [`minisign`](https://jedisct1.github.io/minisign/) first. Without it, th
 curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh
 ```
 
-To inspect the script before running it, download it first and run `sh install.sh`.
-
-Example output (first without `minisign`, then with it):
+To read the script first, download it and run `sh install.sh`. A successful run ends with:
 
 ```
-install.sh: minisign is not installed, so the signature of SHA256SUMS cannot be checked; nothing installed. Install minisign and run this again: brew install minisign (macOS), apt install minisign (Debian, Ubuntu), dnf install minisign (Fedora), nix profile install nixpkgs#minisign, or see https://jedisct1.github.io/minisign/
-
 installed writ v9.9.9 to /home/dev/.local/bin/writ (SHA-256 checked, signature checked)
-/home/dev/.local/bin is not on your PATH; add it: export PATH="/home/dev/.local/bin:$PATH"
 ```
 
-Output of a real run, 2026-11-10.
+Real run, 2026-11-10. If `~/.local/bin` is not on `PATH`, the script says so and prints the `export PATH` line. Without `minisign` it installs nothing and prints how to install it. If the checksum fails, it installs nothing and prints both hashes.
 
-If the binary's checksum fails, nothing is installed:
-
-```
-install.sh: writ-linux-amd64 has SHA-256 eafe950cb49f9769424fc2971bd176aa5c1e22b7d881ffbe94836bf80f1849cf, but SHA256SUMS says 7fb400623abfa4cac138255ff762b4c8483331aed9369c59cd4659b9720d28bd; nothing installed
-```
-
-The script also refuses to overwrite a symlink or directory at the target path, rejects `--version` values outside `[A-Za-z0-9._-]`, and installs atomically without following symlinks.
-
-| Flag | Env var | Meaning |
-| --- | --- | --- |
-| `--version V` | `WRIT_VERSION` | Release tag to install (stamped into each release's script). |
-| `--dir DIR` | `WRIT_INSTALL_DIR` | Install directory. Default `~/.local/bin`. |
-| `--from DIR` | | Install from a local directory with no network. |
-| `--insecure-skip-signature` | | Skip signature verification (still checks SHA-256 and warns). |
-| | `WRIT_MINISIGN_PUBKEY` | Override the release public key. |
-| | `WRIT_BASE_URL` | Override the download base URL (`https://`). |
+Flags such as `--version`, `--dir`, and `--from`, and the script's safety rules, are in [install.sh flags](commands.md#installsh-flags).
 
 Pass flags through a pipe with `sh -s --`:
 
@@ -93,7 +73,7 @@ To build and load the image locally with Nix:
 nix build .#image && podman load -i result
 ```
 
-By default the container runs `writ serve --config /etc/writ/serve` with `/var/lib/writ` as its work directory. Because it runs as non-root UID 65532, set `listen` to a port above 1024 (such as `"0.0.0.0:7340"`):
+The container runs `writ serve --config /etc/writ/serve` in `/var/lib/writ`. It runs as non-root UID 65532, so set `listen` to a port above 1024, such as `"0.0.0.0:7340"`:
 
 ```sh
 podman run -d --name writ \
@@ -103,7 +83,7 @@ podman run -d --name writ \
   ghcr.io/mr-karan/writ:0.1.8
 ```
 
-Validate a config with `serve --config /etc/writ/serve --check`. You can also run dev mode on the host network:
+Validate a config with `serve --config /etc/writ/serve --check`. Dev mode runs on the host network:
 
 ```sh
 podman run --rm --network host ghcr.io/mr-karan/writ:0.1.8 serve --dev
@@ -114,9 +94,7 @@ $ curl -sS http://127.0.0.1:7340/healthz
 {"format":"writ.health/v0","ok":true,"database":true,"issuers":[],"diagnostics":[]}
 ```
 
-Output of a real run, 2026-11-16.
-
-Because the image omits `git`, it can't read local repositories under `--dev` or clone `git::https://` modules. Team servers fetch GitLab repos over HTTPS without `git`.
+Without `git`, the image cannot read local repositories under `--dev` or clone `git::https://` modules. Team servers fetch GitLab repositories over HTTPS and need no `git`.
 
 **Limits.** Running a team server with `provider_uids` inside a container hasn't been tested. Doing so requires `CAP_SETUID`, `CAP_SETGID`, `CAP_KILL`, and the host `nftables` metadata rule; see [Run isolation and egress](run-isolation.md).
 
@@ -162,18 +140,14 @@ writ: git is not installed: writ reads local Git repositories with the git binar
 
 Output of a real run, 2026-11-10.
 
-## Cache location
-
-| Env var | Purpose | Default |
-| --- | --- | --- |
-| `WRIT_CACHE_DIR` | Provider binaries and cached schemas for `writ import bulk` and `writ mcp` | `$XDG_CACHE_HOME/writ` (`~/.cache/writ` on Linux; `/var/lib/writ/cache` in the container image) |
-
 ## Troubleshooting
 
-- **`install.sh: minisign is not installed`**: Install `minisign` (see [Before you begin](#before-you-begin)) and rerun the install script.
-- **`writ: command not found`**: Add `~/.local/bin` to `PATH`.
-- **`writ repo add .` fails in the container image**: The image omits `git`. Use the release binary or Nix package for local repositories under `--dev`.
-- **Container exits with permission denied on port 443**: The container runs as UID 65532. Listen above port 1024 and terminate TLS at a reverse proxy.
+| Problem | Fix |
+| --- | --- |
+| `install.sh: minisign is not installed` | Install `minisign` ([Before you begin](#before-you-begin)) and rerun the script. |
+| `writ: command not found` | Add `~/.local/bin` to `PATH`. |
+| `writ repo add .` fails in the container image | The image has no `git`. Use the release binary or the Nix package for local repositories under `--dev`. |
+| Container exits with permission denied on port 443 | It runs as UID 65532. Listen above port 1024 and terminate TLS at a reverse proxy. |
 
 ## Next steps
 

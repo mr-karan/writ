@@ -255,10 +255,52 @@ export const pages: Page[] = [
     parts: whole('docs/plan-to-apply.md'),
   },
   {
+    slug: 'plan-lifecycle',
+    title: 'Plan lifecycle reference',
+    description: 'Plan statuses, staleness checks, merged-apply matching, apply steps, risk classes, plan IDs, run records, the state index, and apply limits.',
+    parts: whole('docs/plan-lifecycle.md'),
+  },
+  {
     slug: 'security-model',
     title: 'Security model',
     description: 'Credential boundaries, OIDC verification, run sandboxing, secret masking, policy isolation, and explicit limits.',
     parts: whole('docs/security-model.md'),
+  },
+  {
+    slug: 'how-run-isolation-works',
+    title: 'How run isolation works',
+    description: 'The filesystem view, seccomp filter, cgroup limits, scratch measurement, and egress proxy around each OpenTofu step, and what each does not cover.',
+    parts: whole('docs/how-run-isolation-works.md'),
+  },
+  {
+    slug: 'how-sign-in-works',
+    title: 'How sign-in works',
+    description: 'How writ login and the control UI sign people in: CLI discovery, device and browser flows, pending limits, sessions, control UI pages, and response headers.',
+    parts: whole('docs/how-sign-in-works.md'),
+  },
+  {
+    slug: 'how-import-bulk-works',
+    title: 'How import bulk works',
+    description: 'What writ import bulk generates, how resources are named, what writ import accept accepts, selection files, listing, refusals, and limits.',
+    parts: whole('docs/how-import-bulk-works.md'),
+  },
+  {
+    slug: 'how-writ-mcp-works',
+    title: 'How writ mcp works',
+    description: 'The writ mcp tools and their guarantees, response bounds, file rules under --dir, plans from a work tree, Git isolation, and how writ agent init treats your files.',
+    parts: whole('docs/how-writ-mcp-works.md'),
+  },
+  {
+    slug: 'how-the-mask-works',
+    title: 'How the mask works',
+    description: 'The four rules of Writ’s mask, what it learns from each run, and when it drops a whole document rather than risk a leak.',
+    parts: whole('docs/how-the-mask-works.md'),
+  },
+  {
+    slug: 'how-aws-credentials-work',
+    title: 'How AWS credentials work',
+    description: 'How writ serve gives each run short-lived AWS credentials, what CloudTrail records, the S3 backend rules, and how S3 serials and outside writes are tracked.',
+    parts: whole('docs/how-aws-credentials-work.md'),
   },
 ];
 
@@ -303,7 +345,14 @@ export const nav: NavEntry[] = [
   'glossary',
   { separator: 'Concepts' },
   'plan-to-apply',
+  'plan-lifecycle',
   'security-model',
+  'how-run-isolation-works',
+  'how-sign-in-works',
+  'how-import-bulk-works',
+  'how-writ-mcp-works',
+  'how-the-mask-works',
+  'how-aws-credentials-work',
 ];
 
 // Where a link to a source file lands on the site.
@@ -343,5 +392,12 @@ export const fileRoutes: Record<string, string> = {
   'docs/agent-reference.md': '/docs/agent-reference',
   'docs/glossary.md': '/docs/glossary',
   'docs/plan-to-apply.md': '/docs/plan-to-apply',
+  'docs/plan-lifecycle.md': '/docs/plan-lifecycle',
   'docs/security-model.md': '/docs/security-model',
+  'docs/how-run-isolation-works.md': '/docs/how-run-isolation-works',
+  'docs/how-sign-in-works.md': '/docs/how-sign-in-works',
+  'docs/how-import-bulk-works.md': '/docs/how-import-bulk-works',
+  'docs/how-writ-mcp-works.md': '/docs/how-writ-mcp-works',
+  'docs/how-the-mask-works.md': '/docs/how-the-mask-works',
+  'docs/how-aws-credentials-work.md': '/docs/how-aws-credentials-work',
 };

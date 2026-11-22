@@ -223,7 +223,7 @@ env "prod" {
 
 ### forge and repo
 
-- **`forge "NAME"`:** `kind = "gitlab"`, `url` (`https://` or loopback `http://`), `read_token_file` (`read_api` scope), optional `ca_file`, and optional `write_token_file` (reserved for future write operations; warns if set).
+- **`forge "NAME"`:** `kind = "gitlab"`, `url` (`https://` or loopback `http://`), `read_token_file` (`read_api` scope), optional `ca_file`, and optional `write_token_file` (reserved for future write operations; warns if set). `read_token_file` is re-read on every call, so it rotates without a restart, and is sent only in `PRIVATE-TOKEN` with redirects disabled. Writ never echoes raw forge response text in API answers, logs, or database rows; read tokens are redacted from errors, and refused if a forge echoes them back.
 - **`repo`:** `name` (`[a-z0-9][a-z0-9._-]*`), `forge`, `project` (`namespace/project`), optional `path`, optional `prefix` (ending in `/`), and optional `webhook_secret_file` (plain token or GitLab 19.1+ `whsec_` signing token, re-read on each delivery) ([Get changes in seconds with a webhook](webhooks.md)).
 
 ### notify
@@ -238,6 +238,19 @@ env "prod" {
 
 Files are read once at startup (restart after edits). Subscribing to `drift` without a `drift` block emits a warning.
 
+### Notification delivery
+
+Each notifier has its own 128-event queue and background sender, so slow receivers never block plans or applies:
+
+- **Retries:** Timeouts, connection errors, temporary DNS failures, `429`, and `5xx` retry at 1s, 4s, 16s, 1m, and 3m. A `Retry-After` header on `429` extends the delay up to 5 minutes (and paces the next queued event if retries exhaust). Other 4xx statuses fail immediately.
+- **Immediate operator errors:** Untrusted/expired/mismatched TLS certificates, plaintext HTTP on an HTTPS URL, and nonexistent hostnames fail immediately with explicit `tls:` or `dns:` errors.
+- **Bounds:** 10-second per-attempt timeout, 16 KiB max request body, 4 KiB max response read (discarded).
+- **Target rules:** URLs must be `https://` (or loopback `http://` for tests) with no embedded credentials. Redirects (`3xx`) fail.
+- **Queue overflow:** When all 128 slots are full, new events drop with a log warning and count as failed on the next flush.
+- **Restarts:** `url_file` and `secret_file` are read once at startup; restart `writ serve` after changing them. Unsent queued events don't persist across restarts.
+
+`writ serve --check` verifies that `provider_uids` can't read `url_file` or `secret_file`. Notifications originate from `writ serve` itself (not OpenTofu runs), so environment `egress` allow-lists don't apply and `HTTPS_PROXY` is honored.
+
 ### tofu
 
 - `binary`: OpenTofu 1.13.9 path or name on `PATH`.
@@ -246,9 +259,66 @@ Files are read once at startup (restart after edits). Subscribing to `drift` wit
 
 Requires `provider_uids` so OpenTofu never executes as `writ serve`'s OS user.
 
+## When drift checks run
+
+With a `drift` block, Writ checks every OpenTofu `stack@env` with HTTP state, a state index, or a known S3 read. It looks for due checks at startup and every quarter of `every` (at most every 30 seconds), and also checks after an apply finishes, after it detects an outside S3 write, and after [`writ state adopt`](adopt-state.md). Each check refreshes every resource with `plan_role`, never takes the last free plan slot, skips stacks with an active apply, and is discarded and queued again if an apply starts mid-check. Writ keeps the newest 20 checks per `stack@env`. See [Enable drift checks](drift-checks.md).
+
+## writ serve --dev defaults
+
+| Area | Behavior |
+| --- | --- |
+| Store | SQLite `control.db` under `$XDG_DATA_HOME/writ/dev` (or `~/.local/share/writ/dev`). `--data DIR` moves it. `--database postgres://...` uses Postgres instead. |
+| Listen | `127.0.0.1:7340` by default. `--listen` takes loopback addresses only; `:0` picks an ephemeral port. |
+| Identity | A 32-byte random token made at start, written with the URL to `client.json` (`0600` in a `0700` directory). Full permissions: team `dev`, principal `dev/USER`. |
+| Environments | Any valid name (`[a-z][a-z0-9_-]{0,62}`) works on demand and gets `keys/ENV.key`. `--env` defaults to `dev`. |
+| Credentials | No AWS role assumption. Runs get `PATH=/usr/local/bin:/usr/bin:/bin` (prefixed with `tofu.git`'s directory if set), `AWS_EC2_METADATA_DISABLED=true`, the starting shell's `TF_VAR_*`, and a per-run `HOME`. |
+| Isolation | No `provider_uids`: OpenTofu runs as your user. On Linux, runs use the read-only filesystem view, so they cannot read your other files, but they share your network. Elsewhere, OpenTofu has your user's filesystem access, and `--data` must keep `TMPDIR` short enough for macOS's 103-byte Unix socket paths. Plan only stacks you trust with that access. |
+| Single instance | Refuses to start if another dev server answers for the same data directory. A clean shutdown removes `client.json`. |
+| Control UI | `/ui/`, with a one-time 10-minute sign-in link printed at startup and by `writ ui`. |
+| Repositories | `writ repo add .` registers a local Git repository. With `--config FILE`, dev mode also accepts `forge`, `repo`, `poll_every`, `poll_every_with_hook`, `tofu`, and `policy` ([Add a repository](add-repository.md)). |
+
+## Database
+
+`writ serve` keeps all control plane records and HTTP-backend state (the newest 20 versions per `stack@env`) in the Postgres schema `writ_control`. S3-backend stacks keep their state in S3. Never put a Postgres password in the `database` URL: use Unix-socket peer authentication, `?passfile=/path/to/pgpass`, or `PGPASSFILE`.
+
+| Database | Timeouts |
+| --- | --- |
+| Postgres | 5s connect, 10s statement, 5s lock, 15s idle in transaction |
+| SQLite (`--dev`) | 5s busy |
+
+## Repository and stack rules
+
+The rules [Add a repository](add-repository.md) applies.
+
+### Rules for adding a repository
+
+Adding a repository needs `admin` on every stack in every env, because repository code can define any stack name. Most teams instead pin repositories with `repo` blocks in `/etc/writ/serve`, so config review governs them. On `writ serve --dev`, the dev team can add any repository.
+
+| Rule | Detail |
+| --- | --- |
+| Admin grant scope | Only grants with `envs = ["*"]` count, and their `stacks` patterns must match every depth up to 64 parts (the most a 128-character name has). A pattern of `*` parts matches one exact depth (`"*"`, `"*/*"`). Mixing `*` and `**` matches at least as many parts as the `*`s, so `stacks = ["**"]` alone covers every depth. |
+| Unique names and targets | No two repositories share a `name`, or the same `project` and `path`. |
+| Unique stack names | State is stored by stack name, so stack names are global per control plane. On a collision, pass `--prefix payments/` (or `prefix = "payments/"` in HCL) to get `payments/network` and so on. |
+| Disjoint prefixes | No prefix may start with another's: `payments/` and `payments/eu/` are refused together. Two repositories may share the exact same prefix, or one may have none. Pinned `repo` blocks follow the same rule; offending entries are skipped and logged. |
+| No stack under another's prefix | An unprefixed stack `a/x` is refused next to a repository with prefix `a/`, and the reverse. Polling enforces this on new commits: Writ refuses the commit, keeps the previous head, and records the error until it is fixed. |
+
+Writ runs these checks inside the transaction that stores the repository, so two concurrent requests cannot both succeed.
+
+### What a stack may not contain
+
+Writ refuses a commit or stack, before OpenTofu runs, for any of these:
+
+| Rule | Refused |
+| --- | --- |
+| Files | A missing `.terraform.lock.hcl`; a committed `.terraform/` directory; any `.tf.json`, `.tofu.json`, or `.writ` file; any symlink under `path`. Submodules are ignored. |
+| Backend | Anything but an empty `backend "http" {}` or an allow-listed `backend "s3"` ([AWS roles and credentials](aws-credentials.md#2-grant-s3-state-permissions-if-using-backend-s3)). A missing backend and `cloud {}` are refused. |
+| Module `source` | A non-literal source, or one that is not: a relative path (`./`, `../`) inside the repository `path`; a registry address (`[HOST/]NS/NAME/SYS[//SUBDIR]`); or a remote address (`git::`, `hg::`, `s3::`, `gcs::`, `http::`, `https::`, `github.com/`, `bitbucket.org/`). |
+| Module address parts | Any query parameter but a literal `ref` and `depth` (so `checksum`, `archive`, `filename`, `sshkey`, `rev`, S3 credential parameters, and so on), `#` fragments, `file:` (even percent-encoded), backslashes, absolute paths, `~`, Windows and UNC paths, `oci://`. |
+| Size and fetch limits | `1 MiB` per `.tf`, `.tofu`, `.tfvars`, or lock file; `16 MiB` per other file; `2,000` files or `64 MiB` across a stack and its local modules; `2,000` lock files (`16 MiB` total); `20,000` tree entries; `1 MiB` per tree page; `8 MiB` per other API response; `10s` per Git host HTTP call. |
+
 ## Stack names and prefixes
 
-A repository's `prefix` prepends to each stack directory (`prefix = "payments/"` + `network` = `payments/network`). Grants, approvals, and state key off this full name. Writ rejects overlapping prefixes or stack names colliding with another repository's prefix ([Rules for adding a repository](add-repository.md#rules-for-adding-a-repository)).
+A repository's `prefix` prepends to each stack directory (`prefix = "payments/"` + `network` = `payments/network`). Grants, approvals, and state key off this full name. Writ rejects overlapping prefixes or stack names colliding with another repository's prefix ([Rules for adding a repository](#rules-for-adding-a-repository)).
 
 ## State
 

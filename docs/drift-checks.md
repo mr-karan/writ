@@ -1,6 +1,6 @@
 # Enable drift checks
 
-Run scheduled drift checks so Writ surfaces out-of-band cloud changes and unapplied default-branch commits in the control UI, the API, and optional Slack or webhook notifications.
+Schedule drift checks to find cloud changes made outside OpenTofu and default-branch commits not yet applied. Results show in the control UI and API, and optionally in Slack or webhook notifications.
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ drift {
 }
 ```
 
-Each check refreshes every resource in the stack using `plan_role`. Size `every` for your cloud API budget (for example, 200 resources every 6 hours is about 800 reads per day). To send alerts when drift or outside writes appear, add a [`notify` block](notifications.md).
+Each check refreshes every resource in the stack with `plan_role`. Size `every` for your cloud API budget: 200 resources every 6 hours is about 800 reads a day. For alerts, add a [`notify` block](notifications.md).
 
 ### 2. Validate the config and restart `writ serve`
 
@@ -37,9 +37,7 @@ writ serve --config /etc/writ/serve --check
 
 ### 3. Read drift results
 
-Writ checks every OpenTofu `stack@env` with HTTP state, a state index, or a known S3 read. Checks run at startup and every quarter of `every` (at most every 30 seconds), plus after an apply finishes, after an outside S3 write is detected, or after [`writ state adopt`](adopt-state.md).
-
-Inspect results in three places:
+Checks start at startup and then on the schedule ([When drift checks run](config.md#when-drift-checks-run)). Results show in:
 
 - **Control UI:** Overview (`/ui/`) shows drifted stack counts and alerts; `/ui/stack?stack=STACK&env=ENV&view=drift` lists recent checks.
 - **API:** `GET /v1/drift` with `read` on the stack:
@@ -61,51 +59,10 @@ curl -sS "https://writ.example.com/v1/drift?env=prod&stack=app" \
 Drift results never store attribute values, only resource addresses, actions, and changed top-level attribute names passed through [the mask](secrets.md):
 
 ```json
-{
-    "diagnostics": [],
-    "format": "writ.drift/v0",
-    "more": false,
-    "ok": true,
-    "stacks": [
-        {
-            "backend": "http",
-            "check": {
-                "changes": [
-                    {
-                        "action": "create",
-                        "address": "terraform_data.keyed[\"(sensitive)\"]",
-                        "kind": "code"
-                    },
-                    {
-                        "action": "delete",
-                        "address": "terraform_data.keyed[\"(sensitive)\"]",
-                        "kind": "code"
-                    }
-                ],
-                "checked_at": "2026-11-15T06:22:51Z",
-                "code": 2,
-                "commit": "dda65cefe05a83f1433a335c880fdfb4a1d7a51d",
-                "drifted_since": "2026-11-15T06:22:51Z",
-                "error": "",
-                "outside": 0,
-                "plan": "703a6a51ed7d286e9bdbe4f62eeaac6d",
-                "repo": "infra",
-                "started_at": "2026-11-15T06:22:51Z",
-                "status": "drifted"
-            },
-            "checking": false,
-            "env": "prod",
-            "indexed_at": "2026-11-15T06:22:50Z",
-            "indexed_version": 3,
-            "outside_write": null,
-            "resources": 5,
-            "stack": "app"
-        }
-    ]
-}
+{"format":"writ.drift/v0","ok":true,"stacks":[{"stack":"app","env":"prod","backend":"http","check":{"status":"drifted","outside":0,"code":2,"changes":[{"action":"create","address":"terraform_data.keyed[\"(sensitive)\"]","kind":"code"}, ...]}}]}
 ```
 
-Output of a real run, 2026-11-15.
+Excerpt of a real run, 2026-11-15; every field is in [JSON output](json-output.md#documents-of-writ-serve).
 
 A clean check clears the drifted flag. Writ keeps the newest 20 checks per `stack@env`; `GET /v1/drift?env=ENV&stack=STACK` returns them under `checks`, each with a `ref`.
 
@@ -115,11 +72,13 @@ A clean check clears the drifted flag. Writ keeps the newest 20 checks per `stac
 
 ## Troubleshooting
 
-- **`drift unknown: no secret set for state version N of stack@env`**: State was written outside Writ. Run [`writ state adopt`](adopt-state.md).
-- **`local_file` or `local_sensitive_file` always shows as deleted outside OpenTofu**: Each run uses a fresh temporary directory, so files from previous applies don't exist on disk.
-- **`409 state` when trying to approve or apply a drift check plan**: Drift checks keep no saved plan. Run `writ plan --remote` to create an approvable plan.
-- **No check starts during an apply**: Writ skips stacks with active applies; if an apply starts mid-check, Writ discards the check result and re-queues it.
-- **Empty `GET /v1/drift` after config edit**: Confirm `writ serve` was restarted and your token has `read` on the stack's environment.
+| Problem | Fix |
+| --- | --- |
+| `drift unknown: no secret set for state version N of stack@env` | The state was written outside Writ. Run [`writ state adopt`](adopt-state.md). |
+| `local_file` or `local_sensitive_file` always shows as deleted outside OpenTofu | Each run uses a fresh temporary directory, so files from earlier applies are not on disk. |
+| `409 state` when approving or applying a drift check plan | Drift checks keep no saved plan. Run `writ plan --remote` for an approvable plan. |
+| No check starts during an apply | Writ skips stacks with active applies. If an apply starts mid-check, Writ discards the result and queues the check again. |
+| Empty `GET /v1/drift` after a config edit | Restart `writ serve`, and check that your token has `read` on the stack's env. |
 
 ## Limits
 

@@ -8,6 +8,20 @@ conftest verify --policy examples/policy
 
 For loading policies into `writ serve`, see [Write and test a policy](write-a-policy.md). For the input schema and allowed built-ins, see [Policy input and built-ins](policy-reference.md).
 
+## Files in examples/policy
+
+`examples/policy` provides a full policy set and unit tests (`policy_test.rego` and `cookbook_test.rego`). The recipes below come from these files:
+
+| File | Rule | Verdict |
+| --- | --- | --- |
+| `tls.rego` | `deny_rsa` | Denies RSA keys shorter than 4096 bits |
+| `files.rego` | `warn_file_permission` | Warns on `local_file` / `local_sensitive_file` with `file_permission != "0600"` |
+| `replace.rego` | `deny_replace`, `warn_replace` | Denies replacement of `tls_private_key` or `nomad_job`; warns on other replacements |
+| `deletes.rego` | `deny_delete`, `warn_delete` | Denies deletes in `prod`; warns elsewhere and under `conftest` |
+| `window.rego` | `deny_window` | Denies `prod` applies 09:00 to 16:00 Asia/Kolkata, Monday to Friday |
+| `cookbook.rego` | `deny_missing_tags`, `deny_public_s3`, `deny_unencrypted_storage`, `deny_open_ingress`, `deny_instance_size`, `deny_region`, `warn_iam_wildcard`, `deny_iam_prod_apply` | AWS tags, S3 public access, encryption, security groups, instance sizes, regions, and IAM/approval rules |
+| `writ.rego` | | Helpers reading `environment` and `decision` from `input.writ` (default `""` under `conftest`) |
+
 ## Shared helpers (`writ.rego`)
 
 Shared definitions in `package main` used across the recipes below:
