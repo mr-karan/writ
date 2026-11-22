@@ -93,7 +93,7 @@ var forgeKinds = map[control.RepoKind]forgeKind{
 
 // pullRefRE is a pull request's merge or head ref, refs/pull/N/merge or
 // refs/pull/N/head, as a GitHub Actions job of a pull_request event names.
-var pullRefRE = regexp.MustCompile(`^refs/pull/([0-9]+)/(merge|head)$`)
+var pullRefRE = regexp.MustCompile(`^refs/pull/([^/]+)/(merge|head)$`)
 
 // checkGitHubJob refuses a job no fork may start: one of a
 // pull_request_target event, which runs with the base repository's
@@ -112,10 +112,12 @@ func checkGitHubJob(ctx context.Context, c forge.Client, repo control.Repo, job 
 	if m == nil {
 		return &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("the token's ref %s is not a pull request's merge or head ref, so writ serve cannot check where the pull request comes from", trunc(job.ref))}
 	}
-	n, err := strconv.ParseInt(m[1], 10, 64)
-	if err != nil || n <= 0 {
+	// Digits only, no sign: a number from 1 to the largest int64.
+	u, err := strconv.ParseUint(m[1], 10, 63)
+	if err != nil || u == 0 {
 		return refusedRepo(http.StatusBadRequest, "the token's ref %s names pull request %s, which is not a pull request's number", trunc(job.ref), trunc(m[1]))
 	}
+	n := int64(u)
 	gh, ok := c.(*forge.GitHub)
 	if !ok {
 		return &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("repository %s is not read through GitHub's API, so writ serve cannot check where pull request %s comes from", repo.Name, m[1])}

@@ -132,6 +132,9 @@ grant {
 		{"a pull_request_target job", map[string]any{"sha": branch, "ref": "refs/heads/add-subnet-d", "event_name": "pull_request_target"}, nil, 403, "a job of a pull_request_target event may not plan"},
 		{"a pull request number over int64", map[string]any{"sha": merge, "ref": "refs/pull/9999999999999999999/merge", "event_name": "pull_request"}, nil, 400, "names pull request 9999999999999999999, which is not a pull request's number"},
 		{"a pull request number of 20 digits", map[string]any{"sha": merge, "ref": "refs/pull/99999999999999999999/merge", "event_name": "pull_request"}, nil, 400, "names pull request 99999999999999999999, which is not a pull request's number"},
+		{"a negative pull request number", map[string]any{"sha": merge, "ref": "refs/pull/-1/merge", "event_name": "pull_request"}, nil, 400, "names pull request -1, which is not a pull request's number"},
+		{"a pull request number that is not a number", map[string]any{"sha": merge, "ref": "refs/pull/x7/merge", "event_name": "pull_request"}, nil, 400, "names pull request x7, which is not a pull request's number"},
+		{"a pull request number with a sign", map[string]any{"sha": merge, "ref": "refs/pull/+42/merge", "event_name": "pull_request"}, nil, 400, "is not a full ref"},
 		{"pull request 0", map[string]any{"sha": merge, "ref": "refs/pull/0/merge", "event_name": "pull_request"}, nil, 400, "names pull request 0, which is not a pull request's number"},
 		{"a pull ref of another shape", map[string]any{"sha": merge, "ref": "refs/pull/42/evil", "event_name": "pull_request"}, nil, 403, "is not a pull request's merge or head ref"},
 	} {
