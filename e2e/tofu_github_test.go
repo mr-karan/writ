@@ -293,10 +293,10 @@ env "prod" {
 	// Onboarding: writ ci github writes the workflow and the config.
 	// The repository is at a GitHub Enterprise Server, so writ ci github
 	// needs its runners' label.
-	if r := person(2, "ci", "github", "--repo", "web", "--writ-version", "v0.1.8"); !strings.Contains(r.stderr+r.stdout, "--runs-on LABEL") {
+	if r := person(2, "ci", "github", "--repo", "web", "--writ-version", "v0.1.9"); !strings.Contains(r.stderr+r.stdout, "--runs-on LABEL") {
 		t.Fatalf("writ ci github with no runner label:\n%s", r)
 	}
-	ci := person(0, "ci", "github", "--repo", "web", "--writ-version", "v0.1.8", "--runs-on", "self-hosted-linux")
+	ci := person(0, "ci", "github", "--repo", "web", "--writ-version", "v0.1.9", "--runs-on", "self-hosted-linux")
 	for _, want := range []string{"  id-token: write\n", "    runs-on: \"self-hosted-linux\"\n", "github.event.pull_request.head.repo.full_name == github.repository", "  writ:\n    # The one check to require.", "--slot-wait 15m\n", "          - stack: \"app\"\n            env: \"prod\"\n", "  match  = { repository_id = [\"777001\"] }\n"} {
 		if !strings.Contains(ci.stdout, want) {
 			t.Fatalf("writ ci github lacks %q:\n%s", want, ci.stdout)

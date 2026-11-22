@@ -36,7 +36,7 @@ jobs:
     steps:
       - name: Install writ
         env:
-          WRIT_VERSION: "v0.1.8"
+          WRIT_VERSION: "v0.1.9"
         # install.sh checks the release's minisign signature. A runner without minisign
         # gets it from apt-get with sudo, as an Ubuntu runner has them.
         run: |

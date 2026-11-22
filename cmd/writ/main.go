@@ -690,7 +690,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 		envs := fs.String("envs", "", "a comma-separated `list` of environments; default every one writ serve serves")
 		image := fs.String("image", "registry.example.com/writ:"+version, "the `image` whose PATH holds the writ binary")
 		component := fs.String("component", cli.DefaultComponent, "the GitLab CI/CD component to include, `PATH@VERSION`")
-		writVersion := fs.String("writ-version", version, "the Writ `release` a GitHub Actions job installs, such as v0.1.8")
+		writVersion := fs.String("writ-version", "", "the Writ `release` a GitHub Actions job installs, v0.1.9 or later; default this writ's version when it is a release")
 		runsOn := fs.String("runs-on", "", "the `label` of the runner a GitHub Actions job runs on; default ubuntu-24.04 at github.com, required elsewhere")
 		return func(ctx context.Context, app *cli.App, pos []string) error {
 			if len(pos) != 1 || pos[0] != "gitlab" && pos[0] != "github" {

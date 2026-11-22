@@ -54,7 +54,7 @@ func TestCIGitHub(t *testing.T) {
 	var out bytes.Buffer
 	a := precedenceApp(t, t.TempDir(), srv.URL, map[string]string{tokenCI: "ci-token"})
 	a.opts.Stdout = &out
-	if err := a.CI(context.Background(), "github", CIOptions{Repo: "web-app", WritVersion: "v0.1.8"}); err != nil {
+	if err := a.CI(context.Background(), "github", CIOptions{Repo: "web-app", WritVersion: "v0.1.9"}); err != nil {
 		t.Fatal(err)
 	}
 	want, err := os.ReadFile(filepath.Join("testdata", "ci-github.golden"))
@@ -93,7 +93,7 @@ func TestCIGitHubRunnersAndSlots(t *testing.T) {
 			var out bytes.Buffer
 			a := precedenceApp(t, t.TempDir(), srv.URL, map[string]string{tokenCI: "ci-token"})
 			a.opts.Stdout = &out
-			tc.o.Repo, tc.o.WritVersion = "web-app", "v0.1.8"
+			tc.o.Repo, tc.o.WritVersion = "web-app", "v0.1.9"
 			if err := a.CI(context.Background(), "github", tc.o); err != nil {
 				t.Fatal(err)
 			}
@@ -106,6 +106,21 @@ func TestCIGitHubRunnersAndSlots(t *testing.T) {
 				t.Fatalf("a hint to read the server's limit, which was read:\n%s", out.String())
 			}
 		})
+	}
+}
+
+// TestCIGitHubDefaultsToItsOwnRelease checks that with no --writ-version,
+// a writ that is a release installs itself.
+func TestCIGitHubDefaultsToItsOwnRelease(t *testing.T) {
+	srv := repoServer(t, webRepo("github"))
+	var out bytes.Buffer
+	a := precedenceApp(t, t.TempDir(), srv.URL, map[string]string{tokenCI: "ci-token"})
+	a.opts.Stdout, a.opts.Version = &out, "v0.2.0"
+	if err := a.CI(context.Background(), "github", CIOptions{Repo: "web-app"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `          WRIT_VERSION: "v0.2.0"`+"\n") {
+		t.Fatalf("the workflow installs another release:\n%s", out.String())
 	}
 }
 
@@ -128,21 +143,26 @@ func TestCIRefusals(t *testing.T) {
 		o          CIOptions
 		want       string
 	}{
-		{"an unregistered repository", "github", webRepo("github"), CIOptions{Repo: "nope", WritVersion: "v0.1.8"}, "no repository"},
-		{"a GitLab project", "github", webRepo("gitlab"), CIOptions{Repo: "web-app", WritVersion: "v0.1.8"}, "repository web-app is a gitlab repository, not a GitHub repository"},
+		{"an unregistered repository", "github", webRepo("github"), CIOptions{Repo: "nope", WritVersion: "v0.1.9"}, "no repository"},
+		{"a GitLab project", "github", webRepo("gitlab"), CIOptions{Repo: "web-app", WritVersion: "v0.1.9"}, "repository web-app is a gitlab repository, not a GitHub repository"},
 		{"a GitHub repository for GitLab CI", "gitlab", webRepo("github"), CIOptions{Repo: "web-app", Component: DefaultComponent}, "repository web-app is a github repository, not a GitLab project"},
-		{"no served stack", "github", none, CIOptions{Repo: "web-app", WritVersion: "v0.1.8"}, "has no stack this control plane serves"},
-		{"an environment it does not serve", "github", webRepo("github"), CIOptions{Repo: "web-app", Envs: []string{"dev"}, WritVersion: "v0.1.8"}, "has no stack this control plane serves in dev"},
+		{"no served stack", "github", none, CIOptions{Repo: "web-app", WritVersion: "v0.1.9"}, "has no stack this control plane serves"},
+		{"an environment it does not serve", "github", webRepo("github"), CIOptions{Repo: "web-app", Envs: []string{"dev"}, WritVersion: "v0.1.9"}, "has no stack this control plane serves in dev"},
 		{"a version that is no release", "github", webRepo("github"), CIOptions{Repo: "web-app", WritVersion: "dev; curl evil"}, "is not a Writ release"},
 		{"another kind", "bitbucket", webRepo("github"), CIOptions{Repo: "web-app"}, "ci takes gitlab or github"},
-		{"an enterprise server with no runner label", "github", ghe, CIOptions{Repo: "web-app", WritVersion: "v0.1.8"}, "repository web-app is at https://ghe.example.com, not github.com, so writ ci github cannot know its runners' labels: name the label of a Linux runner with --runs-on LABEL"},
-		{"a matrix over 256 jobs", "github", huge, CIOptions{Repo: "web-app", WritVersion: "v0.1.8"}, "has 258 stacks and environments to plan, over the 256 jobs a GitHub Actions matrix makes"},
+		{"a release before the workflow's least", "github", webRepo("github"), CIOptions{Repo: "web-app", WritVersion: "v0.1.8"}, "writ v0.1.8 cannot run the workflow, which needs the GitHub Actions token fetch and --slot-wait of v0.1.9 or later"},
+		{"a pre-release", "github", webRepo("github"), CIOptions{Repo: "web-app", WritVersion: "v0.2.0-rc1"}, "is not a Writ release, such as v0.1.9"},
+		{"no flag on a build of a commit", "github", webRepo("github"), CIOptions{Repo: "web-app"}, `this writ is "1a8c8a3", not a release, so writ ci github cannot tell which release the workflow should install: name one with --writ-version, v0.1.9 or later`},
+		{"an enterprise server with no runner label", "github", ghe, CIOptions{Repo: "web-app", WritVersion: "v0.1.9"}, "repository web-app is at https://ghe.example.com, not github.com, so writ ci github cannot know its runners' labels: name the label of a Linux runner with --runs-on LABEL"},
+		{"a matrix over 256 jobs", "github", huge, CIOptions{Repo: "web-app", WritVersion: "v0.1.9"}, "has 258 stacks and environments to plan, over the 256 jobs a GitHub Actions matrix makes"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := repoServer(t, tc.doc)
 			var out, errOut bytes.Buffer
 			a := precedenceApp(t, t.TempDir(), srv.URL, map[string]string{tokenCI: "ci-token"})
 			a.opts.Stdout, a.opts.Stderr = &out, &errOut
+			// A Nix build of a commit says its short hash.
+			a.opts.Version = "1a8c8a3"
 			err := a.CI(context.Background(), tc.kind, tc.o)
 			if err == nil || !strings.Contains(err.Error()+out.String()+errOut.String(), tc.want) {
 				t.Fatalf("got %v, %s %s; want %q", err, out.String(), errOut.String(), tc.want)

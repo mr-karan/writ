@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/mr-karan/writ/internal/forge"
@@ -13,7 +16,45 @@ import (
 )
 
 // releaseRE is a Writ release tag, which install.sh takes.
-var releaseRE = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`)
+var releaseRE = regexp.MustCompile(`^v([0-9]{1,6})\.([0-9]{1,6})\.([0-9]{1,6})$`)
+
+// minWorkflowRelease is the first release whose writ the workflow can
+// run: it asks GitHub Actions for its ID token, takes --slot-wait, and
+// fetches a new token when a long plan outlives the first. It is the
+// release after v0.1.8, whose changes the changelog lists as unreleased.
+const minWorkflowRelease = "v0.1.9"
+
+// releaseParts are a release tag's major, minor, and patch, and whether
+// it is one.
+func releaseParts(tag string) ([3]int, bool) {
+	m := releaseRE.FindStringSubmatch(tag)
+	if m == nil {
+		return [3]int{}, false
+	}
+	var p [3]int
+	for i := range p {
+		p[i], _ = strconv.Atoi(m[i+1])
+	}
+	return p, true
+}
+
+// workflowRelease is the release the workflow installs: --writ-version,
+// or this writ's own version when it is a release, either at least
+// minWorkflowRelease.
+func (a *App) workflowRelease(flag string) (string, error) {
+	least, _ := releaseParts(minWorkflowRelease)
+	tag := cmp.Or(flag, a.opts.Version)
+	p, ok := releaseParts(tag)
+	switch {
+	case flag != "" && !ok:
+		return "", usagef("--writ-version %q is not a Writ release, such as %s: the workflow installs that release", flag, minWorkflowRelease)
+	case flag == "" && !ok:
+		return "", usagef("this writ is %q, not a release, so writ ci github cannot tell which release the workflow should install: name one with --writ-version, %s or later", tag, minWorkflowRelease)
+	case slices.Compare(p[:], least[:]) < 0:
+		return "", usagef("writ %s cannot run the workflow, which needs the GitHub Actions token fetch and --slot-wait of %s or later: name a later release with --writ-version", tag, minWorkflowRelease)
+	}
+	return tag, nil
+}
 
 // githubRunner is the runner label of a job at github.com that names
 // none: a GitHub-hosted Ubuntu runner, which has sudo and apt-get.
@@ -70,8 +111,9 @@ func yamlString(s string) string {
 // skips a pull request from a fork and Dependabot's runs, which get no ID
 // token; a skipped check does not block a pull request.
 func writeGitHubCI(ctx context.Context, a *App, r *remote, d server.RepoDoc, o CIOptions, p ciPlan) error {
-	if !releaseRE.MatchString(o.WritVersion) {
-		return usagef("--writ-version %q is not a Writ release, such as v0.1.8: the workflow installs that release", o.WritVersion)
+	release, err := a.workflowRelease(o.WritVersion)
+	if err != nil {
+		return err
 	}
 	if len(p.jobs) > maxMatrix {
 		return usagef("repository %s has %d stacks and environments to plan, over the %d jobs a GitHub Actions matrix makes; narrow them with --envs, or split the stacks across repositories", o.Repo, len(p.jobs), maxMatrix)
@@ -127,7 +169,7 @@ func writeGitHubCI(ctx context.Context, a *App, r *remote, d server.RepoDoc, o C
 	fmt.Fprintln(out, "    steps:")
 	fmt.Fprintln(out, "      - name: Install writ")
 	fmt.Fprintln(out, "        env:")
-	fmt.Fprintf(out, "          WRIT_VERSION: %s\n", yamlString(o.WritVersion))
+	fmt.Fprintf(out, "          WRIT_VERSION: %s\n", yamlString(release))
 	fmt.Fprintln(out, "        # install.sh checks the release's minisign signature. A runner without minisign")
 	fmt.Fprintln(out, "        # gets it from apt-get with sudo, as an Ubuntu runner has them.")
 	fmt.Fprintln(out, "        run: |")
