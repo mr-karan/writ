@@ -73,7 +73,9 @@ func TestCIGitHub(t *testing.T) {
 func TestCIGitHubRunnersAndSlots(t *testing.T) {
 	ghe := webRepo("github")
 	ghe.Repo.ForgeURL = "https://ghe.example.com"
-	admin := server.ConfigDoc{Format: server.FormatConfig, OK: true, Admin: &server.AdminConfig{Limits: server.LimitsInfo{PlansPerPrincipal: 2}}}
+	limits := func(plans, perPrincipal int) []server.ConfigDoc {
+		return []server.ConfigDoc{{Format: server.FormatConfig, OK: true, Admin: &server.AdminConfig{Limits: server.LimitsInfo{Plans: plans, PlansPerPrincipal: perPrincipal}}}}
+	}
 	for _, tc := range []struct {
 		name string
 		doc  server.RepoDoc
@@ -81,9 +83,10 @@ func TestCIGitHubRunnersAndSlots(t *testing.T) {
 		o    CIOptions
 		want []string
 	}{
-		{"github.com", webRepo("github"), nil, CIOptions{}, []string{`    runs-on: "ubuntu-24.04"` + "\n", "      max-parallel: 4\n", "an admin's run of writ ci github reads the server's own"}},
+		{"github.com, limits unread", webRepo("github"), nil, CIOptions{}, []string{`    runs-on: "ubuntu-24.04"` + "\n", "      max-parallel: 1\n", "# max-parallel is 1: an admin who runs writ ci github again gets writ serve's own limit."}},
 		{"an enterprise server's label", ghe, nil, CIOptions{RunsOn: "self-hosted-linux"}, []string{`    runs-on: "self-hosted-linux"` + "\n"}},
-		{"the server's plan slots", webRepo("github"), []server.ConfigDoc{admin}, CIOptions{}, []string{"      # writ serve runs 2 plans of one principal at once, its limits.plans_per_principal.\n      max-parallel: 2\n"}},
+		{"the per-principal limit is the lesser", webRepo("github"), limits(8, 2), CIOptions{}, []string{"      # writ serve takes 2 plans of one actor at once: the lesser of its limits.plans and\n      # limits.plans_per_principal.\n      max-parallel: 2\n"}},
+		{"the server's limit is the lesser", webRepo("github"), limits(3, 4), CIOptions{}, []string{"      max-parallel: 3\n"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := repoServer(t, tc.doc, tc.cfg...)
@@ -99,7 +102,7 @@ func TestCIGitHubRunnersAndSlots(t *testing.T) {
 					t.Fatalf("the workflow lacks %q:\n%s", w, out.String())
 				}
 			}
-			if tc.cfg != nil && strings.Contains(out.String(), "an admin's run") {
+			if tc.cfg != nil && strings.Contains(out.String(), "could not read") {
 				t.Fatalf("a hint to read the server's limit, which was read:\n%s", out.String())
 			}
 		})

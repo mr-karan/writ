@@ -22,20 +22,32 @@ const githubRunner = "ubuntu-24.04"
 // maxMatrix is the most jobs one GitHub Actions matrix may make.
 const maxMatrix = 256
 
-// planSlots is how many of one principal's plans writ serve runs at once:
-// its limits.plans_per_principal, which GET /v1/config shows an admin,
-// or the default, and whether it was read. Every job of a workflow run is
-// one principal, its actor, so the matrix runs no more jobs at once.
-func planSlots(ctx context.Context, r *remote) (int, bool) {
+// slotWait is how long a plan job waits for a busy plan slot, and
+// jobTimeout the job's timeout-minutes, which leaves the plan time to run
+// after the wait.
+const (
+	slotWait   = "15m"
+	jobTimeout = 45
+)
+
+// planSlots is how many plans of one workflow run writ serve takes at
+// once: the lesser of its limits.plans and limits.plans_per_principal,
+// which GET /v1/config shows an admin, since every job of a run is one
+// principal, its actor. Unread, it is 1, and read reports so.
+func planSlots(ctx context.Context, r *remote) (slots int, read bool) {
 	b, err := r.get(ctx, "/v1/config", remoteTimeout)
 	if err != nil {
-		return server.DefaultPlansPerPrincipal, false
+		return 1, false
 	}
 	var doc server.ConfigDoc
-	if json.Unmarshal(b, &doc) != nil || doc.Format != server.FormatConfig || doc.Admin == nil || doc.Admin.Limits.PlansPerPrincipal < 1 {
-		return server.DefaultPlansPerPrincipal, false
+	if json.Unmarshal(b, &doc) != nil || doc.Format != server.FormatConfig || doc.Admin == nil {
+		return 1, false
 	}
-	return doc.Admin.Limits.PlansPerPrincipal, true
+	l := doc.Admin.Limits
+	if l.Plans < 1 || l.PlansPerPrincipal < 1 {
+		return 1, false
+	}
+	return min(l.Plans, l.PlansPerPrincipal), true
 }
 
 // yamlString is s as a YAML double-quoted scalar: JSON's quoting, which
@@ -94,16 +106,17 @@ func writeGitHubCI(ctx context.Context, a *App, r *remote, d server.RepoDoc, o C
 	fmt.Fprintln(out, "jobs:")
 	fmt.Fprintln(out, "  plan:")
 	fmt.Fprintln(out, "    # A pull request from a fork and Dependabot's runs get no ID token, so the job skips")
-	fmt.Fprintln(out, "    # them; a skipped check does not block a pull request.")
-	fmt.Fprintln(out, "    if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)")
+	fmt.Fprintln(out, "    # them, for any event that carries a pull request; the writ job below reports it.")
+	fmt.Fprintln(out, "    if: github.actor != 'dependabot[bot]' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)")
 	fmt.Fprintf(out, "    runs-on: %s\n", yamlString(runsOn))
-	fmt.Fprintln(out, "    timeout-minutes: 30")
+	fmt.Fprintf(out, "    timeout-minutes: %d\n", jobTimeout)
 	fmt.Fprintln(out, "    strategy:")
 	fmt.Fprintln(out, "      fail-fast: false")
 	if read {
-		fmt.Fprintf(out, "      # writ serve runs %d plans of one principal at once, its limits.plans_per_principal.\n", slots)
+		fmt.Fprintf(out, "      # writ serve takes %d plans of one actor at once: the lesser of its limits.plans and\n      # limits.plans_per_principal.\n", slots)
 	} else {
-		fmt.Fprintf(out, "      # writ serve's default limits.plans_per_principal is %d; set your server's value here.\n", slots)
+		fmt.Fprintln(out, "      # writ ci github could not read writ serve's limits, which only an admin may: an admin")
+		fmt.Fprintln(out, "      # who runs it again gets the lesser of limits.plans and limits.plans_per_principal.")
 	}
 	fmt.Fprintf(out, "      max-parallel: %d\n", slots)
 	fmt.Fprintln(out, "      matrix:")
@@ -131,8 +144,26 @@ func writeGitHubCI(ctx context.Context, a *App, r *remote, d server.RepoDoc, o C
 	fmt.Fprintln(out, "          WRIT_STACK: ${{ matrix.stack }}")
 	fmt.Fprintln(out, "          WRIT_ENV: ${{ matrix.env }}")
 	fmt.Fprintln(out, "        # writ asks GitHub Actions for the job's ID token, whose audience is WRIT_SERVER;")
-	fmt.Fprintln(out, "        # writ serve refuses a commit or a repository other than the token's.")
-	fmt.Fprintln(out, `        run: writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA"`)
+	fmt.Fprintln(out, "        # writ serve refuses a commit or a repository other than the token's. While writ serve's")
+	fmt.Fprintf(out, "        # plan slots are busy, as with overlapping runs, writ asks again for up to %s.\n", slotWait)
+	fmt.Fprintf(out, "        run: writ plan --remote --env \"$WRIT_ENV\" --stack \"$WRIT_STACK\" --repo \"$WRIT_REPO\" --commit \"$GITHUB_SHA\" --slot-wait %s\n", slotWait)
+	fmt.Fprintln(out, "  writ:")
+	fmt.Fprintln(out, "    # The one check to require. It passes when every plan passed, or when the plan job was")
+	fmt.Fprintln(out, "    # skipped, as for a fork's or Dependabot's pull request, whose per-stack checks GitHub")
+	fmt.Fprintln(out, "    # never makes; it fails when a plan failed or was cancelled.")
+	fmt.Fprintln(out, "    needs: plan")
+	fmt.Fprintln(out, "    if: always()")
+	fmt.Fprintf(out, "    runs-on: %s\n", yamlString(runsOn))
+	fmt.Fprintln(out, "    timeout-minutes: 5")
+	fmt.Fprintln(out, "    steps:")
+	fmt.Fprintln(out, "      - name: Check the plans")
+	fmt.Fprintln(out, "        env:")
+	fmt.Fprintln(out, "          RESULT: ${{ needs.plan.result }}")
+	fmt.Fprintln(out, "        run: |")
+	fmt.Fprintln(out, `          case "$RESULT" in`)
+	fmt.Fprintln(out, `            success|skipped) echo "writ plan: $RESULT" ;;`)
+	fmt.Fprintln(out, `            *) echo "writ plan: $RESULT" >&2; exit 1 ;;`)
+	fmt.Fprintln(out, "          esac")
 
 	name := strings.ReplaceAll(o.Repo, "-", "_")
 	stacks, envs := quotedList(p.stacks), quotedList(p.envs)
@@ -144,9 +175,9 @@ func writeGitHubCI(ctx context.Context, a *App, r *remote, d server.RepoDoc, o C
 	fmt.Fprintf(out, "grant {\n  teams  = [%s]\n  stacks = [%s]\n  envs   = [%s]\n  can    = [\"read\", \"plan\"]\n}\n", tfcode.Quoted(name+"_ci"), stacks, envs)
 	fmt.Fprintf(out, "approval {\n  stacks = [%s]\n  envs   = [%s]\n  risks  = [\"create\", \"update\", \"replace\", \"delete\", \"data-loss\"]\n  need   = 1\n}\n", stacks, envs)
 	fmt.Fprintln(out, "# Grant approve and apply on these stacks to a team of a people issuer.")
-	fmt.Fprintf(out, "\n# Repository settings of %s: protect %s, and require the writ plan checks to pass.\n", d.Repo.Project, d.Repo.DefaultBranch)
+	fmt.Fprintf(out, "\n# Repository settings of %s: protect %s, and require the one check named writ, not\n# the per-stack plan checks.\n", d.Repo.Project, d.Repo.DefaultBranch)
 	if !read {
-		fmt.Fprintln(out, "# max-parallel is writ serve's default plans_per_principal: an admin's run of writ ci github reads the server's own.")
+		fmt.Fprintln(out, "# max-parallel is 1: an admin who runs writ ci github again gets writ serve's own limit.")
 	}
 	if r.dev {
 		fmt.Fprintf(out, "# %s is the dev control plane, on loopback: a GitHub-hosted runner cannot reach it.\n", r.base)

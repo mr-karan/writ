@@ -297,7 +297,7 @@ env "prod" {
 		t.Fatalf("writ ci github with no runner label:\n%s", r)
 	}
 	ci := person(0, "ci", "github", "--repo", "web", "--writ-version", "v0.1.8", "--runs-on", "self-hosted-linux")
-	for _, want := range []string{"  id-token: write\n", "    runs-on: \"self-hosted-linux\"\n", "github.event.pull_request.head.repo.full_name == github.repository", "          - stack: \"app\"\n            env: \"prod\"\n", "  match  = { repository_id = [\"777001\"] }\n"} {
+	for _, want := range []string{"  id-token: write\n", "    runs-on: \"self-hosted-linux\"\n", "github.event.pull_request.head.repo.full_name == github.repository", "  writ:\n    # The one check to require.", "--slot-wait 15m\n", "          - stack: \"app\"\n            env: \"prod\"\n", "  match  = { repository_id = [\"777001\"] }\n"} {
 		if !strings.Contains(ci.stdout, want) {
 			t.Fatalf("writ ci github lacks %q:\n%s", want, ci.stdout)
 		}

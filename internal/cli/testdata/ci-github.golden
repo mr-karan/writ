@@ -16,14 +16,15 @@ permissions:
 jobs:
   plan:
     # A pull request from a fork and Dependabot's runs get no ID token, so the job skips
-    # them; a skipped check does not block a pull request.
-    if: github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    # them, for any event that carries a pull request; the writ job below reports it.
+    if: github.actor != 'dependabot[bot]' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: "ubuntu-24.04"
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
-      # writ serve's default limits.plans_per_principal is 4; set your server's value here.
-      max-parallel: 4
+      # writ ci github could not read writ serve's limits, which only an admin may: an admin
+      # who runs it again gets the lesser of limits.plans and limits.plans_per_principal.
+      max-parallel: 1
       matrix:
         include:
           - stack: "web/network"
@@ -52,8 +53,26 @@ jobs:
           WRIT_STACK: ${{ matrix.stack }}
           WRIT_ENV: ${{ matrix.env }}
         # writ asks GitHub Actions for the job's ID token, whose audience is WRIT_SERVER;
-        # writ serve refuses a commit or a repository other than the token's.
-        run: writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA"
+        # writ serve refuses a commit or a repository other than the token's. While writ serve's
+        # plan slots are busy, as with overlapping runs, writ asks again for up to 15m.
+        run: writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA" --slot-wait 15m
+  writ:
+    # The one check to require. It passes when every plan passed, or when the plan job was
+    # skipped, as for a fork's or Dependabot's pull request, whose per-stack checks GitHub
+    # never makes; it fails when a plan failed or was cancelled.
+    needs: plan
+    if: always()
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 5
+    steps:
+      - name: Check the plans
+        env:
+          RESULT: ${{ needs.plan.result }}
+        run: |
+          case "$RESULT" in
+            success|skipped) echo "writ plan: $RESULT" ;;
+            *) echo "writ plan: $RESULT" >&2; exit 1 ;;
+          esac
 
 # The writ serve config: the team and grant of this repository's workflow runs, by the
 # repository's id, 777001, which a renamed or moved repository keeps, and an approval rule.
@@ -78,5 +97,6 @@ approval {
 }
 # Grant approve and apply on these stacks to a team of a people issuer.
 
-# Repository settings of acme/web-app: protect main, and require the writ plan checks to pass.
-# max-parallel is writ serve's default plans_per_principal: an admin's run of writ ci github reads the server's own.
+# Repository settings of acme/web-app: protect main, and require the one check named writ, not
+# the per-stack plan checks.
+# max-parallel is 1: an admin who runs writ ci github again gets writ serve's own limit.
