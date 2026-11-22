@@ -55,8 +55,9 @@ type hookForge struct {
 	// verify reports whether a delivery with header h and raw body proves
 	// that its sender holds secret, and when not, the audit row's check.
 	verify func(h http.Header, body, secret []byte, now time.Time) (ok bool, check string)
-	// delivery is the delivery's id, the same on each retry, or "".
-	delivery func(h http.Header) string
+	// delivery is the delivery's id, the same on each retry, or "", from
+	// its header and its raw body, which passed verify.
+	delivery func(h http.Header, body []byte) string
 	// moves reports whether the delivery's event can move a branch, from
 	// its header and its raw body, which passed verify.
 	moves func(h http.Header, body []byte) bool
@@ -151,7 +152,7 @@ var deliveryRE = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
 // delivery is keyed by its webhook-id alone, which the signature covers,
 // so a replay can't change its key with a header no one signed. An id the
 // pattern doesn't take is keyed by its SHA-256.
-func gitlabDelivery(h http.Header) string {
+func gitlabDelivery(h http.Header, _ []byte) string {
 	if h.Get("webhook-signature") != "" {
 		id := h.Get("webhook-id")
 		if id == "" || deliveryRE.MatchString(id) {
@@ -172,13 +173,13 @@ func gitlabDelivery(h http.Header) string {
 // GitLab sends for each push and merge to a branch.
 func gitlabMoves(h http.Header, _ []byte) bool { return h.Get("X-Gitlab-Event") == "Push Hook" }
 
-// githubDelivery is X-GitHub-Delivery, a GUID GitHub keeps the same when
-// a delivery is sent again.
-func githubDelivery(h http.Header) string {
-	if v := h.Get("X-GitHub-Delivery"); deliveryRE.MatchString(v) {
-		return v
-	}
-	return ""
+// githubDelivery is the SHA-256 of the signed body. GitHub sends a
+// delivery again with the same body, and X-GitHub-Delivery is not
+// signed, so a replay could change it; the body it cannot change. Two
+// pushes differ in their body, which names each push's commits.
+func githubDelivery(_ http.Header, body []byte) string {
+	sum := sha256.Sum256(body)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // githubMoves reports whether a GitHub delivery is a push event, which
@@ -469,7 +470,7 @@ func (s *Server) receiveHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := ""
-	if id := hf.delivery(r.Header); id != "" {
+	if id := hf.delivery(r.Header, body); id != "" {
 		key = name + "\x00" + id
 		if !s.hooks.first(key) {
 			doc.Duplicate = true

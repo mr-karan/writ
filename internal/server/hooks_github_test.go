@@ -145,10 +145,16 @@ func TestGitHubHook(t *testing.T) {
 		t.Fatalf("a ping's body as a push: %d %s", r.status, r.body)
 	}
 
-	// GitHub sends a delivery again with the same X-GitHub-Delivery.
-	if r := f.githubHook(githubHookPath, hookSecret, "push", "22222222-0000-4000-8000-000000000000", push); r.status != http.StatusOK || r.doc["duplicate"] != true || r.doc["queued"] != false {
-		t.Fatalf("a replayed delivery: %d %s", r.status, r.body)
+	// GitHub sends a delivery again with the same body and the same
+	// X-GitHub-Delivery; a replay may change the header, which is not
+	// signed, but not the body.
+	for _, id := range []string{"22222222-0000-4000-8000-000000000000", "44444444-0000-4000-8000-000000000000", ""} {
+		if r := f.githubHook(githubHookPath, hookSecret, "push", id, push); r.status != http.StatusOK || r.doc["duplicate"] != true || r.doc["queued"] != false {
+			t.Fatalf("a replayed delivery with id %q: %d %s", id, r.status, r.body)
+		}
 	}
+	// The address limit takes 10 deliveries a second.
+	time.Sleep(time.Second)
 
 	for _, c := range []struct {
 		name, secret, check string
