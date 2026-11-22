@@ -126,7 +126,17 @@ func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote,
 	if o.SlotWait < 0 || o.SlotWait > maxSlotWait {
 		return nil, nil, usagef("--slot-wait %s must be between 0 and %s", o.SlotWait, maxSlotWait)
 	}
-	r, err := a.remote(ctx)
+	// The slot wait starts before the first token is fetched, which it
+	// bounds too.
+	var deadline time.Time
+	rctx := ctx
+	if o.SlotWait > 0 {
+		deadline = time.Now().Add(o.SlotWait)
+		var cancel context.CancelFunc
+		rctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+	r, err := a.remote(rctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -168,7 +178,7 @@ func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote,
 	if !o.JSON {
 		io.WriteString(a.humanOutput(), line)
 	}
-	status, resp, err := a.postPlan(ctx, r, body, o.SlotWait)
+	status, resp, err := a.postPlan(ctx, r, body, o.SlotWait, deadline)
 	if err != nil {
 		return nil, nil, err
 	}
