@@ -1,17 +1,11 @@
 package forge
 
 import (
-	"bytes"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -30,11 +24,7 @@ type GitLabOptions struct {
 }
 
 // GitLab reads projects through GitLab's REST API, version 4.
-type GitLab struct {
-	api       string
-	tokenFile string
-	http      *http.Client
-}
+type GitLab struct{ rest *rest }
 
 // pageSize is the tree listing's page size, GitLab's largest.
 const pageSize = 100
@@ -55,132 +45,15 @@ func NewGitLab(o GitLabOptions) (*GitLab, error) {
 	if err != nil || u.Host == "" {
 		return nil, fmt.Errorf("forge URL %q is not a URL", trunc(o.URL))
 	}
-	client := &http.Client{Timeout: CallTimeout, CheckRedirect: func(*http.Request, []*http.Request) error {
-		// A redirect could carry the token to another host.
-		return http.ErrUseLastResponse
-	}}
-	if o.CAFile != "" {
-		pem, err := os.ReadFile(o.CAFile)
-		if err != nil {
-			return nil, fmt.Errorf("read the forge's ca_file: %w", err)
-		}
-		pool, err := x509.SystemCertPool()
-		if err != nil {
-			pool = x509.NewCertPool()
-		}
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("the forge's ca_file %s holds no certificate", o.CAFile)
-		}
-		client.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
-	}
-	return &GitLab{api: strings.TrimSuffix(o.URL, "/") + "/api/v4", tokenFile: o.TokenFile, http: client}, nil
-}
-
-func (g *GitLab) token() (string, error) {
-	b, err := os.ReadFile(g.tokenFile)
-	if err != nil {
-		return "", fmt.Errorf("read the forge's read_token_file: %w", err)
-	}
-	t := strings.TrimSpace(string(b))
-	if t == "" {
-		return "", fmt.Errorf("the forge's read_token_file %s is empty", g.tokenFile)
-	}
-	return t, nil
-}
-
-// call runs fn with the current token and removes the token from any
-// error fn returns. Errors carry no text the forge sent, so this is the
-// second line of defence.
-func (g *GitLab) call(fn func(tok string) error) error {
-	tok, err := g.token()
-	if err != nil {
-		return err
-	}
-	return redact(fn(tok), tok)
-}
-
-// redacted is an error whose text had the token removed. It unwraps to
-// ErrNotFound only, so no caller can reach the text it replaced.
-type redacted struct {
-	msg      string
-	notFound bool
-}
-
-func (e *redacted) Error() string { return e.msg }
-
-func (e *redacted) Unwrap() error {
-	if e.notFound {
-		return ErrNotFound
-	}
-	return nil
-}
-
-func redact(err error, tok string) error {
-	if err == nil || tok == "" || !strings.Contains(err.Error(), tok) {
-		return err
-	}
-	return &redacted{msg: strings.ReplaceAll(err.Error(), tok, "[REDACTED]"), notFound: errors.Is(err, ErrNotFound)}
-}
-
-// echoed reports that an answer holds the token. GitLab never sends the
-// token back, so such an answer is refused whole.
-func echoed(what string) error {
-	return fmt.Errorf("%s: the forge's answer holds the read token, so writ serve refuses it; rotate the token if the forge is not yours", what)
-}
-
-// get sends one GET to the API and returns the answer's body and headers,
-// reading at most max bytes. A status that is not 200 is an *Error.
-func (g *GitLab) get(ctx context.Context, tok, what, p string, q url.Values, max int64) ([]byte, http.Header, error) {
-	ctx, cancel := context.WithTimeout(ctx, CallTimeout)
-	defer cancel()
-	target := g.api + p
-	if len(q) > 0 {
-		target += "?" + q.Encode()
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-	req.Header.Set("PRIVATE-TOKEN", tok)
-	req.Header.Set("Accept", "application/json")
-	resp, err := g.http.Do(req)
-	if err != nil {
-		// The error names the URL, which holds no token.
-		return nil, nil, fmt.Errorf("%s: %w", what, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		// The body is the forge's own text, which is never read.
-		return nil, nil, &Error{What: what, Status: resp.StatusCode}
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, max+1))
-	if err != nil {
-		return nil, nil, fmt.Errorf("%s: read the answer: %w", what, err)
-	}
-	if int64(len(body)) > max {
-		return nil, nil, &TooLargeError{What: what + ": the answer", Max: max}
-	}
-	if bytes.Contains(body, []byte(tok)) {
-		return nil, nil, echoed(what)
-	}
-	return body, resp.Header, nil
-}
-
-// getJSON reads one JSON answer of at most max bytes into v.
-func (g *GitLab) getJSON(ctx context.Context, tok, what, p string, q url.Values, max int64, v any) (http.Header, error) {
-	b, h, err := g.get(ctx, tok, what, p, q, max)
+	client, err := newHTTPClient(o.CAFile)
 	if err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(b, v); err != nil {
-		return nil, fmt.Errorf("%s: the answer is not the JSON GitLab sends", what)
-	}
-	// JSON can spell the token with escapes the raw check misses; the
-	// decoded values, encoded again, spell it plainly.
-	if again, err := json.Marshal(v); err != nil || bytes.Contains(again, []byte(tok)) {
-		return nil, echoed(what)
-	}
-	return h, nil
+	return &GitLab{rest: &rest{
+		api: strings.TrimSuffix(o.URL, "/") + "/api/v4", tokenFile: o.TokenFile, http: client,
+		auth: func(h http.Header, tok string) { h.Set("PRIVATE-TOKEN", tok) },
+		need: "read_api and at least the Reporter role",
+	}}, nil
 }
 
 func projectPath(id string) string { return "/projects/" + url.PathEscape(id) }
@@ -194,8 +67,8 @@ func (g *GitLab) Project(ctx context.Context, ref string) (Project, error) {
 		WebURL            string `json:"web_url"`
 		EmptyRepo         bool   `json:"empty_repo"`
 	}
-	err := g.call(func(tok string) error {
-		_, err := g.getJSON(ctx, tok, "read project "+ref, projectPath(ref), nil, maxDoc, &p)
+	err := g.rest.call(func(tok string) error {
+		_, err := g.rest.getJSON(ctx, tok, "read project "+ref, projectPath(ref), nil, maxDoc, &p)
 		return err
 	})
 	if err != nil {
@@ -217,8 +90,8 @@ func (g *GitLab) Head(ctx context.Context, projectID, branch string) (string, er
 			ID string `json:"id"`
 		} `json:"commit"`
 	}
-	err := g.call(func(tok string) error {
-		_, err := g.getJSON(ctx, tok, "read branch "+branch, projectPath(projectID)+"/repository/branches/"+url.PathEscape(branch), nil, maxDoc, &b)
+	err := g.rest.call(func(tok string) error {
+		_, err := g.rest.getJSON(ctx, tok, "read branch "+branch, projectPath(projectID)+"/repository/branches/"+url.PathEscape(branch), nil, maxDoc, &b)
 		return err
 	})
 	if err != nil {
@@ -240,8 +113,8 @@ func (g *GitLab) Commit(ctx context.Context, projectID, sha string) (string, err
 	var c struct {
 		ID string `json:"id"`
 	}
-	err := g.call(func(tok string) error {
-		_, err := g.getJSON(ctx, tok, "read commit "+sha, projectPath(projectID)+"/repository/commits/"+url.PathEscape(sha), nil, maxDoc, &c)
+	err := g.rest.call(func(tok string) error {
+		_, err := g.rest.getJSON(ctx, tok, "read commit "+sha, projectPath(projectID)+"/repository/commits/"+url.PathEscape(sha), nil, maxDoc, &c)
 		return err
 	})
 	if err != nil {
@@ -263,8 +136,8 @@ func (g *GitLab) OnRef(ctx context.Context, projectID, sha, ref string) (bool, e
 		ID string `json:"id"`
 	}
 	q := url.Values{"refs[]": {sha, ref}}
-	err := g.call(func(tok string) error {
-		_, err := g.getJSON(ctx, tok, "read the merge base of "+Short(sha)+" and "+ref, projectPath(projectID)+"/repository/merge_base", q, maxDoc, &c)
+	err := g.rest.call(func(tok string) error {
+		_, err := g.rest.getJSON(ctx, tok, "read the merge base of "+Short(sha)+" and "+ref, projectPath(projectID)+"/repository/merge_base", q, maxDoc, &c)
 		return err
 	})
 	if errors.Is(err, ErrNotFound) {
@@ -292,7 +165,7 @@ func (g *GitLab) Tree(ctx context.Context, projectID, sha, dir string) ([]File, 
 	}
 	what := "read the tree of " + Short(sha)
 	var out []File
-	err := g.call(func(tok string) error {
+	err := g.rest.call(func(tok string) error {
 		listed := 0
 		for page := 0; ; page++ {
 			if page == maxPages {
@@ -304,7 +177,7 @@ func (g *GitLab) Tree(ctx context.Context, projectID, sha, dir string) ([]File, 
 				Path string `json:"path"`
 				Mode string `json:"mode"`
 			}
-			h, err := g.getJSON(ctx, tok, what, projectPath(projectID)+"/repository/tree", q, maxPage, &entries)
+			h, err := g.rest.getJSON(ctx, tok, what, projectPath(projectID)+"/repository/tree", q, maxPage, &entries)
 			if err != nil {
 				return err
 			}
@@ -363,9 +236,9 @@ func (g *GitLab) Blob(ctx context.Context, projectID, blob string, max int64) ([
 		return nil, fmt.Errorf("blob id %q is not a SHA-1", trunc(blob))
 	}
 	var b []byte
-	err := g.call(func(tok string) error {
+	err := g.rest.call(func(tok string) error {
 		var err error
-		b, _, err = g.get(ctx, tok, "read blob "+Short(blob), projectPath(projectID)+"/repository/blobs/"+blob+"/raw", nil, max)
+		b, _, err = g.rest.get(ctx, tok, "read blob "+Short(blob), projectPath(projectID)+"/repository/blobs/"+blob+"/raw", nil, "application/json", max)
 		return err
 	})
 	if err != nil {

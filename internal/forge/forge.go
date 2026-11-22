@@ -1,7 +1,8 @@
 // Package forge reads repositories where they are hosted: a project, the
 // head of a branch, the files of a commit, and a file's content by its Git
-// blob id. GitLab is read through its REST API with a read-only token, and
-// under writ serve --dev a local Git repository through the git binary.
+// blob id. GitLab and GitHub are read through their REST APIs with a
+// read-only token, and under writ serve --dev a local Git repository
+// through the git binary.
 //
 // The package owns each forge's wire format. Callers see the types below,
 // and never the token, which only the client holds and only a request
@@ -86,6 +87,8 @@ type Error struct {
 	// What names the call, such as "read the tree of 5d1e9a0c".
 	What   string
 	Status int
+	// Need is what the read token needs, which a 403 names.
+	Need string
 }
 
 func (e *Error) Error() string {
@@ -93,12 +96,12 @@ func (e *Error) Error() string {
 	switch {
 	case e.Status == 401:
 		msg += "; it refused the read token, so check the forge's read token"
+	case e.Status == 301 || e.Status == 302 || e.Status == 307 || e.Status == 308:
+		msg += "; writ serve follows no redirect, so add a renamed or moved repository again by its new path"
 	case e.Status == 403:
-		msg += "; the token needs read_api and at least the Reporter role"
+		msg += "; the token needs " + e.Need
 	case e.Status == 404:
 		msg += "; it has no such thing, or the token may not see it"
-	case e.Status == 429:
-		msg += "; it is limiting the rate of calls, so writ serve tries again at the next poll"
 	case e.Status >= 500:
 		msg += "; the forge failed"
 	}
@@ -110,6 +113,23 @@ func (e *Error) Unwrap() error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// RateLimitError is a forge that limits the rate of calls until Until.
+// The client sends it no call before then: Status is the answer that
+// said so, or 0 for a call the client held back.
+type RateLimitError struct {
+	What   string
+	Status int
+	Until  time.Time
+}
+
+func (e *RateLimitError) Error() string {
+	until := e.Until.UTC().Format(time.RFC3339)
+	if e.Status == 0 {
+		return fmt.Sprintf("%s: the forge limits the rate of calls until %s, so writ serve sends it none before then", e.What, until)
+	}
+	return fmt.Sprintf("%s: the forge answered %d; it limits the rate of calls until %s, so writ serve sends it none before then", e.What, e.Status, until)
 }
 
 // BlobID is the Git blob id of content: the SHA-1 of "blob SIZE\x00" and
