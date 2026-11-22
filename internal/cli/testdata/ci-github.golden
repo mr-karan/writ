@@ -1,0 +1,70 @@
+# .github/workflows/writ-plan.yml: each pull request and each push to the default
+# branch plans each stack in each environment with writ serve, which takes the
+# repository and the commit from the job's ID token and reads the commit itself, so no
+# job checks it out or holds a cloud credential. People approve each plan, in /ui/plans
+# or with writ approve --remote, and apply it with writ apply --remote.
+name: writ plan
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - stack: "web/network"
+            env: "prod"
+          - stack: "web/network"
+            env: "staging"
+          - stack: "web/database"
+            env: "prod"
+    steps:
+      - name: Install writ
+        env:
+          WRIT_VERSION: "v0.1.8"
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minisign
+          curl -fsSL "https://github.com/mr-karan/writ/releases/download/$WRIT_VERSION/install.sh" | sh -s -- --version "$WRIT_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Plan
+        env:
+          WRIT_SERVER: "http://127.0.0.1:PORT"
+          WRIT_REPO: "web-app"
+          WRIT_STACK: ${{ matrix.stack }}
+          WRIT_ENV: ${{ matrix.env }}
+        # writ asks GitHub Actions for the job's ID token, whose audience is WRIT_SERVER;
+        # writ serve refuses a commit or a repository other than the token's.
+        run: writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA"
+
+# The writ serve config: the team and grant of this repository's workflow runs, by the
+# repository's id, 777001, which a renamed or moved repository keeps, and an approval rule.
+# The issuer named github is GitHub Actions' token issuer: kind github-actions, at
+# https://token.actions.githubusercontent.com, or https://HOST/_services/token on GitHub
+# Enterprise Server.
+team "web_app_ci" {
+  issuer = "github"
+  match  = { repository_id = ["777001"] }
+}
+grant {
+  teams  = ["web_app_ci"]
+  stacks = ["web/network", "web/database"]
+  envs   = ["prod", "staging"]
+  can    = ["read", "plan"]
+}
+approval {
+  stacks = ["web/network", "web/database"]
+  envs   = ["prod", "staging"]
+  risks  = ["create", "update", "replace", "delete", "data-loss"]
+  need   = 1
+}
+# Grant approve and apply on these stacks to a team of a people issuer.
+
+# Repository settings of acme/web-app: protect main, and require the writ plan checks to pass.

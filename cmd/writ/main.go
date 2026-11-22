@@ -78,6 +78,9 @@ else the dev token:
   repo     show NAME [--json]             print a repository and the stacks found at its head
   ci       gitlab --repo NAME [--envs LIST] [--image IMAGE] [--component REF]
                                           print the .gitlab-ci.yml lines and the config lines for a repository
+  ci       github --repo NAME [--envs LIST] [--writ-version V]
+                                          print a GitHub Actions workflow that plans a repository's stacks,
+                                          and the config lines for it
   ui       [--json]                       print the control UI's address; under --dev, a sign-in link
   show     --remote ID [--json]           print a plan writ serve keeps, by id or ref, or a run, by id
   show     --remote --request KEY [--json]
@@ -685,13 +688,14 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 		repo := fs.String("repo", "", "the `repository` the CI jobs plan, as writ repo list names it")
 		envs := fs.String("envs", "", "a comma-separated `list` of environments; default every one writ serve serves")
 		image := fs.String("image", "registry.example.com/writ:"+version, "the `image` whose PATH holds the writ binary")
-		component := fs.String("component", cli.DefaultComponent, "the CI/CD component to include, `PATH@VERSION`")
+		component := fs.String("component", cli.DefaultComponent, "the GitLab CI/CD component to include, `PATH@VERSION`")
+		writVersion := fs.String("writ-version", version, "the Writ `release` a GitHub Actions job installs, such as v0.1.8")
 		return func(ctx context.Context, app *cli.App, pos []string) error {
-			if len(pos) != 1 || pos[0] != "gitlab" {
-				return &cli.UsageError{Msg: "ci takes gitlab: writ ci gitlab --repo NAME"}
+			if len(pos) != 1 || pos[0] != "gitlab" && pos[0] != "github" {
+				return &cli.UsageError{Msg: "ci takes gitlab or github: writ ci gitlab --repo NAME, or writ ci github --repo NAME"}
 			}
 			if *repo == "" {
-				return &cli.UsageError{Msg: "ci gitlab needs --repo, a repository writ repo list names"}
+				return &cli.UsageError{Msg: "ci " + pos[0] + " needs --repo, a repository writ repo list names"}
 			}
 			var list []string
 			for e := range strings.SplitSeq(*envs, ",") {
@@ -699,7 +703,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 					list = append(list, e)
 				}
 			}
-			return app.CIGitLab(ctx, cli.CIOptions{Repo: *repo, Envs: list, Image: *image, Component: *component})
+			return app.CI(ctx, pos[0], cli.CIOptions{Repo: *repo, Envs: list, Image: *image, Component: *component, WritVersion: *writVersion})
 		}, nil
 	case "ui":
 		j := asJSON()
