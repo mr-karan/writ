@@ -161,7 +161,10 @@ func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote,
 		if err != nil {
 			return nil, nil, err
 		}
-		wt := a.findWorkTree(ctx, r, filepath.Clean(dir))
+		wt := a.findWorkTree(rctx, r, filepath.Clean(dir))
+		if o.SlotWait > 0 && rctx.Err() != nil {
+			return nil, nil, fmt.Errorf("the slot wait of %s ended while writ looked for the work tree's repository on writ serve", o.SlotWait)
+		}
 		if wt.source != nil && o.Stack != "" && o.Stack != wt.name {
 			wt.source, wt.why = nil, "--stack "+o.Stack+" is not the stack's name "+wt.name+" in repository "+wt.repo.Name
 		}

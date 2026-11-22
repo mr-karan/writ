@@ -107,6 +107,8 @@ HTTP/1.1 403 Forbidden
 
 Output of a real run, 2026-11-10.
 
+`writ serve` marks two plan refusals, both made before it takes the plan, with `X-Writ-Retry`: `plan-slots` on the `429` when every plan slot of the principal or the server is busy, and `forge-rate-limit` on the `503`, class `provider`, with `Retry-After`, when the forge limits the rate of calls while the commit is checked. Other refusals, such as a missing grant, carry no mark. A client may send a request with one of those two status and mark pairs again unchanged; any other `429` or `503` may come from a proxy after writ serve took the request.
+
 ## Approval routes
 
 | Method and path | Grant | Body | Response |
@@ -202,8 +204,6 @@ Messages it prints (real runs against a local stand-in, 2026-11-16):
 ```
 
 Unknown fields (such as tokens) are refused; forge tokens never appear in responses, logs, audit rows, or UI pages.
-
-A plan refused before writ serve takes it carries `X-Writ-Retry`: `plan-slots` on the `429` when every plan slot of the principal or the server is busy, and `forge-rate-limit` on the `503`, class `provider`, with `Retry-After`, when the forge limits the rate of calls while the commit is checked. A client may send such a request again unchanged; a `429` or `503` without the header may come from a proxy after writ serve took the request.
 
 ## Webhook route
 

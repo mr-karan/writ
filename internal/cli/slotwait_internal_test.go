@@ -7,8 +7,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +34,9 @@ type busyServer struct {
 	retryAfter string
 	// unmarked leaves out X-Writ-Retry, as a proxy's 429 or 503 would.
 	unmarked bool
+	// mark is the X-Writ-Retry value; when "", writ serve's own for the
+	// status.
+	mark string
 }
 
 func newBusyServer(t *testing.T, busy int) *busyServer {
@@ -50,10 +55,15 @@ func newBusyServer(t *testing.T, busy int) *busyServer {
 				if b.retryAfter != "" {
 					w.Header().Set("Retry-After", b.retryAfter)
 				}
+				status := cmp.Or(b.status, http.StatusTooManyRequests)
 				if !b.unmarked {
-					w.Header().Set(server.RetryHeader, server.RetrySlots)
+					mark := server.RetrySlots
+					if status == http.StatusServiceUnavailable {
+						mark = server.RetryForge
+					}
+					w.Header().Set(server.RetryHeader, cmp.Or(b.mark, mark))
 				}
-				w.WriteHeader(cmp.Or(b.status, http.StatusTooManyRequests))
+				w.WriteHeader(status)
 				_, _ = w.Write([]byte(`{"format":"writ.remote-plan/v0","ok":false,"diagnostics":[{"severity":"error","class":"usage","message":"writ serve is running 4 plans for github acme/web or 8 in all; try again when one ends"}]}`))
 				return
 			}
@@ -203,15 +213,20 @@ func TestSlotWaitAsksAgainOnlyWhenMarked(t *testing.T) {
 		name     string
 		status   int
 		unmarked bool
+		mark     string
 		posts    int
 	}{
-		{"a proxy's 503", http.StatusServiceUnavailable, true, 1},
-		{"a proxy's 429", http.StatusTooManyRequests, true, 1},
-		{"writ serve's 503", http.StatusServiceUnavailable, false, 2},
+		{"a proxy's 503", http.StatusServiceUnavailable, true, "", 1},
+		{"a proxy's 429", http.StatusTooManyRequests, true, "", 1},
+		{"writ serve's 503", http.StatusServiceUnavailable, false, "", 2},
+		{"writ serve's 429", http.StatusTooManyRequests, false, "", 2},
+		{"a 503 marked plan-slots", http.StatusServiceUnavailable, false, server.RetrySlots, 1},
+		{"a 429 marked forge-rate-limit", http.StatusTooManyRequests, false, server.RetryForge, 1},
+		{"an unknown mark", http.StatusTooManyRequests, false, "yes", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			writ := newBusyServer(t, 1)
-			writ.status, writ.unmarked = tc.status, tc.unmarked
+			writ.status, writ.unmarked, writ.mark = tc.status, tc.unmarked, tc.mark
 			a := precedenceApp(t, t.TempDir(), writ.URL, map[string]string{tokenCI: "ci-token", "WRIT_ENV": "prod"})
 			a.opts.Stdout, a.opts.Stderr = &bytes.Buffer{}, &bytes.Buffer{}
 			o := slotPlan
@@ -264,6 +279,7 @@ func TestRetryAfter(t *testing.T) {
 		{"61", 0, true},
 		{"9223372036854775807", 0, true},
 		{"99999999999999999999999", 0, true},
+		{"99999999999999999999999x", 0, false},
 		{"Sun, 22 Nov 2026 12:00:30 GMT", 30 * time.Second, false},
 		{"Sun, 22 Nov 2026 12:05:00 GMT", 5 * time.Minute, true},
 		{"Sun, 22 Nov 2026 11:59:00 GMT", 0, false},
@@ -273,5 +289,36 @@ func TestRetryAfter(t *testing.T) {
 		if wait, past := retryAfter(tc.v, now, time.Minute); wait != tc.wait || past != tc.past {
 			t.Errorf("retryAfter(%q) = %s, %v; want %s, %v", tc.v, wait, past, tc.wait, tc.past)
 		}
+	}
+}
+
+// TestSlotWaitBoundsDiscovery checks that the slot wait also bounds
+// listing writ serve's repositories, which a plan from a work tree does
+// first, and that no plan request follows once the wait ends there.
+func TestSlotWaitBoundsDiscovery(t *testing.T) {
+	repo, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitRepo(t, repo, "resource \"random_pet\" \"name\" {}\n")
+	var posts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/plans" {
+			posts.Add(1)
+		}
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	a := precedenceApp(t, filepath.Join(repo, "stack"), srv.URL, map[string]string{tokenCI: "ci-token", "WRIT_ENV": "prod"})
+	a.opts.Stdout, a.opts.Stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	o := RemotePlanOptions{JSON: true, SlotWait: 300 * time.Millisecond}
+	start := time.Now()
+	_, _, err = a.sendRemotePlan(context.Background(), o)
+	if err == nil || !strings.Contains(err.Error(), "ended while writ looked") || posts.Load() != 0 || time.Since(start) > 2*time.Second {
+		t.Fatalf("got %v after %s and %d plan requests", err, time.Since(start), posts.Load())
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mr-karan/writ/internal/server"
@@ -47,7 +48,7 @@ func (a *App) postPlan(ctx context.Context, r *remote, body []byte, wait time.Du
 			return 0, nil, fmt.Errorf("the slot wait of %s ended before a plan request could be sent", wait)
 		}
 		status, hdr, resp, err := r.send(ctx, http.MethodPost, "/v1/plans", body, remoteTimeout, nil)
-		if err != nil || hdr.Get(server.RetryHeader) == "" || status != http.StatusTooManyRequests && status != http.StatusServiceUnavailable {
+		if err != nil || !marked(status, hdr.Get(server.RetryHeader)) {
 			return status, resp, err
 		}
 		now := time.Now()
@@ -85,6 +86,15 @@ func (a *App) postPlan(ctx context.Context, r *remote, body []byte, wait time.Du
 	}
 }
 
+// marked reports whether a refusal carries the mark writ serve gives its
+// own refusals made before it took the plan: plan-slots on a 429,
+// forge-rate-limit on a 503. Any other pair, as a proxy could send, is not
+// asked again.
+func marked(status int, mark string) bool {
+	return status == http.StatusTooManyRequests && mark == server.RetrySlots ||
+		status == http.StatusServiceUnavailable && mark == server.RetryForge
+}
+
 // retryAfter reads a Retry-After value, seconds or an HTTP-date, as a
 // wait from now, and reports past when the wait is longer than left. A
 // count of seconds is compared with left before it becomes a duration, so
@@ -100,7 +110,7 @@ func retryAfter(v string, now time.Time, left time.Duration) (wait time.Duration
 		}
 		return time.Duration(s) * time.Second, false
 	}
-	if errors.Is(err, strconv.ErrRange) {
+	if errors.Is(err, strconv.ErrRange) && strings.Trim(v, "0123456789") == "" {
 		return 0, true
 	}
 	at, err := http.ParseTime(v)
