@@ -210,8 +210,8 @@ Unknown fields (such as tokens) are refused; forge tokens never appear in respon
 | Delivery | Response |
 | --- | --- |
 | Verified `Push Hook` (GitLab) or `X-GitHub-Event: push` (GitHub) | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never parsed, stored, or logged. |
-| Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0), or duplicate `X-GitHub-Delivery` | `200`, `duplicate: true` |
-| Verified, not a push, such as GitHub's `ping` | `200`, `queued: false` |
+| Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0), or a GitHub delivery whose signed body's SHA-256 was acted on already | `200`, `duplicate: true` |
+| Verified, not a push, such as GitHub's `ping`, or a GitHub `push` whose signed body lacks `ref` or `after` | `200`, `queued: false` |
 | Any verification failure: unknown repository or webhook, missing or wrong secret, bad signature or timestamp, body over 1 MiB (`check: hook-body`) | `401`, `auth`: `the delivery failed verification` |
 | Over 10 deliveries/s from one client IP | `429`, `Retry-After: 1`. Dropped before the body is read; no audit row. |
 | Over 5 deliveries/s for one repository | `429`, `Retry-After: 1`. Audited. |
@@ -243,7 +243,7 @@ GitLab and GitHub treat any 4xx response as a failure. Normal project traffic st
 - Secrets and failed candidate tokens never appear in logs, audit rows, API responses, or the control UI.
 - Webhooks are unauthenticated by bearer token; the per-IP rate limit runs before reading the body.
 - Bodies are capped at 1 MiB and never stored or logged.
-- The newest 4,096 delivery IDs are deduplicated in memory. After a restart, a resent delivery triggers at most one extra head read.
+- The newest 4,096 delivery IDs (for GitHub, signed bodies' digests) are deduplicated in memory. After a restart, a resent delivery triggers at most one extra head read.
 - A delivery never triggers plans or applies and never chooses what to fetch; `writ serve` always reads the stored project ID and default branch using the forge's read token.
 
 ## Token checks

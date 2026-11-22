@@ -18,16 +18,16 @@ Run `writ ci github --repo NAME` to generate the workflow and the `writ serve` t
 
 | Flag | Meaning |
 | --- | --- |
-| `--writ-version V` | The release the workflow installs. Default: the CLI's own version. |
+| `--writ-version V` | The release the workflow installs, a tag `vX.Y.Z` at or after `v0.1.9`: the workflow needs the CLI's GitHub Actions token fetch and `--slot-wait`, which the changelog lists as unreleased after `v0.1.8`. Default: the CLI's own version when it is such a release. A build that reports a commit hash, as a Nix build does, must name one. |
 | `--runs-on LABEL` | The runner label. Default `ubuntu-24.04` for a repository at github.com; required for GitHub Enterprise Server, whose runner labels are its administrators'. |
 | `--envs a,b` | Narrow the environments. |
 
 `strategy.max-parallel` is the lesser of the server's `limits.plans` and `limits.plans_per_principal`, since every job of a run is one principal, its actor. `writ ci github` reads both from `GET /v1/config`, which shows the limits only to an admin; for anyone else it writes 1, with a comment to run it again as an admin.
 
-Each plan step passes `--slot-wait 15m`, and the job's `timeout-minutes` is 45. When writ serve refuses a plan with 429 or 503 because its plan slots are busy, as when two runs overlap, `writ plan --remote` asks again with exponential backoff and jitter, from 5 seconds to a minute, for up to 15 minutes, fetching a fresh ID token before each try. A refused plan spends no token. If the slots stay busy past the wait, the step prints writ serve's refusal and fails.
+Each plan step passes `--slot-wait 15m`, and the job's `timeout-minutes` is 45. When writ serve refuses a plan with 429 or 503 because its plan slots are busy, as when two runs overlap, `writ plan --remote` asks again with exponential backoff and jitter, from 5 seconds to a minute, for up to 15 minutes, fetching a fresh ID token before each try. A `Retry-After` in writ serve's answer, as when GitHub limits the rate of its calls and writ serve answers 503, sets the next try. No try starts after the wait ends, and a refused plan spends no token. If the slots stay busy past the wait, the step prints writ serve's refusal and fails. While the plan runs, `writ` reads it with the same ID token, and fetches a new one if writ serve refuses the old one with 401, as when it expired.
 
 ```
-$ writ ci github --repo web --writ-version v0.1.8 --runs-on self-hosted-linux
+$ writ ci github --repo web --writ-version v0.1.9 --runs-on self-hosted-linux
 # .github/workflows/writ-plan.yml: each pull request and each push to the default
 # branch plans each stack in each environment with writ serve, which takes the
 # repository and the commit from the job's ID token and reads the commit itself, so no
@@ -62,7 +62,7 @@ jobs:
     steps:
       - name: Install writ
         env:
-          WRIT_VERSION: "v0.1.8"
+          WRIT_VERSION: "v0.1.9"
         # install.sh checks the release's minisign signature. A runner without minisign
         # gets it from apt-get with sudo, as an Ubuntu runner has them.
         run: |
@@ -74,7 +74,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Plan
         env:
-          WRIT_SERVER: "http://127.0.0.1:46435"
+          WRIT_SERVER: "http://127.0.0.1:40597"
           WRIT_REPO: "web"
           WRIT_STACK: ${{ matrix.stack }}
           WRIT_ENV: ${{ matrix.env }}
@@ -128,7 +128,7 @@ approval {
 # max-parallel is 1: an admin who runs writ ci github again gets writ serve's own limit.
 ```
 
-Output of a real run against a local test `writ serve` on loopback, with a GitHub Enterprise Server stand-in, 2026-11-22. It shows the shape only: the `http://127.0.0.1:46435` server URL, the runner label, and the repository ID are the test's. Run the command against your own control plane and copy what it prints.
+Output of a real run against a local test `writ serve` on loopback, with a GitHub Enterprise Server stand-in, 2026-11-22. It shows the shape only: the `http://127.0.0.1:40597` server URL, the runner label, and the repository ID are the test's. Run the command against your own control plane and copy what it prints.
 
 1. Save the YAML it printed as `.github/workflows/writ-plan.yml`.
 2. Add the HCL blocks it printed to `/etc/writ/serve`, with a grant of `approve` and `apply` for a team of people, and restart `writ serve`.

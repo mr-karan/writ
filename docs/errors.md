@@ -42,7 +42,7 @@ Output of real runs, 2026-11-16.
 | [`state`](#state) | Plan stale/expired/`no-changes`, stack busy, or key closed | `1` | `409` (`404` when `writ state adopt` names an unknown version or serial) |
 | [`saved-plan`](#saved-plan) | Plan sources don't match or branch moved | `1` | `409` |
 | [`state-io`](#state-io) | Database/audit write failed or apply response lost | `1` | `503` (`502` when an IdP fails to start sign-in) |
-| [`provider`](#provider) | Provider, lock file, S3 read, or Git host failed | `1` | `502` (Git host failure) or `409` (S3 adoption read failure) |
+| [`provider`](#provider) | Provider, lock file, S3 read, or Git host failed | `1` | `502` (Git host failure), `503` with `Retry-After` (Git host rate limit), or `409` (S3 adoption read failure) |
 | [`internal`](#internal) | Local I/O error or bug | `1` | `500` |
 | [`syntax`](#syntax) | Server config HCL failed to parse | `1` | none |
 
