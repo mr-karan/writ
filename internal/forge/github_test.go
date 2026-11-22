@@ -37,7 +37,7 @@ func TestGitHubAPI(t *testing.T) {
 			t.Errorf("GitHubAPI(%q) = %q, %v; want %q", tc.in, got, err, tc.want)
 		}
 	}
-	for _, bad := range []string{"", "github.com", "https://github.com/acme", "https://user@github.com", "https://github.com?x=1"} {
+	for _, bad := range []string{"", "github.com", "https://github.com/acme", "https://@github.com", "https://github.com?x=1"} {
 		if got, err := forge.GitHubAPI(bad); err == nil {
 			t.Errorf("GitHubAPI(%q) = %q", bad, got)
 		}
