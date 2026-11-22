@@ -49,6 +49,10 @@ proto:
 # key, which the state keeps in an address keyed by nonsensitive(). Each
 # then scans the control database and the data directory for the canary
 # the stacks take through a sensitive variable, and for both keys.
+# TestTofuGitHub runs a team's writ serve against a GitHub Enterprise
+# Server stand-in: a workflow job asks its Actions endpoint for an ID
+# token and plans by commit, a person approves and applies, and a signed
+# push webhook reads the new head.
 # TestTofuMCP drives writ mcp against writ serve --dev. TestTofuEgress
 # runs a team's writ serve under egress_mode enforce: a module from the
 # listed host comes through writ's egress proxy, one from an unlisted
@@ -58,7 +62,7 @@ proto:
 # then runs in user, network, mount, and pid namespaces with only
 # loopback. Needs unshare with subordinate uids, and ip.
 e2e:
-	nix shell --inputs-from . nixpkgs#opentofu nixpkgs#postgresql_18 -c go test -tags e2e,e2e_tofu -count=1 -v -timeout 20m -run '^(TestTofuPlanByCommit|TestTofuApproveApply|TestTofuMCP|TestTofuEgress)$' ./e2e
+	nix shell --inputs-from . nixpkgs#opentofu nixpkgs#postgresql_18 -c go test -tags e2e,e2e_tofu -count=1 -v -timeout 20m -run '^(TestTofuPlanByCommit|TestTofuApproveApply|TestTofuGitHub|TestTofuMCP|TestTofuEgress)$' ./e2e
 
 # The test of stacks on S3:
 # TestTofuS3 runs a team's writ serve on an OpenTofu stack whose state is
