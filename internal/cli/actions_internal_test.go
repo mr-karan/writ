@@ -24,7 +24,7 @@ type actionsEndpoint struct {
 
 const (
 	actionsBearer  = "actions-request-token-0123456789"
-	actionsIDToken = "eyJ.actions-id-token.sig"
+	actionsIDToken = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJyZXBvOmFjbWUvd2ViIn0.c2lnbmF0dXJl"
 )
 
 func newActionsEndpoint(t *testing.T) *actionsEndpoint {
@@ -99,6 +99,9 @@ func TestActionsTokenRefusals(t *testing.T) {
 			e.status, e.body = http.StatusForbidden, `{"message":"no id-token permission `+actionsIDToken+`"}`
 		}, "answered 403 to the ID token request: give the job permissions: id-token: write", false},
 		{"no value", func(e *actionsEndpoint, _ map[string]string) { e.body = `{"count":0}` }, "with no token", false},
+		{"the request token sent back", func(e *actionsEndpoint, _ map[string]string) { e.body = `{"value":"` + actionsBearer + `"}` }, "with a value that is not an ID token", false},
+		{"not a compact JWT", func(e *actionsEndpoint, _ map[string]string) { e.body = `{"value":"eyJ.only-two"}` }, "with a value that is not an ID token", false},
+		{"a JWT with no signature", func(e *actionsEndpoint, _ map[string]string) { e.body = `{"value":"eyJ.eyJ."}` }, "with a value that is not an ID token", false},
 		{"not JSON", func(e *actionsEndpoint, _ map[string]string) { e.body = "<html>ACTIONS-INTERNAL</html>" }, "with no token", false},
 		{"only the URL", func(_ *actionsEndpoint, env map[string]string) { delete(env, actionsRequestToken) }, "set only one of", true},
 		{"plain http off loopback", func(_ *actionsEndpoint, env map[string]string) {

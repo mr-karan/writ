@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -83,8 +84,19 @@ func (a *App) actionsToken(ctx context.Context, audience string) (tok string, ok
 	if err != nil || len(b) > actionsMaxBody || json.Unmarshal(b, &doc) != nil || strings.TrimSpace(doc.Value) == "" {
 		return "", true, fmt.Errorf("GitHub Actions at %s answered the ID token request with no token", where)
 	}
-	return strings.TrimSpace(doc.Value), true, nil
+	tok = strings.TrimSpace(doc.Value)
+	// The request token must never reach writ serve, and only a compact
+	// JWT is an ID token: an endpoint that answers with anything else is
+	// not GitHub Actions'.
+	if tok == bearer || !jwtRE.MatchString(tok) {
+		return "", true, fmt.Errorf("GitHub Actions at %s answered the ID token request with a value that is not an ID token, so writ sends it nowhere", where)
+	}
+	return tok, true, nil
 }
+
+// jwtRE is a compact JWT: three base64url segments, the last of which, a
+// signature, is never empty.
+var jwtRE = regexp.MustCompile(`^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$`)
 
 func loopbackHost(host string) bool {
 	ip := net.ParseIP(host)
