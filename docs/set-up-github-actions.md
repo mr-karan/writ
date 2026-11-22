@@ -24,7 +24,7 @@ Run `writ ci github --repo NAME` to generate the workflow and the `writ serve` t
 
 `strategy.max-parallel` is the lesser of the server's `limits.plans` and `limits.plans_per_principal`, since every job of a run is one principal, its actor. `writ ci github` reads both from `GET /v1/config`, which shows the limits only to an admin; for anyone else it writes 1, with a comment to run it again as an admin.
 
-Each plan step passes `--slot-wait 15m`, and the job's `timeout-minutes` is 45. When writ serve refuses a plan with 429 or 503 because its plan slots are busy, as when two runs overlap, `writ plan --remote` asks again with exponential backoff and jitter, from 5 seconds to a minute, for up to 15 minutes, fetching a fresh ID token before each try. A `Retry-After` in writ serve's answer, as when GitHub limits the rate of its calls and writ serve answers 503, sets the next try. No try starts after the wait ends, and a refused plan spends no token. If the slots stay busy past the wait, the step prints writ serve's refusal and fails. While the plan runs, `writ` reads it with the same ID token, and fetches a new one if writ serve refuses the old one with 401, as when it expired.
+Each plan step passes `--slot-wait 15m`, and the job's `timeout-minutes` is 45. When writ serve refuses a plan before it takes it, because its plan slots are busy, as when two runs overlap, or because GitHub limits the rate of its calls, it answers 429 or 503 with `X-Writ-Retry`, and `writ plan --remote` asks again with exponential backoff and jitter, from 5 seconds to a minute, for up to 15 minutes, fetching a fresh ID token before each try. A `Retry-After` in writ serve's answer, in seconds or as an HTTP-date, sets the next try. A 429 or 503 without `X-Writ-Retry`, as a proxy may answer after writ serve took the plan, is not asked again. The wait starts before the first ID token is fetched, no try starts after it ends, and a refused plan spends no token. If the slots stay busy past the wait, the step prints writ serve's refusal and fails. While the plan runs, `writ` reads it with the same ID token, and fetches a new one if writ serve refuses the old one with 401, as when it expired.
 
 ```
 $ writ ci github --repo web --writ-version v0.1.9 --runs-on self-hosted-linux
@@ -43,6 +43,9 @@ on:
 permissions:
   contents: read
   id-token: write
+defaults:
+  run:
+    shell: bash
 jobs:
   plan:
     # A pull request from a fork and Dependabot's runs get no ID token, so the job skips
@@ -60,28 +63,36 @@ jobs:
           - stack: "app"
             env: "prod"
     steps:
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
       - name: Install writ
         env:
           WRIT_VERSION: "v0.1.9"
-        # install.sh checks the release's minisign signature. A runner without minisign
-        # gets it from apt-get with sudo, as an Ubuntu runner has them.
+          CGO_ENABLED: "0"
+          GOTOOLCHAIN: auto
+        # go install fetches the release through the Go module proxy and checks every module
+        # against the Go checksum database, not the release's own files. A failed step
+        # stops the job, so a runner never plans with a writ left from before.
         run: |
-          if ! command -v minisign >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq minisign
-          fi
-          curl -fsSL "https://github.com/mr-karan/writ/releases/download/$WRIT_VERSION/install.sh" | sh -s -- --version "$WRIT_VERSION"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          set -euo pipefail
+          go install "github.com/mr-karan/writ/cmd/writ@${WRIT_VERSION}"
+          bin="$(go env GOPATH)/bin"
+          test "$("$bin/writ" version)" = "writ ${WRIT_VERSION}"
+          echo "$bin" >> "$GITHUB_PATH"
       - name: Plan
         env:
-          WRIT_SERVER: "http://127.0.0.1:40597"
+          WRIT_SERVER: "http://127.0.0.1:34789"
           WRIT_REPO: "web"
           WRIT_STACK: ${{ matrix.stack }}
           WRIT_ENV: ${{ matrix.env }}
         # writ asks GitHub Actions for the job's ID token, whose audience is WRIT_SERVER;
         # writ serve refuses a commit or a repository other than the token's. While writ serve's
         # plan slots are busy, as with overlapping runs, writ asks again for up to 15m.
-        run: writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA" --slot-wait 15m
+        run: |
+          set -euo pipefail
+          writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA" --slot-wait 15m
   writ:
     # The one check to require. It passes when every plan passed, or when the plan job was
     # skipped, as for a fork's or Dependabot's pull request, whose per-stack checks GitHub
@@ -95,6 +106,7 @@ jobs:
         env:
           RESULT: ${{ needs.plan.result }}
         run: |
+          set -euo pipefail
           case "$RESULT" in
             success|skipped) echo "writ plan: $RESULT" ;;
             *) echo "writ plan: $RESULT" >&2; exit 1 ;;
@@ -128,13 +140,13 @@ approval {
 # max-parallel is 1: an admin who runs writ ci github again gets writ serve's own limit.
 ```
 
-Output of a real run against a local test `writ serve` on loopback, with a GitHub Enterprise Server stand-in, 2026-11-22. It shows the shape only: the `http://127.0.0.1:40597` server URL, the runner label, and the repository ID are the test's. Run the command against your own control plane and copy what it prints.
+Output of a real run against a local test `writ serve` on loopback, with a GitHub Enterprise Server stand-in, 2026-11-22. It shows the shape only: the `http://127.0.0.1:34789` server URL, the runner label, and the repository ID are the test's. Run the command against your own control plane and copy what it prints.
 
 1. Save the YAML it printed as `.github/workflows/writ-plan.yml`.
 2. Add the HCL blocks it printed to `/etc/writ/serve`, with a grant of `approve` and `apply` for a team of people, and restart `writ serve`.
 3. Protect the default branch and require the one check named `writ`, not the per-stack `plan` checks.
 
-The workflow uses no third-party action, so it has none to pin by commit SHA. `install.sh` checks the release's minisign signature and SHA-256 before it installs `writ`. The install step needs `minisign`; on a runner without it, the step installs it with `sudo apt-get`, so a runner without `minisign` must be Ubuntu or Debian with `sudo`. Matrix values reach the shell through `env`, never through an expression in `run`.
+The workflow's one action, `actions/setup-go`, is pinned by its full commit SHA with its version in a comment. The install step runs `go install github.com/mr-karan/writ/cmd/writ@VERSION` with `CGO_ENABLED=0`: the Go module proxy serves the module, and the Go checksum database (`sum.golang.org`) checks it, independent of the release's own files. The step fails unless the installed `writ` reports that version, so a persistent runner never plans with a `writ` left from before. Every `run` step is `bash` with `set -euo pipefail`. The runner needs only network access to the Go module proxy, and to `writ serve`. Matrix values reach the shell through `env`, never through an expression in `run`.
 
 ## Pull requests from forks and Dependabot
 

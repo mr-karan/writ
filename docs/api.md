@@ -203,13 +203,15 @@ Messages it prints (real runs against a local stand-in, 2026-11-16):
 
 Unknown fields (such as tokens) are refused; forge tokens never appear in responses, logs, audit rows, or UI pages.
 
+A plan refused before writ serve takes it carries `X-Writ-Retry`: `plan-slots` on the `429` when every plan slot of the principal or the server is busy, and `forge-rate-limit` on the `503`, class `provider`, with `Retry-After`, when the forge limits the rate of calls while the commit is checked. A client may send such a request again unchanged; a `429` or `503` without the header may come from a proxy after writ serve took the request.
+
 ## Webhook route
 
 `POST /v1/hooks/{forge}/{repo}` receives GitLab and GitHub webhooks for pinned repositories with `webhook_secret_file` ([Get changes in seconds with a webhook](webhooks.md)). It takes no bearer token. GitLab deliveries authenticate with `X-Gitlab-Token` or a `whsec_` `webhook-signature`; GitHub deliveries with `X-Hub-Signature-256`, `sha256=` and the hex HMAC-SHA256 of the raw body under the secret.
 
 | Delivery | Response |
 | --- | --- |
-| Verified `Push Hook` (GitLab) or `X-GitHub-Event: push` (GitHub) | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never parsed, stored, or logged. |
+| Verified `Push Hook` (GitLab) or `X-GitHub-Event: push` (GitHub) | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never stored or logged. A GitLab body is never parsed; for GitHub, writ serve parses the signed body's `ref` and `after` only to tell a push from another event, and believes nothing it names. |
 | Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0), or a GitHub delivery whose signed body's SHA-256 was acted on already | `200`, `duplicate: true` |
 | Verified, not a push, such as GitHub's `ping`, or a GitHub `push` whose signed body lacks `ref` or `after` | `200`, `queued: false` |
 | Any verification failure: unknown repository or webhook, missing or wrong secret, bad signature or timestamp, body over 1 MiB (`check: hook-body`) | `401`, `auth`: `the delivery failed verification` |

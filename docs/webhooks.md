@@ -2,7 +2,7 @@
 
 Add a GitLab or GitHub webhook so `writ serve` reads a pushed or merged head within seconds, instead of at the next poll (`poll_every`, 60 seconds by default). Polling continues every `poll_every_with_hook` (5 minutes by default) as a backstop, because GitLab disables a webhook for a while after 4 consecutive failures, and for good after 40.
 
-A webhook only triggers an early read of the default branch through the forge's API, with the forge's read token. It never starts a plan or apply. `writ serve` never trusts or parses the webhook body: the repository comes from the URL path, and the commit from the forge's API.
+A webhook only triggers an early read of the default branch through the forge's API, with the forge's read token. It never starts a plan or apply. `writ serve` never trusts the webhook body: the repository comes from the URL path, and the commit from the forge's API. It parses a GitHub body's `ref` and `after` only to tell a push from another event, and never parses a GitLab body.
 
 ## Before you begin
 
