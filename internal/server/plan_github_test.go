@@ -158,7 +158,29 @@ grant {
 	r := f.do("POST", "/v1/plans", token(map[string]any{"sha": branch, "ref": "refs/heads/add-subnet-d", "event_name": "push"}), planRequest(func(m map[string]any) {
 		m["stacks"], m["source"] = []string{"web/network"}, map[string]any{}
 	}))
-	if ra, _ := strconv.Atoi(r.header.Get("Retry-After")); r.status != http.StatusServiceUnavailable || r.class() != "provider" || ra < 25 || ra > 30 || !strings.Contains(string(r.body), "limits the rate of calls") {
+	if ra, _ := strconv.Atoi(r.header.Get("Retry-After")); r.header.Get(server.RetryHeader) != server.RetryForge || r.status != http.StatusServiceUnavailable || r.class() != "provider" || ra < 25 || ra > 30 || !strings.Contains(string(r.body), "limits the rate of calls") {
 		t.Fatalf("a rate limit: %d Retry-After %q %s", r.status, r.header.Get("Retry-After"), r.body)
+	}
+}
+
+// TestSlotRefusalIsMarked checks that a plan refused because every plan
+// slot of its principal is busy says so in X-Writ-Retry, which a client
+// takes as a refusal made before writ serve took the plan.
+func TestSlotRefusalIsMarked(t *testing.T) {
+	runner := &fakeTofu{plan: createOnly, gate: make(chan struct{})}
+	defer close(runner.gate)
+	one := func(text string) string {
+		return strings.Replace(withForge(t, "")(text), "limits {\n", "limits {\n  plans_per_principal = 1\n", 1)
+	}
+	f := tofuFixtureEdit(t, runner, uidLines(t), one)
+	f.addInfra()
+	first := f.mrToken(changed("resource \"random_pet\" \"a\" {}\n"), nil)
+	if r := f.do("POST", "/v1/plans", first, commitPlan(map[string]any{})); r.status != http.StatusAccepted {
+		t.Fatalf("the first plan: %d %s", r.status, r.body)
+	}
+	second := f.mrToken(changed("resource \"random_pet\" \"b\" {}\n"), map[string]any{"job_id": "9922102"})
+	r := f.do("POST", "/v1/plans", second, commitPlan(map[string]any{}))
+	if r.status != http.StatusTooManyRequests || r.header.Get(server.RetryHeader) != server.RetrySlots || !strings.Contains(string(r.body), "try again when one ends") {
+		t.Fatalf("a plan with every slot busy: %d %q %s", r.status, r.header.Get(server.RetryHeader), r.body)
 	}
 }

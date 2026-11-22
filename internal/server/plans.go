@@ -58,6 +58,7 @@ func (s *Server) createPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.claim(p.key()) {
+		w.Header().Set(RetryHeader, RetrySlots)
 		s.refuse(w, r, FormatRemotePlan, diag.Usage, http.StatusTooManyRequests,
 			"writ serve is running %d plans for %s or %d in all; try again when one ends", s.cfg.Limits.PlansPerPrincipal, p.info.Display, s.cfg.Limits.Plans)
 		return

@@ -166,7 +166,8 @@ type repoError struct {
 	class  diag.Class
 	msg    string
 	// retryAfter, when set, is how long a client should wait before it
-	// asks again, which the answer's Retry-After says.
+	// asks again, which the answer's Retry-After says, and that the
+	// refusal came before writ serve took the request.
 	retryAfter time.Duration
 }
 
@@ -176,6 +177,7 @@ func (e *repoError) Error() string { return e.msg }
 func (e *repoError) retry(w http.ResponseWriter) {
 	if e.retryAfter > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(e.retryAfter.Seconds()))))
+		w.Header().Set(RetryHeader, RetryForge)
 	}
 }
 
