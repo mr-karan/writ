@@ -49,6 +49,7 @@ func parseTemplates(u *UI) (*template.Template, error) {
 			return span{text, iso}
 		},
 		"from": originOf,
+		"dur":  shortDuration,
 		"driftBox": func(d *server.DriftStack, every span, checks []server.DriftCheckSummary) driftBox {
 			return driftBox{d, every, checks}
 		},
@@ -356,4 +357,19 @@ var sections = []section{
 	{"access", "Access", "/ui/access"},
 	{"audit", "Audit", "/ui/audit"},
 	{"settings", "Settings", "/ui/settings"},
+}
+
+// shortDuration drops the zero units a Go duration's text ends with, so
+// 24h0m0s reads 24h and 1m0s reads 1m. Text that is not a duration stays.
+func shortDuration(s string) string {
+	if _, err := time.ParseDuration(s); err != nil || s == "0s" {
+		return s
+	}
+	if t, ok := strings.CutSuffix(s, "m0s"); ok {
+		s = t + "m"
+	}
+	if t, ok := strings.CutSuffix(s, "h0m"); ok {
+		s = t + "h"
+	}
+	return s
 }

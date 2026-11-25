@@ -110,6 +110,8 @@ main:focus { outline: none; }
 .sprite { position: absolute; }
 .i { flex: none; width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .id { font-family: var(--font-mono); font-size: var(--fs-2); white-space: nowrap; }
+/* A stack's name breaks at no hyphen or slash, as a table column narrows. */
+.stack { white-space: nowrap; }
 .id-full { font-family: var(--font-mono); font-size: var(--fs-2); overflow-wrap: anywhere; }
 time { white-space: nowrap; font-variant-numeric: tabular-nums; }
 

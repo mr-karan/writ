@@ -35,9 +35,9 @@
 <dl class="kv">
 {{if .Issuers}}<div><dt>Issuers</dt><dd>{{range $i, $is := .Issuers}}{{if $i}}<br>{{end}}{{$is.Name}} <span class="muted">{{$is.Kind}}</span> <code>{{$is.URL}}</code>{{end}}</dd></div>{{end}}
 <div><dt>Environments</dt><dd>{{range $i, $e := .Envs}}{{if $i}}, {{end}}{{$e.Name}}{{end}}</dd></div>
-{{if .Forges}}<div><dt>Forges</dt><dd>{{range $i, $fg := .Forges}}{{if $i}}<br>{{end}}{{$fg.Name}} <span class="muted">{{$fg.Kind}}</span> <code>{{$fg.URL}}</code>{{end}} <span class="muted">polled every <code>{{.PollEvery}}</code></span></dd></div>{{end}}
-<div><dt>Plan lifetime</dt><dd><code>{{.PlanTTL}}</code></dd></div>
-<div><dt>Session lifetime</dt><dd><code>{{.SessionTTL}}</code></dd></div>
+{{if .Forges}}<div><dt>Forges</dt><dd>{{range $i, $fg := .Forges}}{{if $i}}<br>{{end}}{{$fg.Name}} <span class="muted">{{$fg.Kind}}</span> <code>{{$fg.URL}}</code>{{end}} <span class="muted">polled every <code>{{dur .PollEvery}}</code></span></dd></div>{{end}}
+<div><dt>Plan lifetime</dt><dd><code>{{dur .PlanTTL}}</code></dd></div>
+<div><dt>Session lifetime</dt><dd><code>{{dur .SessionTTL}}</code></dd></div>
 {{- with .Admin}}
 <div><dt>Requests a second</dt><dd><code>{{.Limits.RequestsPerSecond}}</code> for each principal</dd></div>
 <div><dt>Running plans</dt><dd><code>{{.Limits.PlansPerPrincipal}}</code> for each principal, <code>{{.Limits.Plans}}</code> in all</dd></div>
