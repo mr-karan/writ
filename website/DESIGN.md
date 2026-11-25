@@ -122,17 +122,17 @@ All fonts are self-hosted Latin subsets from pinned `@fontsource` packages with 
 
 ## Layout & Sections
 
-Container max width is `1160px` (`24px` side gutters on desktop, `16px` on phones). Sections sit on one ground separated by subtle 1 px dividers.
+Container max width is `1140px` (`24px` side gutters on desktop, `16px` on phones). Sections sit on one open ground with generous vertical whitespace (`clamp(68px, 8.5vw, 112px)`).
 
 | Section | Visual lead | Purpose |
 | --- | --- | --- |
-| Header | Sticky 60 px bar | Wordmark, Docs, GitHub, search icon, theme switch, Quick start CTA. |
-| Hero | Tabbed control UI window (`Overview`, `Plan`, `Resources`, `Drift`, `Runs`) | Direct category headline ("The self-hosted control plane for OpenTofu"), one-line differentiator subhead, two CTAs (`Quick start`, `GitHub`), real UI above the fold, and a 4-item open-source/platform proof strip. |
-| Workflow (`#how`) | Inline SVG pipeline diagram (`Git push -> Plan -> Policy -> Approve -> Apply -> Audit`) | Shows the trust boundary between CI (OIDC only) and `writ serve` (cloud roles and state keys), with one link to `/docs/plan-to-apply`. |
-| Features (`#features`) | 6-card icon grid (3x2 desktop, 1x6 phone) | Core capabilities: No CI cloud keys, OPA Rego policy, Masked secrets, Scheduled drift checks, Sandboxed Linux runs, MCP for agents. |
+| Header | Sticky borderless 64 px bar | Wordmark, Docs, GitHub, search icon, theme switch, Quick start CTA. |
+| Hero | Tabbed control UI window (`Overview`, `Plan`, `Resources`, `Drift`, `Runs`) | Monumental headline ("The self-hosted control plane for OpenTofu"), one-line subhead, primary `Quick start` CTA paired with a copyable install bar, and real UI above the fold. |
+| Workflow (`#how`) | Single open schematic frame (`Pull request -> Plan -> Policy -> Approve -> Apply -> Audit`) | Shows the dashed trust boundary between GitHub Actions (OIDC only; also GitLab CI) and `writ serve` (cloud roles and state keys), with one link to `/docs/plan-to-apply`. |
+| Features (`#features`) | 6 visual schematic cards (3x2 desktop, 1x6 phone) | Minimal geometric SVG diagrams and concise <= 12 word copy for No CI cloud keys, OPA Rego policy, Masked secrets, Scheduled drift checks, Sandboxed Linux runs, MCP for agents. |
 | Showcases (`#policy`) | Full-width UI captures + 5/7 Rego split | Full-width masked secret capture (`secret` on desktop, native `plan-390` on phones), 5/7 split Rego rule + refusal output from `content/landing.json`, and full-width drift table capture (`drift` on desktop, native `stack-390` on phones). |
-| Try it (`#try`) | Elevated CTA band + copyable terminal | 4-line install and `writ serve --dev` command, Quick start and Compare CTAs, and one ochre-caret scope line linking to `/docs/status`. |
-| Footer | Compact single band | Wordmark, Apache 2.0 notice, and links to docs, security, comparison, GitHub, and `llms.txt`. |
+| Try it (`#try`) | Elevated CTA band + tabbed terminal (`GitHub Actions` / `Local --dev`) | Real GitHub Actions plan step from `writ ci github` and 4-line local `writ serve --dev` setup, Quick start CTA + GitHub Actions guide link, and one ochre-caret scope line linking to `/docs/status`. |
+| Footer | Compact single band | Wordmark, Apache 2.0 notice, and links to docs, GitHub Actions, GitLab CI, security, comparison, GitHub, and `llms.txt`. |
 
 ## Components
 
