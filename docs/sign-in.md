@@ -1,6 +1,6 @@
 # Sign in
 
-Let people sign in to a team's `writ serve` from the terminal with `writ login`, or in the browser at `/ui/`. `writ serve` is the OAuth client for both: a laptop holds only a Writ session token, never a client secret, refresh token, access token, or ID token, and a browser holds only its session cookie. CI jobs use OIDC tokens instead ([Set up GitLab CI](set-up-gitlab-ci.md)), and `writ serve --dev` needs no sign-in. Protocol detail is in [How sign-in works](how-sign-in-works.md).
+Let people sign in to a team's `writ serve` from the terminal with `writ login`, or in the browser at `/ui/`. `writ serve` is the OAuth client for both: a laptop holds only a Writ session token, never a client secret, refresh token, access token, or ID token, and a browser holds only its session cookie. CI jobs use OIDC tokens instead ([Set up GitHub Actions](set-up-github-actions.md), [Set up GitLab CI](set-up-gitlab-ci.md)), and `writ serve --dev` needs no sign-in. Protocol detail is in [How sign-in works](how-sign-in-works.md).
 
 ## Before you begin
 
@@ -80,5 +80,5 @@ Any principal with `admin` on any grant can list sessions with `GET /v1/sessions
 ## Next steps
 
 - [How sign-in works](how-sign-in-works.md): flows, pending limits, sessions, and control UI headers.
-- [Set up GitLab CI](set-up-gitlab-ci.md): OIDC auth for CI jobs.
+- [Set up GitHub Actions](set-up-github-actions.md) and [Set up GitLab CI](set-up-gitlab-ci.md): OIDC auth for CI jobs.
 - [API: Token checks](api.md#token-checks): bearer and OIDC validation rules.

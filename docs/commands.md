@@ -25,11 +25,11 @@ writ [--dir DIR] [--env ENV] [--server URL] [--verbose] <command> [flags] [args]
 | `writ runs --remote` | List apply runs in `--env` newest first (`--stack`, `--limit`). |
 | `writ audit --remote` | Query audit rows newest first (`--plan`, `--run`, `--env` + `--stack`, `--person`, `--op`, `--changes`, `--since`, `--until`, `--limit`, `--cursor`) ([Read the audit log](audit-log.md)). |
 | `writ state adopt STACK --env ENV --version N\|--serial N --reason TEXT` | Seal a secret set for the newest HTTP version or S3 serial lacking one (requires human session + `adopt`) ([Adopt a state](adopt-state.md)). |
-| `writ repo add NAME FORGE/PROJECT` | Register a GitLab repository (`--path`, `--prefix`; requires global `admin`) ([Add a repository](add-repository.md)). |
+| `writ repo add NAME FORGE/PROJECT` | Register a GitHub or GitLab repository (`--path`, `--prefix`; requires global `admin`) ([Add a repository](add-repository.md)). |
 | `writ repo add [NAME] DIR` | Under `writ serve --dev`, register a local Git repository (such as `.`). |
 | `writ repo list`, `writ repo show NAME` | List registered repositories or inspect one repository's discovered stacks. |
-| `writ ci gitlab --repo NAME` | Generate `.gitlab-ci.yml` jobs and server HCL config for a repository's project ID (`--envs`, `--image`, `--component`). |
 | `writ ci github --repo NAME` | Generate a GitHub Actions workflow that plans each stack on `pull_request` and `push`, and server HCL config for a repository's ID (`--envs`, `--writ-version`, `--runs-on`) ([Set up GitHub Actions](set-up-github-actions.md)). |
+| `writ ci gitlab --repo NAME` | Generate `.gitlab-ci.yml` jobs and server HCL config for a repository's project ID (`--envs`, `--image`, `--component`) ([Set up GitLab CI](set-up-gitlab-ci.md)). |
 | `writ ui` | Print the control UI URL (and a one-time 10-minute sign-in link under `writ serve --dev`). |
 | `writ login [URL]` | Sign in via OAuth device flow or loopback PKCE browser flow (`--device`, `--browser`, `--issuer`), saving the session to `~/.config/writ/sessions.json` ([Sign in](sign-in.md#people-writ-login)). |
 | `writ logout [URL]` | Revoke your session on `writ serve` and remove it from `sessions.json`. |
@@ -66,9 +66,9 @@ Running `plan`, `apply`, `plans`, `runs`, or `audit` without `--remote` exits 2 
 | `--version N`, `--serial N`, `--reason TEXT` | `state adopt` | Target HTTP state version or S3 serial and 10 to 500 character adoption reason. |
 | `--device`, `--browser`, `--issuer NAME` | `login` | Force device or PKCE browser flow, or choose among multiple `people` issuers. |
 | `--path DIR`, `--prefix PREFIX` | `repo add` | Subdirectory for stack discovery and prefix prepended to stack names. |
+| `--repo NAME`, `--envs a,b`, `--writ-version V`, `--runs-on LABEL` | `ci github` | Repository name, environments, the Writ release the workflow installs (`v0.1.9` or later, landing in the first release after `v0.1.8`; default: the CLI's version when it is such a release), and the runner label (default `ubuntu-24.04` at github.com; required for GitHub Enterprise Server). |
 | `--repo NAME`, `--envs a,b`, `--image IMAGE`, `--component PATH` | `ci gitlab` | Repository name and overrides for generated `.gitlab-ci.yml`. |
 | `--slot-wait DURATION` | `plan --remote` | Keep asking for up to `DURATION` (at most `1h`, counted from before the first token is fetched, and covering the lookup of a work tree's repository) while writ serve refuses the plan before taking it, with a 429 marked `X-Writ-Retry: plan-slots` (busy plan slots) or a 503 marked `forge-rate-limit` (the forge's rate limit). Waits for the answer's `Retry-After`, else backs off with jitter from 5s to 1m. Any other 429 or 503 is not asked again. Without the flag, a plan request is retried as every request is. |
-| `--repo NAME`, `--envs a,b`, `--writ-version V`, `--runs-on LABEL` | `ci github` | Repository name, environments, the Writ release the workflow installs (`v0.1.9` or later; default: the CLI's version when it is such a release), and the runner label (default `ubuntu-24.04` at github.com; required for GitHub Enterprise Server). |
 | `--remote` | `plan`, `apply`, `approve`, `show`, `plans`, `runs`, `audit`, `state`, `whoami` | Target `writ serve` (`state` and `whoami` always target it). |
 | `--limit N` | `plans`, `runs`, `audit` (`--remote`) | Page size, 1 to 200 (default `50`). |
 | `--status STATUS` | `plans --remote` | Filter by effective plan status (`pending`, `applied`, `no-changes`, etc.). |
@@ -116,7 +116,7 @@ Every `writ serve` response includes `X-Writ-Version`. If the server is a newer 
 writ: warning: writ serve is v0.1.7 and this writ is v0.1.5: a newer writ serve can answer in ways an older writ cannot read; install writ v0.1.7, the version of writ serve
 ```
 
-`dev` builds and older servers never trigger this warning. If a newer server returns an unrecognized status or shape, `writ` exits 1 naming both versions. Pin CI images to the server release ([Set up GitLab CI](set-up-gitlab-ci.md#pin-the-cli-to-the-servers-version)).
+`dev` builds and older servers never trigger this warning. If a newer server returns an unrecognized status or shape, `writ` exits 1 naming both versions. Pin CI workflows and images to the server release ([Set up GitHub Actions](set-up-github-actions.md), [Set up GitLab CI](set-up-gitlab-ci.md#pin-the-cli-to-the-servers-version)).
 
 ## install.sh flags
 

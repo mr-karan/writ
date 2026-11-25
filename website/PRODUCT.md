@@ -37,7 +37,7 @@ Key limits stated clearly (full list in `docs/status.md`):
 
 - OpenTofu 1.13.9 only; no Terraform.
 - Team `writ serve` requires Linux; single-node per Postgres database.
-- GitLab is the built-in remote Git host; built-in STS role assumption targets AWS IAM roles.
+- GitHub (fine-grained read token, landing after v0.1.8; no GitHub App yet) and GitLab are the built-in remote Git hosts; built-in STS role assumption targets AWS IAM roles.
 - Egress control defaults to `off`; cgroup limits and seccomp apply where the host allows them (`writ serve --check` reports status).
 - End-to-end suites test against local stand-ins in isolated namespaces rather than live cloud accounts.
 

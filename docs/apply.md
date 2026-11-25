@@ -5,7 +5,7 @@ Plan a commit on `writ serve`, approve that exact plan, and apply it by ID or af
 ## Before you begin
 
 - A running `writ serve` (or `writ serve --dev`) with your [repository added](add-repository.md).
-- A [`writ login`](sign-in.md#people-writ-login) session, a dev server, or a GitLab CI `WRIT_ID_TOKEN`.
+- A [`writ login`](sign-in.md#people-writ-login) session, a dev server, or a GitHub Actions or GitLab CI ID token.
 - Grants for the action (`plan`, `approve`, `apply`, or `override`) and for the plan's [risk classes](glossary.md). Check with `writ whoami`.
 
 ## Plan a commit
@@ -21,8 +21,10 @@ Plan a commit on `writ serve`, approve that exact plan, and apply it by ID or af
 2. In CI, with no checkout, pass `--stack` and `--commit`:
 
    ```sh
-   writ plan --remote --env prod --stack app --commit "$CI_COMMIT_SHA"
+   writ plan --remote --env prod --stack app --repo infra --commit "$GITHUB_SHA" --slot-wait 15m
    ```
+
+   On GitLab CI, pass `--commit "$CI_COMMIT_SHA"` (`--repo` is optional in GitLab CI).
 
 `writ serve` fetches the commit from the Git host, runs `tofu plan -lock=false`, masks secrets, evaluates policies, and returns the plan ID.
 
@@ -30,7 +32,7 @@ Plan a commit on `writ serve`, approve that exact plan, and apply it by ID or af
 
 - **CLI:** `writ approve --remote ID` with a [`writ login`](sign-in.md#people-writ-login) session. It prints `Approved plan ID for ENV (STACK): N of M approvals (WHO), STATUS.` Writ records your stable person ID (such as `gitlab/user/2002`) with auth `person`.
 - **Control UI:** click **Approve** on the plan page.
-- **CI:** a maintainer runs the manual `writ-approve` job (`writ approve --remote --pipeline`), which approves every live plan of the pipeline atomically. If the plan's author runs it, Writ refuses with exit code 1 and the plan stays `pending`.
+- **GitLab CI:** a maintainer runs the manual `writ-approve` job (`writ approve --remote --pipeline`), which approves every live plan of the pipeline atomically. If the plan's author runs it, Writ refuses with exit code 1 and the plan stays `pending`. (On GitHub, people approve via the CLI or control UI.)
 - **Withdraw** before the apply starts: `writ approve --remote --withdraw ID`.
 
 ## Apply a plan
@@ -51,10 +53,10 @@ Excerpt under `writ serve --dev`, 2026-11-16. The CLI streams the run until it f
 ### Apply after a merge
 
 ```sh
-writ apply --remote --merged --env ENV --stack NAME
+writ apply --remote --merged --env ENV --stack NAME --repo REPO --commit MERGED_SHA
 ```
 
-In GitLab CI the commit is the token's `sha`; outside CI, pass `--repo` and `--commit`. Writ applies the newest approved plan whose stack sources match the merged commit, and exits 0 with nothing to apply when a current `no-changes` plan matches. The control plane enforces the gate, not the CI YAML: without an approved plan the job refuses, even if someone removed the approve job. Matching rules are in [How a merged apply picks a plan](plan-lifecycle.md#how-a-merged-apply-picks-a-plan).
+Pass `--repo` and `--commit` from a `writ login` session (as after merging a GitHub pull request); in GitLab CI, the commit comes from the token's `sha` and `--repo` is optional. Writ applies the newest approved plan whose stack sources match the merged commit, and exits 0 with nothing to apply when a current `no-changes` plan matches. The control plane enforces the gate, not the CI YAML: without an approved plan the command refuses, even if someone removed the approve step. Matching rules are in [How a merged apply picks a plan](plan-lifecycle.md#how-a-merged-apply-picks-a-plan).
 
 ### Plan and apply in one command
 
