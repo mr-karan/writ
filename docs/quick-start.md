@@ -118,7 +118,36 @@ Press Ctrl-C in the first terminal when done.
 
 ## Set up Writ for a team
 
-A team `writ serve` adds Postgres, OIDC sign-in for CI jobs and people, teams, grants, approval rules, and per-run `provider_uids`. This walkthrough connects one GitLab project (`acme/infra`, ID `4242`) with one stack (`app`) in one env (`prod`). Its transcripts come from a real run against Postgres, a local OIDC test issuer, and a local GitLab stand-in.
+A team `writ serve` adds Postgres, OIDC sign-in for CI jobs and people, teams, grants, approval rules, and per-run `provider_uids`.
+
+### On GitHub
+
+GitHub repository reads, webhooks, and GitHub Actions OIDC support land in the first release after v0.1.8 (see [CHANGELOG.md](../CHANGELOG.md)). Use a `github` forge with a fine-grained read token (a GitHub App is not built yet), a `github-actions` issuer, and a `people` issuer so teammates can approve and apply:
+
+```hcl
+issuer "github" {
+  kind     = "github-actions"
+  identity = "github"
+  url      = "https://token.actions.githubusercontent.com"
+}
+
+forge "github" {
+  kind            = "github"
+  read_token_file = "secrets/github_read"
+}
+
+repo {
+  name    = "infra"
+  forge   = "github"
+  project = "acme/infra"
+}
+```
+
+Then run `writ ci github --repo infra` to generate `.github/workflows/writ-plan.yml` and the matching `team`, `grant`, and `approval` blocks, and protect `main` with the single required check named `writ`. See [Set up GitHub Actions](set-up-github-actions.md) for the complete GitHub workflow and server setup.
+
+### End-to-end team walkthrough (GitLab)
+
+The full walkthrough below connects one GitLab project (`acme/infra`, ID `4242`) with one stack (`app`) in one env (`prod`). Its transcripts come from a real run against Postgres, a local OIDC test issuer, and a local GitLab stand-in.
 
 ### Before you begin
 
@@ -371,7 +400,7 @@ Real runs, 2026-11-16. If `alice` pushes another commit, a new plan is made and 
 
 ## Next steps
 
-- [Configure approvals](approvals.md) and [Plan and apply](apply.md)
-- [Set up GitLab CI](set-up-gitlab-ci.md) and [Configure sign-in](sign-in.md)
+- [Set up GitHub Actions](set-up-github-actions.md) and [Set up GitLab CI](set-up-gitlab-ci.md)
+- [Configure approvals](approvals.md), [Plan and apply](apply.md), and [Configure sign-in](sign-in.md)
 - [Write and test policies](write-a-policy.md) and [Get notified](notifications.md)
 - [Writ vs plain GitLab CI](compare-gitlab-ci.md)

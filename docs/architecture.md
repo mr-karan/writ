@@ -51,7 +51,7 @@ Four constraints shape the codebase:
 | `importer` | `writ import bulk` (read, infer, generate HCL/manifest, secret guard) and `writ import accept` | `addr`, `diag`, `mask`, `provider`, `schema`, `tfcode`, `tofu`, `types`, `value` |
 | `oidc` | Compact JWS (`RS256`/`ES256`), discovery, JWKS cache, `go-oidc`/`oauth2` flows, typed integer `Refusal` | none |
 | `authz` | Claim-matching teams and `stack@env` grants | none |
-| `forge` | GitLab REST read client, local `git` reader for `--dev`, Git SHA-1 blob verification, `forgetest` | none |
+| `forge` | GitHub and GitLab REST read clients, local `git` reader for `--dev`, Git SHA-1 blob verification, `forgetest` | none |
 | `repo` | Commit blob caching, stack discovery, lock-file translation, backend/module validation | `forge`, `tofu`, `diag` |
 | `egress` | Per-run egress allow-list matching, CONNECT/HTTP proxy, connection bounds, destination recording (stdlib only) | none |
 | `awsrole` | AWS STS `AssumeRole`, loopback container credential endpoint, session refresh `Keeper` | none |

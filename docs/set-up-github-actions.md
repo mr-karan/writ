@@ -4,7 +4,7 @@ With GitHub Actions and Writ, every pull request and every push to the default b
 
 No job needs a Git checkout, cloud credentials, or state encryption keys. Each job authenticates with its GitHub Actions ID token. See [How a plan becomes an apply](plan-to-apply.md) and [Approvals](approvals.md) for the server-side rules.
 
-**Limits.** The workflow is verified against a local GitHub Enterprise Server stand-in and Actions token endpoint, not github.com or a live GitHub Enterprise Server. A GitHub Actions token plans; approving a whole run and applying after a merge from a job are not built for GitHub yet, so people approve and apply.
+**Limits.** GitHub repository reads, webhooks, and GitHub Actions OIDC support land in the first release after `v0.1.8` (see [CHANGELOG.md](../CHANGELOG.md)). The workflow is verified against a local GitHub Enterprise Server stand-in and Actions token endpoint, not github.com or a live GitHub Enterprise Server. A GitHub Actions token plans; approving a whole run and applying after a merge from a job are not built for GitHub yet, so people approve and apply. On GitLab, see [Set up GitLab CI](set-up-gitlab-ci.md).
 
 ## Before you begin
 
@@ -194,3 +194,4 @@ Writ applies the approved plan whose sources equal that commit's. See [Apply aft
 - [Plan and apply](apply.md): approve, apply, recover lost responses, and override rules.
 - [Get changes in seconds with a webhook](webhooks.md): GitHub push webhooks.
 - [Configure sign-in](sign-in.md): browser and CLI sign-in for people.
+- [Set up GitLab CI](set-up-gitlab-ci.md): GitLab CI alternative with plan, approve, and apply jobs.

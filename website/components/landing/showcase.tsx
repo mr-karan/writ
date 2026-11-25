@@ -10,11 +10,9 @@ export function Showcase() {
     <div className="showcases">
       <section className="sec" aria-labelledby="h-review">
         <div className="wrap">
-          <div className="wide-head">
-            <div>
-              <h2 id="h-review">{showcase.review.title}</h2>
-              <p>{showcase.review.text}</p>
-            </div>
+          <div className="sec-center">
+            <h2 id="h-review">{showcase.review.title}</h2>
+            <p className="sec-body">{showcase.review.text}</p>
             <Link className="sec-link" href={showcase.review.link.href}>
               {showcase.review.link.text} <span aria-hidden="true">→</span>
             </Link>
@@ -54,12 +52,10 @@ export function Showcase() {
 
       <section className="sec" aria-labelledby="h-drift">
         <div className="wrap">
-          <div className="wide-head">
-            <div>
-              <h2 id="h-drift">{showcase.drift.title}</h2>
-              <p>{showcase.drift.text}</p>
-            </div>
-            <div className="link-row">
+          <div className="sec-center">
+            <h2 id="h-drift">{showcase.drift.title}</h2>
+            <p className="sec-body">{showcase.drift.text}</p>
+            <div className="link-row link-row-center">
               {showcase.drift.links.map((link) => (
                 <Link key={link.href} className="sec-link" href={link.href}>
                   {link.text} <span aria-hidden="true">→</span>

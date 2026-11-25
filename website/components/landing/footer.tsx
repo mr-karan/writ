@@ -15,9 +15,9 @@ export function Footer() {
         <nav aria-label="Footer">
           <Link href="/docs">Docs</Link>
           <Link href="/docs/quick-start">Quick start</Link>
+          <Link href="/docs/set-up-github-actions">GitHub Actions</Link>
+          <Link href="/docs/set-up-gitlab-ci">GitLab CI</Link>
           <Link href="/docs/security-model">Security model</Link>
-          <Link href="/docs/run-isolation">Run isolation</Link>
-          <Link href="/docs/policy-cookbook">Policy cookbook</Link>
           <Link href="/docs/status">Supported platforms</Link>
           <Link href="/docs/compare">Comparison</Link>
           <a href={repoUrl('SECURITY.md')}>Security policy</a>

@@ -45,24 +45,35 @@ retention {
   plans = "30d"
 }
 
-issuer "gitlab" {
-  kind     = "gitlab-ci"
-  identity = "gitlab"
-  url      = "https://gitlab.com"
+issuer "github" {
+  kind     = "github-actions"
+  identity = "github"
+  url      = "https://token.actions.githubusercontent.com"
 }
 
 issuer "sso" {
   kind               = "people"
-  identity           = "gitlab"
-  url                = "https://gitlab.com"
+  identity           = "sso"
+  url                = "https://idp.example.com"
   client_id          = "8f1c0b7e4d2a"
   client_secret_file = "/run/secrets/writ/oidc_client_secret"
   groups             = "userinfo"
 }
 
-team "infra_mr" {
-  issuer = "gitlab"
-  match  = { project_id = ["4242"], pipeline_source = ["merge_request_event"] }
+forge "github" {
+  kind            = "github"
+  read_token_file = "/run/secrets/writ/github_read"
+}
+
+repo {
+  name    = "infra"
+  forge   = "github"
+  project = "acme/infra"
+}
+
+team "infra_ci" {
+  issuer = "github"
+  match  = { repository_id = ["777001"] }
 }
 
 team "platform" {
@@ -70,23 +81,8 @@ team "platform" {
   match  = { groups = ["acme/platform"] }
 }
 
-team "infra_reviewers" {
-  issuer = "gitlab"
-  match  = { project_id = ["4242"], user_access_level = ["maintainer", "owner"] }
-}
-
-team "infra_main" {
-  issuer = "gitlab"
-  match = {
-    project_id        = ["4242"]
-    ref_path          = ["refs/heads/main"]
-    ref_protected     = ["true"]
-    ci_config_ref_uri = ["gitlab.com/acme/infra//.gitlab-ci.yml@refs/heads/main"]
-  }
-}
-
 grant {
-  teams  = ["infra_mr"]
+  teams  = ["infra_ci"]
   stacks = ["*"]
   envs   = ["staging", "prod"]
   can    = ["read", "plan"]
@@ -97,22 +93,7 @@ grant {
   teams  = ["platform"]
   stacks = ["*"]
   envs   = ["staging", "prod"]
-  can    = ["read", "approve"]
-  risks  = []
-}
-
-grant {
-  teams  = ["infra_reviewers"]
-  stacks = ["*"]
-  envs   = ["prod"]
-  can    = ["approve"]
-}
-
-grant {
-  teams  = ["infra_main"]
-  stacks = ["*"]
-  envs   = ["staging", "prod"]
-  can    = ["read", "apply"]
+  can    = ["read", "plan", "approve", "apply"]
   risks  = ["create", "update", "replace", "delete"]
 }
 
@@ -144,6 +125,8 @@ env "prod" {
 }
 ```
 
+For a GitLab CI team setup (`kind = "gitlab-ci"` and `kind = "gitlab"`), see [Set up GitLab CI](set-up-gitlab-ci.md).
+
 ## Settings and blocks
 
 | Field | Meaning |
@@ -161,12 +144,12 @@ env "prod" {
 | `limits` | Concurrency, size, and timeout caps (defaults in sample above): `requests_per_second` (`>= 1`), `requests_per_address` (`>= 1`), `plans_per_principal` (`>= 1`), `plans` (`>= 1`), `applies` (`>= 1`), `body` (`1B` to `2GiB`, post-gzip), positive durations `plan_timeout`, `apply_start_timeout`, `apply_timeout`, and per-step run limits `run_memory` (`128MiB` to `1024GiB`), `run_pids` (`>= 64`), `run_cpus` (`0.1` to `1024`), `run_scratch` (`64MiB` to `1024GiB`). |
 | `trusted_proxies` | Optional CIDR list of reverse proxies permitted to supply `X-Forwarded-For` ([Rate limits](api.md#rate-limits)). |
 | `retention` | Optional block: positive durations `audit` and `plans` (kept forever when unset) ([Back up and upgrade](upgrades.md)). |
-| `issuer "NAME"` | Trusted OIDC issuer (`kind`: `gitlab-ci`, `github-actions`, or `people`; `url`; `identity`; optional `ca_file`). |
+| `issuer "NAME"` | Trusted OIDC issuer (`kind`: `github-actions`, `gitlab-ci`, or `people`; `url`; `identity`; optional `ca_file`). |
 | `team "NAME"` | Maps claims from an `issuer` to a team name ([Teams, grants, and approvals](#team-grant-and-approval)). |
 | `grant` | Authorizes `teams` on `stacks` and `envs` for `can` operations (numbered from 1). |
 | `approval` | Optional approval count rules (`stacks`, `envs`, `risks`, `need` `1` to `10`). |
 | `env "NAME"` | Environment definition (`key`, optional `plan_role`, `apply_role`, `s3_endpoints`, `provider_env`, `egress`). |
-| `forge "NAME"` | Optional Git host (`kind = "gitlab"` or `"github"`, `url`, `read_token_file`, optional `write_token_file`, `ca_file`). |
+| `forge "NAME"` | Optional Git host (`kind = "github"` or `"gitlab"`, `url`, `read_token_file`, optional `write_token_file`, `ca_file`). |
 | `repo` | Optional pinned repository blocks (`name`, `forge`, `project`, optional `path`, `prefix`, `webhook_secret_file`). Disables `POST /v1/repos`. |
 | `poll_every` | Repository default-branch poll interval (`>= 1s`, default `60s`). |
 | `poll_every_with_hook` | Backstop poll interval for repositories with webhooks (`>= poll_every`; default `5m`, or `poll_every` if longer). |
@@ -185,7 +168,7 @@ env "prod" {
 
 #### Who a person is
 
-Writ identifies people as `IDENTITY/user/ID` using `user_id` (GitLab CI), `actor_id` (GitHub Actions), or `sub` (`people` ID token). Issuers for the same Git host share one `identity` so a person's CI jobs and CLI/UI sessions collapse to one ID, preventing cross-channel self-approval. Separate Git hosts must use separate identities (`writ serve --check` warns if different identities point to the same normalized host).
+Writ identifies people as `IDENTITY/user/ID` using `actor_id` (GitHub Actions), `user_id` (GitLab CI), or `sub` (`people` ID token). Issuers for the same Git host share one `identity` so a person's CI jobs and CLI/UI sessions collapse to one ID, preventing cross-channel self-approval. Separate Git hosts must use separate identities (`writ serve --check` warns if different identities point to the same normalized host).
 
 Renaming an identity renames every person in it. Sessions and plan authors under the old identity are refused until they sign in or plan again, and approvals kept under the old identity stop counting (rolling back the rename restores them).
 
@@ -223,10 +206,10 @@ env "prod" {
 
 ### forge and repo
 
-- **`forge "NAME"`:** `kind = "gitlab"` or `kind = "github"`, `url` (`https://` or loopback `http://`), `read_token_file`, optional `ca_file`, and optional `write_token_file` (reserved for future write operations; warns if set). `read_token_file` is re-read on every call, so it rotates without a restart, and is sent with redirects disabled. Writ never echoes raw forge response text in API answers, logs, or database rows; read tokens are redacted from errors, and refused if a forge echoes them back.
-  - **`kind = "gitlab"`:** `url` is required. The token needs `read_api` and is sent in `PRIVATE-TOKEN`.
-  - **`kind = "github"`:** `url` defaults to `https://github.com`; for GitHub Enterprise Server, set `https://HOST`. Writ calls `https://api.github.com` for github.com and `HOST/api/v3` otherwise. The token is a fine-grained personal access token with **Contents: read** and **Metadata: read** on the repositories, sent as `Authorization: Bearer`. A rate-limit answer (403 or 429 with `Retry-After`, `X-RateLimit-Remaining: 0` with `X-RateLimit-Reset`, or a 403 whose body names a secondary rate limit, held for a minute) holds every call to that forge back until the limit ends, at most one hour. A GitLab 429 fails only that call, and the next poll tries again. `app_id` and `key_file` are reserved for a GitHub App and refused.
-- **`repo`:** `name` (`[a-z0-9][a-z0-9._-]*`), `forge`, `project` (`namespace/project` on GitLab, `OWNER/REPO` on GitHub, or the numeric ID), optional `path`, optional `prefix` (ending in `/`), and optional `webhook_secret_file` (on GitLab, a plain token or a GitLab 19.1+ `whsec_` signing token; on GitHub, the webhook's secret; re-read on each delivery) ([Get changes in seconds with a webhook](webhooks.md)).
+- **`forge "NAME"`:** `kind = "github"` or `kind = "gitlab"`, `url` (`https://` or loopback `http://`), `read_token_file`, optional `ca_file`, and optional `write_token_file` (reserved for future write operations; warns if set). `read_token_file` is re-read on every call, so it rotates without a restart, and is sent with redirects disabled. Writ never echoes raw forge response text in API answers, logs, or database rows; read tokens are redacted from errors, and refused if a forge echoes them back.
+  - **`kind = "github"`:** `url` defaults to `https://github.com`; for GitHub Enterprise Server, set `https://HOST`. Writ calls `https://api.github.com` for github.com and `HOST/api/v3` otherwise. The token is a fine-grained personal access token with **Contents: read** and **Metadata: read** on the repositories, sent as `Authorization: Bearer`. A rate-limit answer (403 or 429 with `Retry-After`, `X-RateLimit-Remaining: 0` with `X-RateLimit-Reset`, or a 403 whose body names a secondary rate limit, held for a minute) holds every call to that forge back until the limit ends, at most one hour. `app_id` and `key_file` are reserved for a GitHub App and refused.
+  - **`kind = "gitlab"`:** `url` is required. The token needs `read_api` and is sent in `PRIVATE-TOKEN`. A GitLab 429 fails only that call, and the next poll tries again.
+- **`repo`:** `name` (`[a-z0-9][a-z0-9._-]*`), `forge`, `project` (`OWNER/REPO` on GitHub, `namespace/project` on GitLab, or the numeric ID), optional `path`, optional `prefix` (ending in `/`), and optional `webhook_secret_file` (on GitHub, the webhook's secret; on GitLab, a plain token or a GitLab 19.1+ `whsec_` signing token; re-read on each delivery) ([Get changes in seconds with a webhook](webhooks.md)).
 
 ### notify
 

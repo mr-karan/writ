@@ -45,16 +45,16 @@ Each Writ term has one meaning across the docs, CLI, and UI. Where Terraform or 
 | agent | A language-model-driven program that edits code and calls `writ` or `writ mcp`. | |
 | control plane | The `writ serve` server that plans commits, enforces grants and policies, applies approved plans, and writes the audit log. | HCP Terraform (remote runs) |
 | dev control plane | `writ serve --dev`: single-user server on loopback with SQLite, auto-discovered by CLI commands. | |
-| issuer | A trusted OIDC issuer configured in `issuer "NAME"`: `gitlab-ci`, `github-actions`, or `people`. | |
+| issuer | A trusted OIDC issuer configured in `issuer "NAME"`: `github-actions`, `gitlab-ci`, or `people`. | |
 | identity | Config-defined name shared by issuers belonging to the same Git host or IdP, used to build stable person IDs. See [Who a person is](config.md#who-a-person-is). | |
-| person id | `IDENTITY/user/ID` (for example `gitlab/user/1001`), compared by approval rules to prevent self-approval across CI, CLI, and UI. | |
+| person id | `IDENTITY/user/ID` (for example `github/user/1001` or `gitlab/user/1001`), compared by approval rules to prevent self-approval across CI, CLI, and UI. | |
 | principal | The verified caller behind a token or session: a CI job (and its triggering user) or a signed-in person. | |
 | session | A `writ login` (`cli`) or control UI (`browser`) sign-in, valid for `session_ttl` (12h default) with no refresh. Only the token's SHA-256 is stored. | |
 | control UI | Built-in web interface served by `writ serve` under `/ui/`. See [The control UI](how-sign-in-works.md#the-control-ui). | |
 | team | A named claim-matching rule on one issuer. Any token matching all claims in `match` belongs to the team. | Team |
 | grant | A rule granting teams operations (`read`, `plan`, `approve`, `apply`, `override`, `adopt`, `admin`) and risk classes on matching `stack@env`. | Permission |
-| repository | A GitLab project (or local Git dir under `--dev`) registered with `writ serve`, short form "repo". See [Add a repository](add-repository.md). | VCS connection |
-| forge | A configured Git host (`forge` block, currently `gitlab` only) accessed with a read-only token file. | VCS provider |
+| repository | A GitHub repository, GitLab project, or local Git dir under `--dev` registered with `writ serve`, short form "repo". See [Add a repository](add-repository.md). | VCS connection |
+| forge | A configured Git host (`forge` block, `github` or `gitlab`) accessed with a read-only token file. | VCS provider |
 | approval | A person's confirmation that one specific plan ID may apply. Plan authors can't approve their own plans. See [Approvals](approvals.md). | Approval of a run |
 | approval rule | An `approval` config block setting `need` (1 to 10 approvals) for matching stacks, environments, and risk classes. | Policy (HCP Terraform) |
 | override | Applying a plan without required approvals using an `override` grant and a recorded 10 to 500 character reason. Never bypasses mandatory Rego policies. | |

@@ -200,19 +200,19 @@ Messages it prints (real runs against a local stand-in, 2026-11-16):
 | `POST /v1/dev/ui-link` | dev token | `writ.ui-link/v0` (`--dev` only) |
 
 ```json
-{"format": "writ.repo-request/v0", "name": "infra", "forge": "gitlab", "project": "acme/infra", "path": "infra", "prefix": ""}
+{"format": "writ.repo-request/v0", "name": "infra", "forge": "github", "project": "acme/infra", "path": "infra", "prefix": ""}
 ```
 
 Unknown fields (such as tokens) are refused; forge tokens never appear in responses, logs, audit rows, or UI pages.
 
 ## Webhook route
 
-`POST /v1/hooks/{forge}/{repo}` receives GitLab and GitHub webhooks for pinned repositories with `webhook_secret_file` ([Get changes in seconds with a webhook](webhooks.md)). It takes no bearer token. GitLab deliveries authenticate with `X-Gitlab-Token` or a `whsec_` `webhook-signature`; GitHub deliveries with `X-Hub-Signature-256`, `sha256=` and the hex HMAC-SHA256 of the raw body under the secret.
+`POST /v1/hooks/{forge}/{repo}` receives GitHub and GitLab webhooks for pinned repositories with `webhook_secret_file` ([Get changes in seconds with a webhook](webhooks.md)). It takes no bearer token. GitHub deliveries authenticate with `X-Hub-Signature-256`, `sha256=` and the hex HMAC-SHA256 of the raw body under the secret; GitLab deliveries with `X-Gitlab-Token` or a `whsec_` `webhook-signature`.
 
 | Delivery | Response |
 | --- | --- |
-| Verified `Push Hook` (GitLab) or `X-GitHub-Event: push` (GitHub) | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never stored or logged. A GitLab body is never parsed; for GitHub, writ serve parses the signed body's `ref` and `after` only to tell a push from another event, and believes nothing it names. |
-| Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0), or a GitHub delivery whose signed body's SHA-256 was acted on already | `200`, `duplicate: true` |
+| Verified `X-GitHub-Event: push` (GitHub) or `Push Hook` (GitLab) | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never stored or logged. For GitHub, writ serve parses the signed body's `ref` and `after` only to tell a push from another event, and believes nothing it names; a GitLab body is never parsed. |
+| Duplicate GitHub signed body SHA-256, or duplicate GitLab `webhook-id` (or `Idempotency-Key` before GitLab 19.0) | `200`, `duplicate: true` |
 | Verified, not a push, such as GitHub's `ping`, or a GitHub `push` whose signed body lacks `ref` or `after` | `200`, `queued: false` |
 | Any verification failure: unknown repository or webhook, missing or wrong secret, bad signature or timestamp, body over 1 MiB (`check: hook-body`) | `401`, `auth`: `the delivery failed verification` |
 | Over 10 deliveries/s from one client IP | `429`, `Retry-After: 1`. Dropped before the body is read; no audit row. |
@@ -260,7 +260,7 @@ Compact JWS tokens signed with `RS256` or `ES256`, checked in this order. The fi
 | 4 | Signature | Verified against the issuer's cached JWKS. The key's `kid`, type, and `alg` must match. |
 | 5 | Times | `exp` and `iat` required, `nbf` optional, 60s leeway. |
 | 6 | Audience | `aud` is `writ serve`'s `url` alone. |
-| 7 | Claims | Non-empty `sub` and `jti`, and every required claim of the issuer's kind. GitLab CI: `project_id`, `project_path`, `namespace_id`, `pipeline_id`, `pipeline_source`, `job_id`, `ref_path`, `ref_protected`, `sha`, `user_id`, `user_login`. GitHub Actions: `repository`, `repository_id`, `repository_owner_id`, `run_id`, `ref`, `sha`, `event_name`, `workflow_ref`, `actor`, `actor_id`. |
+| 7 | Claims | Non-empty `sub` and `jti`, and every required claim of the issuer's kind. GitHub Actions: `repository`, `repository_id`, `repository_owner_id`, `run_id`, `ref`, `sha`, `event_name`, `workflow_ref`, `actor`, `actor_id`. GitLab CI: `project_id`, `project_path`, `namespace_id`, `pipeline_id`, `pipeline_source`, `job_id`, `ref_path`, `ref_protected`, `sha`, `user_id`, `user_login`. |
 | 8 | Replay | Each CI token `jti` allows one write, recorded until `exp`. |
 
 JWKS refreshes hourly, or per `Cache-Control: max-age` clamped to 5m to 1h, and at most once a minute on an unknown `kid`. On a fetch error it falls back to the stale set for 24h. Fetch bounds: 10s timeout, 1 MiB, at most 100 keys, RSA 2048 to 8192 with `e=65537`, EC P-256, HTTPS on the issuer's host, no redirects.

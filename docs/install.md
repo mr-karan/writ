@@ -1,6 +1,6 @@
 # Install
 
-The current release is **v0.1.8**. Releases include static binaries for Linux and macOS (`amd64` and `arm64`), a multi-arch `writ serve` container image, an install script, `SHA256SUMS`, and its minisign signature. There is no Windows build.
+The current release is **v0.1.8**. GitHub forge, webhook, and GitHub Actions support land in the first release after v0.1.8 (see [CHANGELOG.md](../CHANGELOG.md)). Releases include static binaries for Linux and macOS (`amd64` and `arm64`), a multi-arch `writ serve` container image, an install script, `SHA256SUMS`, and its minisign signature. There is no Windows build.
 
 | Method | Best for |
 | --- | --- |
@@ -94,7 +94,7 @@ $ curl -sS http://127.0.0.1:7340/healthz
 {"format":"writ.health/v0","ok":true,"database":true,"issuers":[],"diagnostics":[]}
 ```
 
-Without `git`, the image cannot read local repositories under `--dev` or clone `git::https://` modules. Team servers fetch GitLab repositories over HTTPS and need no `git`.
+Without `git`, the image cannot read local repositories under `--dev` or clone `git::https://` modules. Team servers fetch GitHub and GitLab repositories over HTTPS and need no `git`.
 
 **Limits.** Running a team server with `provider_uids` inside a container hasn't been tested. Doing so requires `CAP_SETUID`, `CAP_SETGID`, `CAP_KILL`, and the host `nftables` metadata rule; see [Run isolation and egress](run-isolation.md).
 

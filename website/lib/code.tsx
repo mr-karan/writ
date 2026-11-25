@@ -12,7 +12,7 @@ interface Token {
 
 const plain = 'var(--syn-fg)';
 const highlighter = getHighlighter('js', {
-  langs: [sessionLanguage, regoLanguage, 'hcl'],
+  langs: [sessionLanguage, regoLanguage, 'hcl', 'yaml'],
   themes: [writThemes.light],
 });
 
