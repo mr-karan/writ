@@ -78,6 +78,7 @@
 <div class="wide"><dt>Id</dt><dd>{{if $p.ID}}<code class="id-full">{{$p.ID}}</code>{{else}}<span class="muted">none yet; ref</span> <code>{{$p.Ref}}</code>{{end}}</dd></div>
 <div><dt>By</dt><dd><span class="ref" data-record="{{planDoc $p}}" data-field="plan.author.display">{{$p.Author.Display}}</span> <code class="muted">{{$p.Author.Person}}</code></dd></div>
 <div><dt>Started by</dt><dd>{{if eq $p.StartedBy "ci"}}a CI job{{else}}a person{{end}}</dd></div>
+{{if and $p.Source.Commit (not (from $p.Origin))}}<div><dt>Commit</dt><dd><code data-record="{{planDoc $p}}" data-field="plan.source.commit">{{short $p.Source.Commit}}</code>{{with $p.Source.Repo}} <span class="muted">of</span> <span class="ref" data-record="{{planDoc $p}}" data-field="plan.source.repo">{{.}}</span>{{end}}{{with $p.Source.Ref}} <span class="muted">on</span> <code data-record="{{planDoc $p}}" data-field="plan.source.ref">{{.}}</code>{{end}}</dd></div>{{end}}
 {{with from $p.Origin}}<div><dt>From</dt><dd><span class="ref" data-record="{{planDoc $p}}" data-field="plan.origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span>{{with $.Data.Origin}}{{with index . "sha"}} <span class="muted">commit <code>{{short (print .)}}</code></span>{{end}}{{end}}</dd></div>{{end}}
 <div><dt>Requested</dt><dd>{{template "time" $p.RequestedAt}}</dd></div>
 {{if $p.MadeAt}}<div><dt>Made</dt><dd>{{template "time" $p.MadeAt}}</dd></div>{{end}}

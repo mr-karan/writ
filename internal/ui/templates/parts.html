@@ -23,7 +23,7 @@
 <tr>
 {{- if $.Status}}<td>{{template "status" .Status}}</td>{{end -}}
 <td><a class="id" href="/ui/plans/{{planName .}}">{{short (planName .)}}</a>{{if .SupersededBy}} <span class="chip">superseded</span>{{end}}</td>
-{{- if $.Stack}}<td>{{range $i, $s := .Stacks}}{{if $i}}, {{end}}<a href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}}</td>{{end -}}
+{{- if $.Stack}}<td>{{range $i, $s := .Stacks}}{{if $i}}, {{end}}<a class="stack" href="{{link "/ui/stack" "stack" $s.Stack "env" $p.Env}}">{{$s.Stack}}</a>{{end}}</td>{{end -}}
 <td class="c-wide">{{range $i, $s := .Stacks}}{{if $i}}, {{end}}{{template "n" (exact $s.Changes)}}{{end}} {{template "risks" .Risks}}</td>
 <td data-record="{{planRecord .}}"><span class="by">{{template "started-by" .StartedBy}}<span class="ref" data-field="author.display">{{.Author.Display}}</span></span>{{with from .Origin}} <span class="under"><span class="ref" data-field="origin.{{.Field}}">{{.Where}}</span>{{with .Kind}} {{.}}{{end}} <span class="id">{{.ID}}</span></span>{{end}}</td>
 {{- if $.Approvals}}<td data-label="Approvals">{{template "n" (exact (len .Approvals.ApprovedBy))}} of {{template "n" (exact .Approvals.Need)}}</td>{{end -}}
@@ -46,7 +46,7 @@
 <tr>
 <td>{{template "status" .Status}}</td>
 <th scope="row"><a class="id" href="{{link (print "/ui/runs/" .ID) "stack" .Stack "env" .Env}}">{{short .ID}}</a></th>
-{{- if $.Stack}}<td data-label="Stack"><a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}">{{.Stack}}</a></td>{{end}}
+{{- if $.Stack}}<td data-label="Stack"><a class="stack" href="{{link "/ui/stack" "stack" .Stack "env" .Env}}">{{.Stack}}</a></td>{{end}}
 <td data-label="Plan"><a class="id" href="/ui/plans/{{.Plan}}">{{short .Plan}}</a></td>
 <td><span class="ref" data-record="{{record "id" .ID}}" data-field="actor.display">{{.Actor.Display}}</span>{{if .Override}} <span class="chip chip-warn">override</span>{{end}}</td>
 <td class="end" data-label="Started">{{template "when" .StartedAt}}</td>
