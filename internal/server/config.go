@@ -589,6 +589,10 @@ func (d *decoder) lint(cfg *Config) {
 	var span any
 	ids := map[string]string{"project_path": "project_id", "namespace_path": "namespace_id", "repository": "repository_id", "repository_owner": "repository_owner_id"}
 	refKeys := []string{"ref", "ref_path", "pipeline_source", "event_name", "environment", "workflow_ref", "ci_config_ref_uri"}
+	kinds := map[string]oidc.Kind{}
+	for _, i := range cfg.Issuers {
+		kinds[i.Name] = i.Kind
+	}
 	for _, t := range cfg.Policy.Teams {
 		claims := map[string]bool{}
 		for _, r := range t.Match {
@@ -602,7 +606,9 @@ func (d *decoder) lint(cfg *Config) {
 		writes := slices.ContainsFunc(cfg.Policy.Grants, func(g authz.Grant) bool {
 			return slices.Contains(g.Teams, t.Name) && (slices.Contains(g.Can, authz.Apply) || slices.Contains(g.Can, authz.Override))
 		})
-		if writes && !slices.ContainsFunc(refKeys, func(k string) bool { return claims[k] }) {
+		// A person's token names no branch, so only a CI team's apply
+		// needs a ref to bound it.
+		if writes && kinds[t.Issuer] != oidc.People && !slices.ContainsFunc(refKeys, func(k string) bool { return claims[k] }) {
 			d.warnf(span, "team %s may apply but matches no ref, pipeline source, or environment, so every branch's pipeline has that power", t.Name)
 		}
 	}
