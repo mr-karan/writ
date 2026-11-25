@@ -812,3 +812,23 @@ func TestStepNamesTheMemoryLimitThatKilledIt(t *testing.T) {
 		})
 	}
 }
+
+// TestCheckLimitsUnderAShell runs writ serve --check's limits check in a
+// delegated cgroup under a shell that waits for it, as a Nomad task's
+// sh -c '... --check && exec writ serve' does. The shell is the check's
+// ancestor and is gone once writ serve runs, so the check reports the
+// limits a step gets, not that the cgroup holds another process.
+func TestCheckLimitsUnderAShell(t *testing.T) {
+	if os.Getenv(limitsStageEnv) == "shell" {
+		if e := CheckLimits(testLimits); e.Cgroup == "" {
+			t.Fatalf("--check under a shell reports limits off: %s", e.CgroupOff)
+		}
+		return
+	}
+	self := systemdRunSelf(t)
+	// "; true" keeps sh waiting, as "&& exec" does until --check ends.
+	cmd := exec.Command("systemd-run", "--user", "--scope", "--quiet", "--collect", "-p", "Delegate=yes", "--",
+		"sh", "-c", `"$0" -test.run='^TestCheckLimitsUnderAShell$' -test.v -test.count=1; true`, self)
+	cmd.Env = append(os.Environ(), limitsStageEnv+"=shell")
+	runInUnit(t, "TestCheckLimitsUnderAShell", cmd)
+}
