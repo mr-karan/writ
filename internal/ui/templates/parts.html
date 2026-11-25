@@ -46,8 +46,8 @@
 <tr>
 <td>{{template "status" .Status}}</td>
 <th scope="row"><a class="id" href="{{link (print "/ui/runs/" .ID) "stack" .Stack "env" .Env}}">{{short .ID}}</a></th>
-{{- if $.Stack}}<td><a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}">{{.Stack}}</a></td>{{end}}
-<td><a class="id" href="/ui/plans/{{.Plan}}">{{short .Plan}}</a></td>
+{{- if $.Stack}}<td data-label="Stack"><a href="{{link "/ui/stack" "stack" .Stack "env" .Env}}">{{.Stack}}</a></td>{{end}}
+<td data-label="Plan"><a class="id" href="/ui/plans/{{.Plan}}">{{short .Plan}}</a></td>
 <td><span class="ref" data-record="{{record "id" .ID}}" data-field="actor.display">{{.Actor.Display}}</span>{{if .Override}} <span class="chip chip-warn">override</span>{{end}}</td>
 <td class="end" data-label="Started">{{template "when" .StartedAt}}</td>
 <td class="end" data-label="Took">{{with $took.Text}}<time datetime="{{$took.ISO}}">{{.}}</time>{{end}}</td>

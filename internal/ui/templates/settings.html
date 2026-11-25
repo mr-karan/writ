@@ -50,6 +50,7 @@
 {{if .Notifiers}}
 <section class="card" aria-labelledby="h-notify">
 <div class="card-head"><h2 id="h-notify">Notifications</h2></div>
+<div class="scroll">
 <table class="list">
 <caption class="sr-only">Each notifier, the events it hears, and how its deliveries went</caption>
 <thead><tr><th scope="col">Notifier</th><th scope="col">Events</th><th scope="col" class="num">Delivered</th><th scope="col" class="num">Failed</th><th scope="col">Last delivery</th><th scope="col" class="end">Last error</th></tr></thead>
@@ -66,6 +67,7 @@
 {{- end}}
 </tbody>
 </table>
+</div>
 </section>
 {{end}}
 {{end}}

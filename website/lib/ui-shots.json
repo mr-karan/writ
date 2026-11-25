@@ -1,31 +1,31 @@
 {
-  "date": "2026-11-19",
-  "commit": "3a041bc8",
+  "date": "2026-11-25",
+  "commit": "5b30a805",
   "paths": {
     "overview": "/ui/",
-    "plan": "/ui/plans/1eb94828bb4a01b67298cd4be01f13b4",
+    "plan": "/ui/plans/d6e168755cc68d6355e3911a3b1329ed",
     "resources": "/ui/stack?stack=platform&env=dev",
     "stack": "/ui/stack?stack=app&env=dev&view=drift",
     "runs": "/ui/runs",
-    "secret": "/ui/plans/1eb94828bb4a01b67298cd4be01f13b4",
+    "secret": "/ui/plans/d6e168755cc68d6355e3911a3b1329ed",
     "drift": "/ui/stack?stack=app&env=dev&view=drift"
   },
   "sizes": {
     "overview-390-light": {
       "width": 390,
-      "height": 1521
+      "height": 1600
     },
     "overview-390-dark": {
       "width": 390,
-      "height": 1521
+      "height": 1600
     },
     "overview-1280-light": {
       "width": 1280,
-      "height": 1016
+      "height": 1095
     },
     "overview-1280-dark": {
       "width": 1280,
-      "height": 1016
+      "height": 1095
     },
     "plan-390-light": {
       "width": 390,
@@ -45,35 +45,35 @@
     },
     "resources-390-light": {
       "width": 390,
-      "height": 1133
+      "height": 1212
     },
     "resources-390-dark": {
       "width": 390,
-      "height": 1133
+      "height": 1212
     },
     "resources-1280-light": {
       "width": 1280,
-      "height": 875
+      "height": 918
     },
     "resources-1280-dark": {
       "width": 1280,
-      "height": 875
+      "height": 918
     },
     "stack-390-light": {
       "width": 390,
-      "height": 1055
+      "height": 1364
     },
     "stack-390-dark": {
       "width": 390,
-      "height": 1055
+      "height": 1364
     },
     "stack-1280-light": {
       "width": 1280,
-      "height": 800
+      "height": 967
     },
     "stack-1280-dark": {
       "width": 1280,
-      "height": 800
+      "height": 967
     },
     "runs-390-light": {
       "width": 390,
@@ -93,19 +93,19 @@
     },
     "secret-light": {
       "width": 958,
-      "height": 229
+      "height": 268
     },
     "secret-dark": {
       "width": 958,
-      "height": 229
+      "height": 268
     },
     "drift-light": {
       "width": 958,
-      "height": 280
+      "height": 292
     },
     "drift-dark": {
       "width": 958,
-      "height": 280
+      "height": 292
     }
   }
 }
