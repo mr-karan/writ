@@ -93,8 +93,16 @@ func cgroupBase(apply bool) (cgroupSetup, error) {
 	if err != nil {
 		return none, err
 	}
-	// A process of another pid namespace reads as 0.
-	if others := slices.DeleteFunc(pids, func(p int) bool { return p == os.Getpid() }); len(others) > 0 {
+	// A process of another pid namespace reads as 0. writ serve --check
+	// may run under a shell that then execs writ serve, as a Nomad task's
+	// sh -c '... --check && exec writ serve' does: the shell is this
+	// process's ancestor and is gone once writ serve runs, so the check
+	// leaves out its ancestors.
+	keep := []int{os.Getpid()}
+	if !apply {
+		keep = append(keep, ancestors()...)
+	}
+	if others := slices.DeleteFunc(pids, func(p int) bool { return slices.Contains(keep, p) }); len(others) > 0 {
 		return none, fmt.Errorf("writ's cgroup %s holds processes other than writ serve, %v, and a cgroup whose children have limits may hold none; run writ serve alone in its cgroup, as a systemd unit with Delegate=yes or a Nomad task does", own, others)
 	}
 	set := cgroupSetup{base: filepath.Join(own, runsCgroup)}
@@ -892,4 +900,28 @@ func cgroupKeys(dir, file string) (map[string]int64, error) {
 		}
 	}
 	return out, nil
+}
+
+// ancestors returns the pids of this process's parent, its parent, and so
+// on, read from /proc, up to the first it cannot read or pid 1.
+func ancestors() []int {
+	var out []int
+	for pid := os.Getppid(); pid > 1 && len(out) < 64; {
+		out = append(out, pid)
+		b, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+		if err != nil {
+			break
+		}
+		// The command name, in parentheses, may hold spaces; the fields
+		// after its last ")" are state and then the parent's pid.
+		i := strings.LastIndexByte(string(b), ')')
+		f := strings.Fields(string(b[i+1:]))
+		if i < 0 || len(f) < 2 {
+			break
+		}
+		if pid, err = strconv.Atoi(f[1]); err != nil {
+			break
+		}
+	}
+	return out
 }
