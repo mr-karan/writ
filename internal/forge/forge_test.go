@@ -306,6 +306,28 @@ func TestGitLabTreeBounds(t *testing.T) {
 	}
 }
 
+// TestGitLab429FailsOnlyThatCall checks that a GitLab 429 fails the call
+// that met it, with GitLab's words, and holds back no later call: the
+// next poll tries again.
+func TestGitLab429FailsOnlyThatCall(t *testing.T) {
+	var calls atomic.Int32
+	c := hostile(t, func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			w.Header().Set("Retry-After", "3600")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		fmt.Fprint(w, `{"id":4242,"path_with_namespace":"acme/infra","default_branch":"main"}`)
+	})
+	_, err := c.Project(context.Background(), "acme/infra")
+	if _, limited := errors.AsType[*forge.RateLimitError](err); limited || err == nil || !strings.Contains(err.Error(), "the forge answered 429; it is limiting the rate of calls, so writ serve tries again at the next poll") {
+		t.Fatalf("a 429: %v", err)
+	}
+	if p, err := c.Project(context.Background(), "4242"); err != nil || p.ID != "4242" || calls.Load() != 2 {
+		t.Fatalf("the next call after a 429: %+v, %v, after %d calls", p, err, calls.Load())
+	}
+}
+
 // A forge that answers with another commit than the one asked for must not
 // swap that commit's sources into a plan.
 func TestGitLabCommitIsTheOneAskedFor(t *testing.T) {

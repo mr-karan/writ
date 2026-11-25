@@ -26,8 +26,9 @@ import (
 // --server (dev for the dev control plane), WRIT_SERVER, the one control
 // plane the user holds a session of writ login for, and the dev control
 // plane. The token is the
-// first of WRIT_ID_TOKEN, the session for that server, and the dev token
-// when the server is the dev control plane. No command starts a control
+// first of WRIT_ID_TOKEN, the ID token a GitHub Actions job asks for, the
+// session for that server, and the dev token when the server is the dev
+// control plane. No command starts a control
 // plane: a process that a command leaves running has no owner.
 
 // RemoteOptions are the flags every --remote command shares.
@@ -98,6 +99,10 @@ type RemotePlanOptions struct {
 	// job with no checkout sends them. A CI job's token names its own
 	// repository, so Repo may be empty there.
 	Repo, Commit string
+	// SlotWait is how long to keep asking while writ serve refuses the
+	// plan with 429 because its plan slots are busy; 0 asks as a command
+	// always does, a few times over about 30 seconds.
+	SlotWait time.Duration
 }
 
 // RemotePlan sends a plan to writ serve, waits for it, and prints it. The
@@ -118,7 +123,20 @@ func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote,
 	if o.Commit != "" && !forge.IsSHA(o.Commit) {
 		return nil, nil, usagef("--commit %q is not a commit's full id", o.Commit)
 	}
-	r, err := a.remote(ctx)
+	if o.SlotWait < 0 || o.SlotWait > maxSlotWait {
+		return nil, nil, usagef("--slot-wait %s must be between 0 and %s", o.SlotWait, maxSlotWait)
+	}
+	// The slot wait starts before the first token is fetched, which it
+	// bounds too.
+	var deadline time.Time
+	rctx := ctx
+	if o.SlotWait > 0 {
+		deadline = time.Now().Add(o.SlotWait)
+		var cancel context.CancelFunc
+		rctx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+	r, err := a.remote(rctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -143,7 +161,10 @@ func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote,
 		if err != nil {
 			return nil, nil, err
 		}
-		wt := a.findWorkTree(ctx, r, filepath.Clean(dir))
+		wt := a.findWorkTree(rctx, r, filepath.Clean(dir))
+		if o.SlotWait > 0 && rctx.Err() != nil {
+			return nil, nil, fmt.Errorf("the slot wait of %s ended while writ looked for the work tree's repository on writ serve", o.SlotWait)
+		}
 		if wt.source != nil && o.Stack != "" && o.Stack != wt.name {
 			wt.source, wt.why = nil, "--stack "+o.Stack+" is not the stack's name "+wt.name+" in repository "+wt.repo.Name
 		}
@@ -160,7 +181,7 @@ func (a *App) sendRemotePlan(ctx context.Context, o RemotePlanOptions) (*remote,
 	if !o.JSON {
 		io.WriteString(a.humanOutput(), line)
 	}
-	status, resp, err := r.call(ctx, http.MethodPost, "/v1/plans", body, remoteTimeout)
+	status, resp, err := a.postPlan(ctx, r, body, o.SlotWait, deadline)
 	if err != nil {
 		return nil, nil, err
 	}

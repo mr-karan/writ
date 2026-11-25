@@ -42,7 +42,7 @@ Output of real runs, 2026-11-16.
 | [`state`](#state) | Plan stale/expired/`no-changes`, stack busy, or key closed | `1` | `409` (`404` when `writ state adopt` names an unknown version or serial) |
 | [`saved-plan`](#saved-plan) | Plan sources don't match or branch moved | `1` | `409` |
 | [`state-io`](#state-io) | Database/audit write failed or apply response lost | `1` | `503` (`502` when an IdP fails to start sign-in) |
-| [`provider`](#provider) | Provider, lock file, S3 read, or Git host failed | `1` | `502` (Git host failure) or `409` (S3 adoption read failure) |
+| [`provider`](#provider) | Provider, lock file, S3 read, or Git host failed | `1` | `502` (Git host failure), `503` with `Retry-After` (Git host rate limit), or `409` (S3 adoption read failure) |
 | [`internal`](#internal) | Local I/O error or bug | `1` | `500` |
 | [`syntax`](#syntax) | Server config HCL failed to parse | `1` | none |
 
@@ -144,6 +144,7 @@ Common messages:
 Common messages:
 
 - `WHAT: the forge answered STATUS`
+- `WHAT: the forge limits the rate of calls until TIME, so writ serve sends it none before then` (GitHub's rate limit: `writ serve` sends that forge no call before `TIME`, at most an hour away)
 - `the lock file is over N bytes, so a plan of the stack is refused`
 - `provider SOURCE finds no TYPE with that import id`
 - `N objects could not be imported, so nothing was written`

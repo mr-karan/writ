@@ -17,6 +17,9 @@ type RepoKind string
 const (
 	// GitLab is a project at a GitLab instance, read through its API.
 	GitLab RepoKind = "gitlab"
+	// GitHub is a repository at github.com or a GitHub Enterprise Server,
+	// read through its API.
+	GitHub RepoKind = "github"
 	// Dir is a local Git repository, which only writ serve --dev reads.
 	Dir RepoKind = "dir"
 )

@@ -103,7 +103,7 @@ See [Install](docs/install.md) for commands and verification steps.
 ## Supported platforms and limits
 
 - **OpenTofu only.** Writ runs OpenTofu 1.13.9 exclusively and doesn't run Terraform. Each stack has one state, with no `tofu workspace`.
-- **GitLab only.** GitLab is the only remote Git host Writ reads, and its CI components target GitLab CI (`writ serve --dev` also reads local Git directories).
+- **GitLab and GitHub.** GitLab and GitHub are the remote Git hosts Writ reads, with a read-only token; there is no GitHub App yet. `writ ci gitlab` and `writ ci github` write the CI config (`writ serve --dev` also reads local Git directories).
 - **AWS roles only.** Built-in role assumption supports AWS IAM roles via STS. Other providers get credentials from `provider_env` secret files on the server.
 - **One node, on Linux.** A team `writ serve` runs as a single process on Linux with namespace isolation. Running a second process against the same database fails the first process's in-flight work.
 - **Stand-in test suite.** End-to-end tests run real OpenTofu 1.13.9 and real providers against local stand-ins in isolated namespaces; no test contacts a live cloud account.

@@ -373,6 +373,16 @@ func (s *Server) Handler() http.Handler {
 // older than the server can say so before an answer it cannot read.
 const VersionHeader = "X-Writ-Version"
 
+// RetryHeader marks a refusal writ serve made before it took a request,
+// which a client may send again unchanged: RetrySlots when every plan slot
+// is busy, RetryForge when the forge limits the rate of calls. A 429 or
+// 503 without it may come from a proxy after writ serve took the request.
+const (
+	RetryHeader = "X-Writ-Retry"
+	RetrySlots  = "plan-slots"
+	RetryForge  = "forge-rate-limit"
+)
+
 // UIRoute is one route of the control UI: a ServeMux pattern and its
 // handler, a func, so a router cannot be a route.
 type UIRoute struct {

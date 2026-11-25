@@ -76,6 +76,70 @@ func TestVerifyGitLab(t *testing.T) {
 	}
 }
 
+// TestVerifyGitHub checks X-Hub-Signature-256 against the example in
+// GitHub's documentation of validating webhook deliveries, read
+// 2026-11-22: the secret "It's a Secret to Everybody" signs the body
+// "Hello, World!".
+func TestVerifyGitHub(t *testing.T) {
+	secret, body := []byte("It's a Secret to Everybody"), []byte("Hello, World!")
+	const good = "sha256=757107ea0eb2509fc211221cce984b8a37570b6d7586c22c46f4379c8b043e17"
+	sig := func(k, v string) http.Header {
+		h := http.Header{}
+		h.Set(k, v)
+		return h
+	}
+	for _, c := range []struct {
+		name   string
+		secret []byte
+		h      http.Header
+		body   []byte
+		check  string
+	}{
+		{"signed", secret, sig("X-Hub-Signature-256", good), body, ""},
+		{"another body", secret, sig("X-Hub-Signature-256", good), []byte("Hello, World?"), "hook-signature"},
+		{"another secret", []byte("It's a Secret to Somebody"), sig("X-Hub-Signature-256", good), body, "hook-signature"},
+		{"upper-case hex", secret, sig("X-Hub-Signature-256", strings.ToUpper(good)), body, "hook-signature"},
+		{"no prefix", secret, sig("X-Hub-Signature-256", good[len("sha256="):]), body, "hook-signature"},
+		{"a prefix of the signature", secret, sig("X-Hub-Signature-256", good[:40]), body, "hook-signature"},
+		{"the SHA-1 header only", secret, sig("X-Hub-Signature", "sha1=01dc10d0c83e72ed246219cdd91669667fe2ca59"), body, "hook-no-signature"},
+		{"no signature", secret, http.Header{}, body, "hook-no-signature"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ok, check := verifyGitHub(c.h, c.body, c.secret, time.Time{})
+			if ok != (c.check == "") || check != c.check {
+				t.Fatalf("got %v %q, want %q", ok, check, c.check)
+			}
+		})
+	}
+}
+
+// TestGitHubMoves checks that a delivery reads the head only when both
+// its header and its signed body are a push's.
+func TestGitHubMoves(t *testing.T) {
+	push := `{"ref":"refs/heads/main","before":"0000000000000000000000000000000000000000","after":"5d1e9a0c7b2f4e1d8a6c3b9e0f7a2d4c6b8e1f3a","commits":[]}`
+	ping := `{"zen":"Keep it logically awesome.","hook_id":1,"hook":{"type":"Repository"}}`
+	for _, c := range []struct {
+		name, event, body string
+		want              bool
+	}{
+		{"a push", "push", push, true},
+		{"a ping", "ping", ping, false},
+		{"a ping's body sent as a push", "push", ping, false},
+		{"a push's body sent as a ping", "ping", push, false},
+		{"a push with a zen", "push", `{"ref":"refs/heads/main","after":"x","zen":"z"}`, false},
+		{"not JSON", "push", "ref=refs/heads/main", false},
+		{"an array", "push", "[]", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := http.Header{}
+			h.Set("X-GitHub-Event", c.event)
+			if got := githubMoves(h, []byte(c.body)); got != c.want {
+				t.Fatalf("got %v", got)
+			}
+		})
+	}
+}
+
 // TestHookProofsCompareInConstantTime checks that hooks.go compares a
 // proof a delivery sent only through secretEqual, and that secretEqual
 // compares SHA-256 digests, which have one length, with
@@ -121,7 +185,7 @@ func TestHookProofsCompareInConstantTime(t *testing.T) {
 			}
 			// In the functions that check a proof, no == or != may touch
 			// one, but to ask whether it's empty.
-			if b, ok := n.(*ast.BinaryExpr); ok && (b.Op == token.EQL || b.Op == token.NEQ) && (fn.Name.Name == "verifyGitLab" || fn.Name.Name == "verifySigned") {
+			if b, ok := n.(*ast.BinaryExpr); ok && (b.Op == token.EQL || b.Op == token.NEQ) && (fn.Name.Name == "verifyGitLab" || fn.Name.Name == "verifySigned" || fn.Name.Name == "verifyGitHub") {
 				if empty(b.X) || empty(b.Y) {
 					return true
 				}
@@ -139,7 +203,7 @@ func TestHookProofsCompareInConstantTime(t *testing.T) {
 	if c := calls["secretEqual"]; !c["subtle.ConstantTimeCompare"] || !c["sha256.Sum256"] {
 		t.Fatalf("secretEqual calls %v", c)
 	}
-	for _, fn := range []string{"verifyGitLab", "verifySigned"} {
+	for _, fn := range []string{"verifyGitLab", "verifySigned", "verifyGitHub"} {
 		if !calls[fn]["secretEqual"] {
 			t.Errorf("%s does not compare through secretEqual", fn)
 		}

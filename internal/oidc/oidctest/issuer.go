@@ -209,6 +209,16 @@ func (is *Issuer) SetDiscovery(issuer, jwksURI string) {
 	is.discoveryIssuer, is.jwksURI = issuer, jwksURI
 }
 
+// ServeAt moves the issuer to is.URL+path, as GitHub Enterprise Server
+// issues its Actions tokens at https://HOST/_services/token: the
+// discovery document is served under it and names it. It returns the new
+// issuer URL, which tokens must carry as iss.
+func (is *Issuer) ServeAt(path string) string {
+	is.mux.HandleFunc("GET "+path+"/.well-known/openid-configuration", is.discovery)
+	is.SetDiscovery(is.URL+path, "")
+	return is.URL + path
+}
+
 // Fetches counts key set requests.
 func (is *Issuer) Fetches() int {
 	is.mu.Lock()

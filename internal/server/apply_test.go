@@ -987,3 +987,53 @@ grant {`, 1)
 		t.Fatalf("the merged apply with two reviewers: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// TestApplyGrantBeforeForge checks that an apply by a principal with no
+// apply grant on the stack@env is refused before writ serve calls the
+// forge with its token: neither an apply after a merge nor one by a plan's
+// id reads anything of the repository.
+func TestApplyGrantBeforeForge(t *testing.T) {
+	f := planFixture(t, withApprovals(t))
+	f.addInfra()
+	tok := f.mrToken(changed("resource \"random_pet\" \"pet2\" {}\n"), nil)
+	r := f.do("POST", "/v1/plans", tok, commitPlan(map[string]any{}))
+	if r.status != http.StatusAccepted {
+		t.Fatalf("plan: %d %s", r.status, r.body)
+	}
+	id := f.waitPlan(tok, r.doc["plan"].(map[string]any)["ref"].(string)).Plan.ID
+	merged := f.gitlab.Commit(4242, "main", changed("resource \"random_pet\" \"pet2\" {}\n"))
+	for _, tc := range []struct {
+		name, tok string
+		body      *bytes.Reader
+		want      string
+	}{
+		{"after a merge", deniedMainJob(f, merged), mergedRequest("network"), "may not apply to network@prod"},
+		{"by id", f.token(nil), runRequest(map[string]any{"plan": id}), "may not apply plan " + id},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f.gitlab.Calls()
+			r := f.do("POST", "/v1/runs", tc.tok, tc.body)
+			if r.status != http.StatusForbidden || r.class() != "denied" || !strings.Contains(string(r.body), tc.want) {
+				t.Fatalf("got %d %s", r.status, r.body)
+			}
+			if calls := f.gitlab.Calls(); len(calls) != 0 {
+				t.Fatalf("the refused apply called the forge: %v", calls)
+			}
+		})
+	}
+	// Each refusal's audit row names its target, so a team that reads the
+	// stack sees the denied apply.
+	rows, _ := f.auditAll(f.token(nil), nil)
+	denied := 0
+	for _, row := range rows {
+		if row.Method == "POST" && row.Route == "/v1/runs" && row.Status == http.StatusForbidden {
+			denied++
+			if row.Env != "prod" || len(row.Stacks) != 1 {
+				t.Fatalf("a denied apply's audit row names %q %v", row.Env, row.Stacks)
+			}
+		}
+	}
+	if denied != 2 {
+		t.Fatalf("%d denied apply rows, want 2", denied)
+	}
+}

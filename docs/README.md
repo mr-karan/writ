@@ -20,6 +20,7 @@ Writ is one Go binary under Apache 2.0, with no limits on users, runs, or resour
 | Connect a local repository or GitLab project | [Add a repository](add-repository.md) |
 | Get pushes in seconds | [Webhooks](webhooks.md) |
 | Plan, approve, and apply from GitLab CI | [Set up GitLab CI](set-up-gitlab-ci.md) |
+| Plan from GitHub Actions | [Set up GitHub Actions](set-up-github-actions.md) |
 | Plan, approve, apply, recover a lost reply, or override | [Plan and apply](apply.md) |
 | Require approvals by stack, env, and risk | [Configure approvals](approvals.md) |
 | Send events to Slack or a signed webhook | [Get notified](notifications.md) |

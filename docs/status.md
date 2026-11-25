@@ -10,7 +10,7 @@ Writ plans, approves, and applies OpenTofu 1.13.9 stacks on your own Linux serve
 - **Run isolation and egress**: Dedicated `provider_uids`, Linux user/mount/PID/IPC namespaces, cgroup v2 resource limits, a seccomp filter, `nftables` EC2 metadata blocking, module-source allow-listing, and an opt-in per-run egress proxy. [Run isolation and egress](run-isolation.md)
 - **OPA Rego policy**: Evaluated at plan and apply time with `conftest` parity and no override for mandatory denials. [Write and test policies](write-a-policy.md)
 - **Drift checks and notifications**: Scheduled drift checks (`drift` block) and asynchronous Slack or HMAC-signed JSON webhook notifications (`notify` block) for drift, failures, applies, outside writes, and pending approvals. [Drift checks](drift-checks.md), [Notifications](notifications.md)
-- **GitLab webhooks**: Verified push webhooks (`POST /v1/hooks/{forge}/{repo}`) to trigger immediate default-branch reads with periodic polling as a backstop. [Webhooks](webhooks.md)
+- **GitLab and GitHub**: Polling of GitLab projects and GitHub repositories (github.com or GitHub Enterprise Server, with a read-only token), verified push webhooks (`POST /v1/hooks/{forge}/{repo}`) to trigger immediate default-branch reads with periodic polling as a backstop, `writ ci gitlab` and `writ ci github`, and GitHub Actions ID tokens fetched by the CLI. [Add a repository](add-repository.md), [Webhooks](webhooks.md), [Set up GitHub Actions](set-up-github-actions.md)
 - **Control UI and audit log**: Built-in web UI at `/ui/` (overview, plan review, approvals, stack resources and drift, runs, repos, access, settings, and `/ui/audit`) backed by a synchronous audit log. [Configure sign-in](sign-in.md), [Read the audit log](audit-log.md)
 - **Bulk import and coding agents**: `writ import bulk` and `writ import accept` for existing objects, plus `writ mcp` and `writ agent init`. [Import existing objects](import-bulk.md), [Use Writ with a coding agent](agents.md)
 - **Structured output**: `--json` on every command except `serve`, `mcp`, `ci`, and `help`. [Commands](commands.md)
@@ -23,17 +23,17 @@ End-to-end suites build `writ` and run real OpenTofu 1.13.9 and real providers i
 - `hashicorp/random` and `terraform_data` through `writ serve` on `backend "s3"` against local S3 and STS stand-ins.
 - `hashicorp/nomad` against a local dev agent and `hashicorp/aws` against local stand-ins and AWS Emulator for `writ import bulk` and `writ import accept`.
 
-No test contacts a live cloud account or real GitLab instance.
+No test contacts a live cloud account, a real GitLab instance, or GitHub.
 
 ## Platform requirements and limits
 
 - **OpenTofu 1.13.9 only**: Writ runs OpenTofu 1.13.9 and doesn't run Terraform. Each stack has one state (no `tofu workspace`).
 - **Linux required for `writ serve`**: Team servers require Linux namespaces, `provider_uids`, `nftables` (on hosts with metadata services), and cgroup v2 on Linux 5.14+ for per-step memory/PID/CPU limits. The CLI builds for Linux and macOS (`amd64`, `arm64`), though macOS binaries are cross-built on Linux and haven't been tested on macOS.
 - **Single-node server**: Run one `writ serve` process per Postgres database. A second process marks the first process's in-flight runs as `failed` and releases their locks.
-- **GitLab only**: GitLab is the only remote Git host Writ polls or accepts webhooks from, and bundled CI components target GitLab CI (`writ serve --dev` also reads local Git repos).
+- **GitLab and GitHub only**: GitLab and GitHub are the remote Git hosts Writ polls and accepts webhooks from (`writ serve --dev` also reads local Git repos). A GitHub Actions token plans; approving a whole run and applying after a merge from a CI job take GitLab CI tokens only, so on GitHub people approve and apply.
 - **AWS STS roles only**: Built-in `plan_role` and `apply_role` assumption supports AWS IAM roles. Other cloud providers read credentials from `provider_env` secret files.
 - **Pending login slots**: At most 1,000 device logins and 1,000 browser logins can wait in memory, and 10 of both flows together per client IP. A browser sign-in expires after 10 minutes; a device sign-in follows the issuer's expiry, capped at 30 minutes. [Sign-ins that wait](how-sign-in-works.md#sign-ins-that-wait)
-- **Stand-in verification**: S3 state, STS assumption, GitLab CI components, GitLab OIDC sign-in, webhooks, and bulk imports are verified against local stand-ins rather than live cloud or GitLab accounts.
+- **Stand-in verification**: S3 state, STS assumption, GitLab CI components, GitLab OIDC sign-in, GitHub reads, GitHub Actions ID tokens, webhooks, and bulk imports are verified against local stand-ins rather than live cloud, GitLab, or GitHub accounts.
 - **Bulk import scope**: `writ import bulk` covers the AWS and Nomad patterns it has been tested against; see [Import existing objects](import-bulk.md).
 
 ## Not built yet
@@ -41,8 +41,8 @@ No test contacts a live cloud account or real GitLab instance.
 ### Server and CI
 
 - Multi-node active-active `writ serve`.
-- GitHub repository polling (GitHub App) and GitHub webhooks (`X-Hub-Signature-256`).
-- Automatic GitHub Actions OIDC token fetching in the CLI (workflows must fetch the token and set `WRIT_ID_TOKEN`) and a bundled GitHub Actions workflow template.
+- A GitHub App for repository reads (a `github` forge reads with a fine-grained token).
+- Approving a whole run (`writ approve --remote --pipeline`) and applying after a merge (`writ apply --remote --merged`) from a GitHub Actions token.
 - Built-in STS role brokers for clouds other than AWS.
 - Merge request plan comments and commit status publishing (`write_token_file` warns and has no effect).
 - Multi-stack atomic plans and `--changed` stack detection on the server.

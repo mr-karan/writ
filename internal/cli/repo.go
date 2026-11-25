@@ -172,7 +172,7 @@ func (a *App) printRepo(asJSON bool, doc []byte, added bool) error {
 		if rp.Kind == "dir" {
 			fmt.Fprintln(out, "Next: in a clean work tree of it, writ plan --remote plans the commit you are on.")
 		} else {
-			fmt.Fprintf(out, "Next: add the CI job that plans each merge request: writ ci gitlab --repo %s\n", rp.Name)
+			fmt.Fprintf(out, "Next: add the CI job that plans each merge request: writ ci %s --repo %s\n", rp.Kind, rp.Name)
 		}
 	}
 	return nil

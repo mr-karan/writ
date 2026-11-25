@@ -1,10 +1,11 @@
-// Package forgetest serves a stand-in for GitLab's REST API in a test's
-// process: the project, branch, commit, merge base, repository tree, and
-// raw blob endpoints that writ serve reads, with the response shapes of
-// GitLab's API documentation (docs.gitlab.com/api/projects, /api/branches, /api/commits,
-// and /api/repositories, read 2026-11-10). Commits are made from maps of
-// files. The stand-in records each call, so a test can say what was
-// fetched, and can serve a tampered blob or a symbolic link.
+// Package forgetest serves stand-ins for GitLab's and GitHub's REST APIs
+// in a test's process. The GitLab stand-in answers the project, branch,
+// commit, merge base, repository tree, and raw blob endpoints that writ
+// serve reads, with the response shapes of GitLab's API documentation
+// (docs.gitlab.com/api/projects, /api/branches, /api/commits, and
+// /api/repositories, read 2026-11-10); github.go has GitHub's. Commits are
+// made from maps of files. A stand-in records each call, so a test can say
+// what was fetched, and can serve a tampered blob or a symbolic link.
 package forgetest
 
 import (
@@ -30,14 +31,22 @@ type GitLab struct {
 	URL string
 	// Token is the one token it accepts in PRIVATE-TOKEN.
 	Token string
+	*host
+	// pageSize overrides per_page, so a test sees several pages.
+	pageSize int
+}
 
+// host is the repositories a stand-in serves, whichever API it speaks.
+type host struct {
 	mu       sync.Mutex
 	projects map[string]*project
 	blobs    map[string][]byte
 	tampered map[string][]byte
 	calls    []string
-	// pageSize overrides per_page, so a test sees several pages.
-	pageSize int
+}
+
+func newHost() *host {
+	return &host{projects: map[string]*project{}, blobs: map[string][]byte{}, tampered: map[string][]byte{}}
 }
 
 type project struct {
@@ -75,14 +84,14 @@ func New(t testing.TB, token string) *GitLab {
 // server, such as an OIDC issuer's, as GitLab serves both from one host.
 // The caller sets URL.
 func Handler(token string) *GitLab {
-	return &GitLab{Token: token, projects: map[string]*project{}, blobs: map[string][]byte{}, tampered: map[string][]byte{}}
+	return &GitLab{Token: token, host: newHost()}
 }
 
 // ServeHTTP answers the API's calls.
 func (g *GitLab) ServeHTTP(w http.ResponseWriter, r *http.Request) { g.serve(w, r) }
 
 // AddProject adds a project with no commits.
-func (g *GitLab) AddProject(id int, path, defaultBranch string) {
+func (g *host) AddProject(id int, path, defaultBranch string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.projects[strconv.Itoa(id)] = &project{id: id, path: path, defaultBranch: defaultBranch, branches: map[string]string{}, commits: map[string][]entry{}, parents: map[string]string{}}
@@ -91,7 +100,7 @@ func (g *GitLab) AddProject(id int, path, defaultBranch string) {
 // Commit makes a commit of files in the project and moves branch to it.
 // Its parent is the branch's head before, if the branch had one. It
 // returns the commit's id.
-func (g *GitLab) Commit(projectID int, branch string, files map[string]File) string {
+func (g *host) Commit(projectID int, branch string, files map[string]File) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	p := g.projects[strconv.Itoa(projectID)]
@@ -120,7 +129,7 @@ func (g *GitLab) Commit(projectID int, branch string, files map[string]File) str
 
 // DeleteBranch removes a branch, as a merged merge request's source
 // branch is removed. Its commits stay.
-func (g *GitLab) DeleteBranch(projectID int, branch string) {
+func (g *host) DeleteBranch(projectID int, branch string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	delete(g.projects[strconv.Itoa(projectID)].branches, branch)
@@ -128,7 +137,7 @@ func (g *GitLab) DeleteBranch(projectID int, branch string) {
 
 // Tamper makes the stand-in serve content for blob, so the content no
 // longer matches the id.
-func (g *GitLab) Tamper(blob string, content string) {
+func (g *host) Tamper(blob string, content string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.tampered[blob] = []byte(content)
@@ -143,7 +152,7 @@ func (g *GitLab) PageSize(n int) {
 
 // Calls returns the calls made since the last Calls, as "GET /path", and
 // forgets them.
-func (g *GitLab) Calls() []string {
+func (g *host) Calls() []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	out := g.calls

@@ -107,6 +107,8 @@ HTTP/1.1 403 Forbidden
 
 Output of a real run, 2026-11-10.
 
+`writ serve` marks two plan refusals, both made before it takes the plan, with `X-Writ-Retry`: `plan-slots` on the `429` when every plan slot of the principal or the server is busy, and `forge-rate-limit` on the `503`, class `provider`, with `Retry-After`, when the forge limits the rate of calls while the commit is checked. Other refusals, such as a missing grant, carry no mark. A client may send a request with one of those two status and mark pairs again unchanged; any other `429` or `503` may come from a proxy after writ serve took the request.
+
 ## Approval routes
 
 | Method and path | Grant | Body | Response |
@@ -205,13 +207,13 @@ Unknown fields (such as tokens) are refused; forge tokens never appear in respon
 
 ## Webhook route
 
-`POST /v1/hooks/{forge}/{repo}` receives GitLab webhooks for pinned repositories with `webhook_secret_file` ([Get changes in seconds with a webhook](webhooks.md)). It takes no bearer token; deliveries authenticate with `X-Gitlab-Token` or a `whsec_` `webhook-signature`.
+`POST /v1/hooks/{forge}/{repo}` receives GitLab and GitHub webhooks for pinned repositories with `webhook_secret_file` ([Get changes in seconds with a webhook](webhooks.md)). It takes no bearer token. GitLab deliveries authenticate with `X-Gitlab-Token` or a `whsec_` `webhook-signature`; GitHub deliveries with `X-Hub-Signature-256`, `sha256=` and the hex HMAC-SHA256 of the raw body under the secret.
 
 | Delivery | Response |
 | --- | --- |
-| Verified `Push Hook` | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never parsed, stored, or logged. |
-| Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0) | `200`, `duplicate: true` |
-| Verified, not a push | `200`, `queued: false` |
+| Verified `Push Hook` (GitLab) or `X-GitHub-Event: push` (GitHub) | `202`, `writ.hook/v0`, `queued: true`. Triggers an immediate default-branch read through the forge API. The body is capped at 1 MiB and never stored or logged. A GitLab body is never parsed; for GitHub, writ serve parses the signed body's `ref` and `after` only to tell a push from another event, and believes nothing it names. |
+| Duplicate `webhook-id` (or `Idempotency-Key` before GitLab 19.0), or a GitHub delivery whose signed body's SHA-256 was acted on already | `200`, `duplicate: true` |
+| Verified, not a push, such as GitHub's `ping`, or a GitHub `push` whose signed body lacks `ref` or `after` | `200`, `queued: false` |
 | Any verification failure: unknown repository or webhook, missing or wrong secret, bad signature or timestamp, body over 1 MiB (`check: hook-body`) | `401`, `auth`: `the delivery failed verification` |
 | Over 10 deliveries/s from one client IP | `429`, `Retry-After: 1`. Dropped before the body is read; no audit row. |
 | Over 5 deliveries/s for one repository | `429`, `Retry-After: 1`. Audited. |
@@ -231,11 +233,11 @@ Every 401 returns the same message so senders learn nothing. Inspect `check` in 
 | `hook-no-token` | Missing `X-Gitlab-Token` header |
 | `hook-token` | `X-Gitlab-Token` doesn't match the secret |
 | `hook-secret-file` | Secret file is unreadable, not a regular file <= 4 KiB, or has invalid base64 after `whsec_` (see server log) |
-| `hook-no-signature` | Missing `webhook-id`, `webhook-timestamp`, or `webhook-signature` under a signing token |
+| `hook-no-signature` | Missing `webhook-id`, `webhook-timestamp`, or `webhook-signature` under a signing token, or a GitHub delivery without `X-Hub-Signature-256` |
 | `hook-timestamp` | `webhook-timestamp` is more than 5 minutes from server time |
 | `hook-signature` | Signature doesn't match the raw body |
 
-GitLab treats any 4xx response as a failure. Normal project traffic stays far below these rate limits, so a 429 indicates unexpected traffic to the endpoint.
+GitLab and GitHub treat any 4xx response as a failure. Normal project traffic stays far below these rate limits, so a 429 indicates unexpected traffic to the endpoint.
 
 ### Webhook security
 
@@ -243,7 +245,7 @@ GitLab treats any 4xx response as a failure. Normal project traffic stays far be
 - Secrets and failed candidate tokens never appear in logs, audit rows, API responses, or the control UI.
 - Webhooks are unauthenticated by bearer token; the per-IP rate limit runs before reading the body.
 - Bodies are capped at 1 MiB and never stored or logged.
-- The newest 4,096 delivery IDs are deduplicated in memory. After a restart, a resent delivery triggers at most one extra head read.
+- The newest 4,096 delivery IDs (for GitHub, signed bodies' digests) are deduplicated in memory. After a restart, a resent delivery triggers at most one extra head read.
 - A delivery never triggers plans or applies and never chooses what to fetch; `writ serve` always reads the stored project ID and default branch using the forge's read token.
 
 ## Token checks

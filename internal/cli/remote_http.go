@@ -37,6 +37,10 @@ type remote struct {
 	http *http.Client
 	// seen takes writ serve's version from each answer that names it.
 	seen func(version string)
+	// refresh asks for a new token where the token came from GitHub
+	// Actions, whose ID tokens expire while a long plan runs; nil
+	// otherwise.
+	refresh func(ctx context.Context) (string, error)
 }
 
 // Where a remote command's token came from.
@@ -91,6 +95,19 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 		r.token, r.tokenFrom = ciToken, tokenCI
 		return r, nil
 	}
+	// A GitHub Actions job may ask for its ID token instead of setting
+	// WRIT_ID_TOKEN, for the audience writ serve takes: its own URL.
+	if tok, ok, err := a.actionsToken(ctx, base); ok {
+		if err != nil {
+			return nil, err
+		}
+		r.token, r.tokenFrom = tok, tokenActions
+		r.refresh = func(ctx context.Context) (string, error) {
+			tok, _, err := a.actionsToken(ctx, base)
+			return tok, err
+		}
+		return r, nil
+	}
 	_, doc, err := a.readSessions()
 	if err != nil {
 		return nil, err
@@ -106,7 +123,7 @@ func (a *App) remote(ctx context.Context) (*remote, error) {
 		r.token, r.tokenFrom, r.dev = c.Token, tokenDev, true
 		return r, nil
 	}
-	return nil, usagef("no token for %s: sign in with writ login %s, or in GitLab CI set id_tokens: { WRIT_ID_TOKEN: { aud: %s } } on the job", base, base, base)
+	return nil, usagef("no token for %s: sign in with writ login %s; in GitHub Actions give the job permissions: id-token: write; in GitLab CI set id_tokens: { WRIT_ID_TOKEN: { aud: %s } } on the job", base, base, base)
 }
 
 // newRemote is a client of the control plane at base, with no token, that
@@ -154,6 +171,16 @@ func (r *remote) call(ctx context.Context, method, path string, body []byte, tim
 			}
 		}
 		status, b, err := r.once(ctx, method, path, body, timeout, nil)
+		if err == nil && status == http.StatusUnauthorized && method == http.MethodGet && r.refresh != nil {
+			// The Actions token may have expired since it was fetched:
+			// fetch another and read once more. A write is never resent.
+			tok, rerr := r.refresh(ctx)
+			if rerr != nil {
+				return 0, nil, rerr
+			}
+			r.token = tok
+			status, b, err = r.once(ctx, method, path, body, timeout, nil)
+		}
 		_, redirected := errors.AsType[*redirectError](err)
 		switch {
 		case err != nil && method == http.MethodGet && ctx.Err() == nil && !redirected:
@@ -174,6 +201,12 @@ func (r *remote) call(ctx context.Context, method, path string, body []byte, tim
 
 // once sends one request, with the headers in hdr besides the token's.
 func (r *remote) once(ctx context.Context, method, path string, body []byte, timeout time.Duration, hdr http.Header) (int, []byte, error) {
+	status, _, b, err := r.send(ctx, method, path, body, timeout, hdr)
+	return status, b, err
+}
+
+// send is once, which also returns the answer's headers.
+func (r *remote) send(ctx context.Context, method, path string, body []byte, timeout time.Duration, hdr http.Header) (int, http.Header, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var rd io.Reader
@@ -182,7 +215,7 @@ func (r *remote) once(ctx context.Context, method, path string, body []byte, tim
 	}
 	req, err := http.NewRequestWithContext(ctx, method, r.base+path, rd)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	if r.token != "" {
 		req.Header.Set("Authorization", "Bearer "+r.token)
@@ -198,7 +231,7 @@ func (r *remote) once(ctx context.Context, method, path string, body []byte, tim
 	}
 	resp, err := r.http.Do(req)
 	if err != nil {
-		return 0, nil, fmt.Errorf("%s %s: %w", method, r.base+path, errors.Unwrap(err))
+		return 0, nil, nil, fmt.Errorf("%s %s: %w", method, r.base+path, errors.Unwrap(err))
 	}
 	defer resp.Body.Close()
 	if v := resp.Header.Get(server.VersionHeader); v != "" && r.seen != nil {
@@ -206,9 +239,9 @@ func (r *remote) once(ctx context.Context, method, path string, body []byte, tim
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse))
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
-	return resp.StatusCode, b, nil
+	return resp.StatusCode, resp.Header, b, nil
 }
 
 // get fetches a document and refuses a body that is not one.

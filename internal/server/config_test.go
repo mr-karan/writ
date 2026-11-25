@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mr-karan/writ/internal/authz"
+	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
 	"github.com/mr-karan/writ/internal/egress"
 )
@@ -407,6 +408,47 @@ poll_every = "2m"
 	src += "repo {\n  name = \"infra\"\n  forge = \"gitlab\"\n  project = \"acme/other\"\n}\n"
 	if _, diags := ParseConfig("/etc/writ/serve", []byte(src)); !strings.Contains(diagText(diags), "repos names infra twice") {
 		t.Fatalf("a repository named twice: %v", diags)
+	}
+}
+
+// A github forge reads github.com when it names no url, and takes
+// another instance's url by the same rule as gitlab. A GitHub App's
+// attributes are refused until the App is built.
+func TestParseGitHubForge(t *testing.T) {
+	forge := func(body string) string {
+		return minimal + "forge \"github\" {\n  kind = \"github\"\n  read_token_file = \"secrets/github_read\"\n" + body + "}\n" +
+			"repo {\n  name = \"web\"\n  forge = \"github\"\n  project = \"acme/web\"\n}\n"
+	}
+	for _, tc := range []struct{ name, body, url string }{
+		{"no url", "", "https://github.com"},
+		{"an enterprise server", "  url = \"https://ghe.example.com/\"\n", "https://ghe.example.com"},
+		{"a stand-in on loopback", "  url = \"http://127.0.0.1:9000\"\n", "http://127.0.0.1:9000"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, diags := ParseConfig("/etc/writ/serve", []byte(forge(tc.body)))
+			if diags.HasErrors() {
+				t.Fatal(diags)
+			}
+			if len(cfg.Forges) != 1 || cfg.Forges[0].Kind != control.GitHub || cfg.Forges[0].URL != tc.url || cfg.Forges[0].ReadTokenFile != "/etc/writ/secrets/github_read" {
+				t.Fatalf("forges %+v", cfg.Forges)
+			}
+		})
+	}
+	for _, tc := range []struct{ name, body, want string }{
+		{"plain http off loopback", "  url = \"http://ghe.example.com\"\n", "url must be https://HOST, or http:// on a loopback address"},
+		{"a path", "  url = \"https://github.com/acme\"\n", "url must be https://HOST"},
+		{"an app id", "  app_id = \"1\"\n", "app_id is for a GitHub App, which is not built yet"},
+		{"a key file", "  key_file = \"k.pem\"\n", "key_file is for a GitHub App, which is not built yet"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, diags := ParseConfig("/etc/writ/serve", []byte(forge(tc.body))); !strings.Contains(diagText(diags), tc.want) {
+				t.Fatalf("got %v, want %q", diags, tc.want)
+			}
+		})
+	}
+	src := minimal + "forge \"github\" {\n  kind = \"github\"\n}\n"
+	if _, diags := ParseConfig("/etc/writ/serve", []byte(src)); !strings.Contains(diagText(diags), "needs read_token_file, the file that holds a read-only token: a fine-grained token with Contents: read and Metadata: read") {
+		t.Fatalf("no read token: %v", diags)
 	}
 }
 

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,7 +47,7 @@ type forgeClient struct {
 func (s *Server) initForges() error {
 	s.forges = map[string]forgeClient{}
 	for _, f := range s.cfg.Forges {
-		c, err := forge.NewGitLab(forge.GitLabOptions{URL: f.URL, TokenFile: f.ReadTokenFile, CAFile: f.CAFile})
+		c, err := forgeKinds[f.Kind].client(f)
 		if err != nil {
 			return fmt.Errorf("forge %s: %w", f.Name, err)
 		}
@@ -70,6 +72,10 @@ func (s *Server) clientOf(r control.Repo) (forge.Client, error) {
 	}
 	if f.cfg.URL != r.ForgeURL {
 		return nil, fmt.Errorf("forge %s is now %s, and repository %s was added at %s; add the repository again", r.Forge, f.cfg.URL, r.Name, r.ForgeURL)
+	}
+	// A project id is a forge kind's own: GitLab's 4242 is not GitHub's.
+	if f.cfg.Kind != r.Kind {
+		return nil, fmt.Errorf("forge %s is now of kind %s, and repository %s was added at a forge of kind %s; add the repository again", r.Forge, f.cfg.Kind, r.Name, r.Kind)
 	}
 	return f.client, nil
 }
@@ -159,18 +165,34 @@ type repoError struct {
 	status int
 	class  diag.Class
 	msg    string
+	// retryAfter, when set, is how long a client should wait before it
+	// asks again, which the answer's Retry-After says, and that the
+	// refusal came before writ serve took the request.
+	retryAfter time.Duration
 }
 
 func (e *repoError) Error() string { return e.msg }
+
+// retry sets Retry-After on an answer of the refusal, when it has one.
+func (e *repoError) retry(w http.ResponseWriter) {
+	if e.retryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(e.retryAfter.Seconds()))))
+		w.Header().Set(RetryHeader, RetryForge)
+	}
+}
 
 func refusedRepo(status int, format string, args ...any) *repoError {
 	return &repoError{status: status, class: diag.Usage, msg: fmt.Sprintf(format, args...)}
 }
 
 // forgeRefusal turns a forge's error into a refusal: a project, branch, or
-// commit the token cannot see is 404, and anything else 502, because the
-// forge, not the request, failed.
+// commit the token cannot see is 404, a forge's rate limit 503 with how
+// long it lasts, so a client waits and asks again, and anything else 502,
+// because the forge, not the request, failed.
 func forgeRefusal(err error) *repoError {
+	if rl, ok := errors.AsType[*forge.RateLimitError](err); ok {
+		return &repoError{status: http.StatusServiceUnavailable, class: diag.Provider, msg: err.Error(), retryAfter: max(time.Until(rl.Until), time.Second)}
+	}
 	if _, ok := errors.AsType[*repo.WritFilesError](err); ok {
 		return &repoError{status: http.StatusBadRequest, class: diag.Usage, msg: err.Error()}
 	}
@@ -456,6 +478,7 @@ func (s *Server) createRepo(w http.ResponseWriter, r *http.Request) {
 	spec := RepoSpec{Name: body.Name, Forge: body.Forge, Project: body.Project, Path: body.Path, Prefix: body.Prefix}
 	rp, c, rerr := s.addRepo(ctx, spec, control.FromAPI, req.principal.key(), e)
 	if rerr != nil {
+		rerr.retry(w)
 		s.refuse(w, r, FormatRepo, rerr.class, rerr.status, "%s", rerr.msg)
 		return
 	}
@@ -691,7 +714,7 @@ func (s *Server) sameSpec(r control.Repo, spec RepoSpec) bool {
 		return r.Kind == control.Dir
 	}
 	f, err := findForge(s.cfg.Forges, spec.Forge)
-	return err == nil && f.Name == r.Forge && f.URL == r.ForgeURL
+	return err == nil && f.Name == r.Forge && f.Kind == r.Kind && f.URL == r.ForgeURL
 }
 
 // stackDir is the directory of a stack in its repository, from its name.

@@ -1,0 +1,119 @@
+# .github/workflows/writ-plan.yml: each pull request and each push to the default
+# branch plans each stack in each environment with writ serve, which takes the
+# repository and the commit from the job's ID token and reads the commit itself, so no
+# job checks it out or holds a cloud credential. People approve each plan, in /ui/plans
+# or with writ approve --remote ID. After the merge, a person applies a pull request's
+# approved plan with writ apply --remote --merged --env ENV --stack NAME --repo REPO
+# --commit SHA, naming the merged commit, whose sources must be the plan's.
+name: writ plan
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+permissions:
+  contents: read
+  id-token: write
+defaults:
+  run:
+    shell: bash
+jobs:
+  plan:
+    # A pull request from a fork and Dependabot's runs get no ID token, so the job skips
+    # them, for any event that carries a pull request; the writ job below reports it.
+    if: github.actor != 'dependabot[bot]' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      # writ ci github could not read writ serve's limits, which only an admin may: an admin
+      # who runs it again gets the lesser of limits.plans and limits.plans_per_principal.
+      max-parallel: 1
+      matrix:
+        include:
+          - stack: "web/network"
+            env: "prod"
+          - stack: "web/network"
+            env: "staging"
+          - stack: "web/database"
+            env: "prod"
+    steps:
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+      - name: Install writ
+        env:
+          WRIT_VERSION: "v0.1.9"
+          CGO_ENABLED: "0"
+          GOTOOLCHAIN: auto
+          GOSUMDB: sum.golang.org
+          GOFLAGS: ""
+        # go install fetches the release through the Go module proxy and checks its modules
+        # against the Go checksum database, not the release's own files; a runner must not
+        # exempt github.com/mr-karan/writ with GONOSUMDB or GOPRIVATE. The binary goes to a
+        # directory of this job only, and a failed step stops the job, so a runner never
+        # plans with a writ left from before.
+        run: |
+          set -euo pipefail
+          export GOBIN="$RUNNER_TEMP/writ-bin"
+          rm -rf "$GOBIN"
+          go install "github.com/mr-karan/writ/cmd/writ@${WRIT_VERSION}"
+          test "$("$GOBIN/writ" version)" = "writ ${WRIT_VERSION}"
+          echo "$GOBIN" >> "$GITHUB_PATH"
+      - name: Plan
+        env:
+          WRIT_SERVER: "http://127.0.0.1:PORT"
+          WRIT_REPO: "web-app"
+          WRIT_STACK: ${{ matrix.stack }}
+          WRIT_ENV: ${{ matrix.env }}
+        # writ asks GitHub Actions for the job's ID token, whose audience is WRIT_SERVER;
+        # writ serve refuses a commit or a repository other than the token's. While writ serve's
+        # plan slots are busy, as with overlapping runs, writ asks again for up to 15m.
+        run: |
+          set -euo pipefail
+          writ plan --remote --env "$WRIT_ENV" --stack "$WRIT_STACK" --repo "$WRIT_REPO" --commit "$GITHUB_SHA" --slot-wait 15m
+  writ:
+    # The one check to require. It passes when every plan passed, or when the plan job was
+    # skipped, as for a fork's or Dependabot's pull request, whose per-stack checks GitHub
+    # never makes; it fails when a plan failed or was cancelled.
+    needs: plan
+    if: always()
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 5
+    steps:
+      - name: Check the plans
+        env:
+          RESULT: ${{ needs.plan.result }}
+        run: |
+          set -euo pipefail
+          case "$RESULT" in
+            success|skipped) echo "writ plan: $RESULT" ;;
+            *) echo "writ plan: $RESULT" >&2; exit 1 ;;
+          esac
+
+# The writ serve config: the team and grant of this repository's workflow runs, by the
+# repository's id, 777001, which a renamed or moved repository keeps, and an approval rule.
+# The issuer named github is GitHub Actions' token issuer: kind github-actions, at
+# https://token.actions.githubusercontent.com, or https://HOST/_services/token on GitHub
+# Enterprise Server.
+team "web_app_ci" {
+  issuer = "github"
+  match  = { repository_id = ["777001"] }
+}
+grant {
+  teams  = ["web_app_ci"]
+  stacks = ["web/network", "web/database"]
+  envs   = ["prod", "staging"]
+  can    = ["read", "plan"]
+}
+approval {
+  stacks = ["web/network", "web/database"]
+  envs   = ["prod", "staging"]
+  risks  = ["create", "update", "replace", "delete", "data-loss"]
+  need   = 1
+}
+# Grant approve and apply on these stacks to a team of a people issuer.
+
+# Repository settings of acme/web-app: protect main, and require the one check named writ, not
+# the per-stack plan checks.
+# max-parallel is 1: an admin who runs writ ci github again gets writ serve's own limit.

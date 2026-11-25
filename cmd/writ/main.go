@@ -56,7 +56,8 @@ commands:
 
 remote commands, against the first control plane of --server, WRIT_SERVER, the one you
 hold a session for, and the one writ serve --dev runs, with the CI token in
-WRIT_ID_TOKEN, else your session from writ login, else the dev token:
+WRIT_ID_TOKEN, else a GitHub Actions job's ID token, else your session from writ login,
+else the dev token:
   login    [URL] [--issuer NAME] [--device | --browser] [--json]
                                           sign in through the team's identity provider: with the
                                           device flow when it offers one, else in a browser on this
@@ -67,7 +68,7 @@ WRIT_ID_TOKEN, else your session from writ login, else the dev token:
                                           plan the OpenTofu stack on writ serve, which keeps the plan:
                                           in a clean work tree of a repository writ serve reads, the
                                           commit you are on, which writ serve fetches
-  plan     --remote --env ENV --stack NAME --commit SHA [--repo NAME]
+  plan     --remote --env ENV --stack NAME --commit SHA [--repo NAME] [--slot-wait 15m]
                                           plan a commit and read no file, as a CI job with no checkout
   repo     add NAME FORGE/PROJECT [--path PATH] [--prefix PREFIX] [--json]
                                           add a repository: writ serve reads its default branch with the
@@ -77,6 +78,9 @@ WRIT_ID_TOKEN, else your session from writ login, else the dev token:
   repo     show NAME [--json]             print a repository and the stacks found at its head
   ci       gitlab --repo NAME [--envs LIST] [--image IMAGE] [--component REF]
                                           print the .gitlab-ci.yml lines and the config lines for a repository
+  ci       github --repo NAME [--envs LIST] [--writ-version V] [--runs-on LABEL]
+                                          print a GitHub Actions workflow that plans a repository's stacks,
+                                          and the config lines for it
   ui       [--json]                       print the control UI's address; under --dev, a sign-in link
   show     --remote ID [--json]           print a plan writ serve keeps, by id or ref, or a run, by id
   show     --remote --request KEY [--json]
@@ -413,6 +417,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 		mr := fs.Int("hint-merge-request", 0, "with --remote: the merge request `IID` the plan belongs to, for writ serve's records")
 		repo := fs.String("repo", "", "with --remote: the `repository` whose commit to plan, as writ repo list names it; a CI job's token names its own")
 		commit := fs.String("commit", "", "with --remote: the commit `SHA` to plan, which writ serve fetches; no file is read")
+		slotWait := fs.Duration("slot-wait", 0, "with --remote: how long to keep asking while writ serve's plan slots are busy, such as 15m; at most 1h")
 		return func(ctx context.Context, app *cli.App, pos []string) error {
 			if err := noArgs(name, pos); err != nil {
 				return err
@@ -420,7 +425,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 			if err := remoteOnly(rem); err != nil {
 				return err
 			}
-			return app.RemotePlan(ctx, cli.RemotePlanOptions{RemoteOptions: cli.RemoteOptions{Stack: *stackName}, JSON: *j, HintMergeRequest: *mr, Repo: *repo, Commit: *commit})
+			return app.RemotePlan(ctx, cli.RemotePlanOptions{RemoteOptions: cli.RemoteOptions{Stack: *stackName}, JSON: *j, HintMergeRequest: *mr, Repo: *repo, Commit: *commit, SlotWait: *slotWait})
 		}, nil
 	case "apply":
 		j := asJSON()
@@ -684,13 +689,15 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 		repo := fs.String("repo", "", "the `repository` the CI jobs plan, as writ repo list names it")
 		envs := fs.String("envs", "", "a comma-separated `list` of environments; default every one writ serve serves")
 		image := fs.String("image", "registry.example.com/writ:"+version, "the `image` whose PATH holds the writ binary")
-		component := fs.String("component", cli.DefaultComponent, "the CI/CD component to include, `PATH@VERSION`")
+		component := fs.String("component", cli.DefaultComponent, "the GitLab CI/CD component to include, `PATH@VERSION`")
+		writVersion := fs.String("writ-version", "", "the Writ `release` a GitHub Actions job installs, v0.1.9 or later; default this writ's version when it is a release")
+		runsOn := fs.String("runs-on", "", "the `label` of the runner a GitHub Actions job runs on; default ubuntu-24.04 at github.com, required elsewhere")
 		return func(ctx context.Context, app *cli.App, pos []string) error {
-			if len(pos) != 1 || pos[0] != "gitlab" {
-				return &cli.UsageError{Msg: "ci takes gitlab: writ ci gitlab --repo NAME"}
+			if len(pos) != 1 || pos[0] != "gitlab" && pos[0] != "github" {
+				return &cli.UsageError{Msg: "ci takes gitlab or github: writ ci gitlab --repo NAME, or writ ci github --repo NAME"}
 			}
 			if *repo == "" {
-				return &cli.UsageError{Msg: "ci gitlab needs --repo, a repository writ repo list names"}
+				return &cli.UsageError{Msg: "ci " + pos[0] + " needs --repo, a repository writ repo list names"}
 			}
 			var list []string
 			for e := range strings.SplitSeq(*envs, ",") {
@@ -698,7 +705,7 @@ func command(name string, fs *flag.FlagSet) (call, error) {
 					list = append(list, e)
 				}
 			}
-			return app.CIGitLab(ctx, cli.CIOptions{Repo: *repo, Envs: list, Image: *image, Component: *component})
+			return app.CI(ctx, pos[0], cli.CIOptions{Repo: *repo, Envs: list, Image: *image, Component: *component, WritVersion: *writVersion, RunsOn: *runsOn})
 		}, nil
 	case "ui":
 		j := asJSON()

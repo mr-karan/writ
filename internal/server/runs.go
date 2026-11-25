@@ -207,7 +207,16 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request) {
 // --dev, an override is a person's, a CI job applies only a plan of its
 // own pipeline, and the plan's ref must not have moved since the plan.
 func (s *Server) byPlan(w http.ResponseWriter, r *http.Request, p control.Plan, override string) bool {
-	pr := reqOf(r).principal
+	req := reqOf(r)
+	pr := req.principal
+	// Apply on the stack@env comes before any call to the forge, with
+	// writ serve's token; the plan's risks are checked after. The audit
+	// row names the target even when this refuses.
+	req.entry.Env, req.entry.Stacks = p.Env, []string{p.Stack}
+	if d := s.cfg.Policy.Decide(pr.teams, authz.Apply, []string{p.Stack}, p.Env, nil); !d.Allowed {
+		s.refuse(w, r, FormatRemoteRun, diag.Denied, http.StatusForbidden, "%s may not apply plan %s: %s", pr.info.Display, p.ID, d.Reason)
+		return false
+	}
 	if !s.rules().Approvable(p) {
 		s.refuse(w, r, FormatRemoteRun, diag.SavedPlan, http.StatusConflict, "plan %s is a speculative plan, of files a client sent, which a team's control plane never applies: push the commit and plan it", p.ID)
 		return false
@@ -240,6 +249,7 @@ func (s *Server) byPlan(w http.ResponseWriter, r *http.Request, p control.Plan, 
 	if err != nil {
 		var re *repoError
 		if errors.As(err, &re) {
+			re.retry(w)
 			s.refuse(w, r, FormatRemoteRun, re.class, re.status, "writ serve could not check that %s has not moved since plan %s, so it refuses the apply: %s", p.Source.Ref, p.ID, re.msg)
 			return false
 		}
@@ -319,8 +329,18 @@ func (s *Server) byMerged(w http.ResponseWriter, r *http.Request, body RunReques
 		return mergedApply{}, false
 	}
 	env := e.Name
+	// Apply on the stack@env comes before any call to the forge, with
+	// writ serve's token, so a principal that may not apply there reads
+	// nothing of the repository; the plan's risks are checked after. The
+	// audit row names the target even when this refuses.
+	reqOf(r).entry.Env, reqOf(r).entry.Stacks = env, []string{stack}
+	if d := s.cfg.Policy.Decide(pr.teams, authz.Apply, []string{stack}, env, nil); !d.Allowed {
+		s.refuse(w, r, FormatRemoteRun, diag.Denied, http.StatusForbidden, "%s may not apply to %s@%s", pr.info.Display, stack, env)
+		return mergedApply{}, false
+	}
 	in, rerr := s.mergedSource(ctx, pr, body.Merged)
 	if rerr != nil {
+		rerr.retry(w)
 		s.refuse(w, r, FormatRemoteRun, rerr.class, rerr.status, "%s", rerr.msg)
 		return mergedApply{}, false
 	}
@@ -332,6 +352,7 @@ func (s *Server) byMerged(w http.ResponseWriter, r *http.Request, body RunReques
 	sources, err := s.commitSources(ctx, rp, c, commit, stack)
 	if err != nil {
 		rerr := forgeRefusal(err)
+		rerr.retry(w)
 		s.refuse(w, r, FormatRemoteRun, rerr.class, rerr.status, "read %s at %s: %s", rp.Name, forge.Short(commit), rerr.msg)
 		return mergedApply{}, false
 	}

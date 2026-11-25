@@ -11,7 +11,6 @@ import (
 	"github.com/mr-karan/writ/internal/control"
 	"github.com/mr-karan/writ/internal/diag"
 	"github.com/mr-karan/writ/internal/forge"
-	"github.com/mr-karan/writ/internal/oidc"
 	"github.com/mr-karan/writ/internal/repo"
 )
 
@@ -42,22 +41,26 @@ func fullRef(ref string) bool {
 func (s *Server) planSource(ctx context.Context, p *principal, req *SourceRequest, stack string) (planInput, *repoError) {
 	var in planInput
 	var commit string
+	// check is the token's forge's check of its job, nil when it has none.
+	var check func(context.Context, forge.Client) *repoError
 	if p.tok != nil {
-		if p.tok.Kind != oidc.GitLabCI {
+		kind, fk, ok := kindOfToken(p.tok.Kind)
+		if !ok {
 			return in, refusedRepo(http.StatusBadRequest, "a plan of a commit from a %s token is not built yet", p.tok.Kind)
 		}
-		claim := func(name string) string { v, _ := p.tok.Claims.String(name); return v }
-		projectID, sha := claim("project_id"), claim("sha")
-		ref := claim("ref_path")
-		if ref == "" && claim("ref") != "" {
-			ref = "refs/heads/" + claim("ref")
+		job := fk.job(p.tok)
+		if job.forgeURL == "" {
+			return in, &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("issuer %s is not the CI issuer of a forge this control plane knows, so its tokens name no repository", trunc(issuerURL(p.tok)))}
 		}
-		repos, err := s.store.ReposOfProject(ctx, control.GitLab, issuerURL(p.tok), projectID)
+		projectID, sha, ref := job.projectID, job.sha, job.ref
+		// The token binds the plan to the repository its forge and id
+		// name, never to one the request names.
+		repos, err := s.store.ReposOfProject(ctx, kind, job.forgeURL, projectID)
 		if err != nil {
 			return in, &repoError{status: http.StatusServiceUnavailable, class: diag.StateIO, msg: "the control database failed"}
 		}
 		if len(repos) == 0 {
-			return in, &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("project %s (id %s) is not a repository of this control plane; a merge request from a fork runs in the fork's project, whose id matches no repository", trunc(claim("project_path")), trunc(projectID))}
+			return in, &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("project %s (id %s) is not a repository of this control plane%s", trunc(job.project), trunc(projectID), fk.forkNote)}
 		}
 		switch {
 		case req.Repo != "":
@@ -82,9 +85,12 @@ func (s *Server) planSource(ctx context.Context, p *principal, req *SourceReques
 			return in, &repoError{status: http.StatusForbidden, class: diag.Denied, msg: fmt.Sprintf("a CI job plans its own commit: the token names %s, not %s", forge.Short(sha), forge.Short(req.Commit))}
 		}
 		if ref != "" && !fullRef(ref) {
-			return in, refusedRepo(http.StatusBadRequest, "the token's ref_path %q is not a full ref, such as refs/heads/main", trunc(ref))
+			return in, refusedRepo(http.StatusBadRequest, "the token's ref %q is not a full ref, such as refs/heads/main", trunc(ref))
 		}
 		commit, in.source.Ref = sha, ref
+		if fk.checkJob != nil {
+			check = func(ctx context.Context, c forge.Client) *repoError { return fk.checkJob(ctx, c, in.repo, job) }
+		}
 	} else {
 		if req.Repo == "" || !forge.IsSHA(req.Commit) {
 			return in, refusedRepo(http.StatusBadRequest, "a plan of a commit names the repository and the commit's full id: source.repo and source.commit")
@@ -111,6 +117,11 @@ func (s *Server) planSource(ctx context.Context, p *principal, req *SourceReques
 	}
 	cctx, cancel := context.WithTimeout(ctx, forge.CallTimeout)
 	defer cancel()
+	if check != nil {
+		if rerr := check(cctx, c); rerr != nil {
+			return in, rerr
+		}
+	}
 	full, err := c.Commit(cctx, in.repo.ProjectID, commit)
 	if err != nil {
 		rerr := forgeRefusal(err)
