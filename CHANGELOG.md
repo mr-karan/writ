@@ -38,7 +38,6 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 ### Fixed
 
 - The control UI keeps a stack's name on one line in the plans, runs and audit tables, shows the commit a person's plan planned, and writes settings durations short, such as `24h` for `24h0m0s`.
-||||||| 166d3ed1
 - `writ serve --check` no longer reports run limits off when it runs under a shell that then starts `writ serve`, as a Nomad task's `sh -c '... --check && exec writ serve'` does. The check leaves out its own ancestors, which are gone once `writ serve` runs.
 - `writ serve --check` no longer warns that a team of people may apply but matches no ref. A person's token names no branch, so the warning now covers CI teams only, and a GitHub setup, where people apply, checks clean.
 - The NixOS module's `RestrictNamespaces` allows `net`. Without it, every OpenTofu run under `egress_mode` `report` or `enforce` failed at start with `operation not permitted`, since each step starts in a network namespace of its own. Under those modes, `writ serve --check` now starts a probe in a run's own network, so a unit of your own that refuses the namespace fails the check, and the unit doesn't start, rather than every run. The error names the network namespace with the others it needs.
