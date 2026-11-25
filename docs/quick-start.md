@@ -14,10 +14,10 @@ Plan and apply an OpenTofu stack locally in four steps with no cloud account, th
 
 ### 1. Install writ
 
-The script installs `writ` v0.1.8 to `~/.local/bin` and verifies its minisign signature and SHA-256 checksum:
+The script installs `writ` v0.1.9 to `~/.local/bin` and verifies its minisign signature and SHA-256 checksum:
 
 ```sh
-curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh
+curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.9/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 writ version
 ```
@@ -122,7 +122,7 @@ A team `writ serve` adds Postgres, OIDC sign-in for CI jobs and people, teams, g
 
 ### On GitHub
 
-GitHub repository reads, webhooks, and GitHub Actions OIDC support land in the first release after v0.1.8 (see [CHANGELOG.md](../CHANGELOG.md)). Use a `github` forge with a fine-grained read token (a GitHub App is not built yet), a `github-actions` issuer, and a `people` issuer so teammates can approve and apply:
+Use a `github` forge with a fine-grained read token (a GitHub App is not built yet), a `github-actions` issuer, and a `people` issuer so teammates can approve and apply:
 
 ```hcl
 issuer "github" {
@@ -153,7 +153,7 @@ The full walkthrough below connects one GitLab project (`acme/infra`, ID `4242`)
 
 - A Linux host with Postgres, `writ`, and OpenTofu 1.13.9, behind a TLS-terminating proxy for `https://writ.example.com`.
 - A GitLab project (`acme/infra`, numeric ID `4242`).
-- A `writ` container image your GitLab runners can pull, for example `registry.example.com/writ:0.1.8` copied from [`ghcr.io/mr-karan/writ:0.1.8`](install.md#the-container-image).
+- A `writ` container image your GitLab runners can pull, for example `registry.example.com/writ:0.1.9` copied from [`ghcr.io/mr-karan/writ:0.1.9`](install.md#the-container-image).
 
 ### 1. Commit the stack to the default branch
 
@@ -311,7 +311,7 @@ Or open `https://writ.example.com/ui/repos/infra` in a browser and sign in throu
 
 ### 5. Add the GitLab CI jobs
 
-Add these jobs to `.gitlab-ci.yml` in a merge request, or generate them with `writ ci gitlab --repo infra --image registry.example.com/writ:0.1.8`:
+Add these jobs to `.gitlab-ci.yml` in a merge request, or generate them with `writ ci gitlab --repo infra --image registry.example.com/writ:0.1.9`:
 
 ```yaml
 stages: [writ-plan, writ-approve, writ-apply]
@@ -321,17 +321,17 @@ include:
       server: https://writ.example.com
       env: prod
       stack: app
-      image: registry.example.com/writ:0.1.8
+      image: registry.example.com/writ:0.1.9
   - component: $CI_SERVER_FQDN/platform/writ-ci/writ-approve@0.1.0
     inputs:
       server: https://writ.example.com
-      image: registry.example.com/writ:0.1.8
+      image: registry.example.com/writ:0.1.9
   - component: $CI_SERVER_FQDN/platform/writ-ci/writ-apply@0.1.0
     inputs:
       server: https://writ.example.com
       env: prod
       stack: app
-      image: registry.example.com/writ:0.1.8
+      image: registry.example.com/writ:0.1.9
 ```
 
 Host the components from [`ci/gitlab`](../ci/gitlab/README.md) at `platform/writ-ci`, or change the path. Protect `main` and enable **Pipelines must succeed** in the project settings. No job checks out code or holds cloud credentials ([Set up GitLab CI](set-up-gitlab-ci.md)).

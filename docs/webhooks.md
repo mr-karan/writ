@@ -1,6 +1,6 @@
 # Get changes in seconds with a webhook
 
-Add a GitHub or GitLab webhook so `writ serve` reads a pushed or merged head within seconds, instead of at the next poll (`poll_every`, 60 seconds by default). Polling continues every `poll_every_with_hook` (5 minutes by default) as a backstop. GitHub webhooks land in the first release after v0.1.8 (see [CHANGELOG.md](../CHANGELOG.md)).
+Add a GitHub or GitLab webhook so `writ serve` reads a pushed or merged head within seconds, instead of at the next poll (`poll_every`, 60 seconds by default). Polling continues every `poll_every_with_hook` (5 minutes by default) as a backstop.
 
 A webhook only triggers an early read of the default branch through the Git host's API, with the forge's read token. It never starts a plan or apply. `writ serve` never trusts the webhook body: the repository comes from the URL path, and the commit from the Git host's API. It parses a GitHub body's `ref` and `after` only to tell a push from another event, and never parses a GitLab body.
 

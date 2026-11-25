@@ -1,6 +1,6 @@
 # Install
 
-The current release is **v0.1.8**. GitHub forge, webhook, and GitHub Actions support land in the first release after v0.1.8 (see [CHANGELOG.md](../CHANGELOG.md)). Releases include static binaries for Linux and macOS (`amd64` and `arm64`), a multi-arch `writ serve` container image, an install script, `SHA256SUMS`, and its minisign signature. There is no Windows build.
+The current release is **v0.1.9**, the first with GitHub forge, webhook, and GitHub Actions support. Releases include static binaries for Linux and macOS (`amd64` and `arm64`), a multi-arch `writ serve` container image, an install script, `SHA256SUMS`, and its minisign signature. There is no Windows build.
 
 | Method | Best for |
 | --- | --- |
@@ -29,7 +29,7 @@ Install [`minisign`](https://jedisct1.github.io/minisign/). Without it, the scri
 ### Run it
 
 ```sh
-curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh
+curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.9/install.sh | sh
 ```
 
 To read the script first, download it and run `sh install.sh`. A successful run ends with:
@@ -45,7 +45,7 @@ Flags such as `--version`, `--dir`, and `--from`, and the script's safety rules,
 Pass flags through a pipe with `sh -s --`:
 
 ```sh
-curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh -s -- --dir /opt/writ/bin
+curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.9/install.sh | sh -s -- --dir /opt/writ/bin
 ```
 
 ### Check a download by hand
@@ -61,10 +61,10 @@ On macOS, replace `sha256sum` with `shasum -a 256`.
 
 ## The container image
 
-`ghcr.io/mr-karan/writ:0.1.8` is a multi-architecture (`amd64`, `arm64`) image containing `writ`, OpenTofu 1.13.9 at `/bin/tofu`, CA certificates, tzdata, and user `writ` (UID 65532). It has no shell and no `git`.
+`ghcr.io/mr-karan/writ:0.1.9` is a multi-architecture (`amd64`, `arm64`) image containing `writ`, OpenTofu 1.13.9 at `/bin/tofu`, CA certificates, tzdata, and user `writ` (UID 65532). It has no shell and no `git`.
 
 ```sh
-podman pull ghcr.io/mr-karan/writ:0.1.8
+podman pull ghcr.io/mr-karan/writ:0.1.9
 ```
 
 To build and load the image locally with Nix:
@@ -80,13 +80,13 @@ podman run -d --name writ \
   -v ./serve:/etc/writ/serve:ro \
   -v writ-data:/var/lib/writ \
   -p 7340:7340 \
-  ghcr.io/mr-karan/writ:0.1.8
+  ghcr.io/mr-karan/writ:0.1.9
 ```
 
 Validate a config with `serve --config /etc/writ/serve --check`. Dev mode runs on the host network:
 
 ```sh
-podman run --rm --network host ghcr.io/mr-karan/writ:0.1.8 serve --dev
+podman run --rm --network host ghcr.io/mr-karan/writ:0.1.9 serve --dev
 ```
 
 ```

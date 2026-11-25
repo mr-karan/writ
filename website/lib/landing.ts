@@ -118,7 +118,7 @@ export const tryIt = {
   text: 'Start one Go binary on loopback, or plan pull requests with OIDC.',
   primaryCta: { text: 'Quick start', href: '/docs/quick-start' },
   secondaryLink: { text: 'GitHub Actions guide', href: '/docs/set-up-github-actions' },
-  limit: 'Linux and OpenTofu 1.13.9. GitHub read-token support lands after v0.1.8; GitLab also works.',
+  limit: 'Linux and OpenTofu 1.13.9. GitHub (read token) from v0.1.9; GitLab also works.',
   limitLink: { text: 'Limits', href: '/docs/status' },
   tabs: {
     github: 'GitHub Actions',
