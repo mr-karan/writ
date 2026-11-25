@@ -37,6 +37,7 @@ Writ's notable changes, newest first. The format follows [Keep a Changelog](http
 
 ### Fixed
 
+- `writ serve --check` no longer warns that a team of people may apply but matches no ref. A person's token names no branch, so the warning now covers CI teams only, and a GitHub setup, where people apply, checks clean.
 - The NixOS module's `RestrictNamespaces` allows `net`. Without it, every OpenTofu run under `egress_mode` `report` or `enforce` failed at start with `operation not permitted`, since each step starts in a network namespace of its own. Under those modes, `writ serve --check` now starts a probe in a run's own network, so a unit of your own that refuses the namespace fails the check, and the unit doesn't start, rather than every run. The error names the network namespace with the others it needs.
 
 - Each OpenTofu step of `writ serve` runs in an IPC namespace of its own. Before, steps shared `writ serve`'s: a step's System V shared memory outlived the step, and a later run could attach to it by its key and read it. The NixOS module's `RestrictNamespaces` now allows `ipc`, which `writ serve` needs to make the namespace; a unit of your own with `RestrictNamespaces` needs it too. See [What each run can see on disk](docs/how-run-isolation-works.md#what-each-run-can-see-on-disk).

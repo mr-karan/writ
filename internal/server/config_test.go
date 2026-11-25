@@ -315,6 +315,32 @@ func TestParseConfigWarnings(t *testing.T) {
 			t.Errorf("no warning %q in %s", want, text)
 		}
 	}
+	people := `issuer "sso" {
+  kind               = "people"
+  identity           = "sso"
+  url                = "https://idp.example.com"
+  client_id          = "c"
+  client_secret_file = "/run/secrets/writ/oidc_client_secret"
+}
+team "ops" {
+  issuer = "sso"
+  match  = { groups = ["ops"] }
+}
+grant {
+  teams = ["ops"]
+  stacks = ["*"]
+  envs = ["*"]
+  can = ["apply"]
+  risks = ["create"]
+}
+`
+	_, pdiags := ParseConfig("/etc/writ/serve", []byte(minimal+people))
+	if pdiags.HasErrors() {
+		t.Fatal(pdiags)
+	}
+	if ptext := diagText(pdiags); strings.Contains(ptext, "team ops may apply but matches no ref") {
+		t.Errorf("a people team's apply is warned to match a ref: %s", ptext)
+	}
 	if strings.Contains(text, "no effect yet: writ serve does not apply") || strings.Contains(text, "approvals has no effect") {
 		t.Errorf("a config is warned that applies are not built: %s", text)
 	}
