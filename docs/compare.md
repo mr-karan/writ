@@ -17,7 +17,7 @@ Four differences between Writ, Atlantis, OTF, and Terrakube, from each project's
 
 Sources: Atlantis's [command requirements](https://www.runatlantis.io/docs/command-requirements), [server configuration](https://www.runatlantis.io/docs/server-configuration), and [security](https://www.runatlantis.io/docs/security). OTF's [runners](https://docs.otf.ninja/runners/), [flags](https://docs.otf.ninja/config/flags/), and [issue 809](https://github.com/leg100/otf/issues/809). Terrakube's [README](https://github.com/terrakube-io/terrakube), [templates](https://docs.terrakube.io/user-guide/organizations/templates), and [pull request 3406](https://github.com/terrakube-io/terrakube/pull/3406).
 
-All three also have what Writ lacks: years of production use and a GitHub App. Writ reads GitHub (landing in the first release after v0.1.8) and GitLab with a read-only token, and shipped its first release on 2026-11-17.
+All three also have what Writ lacks: years of production use and a GitHub App. Writ reads GitHub (from v0.1.9) and GitLab with a read-only token, and shipped its first release on 2026-11-17.
 
 ## Among the paid control planes
 
@@ -45,7 +45,7 @@ Spacelift, HCP Terraform, env zero, and Scalr are paid control planes for the sa
 - Self-service infrastructure templates such as Spacelift Blueprints ([pricing][sl-pricing]).
 - Years of production mileage: Scalr reports "1,000+ teams made the switch" ([home page][sc-home]).
 
-Writ runs OpenTofu 1.13.9 with GitHub (token-based, landing in the first release after v0.1.8) and GitLab on a single Linux node. If you need Terraform, a GitHub App, a hosted service, or commercial support today, choose one of the tools above.
+Writ runs OpenTofu 1.13.9 with GitHub (token-based, from v0.1.9) and GitLab on a single Linux node. If you need Terraform, a GitHub App, a hosted service, or commercial support today, choose one of the tools above.
 
 ## Next steps
 

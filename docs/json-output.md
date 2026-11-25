@@ -93,7 +93,7 @@ Returns `GET /v1/audit` ([API: Read the audit log](api.md#read-the-audit-log)).
 ## `writ version --json` (`writ.version/v0`)
 
 ```json
-{"format": "writ.version/v0", "ok": true, "version": "v0.1.8"}
+{"format": "writ.version/v0", "ok": true, "version": "v0.1.9"}
 ```
 
 ## Documents of `writ serve`

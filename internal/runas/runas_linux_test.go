@@ -143,8 +143,11 @@ func startMappedChild(t *testing.T) {
 	if err := AsUser(User{UID: runUID, GID: runUID}, func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if d := dumpable(t); d != 0 {
-		t.Fatalf("after AsUser writ is dumpable %d, want 0, which StartMapped must undo to start the process", d)
+	// The kernel sets fs.suid_dumpable, 0 or 2, when the fs uid changes;
+	// either is not dumpable, which StartMapped must undo to start the
+	// process.
+	if d := dumpable(t); d == 1 {
+		t.Fatalf("after AsUser writ is dumpable %d, want not 1, which StartMapped must undo to start the process", d)
 	}
 	cmd := exec.Command("/proc/self/exe")
 	cmd.SysProcAttr = &syscall.SysProcAttr{

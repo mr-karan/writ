@@ -302,6 +302,7 @@ func TestHeldFilesStopPastTheirCap(t *testing.T) {
 // run_scratch: here empty files that O_TMPFILE made, which no directory
 // ever named.
 func TestScratchStopsPastTheHeldFilesCap(t *testing.T) {
+	raiseOpenFiles(t, heldFilesMax+256)
 	dir := t.TempDir()
 	for range heldFilesMax + 1 {
 		fd, err := unix.Open(dir, unix.O_TMPFILE|unix.O_RDWR|unix.O_CLOEXEC, 0o600)
@@ -354,4 +355,27 @@ func TestHeldFilesCapCountsFilesOnce(t *testing.T) {
 	if err := h.addOpen(1, heldFilesMax, 0, []byte("/run/f")); !errors.Is(err, errScratchFiles) {
 		t.Fatalf("file %d returned %v, not errScratchFiles", heldFilesMax+1, err)
 	}
+}
+
+// raiseOpenFiles raises this process's soft limit of open files to at
+// least n for the test, up to the hard limit, and skips t when the hard
+// limit is lower, as on a host that caps it.
+func raiseOpenFiles(t *testing.T, n uint64) {
+	t.Helper()
+	var lim unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &lim); err != nil {
+		t.Fatal(err)
+	}
+	if lim.Cur >= n {
+		return
+	}
+	if lim.Max < n {
+		t.Skipf("needs %d open files, and the hard limit is %d", n, lim.Max)
+	}
+	was := lim
+	lim.Cur = n
+	if err := unix.Setrlimit(unix.RLIMIT_NOFILE, &lim); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = unix.Setrlimit(unix.RLIMIT_NOFILE, &was) })
 }

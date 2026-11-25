@@ -40,11 +40,12 @@ func inDelegatedScope(t *testing.T, test string, props []string, env ...string) 
 // inDelegatedScope does, but as a transient service, which systemd starts
 // itself and can confine with properties such as RestrictNamespaces, as it
 // does writ serve's unit. The service gets env and this process's TMPDIR,
-// and no other environment.
+// and no other environment, and the module's UMask=0077, whatever the
+// user's service manager would give it.
 func inDelegatedService(t *testing.T, test string, props []string, env ...string) {
 	t.Helper()
 	self := systemdRunSelf(t)
-	args := []string{"--user", "--wait", "--pipe", "--quiet", "--collect", "-p", "Delegate=yes", "--setenv=TMPDIR=" + os.TempDir()}
+	args := []string{"--user", "--wait", "--pipe", "--quiet", "--collect", "-p", "Delegate=yes", "-p", "UMask=0077", "--setenv=TMPDIR=" + os.TempDir()}
 	for _, p := range props {
 		args = append(args, "-p", p)
 	}

@@ -24,8 +24,7 @@ const setupGo = "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.
 
 // minWorkflowRelease is the first release whose writ the workflow can
 // run: it asks GitHub Actions for its ID token, takes --slot-wait, and
-// fetches a new token when a long plan outlives the first. It is the
-// release after v0.1.8, whose changes the changelog lists as unreleased.
+// fetches a new token when a long plan outlives the first.
 const minWorkflowRelease = "v0.1.9"
 
 // releaseParts are a release tag's major, minor, and patch, and whether

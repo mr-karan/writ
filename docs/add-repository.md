@@ -1,6 +1,6 @@
 # Add a repository
 
-Register a Git repository so `writ serve` can read its commits and discover OpenTofu stacks. Clients never upload stack files to a team control plane: `writ serve` fetches commits from Git by SHA, verifies each file's Git SHA-1 blob ID, and plans those exact bytes. GitHub (github.com or GitHub Enterprise Server, landing in the first release after v0.1.8; see [CHANGELOG.md](../CHANGELOG.md)) and GitLab are the supported remote Git hosts.
+Register a Git repository so `writ serve` can read its commits and discover OpenTofu stacks. Clients never upload stack files to a team control plane: `writ serve` fetches commits from Git by SHA, verifies each file's Git SHA-1 blob ID, and plans those exact bytes. GitHub (github.com or GitHub Enterprise Server, from v0.1.9) and GitLab are the supported remote Git hosts.
 
 ## Before you begin
 

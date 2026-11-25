@@ -4,7 +4,7 @@ With GitHub Actions and Writ, every pull request and every push to the default b
 
 No job needs a Git checkout, cloud credentials, or state encryption keys. Each job authenticates with its GitHub Actions ID token. See [How a plan becomes an apply](plan-to-apply.md) and [Approvals](approvals.md) for the server-side rules.
 
-**Limits.** GitHub repository reads, webhooks, and GitHub Actions OIDC support land in the first release after `v0.1.8` (see [CHANGELOG.md](../CHANGELOG.md)). The workflow is verified against a local GitHub Enterprise Server stand-in and Actions token endpoint, not github.com or a live GitHub Enterprise Server. A GitHub Actions token plans; approving a whole run and applying after a merge from a job are not built for GitHub yet, so people approve and apply. On GitLab, see [Set up GitLab CI](set-up-gitlab-ci.md).
+**Limits.** GitHub repository reads, webhooks, and GitHub Actions OIDC support need `v0.1.9` or later. The workflow is verified against a local GitHub Enterprise Server stand-in and Actions token endpoint, not github.com or a live GitHub Enterprise Server. A GitHub Actions token plans; approving a whole run and applying after a merge from a job are not built for GitHub yet, so people approve and apply. On GitLab, see [Set up GitLab CI](set-up-gitlab-ci.md).
 
 ## Before you begin
 
@@ -18,7 +18,7 @@ Run `writ ci github --repo NAME` to generate the workflow and the `writ serve` t
 
 | Flag | Meaning |
 | --- | --- |
-| `--writ-version V` | The release the workflow installs, a tag `vX.Y.Z` at or after `v0.1.9`: the workflow needs the CLI's GitHub Actions token fetch and `--slot-wait`, which the changelog lists as unreleased after `v0.1.8`. Default: the CLI's own version when it is such a release. A build that reports a commit hash, as a Nix build does, must name one. |
+| `--writ-version V` | The release the workflow installs, a tag `vX.Y.Z` at or after `v0.1.9`: the workflow needs the CLI's GitHub Actions token fetch and `--slot-wait`, which `v0.1.9` added. Default: the CLI's own version when it is such a release. A build that reports a commit hash, as a Nix build does, must name one. |
 | `--runs-on LABEL` | The runner label. Default `ubuntu-24.04` for a repository at github.com; required for GitHub Enterprise Server, whose runner labels are its administrators'. |
 | `--envs a,b` | Narrow the environments. |
 

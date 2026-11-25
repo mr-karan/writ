@@ -28,10 +28,10 @@ Writ ships as one Go binary under the Apache 2.0 license, with no limits on user
 
 Requirements: Linux, [`minisign`](https://jedisct1.github.io/minisign/), Git, and [OpenTofu 1.13.9](https://opentofu.org/docs/intro/install/) on `PATH`.
 
-1. Install `writ` v0.1.8 (verifies the minisign signature and SHA-256 checksum, then installs to `~/.local/bin`):
+1. Install `writ` v0.1.9 (verifies the minisign signature and SHA-256 checksum, then installs to `~/.local/bin`):
 
    ```sh
-   curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.8/install.sh | sh
+   curl -fsSL https://github.com/mr-karan/writ/releases/download/v0.1.9/install.sh | sh
    export PATH="$HOME/.local/bin:$PATH"
    ```
 
@@ -92,8 +92,6 @@ Open the control UI link printed by `writ serve --dev` to inspect the plan and r
 
 ### Connect GitHub Actions
 
-GitHub repository reads, webhooks, and GitHub Actions OIDC support land in the first release after v0.1.8 (see [CHANGELOG.md](CHANGELOG.md)).
-
 Point `writ serve` at GitHub with a fine-grained read token (**Contents: read** and **Metadata: read**; a GitHub App is not built yet) and a `github-actions` OIDC issuer:
 
 ```hcl
@@ -128,7 +126,7 @@ Also works with GitLab: see [Add a repository](docs/add-repository.md#forges-and
 ## Install
 
 - **Install script:** Downloads the release binary, checks its minisign signature and SHA-256, and writes `~/.local/bin/writ`.
-- **Container image:** `ghcr.io/mr-karan/writ:0.1.8` bundles `writ` and OpenTofu 1.13.9 for team servers.
+- **Container image:** `ghcr.io/mr-karan/writ:0.1.9` bundles `writ` and OpenTofu 1.13.9 for team servers.
 - **Nix:** `nix run github:mr-karan/writ -- version`, plus `nixosModules.writ-serve` for a NixOS host with Postgres.
 - **From source:** Go 1.27.3+ and `just` (`just build` writes `bin/writ`).
 - **Release binaries:** Static binaries for Linux and macOS on amd64 and arm64. macOS binaries are cross-built on Linux and haven't been tested on macOS.
@@ -138,7 +136,7 @@ See [Install](docs/install.md) for commands and verification steps.
 ## Supported platforms and limits
 
 - **OpenTofu only.** Writ runs OpenTofu 1.13.9 exclusively and doesn't run Terraform. Each stack has one state, with no `tofu workspace`.
-- **GitHub and GitLab.** GitHub (github.com or GitHub Enterprise Server, landing in the first release after v0.1.8; see [CHANGELOG.md](CHANGELOG.md)) and GitLab are the remote Git hosts Writ reads with a read-only token; there is no GitHub App yet. `writ ci github` and `writ ci gitlab` write the CI config (`writ serve --dev` also reads local Git directories).
+- **GitHub and GitLab.** GitHub (github.com or GitHub Enterprise Server, from v0.1.9) and GitLab are the remote Git hosts Writ reads with a read-only token; there is no GitHub App yet. `writ ci github` and `writ ci gitlab` write the CI config (`writ serve --dev` also reads local Git directories).
 - **AWS roles only.** Built-in role assumption supports AWS IAM roles via STS. Other providers get credentials from `provider_env` secret files on the server.
 - **One node, on Linux.** A team `writ serve` runs as a single process on Linux with namespace isolation. Running a second process against the same database fails the first process's in-flight work.
 - **Stand-in test suite.** End-to-end tests run real OpenTofu 1.13.9 and real providers against local stand-ins in isolated namespaces; no test contacts a live cloud account.
