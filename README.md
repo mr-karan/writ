@@ -13,7 +13,7 @@ Writ ships as one Go binary under the Apache 2.0 license, with no limits on user
 
 ## What it does
 
-- **Server-side plans.** You or a CI job submit a commit SHA. `writ serve` fetches that commit from GitLab and runs `tofu plan -lock=false` in an isolated Linux namespace without modifying state.
+- **Server-side plans.** You or a CI job submit a commit SHA. `writ serve` fetches that commit from GitHub or GitLab and runs `tofu plan -lock=false` in an isolated Linux namespace without modifying state.
 - **Plan-bound approvals.** Reviewers approve a plan by its plan ID, and `writ apply --remote` runs that exact saved plan. Wherever an approval rule applies, the plan's author can't approve it. [Approvals](docs/approvals.md)
 - **Split cloud roles.** Plans run with your `plan_role` (which you keep read-only). Only an approved apply, or an override with a recorded reason, gets `apply_role`. [AWS roles and credentials](docs/aws-credentials.md)
 - **Secret masking.** Writ strips secrets from every plan, run log, diagnostic, and state index row it stores or serves. [Secrets and the mask](docs/secrets.md)
@@ -90,6 +90,41 @@ Requirements: Linux, [`minisign`](https://jedisct1.github.io/minisign/), Git, an
 
 Open the control UI link printed by `writ serve --dev` to inspect the plan and run in your browser. Next, follow [set up Writ for a team](docs/quick-start.md#set-up-writ-for-a-team).
 
+### Connect GitHub Actions
+
+GitHub repository reads, webhooks, and GitHub Actions OIDC support land in the first release after v0.1.8 (see [CHANGELOG.md](CHANGELOG.md)).
+
+Point `writ serve` at GitHub with a fine-grained read token (**Contents: read** and **Metadata: read**; a GitHub App is not built yet) and a `github-actions` OIDC issuer:
+
+```hcl
+issuer "github" {
+  kind     = "github-actions"
+  identity = "github"
+  url      = "https://token.actions.githubusercontent.com"
+}
+
+forge "github" {
+  kind            = "github"
+  read_token_file = "/run/secrets/writ/github_read"
+}
+
+repo {
+  name    = "infra"
+  forge   = "github"
+  project = "acme/infra"
+}
+```
+
+Generate the workflow (a per-stack plan matrix plus one required check named `writ`, skipping fork and Dependabot PRs) and matching server grants with:
+
+```sh
+writ ci github --repo infra
+```
+
+Each job requests its own GitHub Actions ID token and runs `writ plan --remote --slot-wait 15m` without a checkout or cloud keys; people approve and apply. See [Set up GitHub Actions](docs/set-up-github-actions.md) and [Webhooks](docs/webhooks.md).
+
+Also works with GitLab: see [Add a repository](docs/add-repository.md#forges-and-their-tokens) and [Set up GitLab CI](docs/set-up-gitlab-ci.md).
+
 ## Install
 
 - **Install script:** Downloads the release binary, checks its minisign signature and SHA-256, and writes `~/.local/bin/writ`.
@@ -103,7 +138,7 @@ See [Install](docs/install.md) for commands and verification steps.
 ## Supported platforms and limits
 
 - **OpenTofu only.** Writ runs OpenTofu 1.13.9 exclusively and doesn't run Terraform. Each stack has one state, with no `tofu workspace`.
-- **GitLab and GitHub.** GitLab and GitHub are the remote Git hosts Writ reads, with a read-only token; there is no GitHub App yet. `writ ci gitlab` and `writ ci github` write the CI config (`writ serve --dev` also reads local Git directories).
+- **GitHub and GitLab.** GitHub (github.com or GitHub Enterprise Server, landing in the first release after v0.1.8; see [CHANGELOG.md](CHANGELOG.md)) and GitLab are the remote Git hosts Writ reads with a read-only token; there is no GitHub App yet. `writ ci github` and `writ ci gitlab` write the CI config (`writ serve --dev` also reads local Git directories).
 - **AWS roles only.** Built-in role assumption supports AWS IAM roles via STS. Other providers get credentials from `provider_env` secret files on the server.
 - **One node, on Linux.** A team `writ serve` runs as a single process on Linux with namespace isolation. Running a second process against the same database fails the first process's in-flight work.
 - **Stand-in test suite.** End-to-end tests run real OpenTofu 1.13.9 and real providers against local stand-ins in isolated namespaces; no test contacts a live cloud account.
@@ -116,7 +151,7 @@ Read the docs at [writ.mrkaran.dev/docs](https://writ.mrkaran.dev/docs) or in [`
 
 - [Quick start](docs/quick-start.md): local dev setup, then a team server with approvals.
 - [Run a server](docs/run.md) and [Server config](docs/config.md): deployment and configuration.
-- [Set up GitLab CI](docs/set-up-gitlab-ci.md): merge-request plan, blocking approve, and post-merge apply jobs.
+- [Set up GitHub Actions](docs/set-up-github-actions.md) and [Set up GitLab CI](docs/set-up-gitlab-ci.md): OIDC-authenticated CI plans and workflows.
 - [Commands](docs/commands.md), [API](docs/api.md), and [Errors](docs/errors.md): CLI, HTTP routes, and error classes.
 - [How a plan becomes an apply](docs/plan-to-apply.md) and [Security model](docs/security-model.md): execution lifecycle and trust boundaries.
 - [Writ vs other control planes](docs/compare.md) and [Writ vs plain GitLab CI](docs/compare-gitlab-ci.md).
